@@ -37,3 +37,15 @@ func (r *Renderer) Render(w http.ResponseWriter, name string, data any) error {
 
 	return tmpl.ExecuteTemplate(w, "layouts/base.html", data)
 }
+
+func (r *Renderer) RenderComponent(w http.ResponseWriter, pageName string, componentName string, data any) error {
+	tmpl, ok := r.pages[pageName]
+	if !ok {
+		http.Error(w, "template not found", http.StatusInternalServerError)
+		return nil
+	}
+
+	w.Header().Set("Content-type", "text/html; charset=utf-8")
+
+	return tmpl.ExecuteTemplate(w, componentName, data)
+}

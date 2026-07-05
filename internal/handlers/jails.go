@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/otterlabs/jaildeck/internal/services"
 	"github.com/otterlabs/jaildeck/internal/views"
 )
@@ -38,5 +39,44 @@ func (h *JailHandler) List(w http.ResponseWriter, r *http.Request) {
 	if err := h.renderer.Render(w, "jails", data); err != nil {
 		fmt.Printf("failed to render page: %s", err.Error())
 		http.Error(w, "failed to render page", http.StatusInternalServerError)
+	}
+}
+
+func (h *JailHandler) Start(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	jail, err := h.service.Start(r.Context(), name)
+	if err != nil {
+		http.Error(w, "failed to start jail", http.StatusInternalServerError)
+	}
+
+	if err := h.renderer.RenderComponent(w, "jails", "components/jail_row.html", jail); err != nil {
+		http.Error(w, "failed to render jail row", http.StatusInternalServerError)
+	}
+}
+
+func (h *JailHandler) Stop(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	jail, err := h.service.Stop(r.Context(), name)
+	if err != nil {
+		http.Error(w, "failed to stop jail", http.StatusInternalServerError)
+	}
+
+	if err := h.renderer.RenderComponent(w, "jails", "components/jail_row.html", jail); err != nil {
+		http.Error(w, "failed to render jail row", http.StatusInternalServerError)
+	}
+}
+
+func (h *JailHandler) Restart(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	jail, err := h.service.Restart(r.Context(), name)
+	if err != nil {
+		http.Error(w, "failed to restart jail", http.StatusInternalServerError)
+	}
+
+	if err := h.renderer.RenderComponent(w, "jails", "components/jail_row.html", jail); err != nil {
+		http.Error(w, "failed to render jail row", http.StatusInternalServerError)
 	}
 }

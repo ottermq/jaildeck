@@ -2,5 +2,14 @@
 <tr id="jail-{{ .Name }}">
     <td>{{ .Name }}</td>
     <td>{{ .Status }}</td>
+    <td>
+        <button hx-post="/jails/{{.Name}}/start" hx-target="#jail-{{ .Name }}" hx-swap="outerHTML">
+            Start
+        </button>
+
+        <button hx-post="/jails/{{ .Name }}/stop" hx-target="#jail-{{ .Name }}" hx-swap="outerHTML">
+            Stop
+        </button>
+    </td>
 </tr>
 {{ end }}

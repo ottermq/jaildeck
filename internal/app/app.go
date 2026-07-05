@@ -40,7 +40,16 @@ func (a *App) Routes() http.Handler {
 		http.Redirect(w, r, "/jails", http.StatusSeeOther)
 	})
 
-	r.Get("/jails", a.jailHandler.List)
+	r.Route("/jails", func(r chi.Router) {
+
+		r.Get("/", a.jailHandler.List)
+
+		r.Route("/{name}", func(r chi.Router) {
+			r.Post("/start", a.jailHandler.Start)
+			r.Post("/stop", a.jailHandler.Stop)
+			r.Post("/restart", a.jailHandler.Restart)
+		})
+	})
 
 	return r
 }

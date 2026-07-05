@@ -4,12 +4,11 @@
 
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <title>{{ .Title }}Jail Deck</title>
+    <title>{{ .Title }} - Jail Deck</title>
 </head>
 
 <body>
-    <h1>{{ .Title}}</h1>
+    <h1>{{ .Title }}</h1>
 
     <table>
         <thead>
@@ -20,15 +19,11 @@
         </thead>
         <tbody>
             {{ range .Jails }}
-            <tr>
-                <td>{{ .Name }}</td>
-                <td>{{ .Status }}</td>
-            </tr>
+            {{ template "components/jail_row.html" . }}
             {{end}}
         </tbody>
     </table>
 </body>
 
 </html>
-
 {{ end }}

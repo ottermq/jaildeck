@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -47,7 +48,8 @@ func (h *JailHandler) Start(w http.ResponseWriter, r *http.Request) {
 
 	jail, err := h.service.Start(r.Context(), name)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to start jail: %v", err), http.StatusInternalServerError)
+		log.Printf("failed to start jail %q: %v", name, err)
+		http.Error(w, "failed to start jail", http.StatusInternalServerError)
 		return
 	}
 
@@ -61,6 +63,7 @@ func (h *JailHandler) Stop(w http.ResponseWriter, r *http.Request) {
 
 	jail, err := h.service.Stop(r.Context(), name)
 	if err != nil {
+		log.Printf("failed to stop jail %q: %v", name, err)
 		http.Error(w, "failed to stop jail", http.StatusInternalServerError)
 		return
 	}
@@ -75,6 +78,7 @@ func (h *JailHandler) Restart(w http.ResponseWriter, r *http.Request) {
 
 	jail, err := h.service.Restart(r.Context(), name)
 	if err != nil {
+		log.Printf("failed to restart jail %q: %v", name, err)
 		http.Error(w, "failed to restart jail", http.StatusInternalServerError)
 		return
 	}

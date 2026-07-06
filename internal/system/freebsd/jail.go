@@ -47,7 +47,6 @@ func (a *Adapter) runService(ctx context.Context, name, action string) (domain.J
 		Name: "service",
 		Args: []string{"jail", action, name},
 	}
-	fmt.Printf("\ncmd: %v\n", cmd)
 	result, err := a.runner.Run(ctx, cmd)
 
 	if err != nil {
@@ -65,34 +64,8 @@ func (a *Adapter) runService(ctx context.Context, name, action string) (domain.J
 			result.Stderr,
 		)
 	}
-	err = parseError(name, result.Stdout)
-	if err != nil {
-		return domain.Jail{}, err
-	}
 
 	return a.getJailByName(ctx, name)
-}
-
-func parseError(jail, output string) error {
-	fmt.Println(output)
-	cutted, _ := strings.CutPrefix(output, "Starting jails:")
-	outputs := strings.Split(cutted, "\n")
-	fmt.Printf("%v", outputs)
-	var errStr string
-	if len(outputs) > 0 && strings.Contains(outputs[0], "cannot") {
-		fmt.Println("found --cannot--")
-		var errs []string
-		for _, o := range outputs {
-			o = strings.TrimSpace(o)
-			o, _ = strings.CutPrefix(o, fmt.Sprintf("jail: %s:", jail))
-			if o != "" {
-				errs = append(errs, o)
-			}
-		}
-		errStr = strings.Join(errs, "/n ")
-		return fmt.Errorf("%s %s", outputs[0], errStr)
-	}
-	return nil
 }
 
 func (a *Adapter) Start(ctx context.Context, name string) (domain.Jail, error) {

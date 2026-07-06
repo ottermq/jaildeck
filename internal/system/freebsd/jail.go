@@ -32,11 +32,26 @@ var jlsListCommand = system.Command{
 }
 
 func (a *Adapter) listConfiguredJails() ([]domain.Jail, error) {
+	mapConfigJails := make(map[string]bool)
 	dirJails, err := listJailsFromConfDir(defaultJailConfDir)
 	if err != nil {
 		return nil, err
 	}
-	return dirJails, nil
+	for _, j := range dirJails {
+		mapConfigJails[j.Name] = true
+	}
+	fileJails, err := listJailsFromConfFile(defaultJailConf)
+	if err != nil {
+		return nil, err
+	}
+	jails := make([]domain.Jail, 0, len(dirJails)+len(fileJails))
+	jails = append(jails, dirJails...)
+	for _, j := range fileJails {
+		if ok := mapConfigJails[j.Name]; !ok {
+			jails = append(jails, j)
+		}
+	}
+	return jails, nil
 }
 
 func (a *Adapter) runningJails(ctx context.Context) ([]domain.Jail, error) {

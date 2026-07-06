@@ -29,7 +29,7 @@ func listJailsFromConfDir(dir string) ([]domain.Jail, error) {
 			return nil, err
 		}
 
-		jail, ok := parseSingleJailConf(string(content))
+		jail, ok := parseJailConfDir(string(content))
 		if !ok {
 			continue
 		}
@@ -39,7 +39,7 @@ func listJailsFromConfDir(dir string) ([]domain.Jail, error) {
 	return jails, nil
 }
 
-func parseSingleJailConf(content string) (domain.Jail, bool) {
+func parseJailConfDir(content string) (domain.Jail, bool) {
 	lines := strings.Split(content, "\n")
 
 	var jail domain.Jail
@@ -84,6 +84,64 @@ func parseSingleJailConf(content string) (domain.Jail, bool) {
 	}
 
 	return jail, true
+}
+
+func listJailsFromConfFile(filename string) ([]domain.Jail, error) {
+
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(content), "\n")
+
+	var jails []domain.Jail
+	var jail domain.Jail
+	var name string
+	values := map[string]string{}
+
+	for _, line := range lines {
+		line = stripComment(line)
+		line = strings.TrimSpace(line)
+
+		if line == "" {
+			continue
+		}
+
+		if before, ok := strings.CutSuffix(line, "{"); ok {
+			name = strings.TrimSpace(before)
+			continue
+		}
+
+		matches := assignmentRE.FindStringSubmatch(line)
+		if len(matches) == 3 {
+			key := matches[1]
+			value := resolveVars(matches[2], name)
+			values[key] = value
+		}
+
+		if strings.HasSuffix(line, "}") {
+			if name == "" {
+				continue
+			}
+			jail = domain.Jail{
+				Name:     name,
+				Status:   domain.JailStatusStopped,
+				Hostname: values["host.hostname"],
+				IP:       values["ip4"],
+				Path:     values["path"],
+			}
+			if jail.Hostname == "" {
+				jail.Hostname = name
+			}
+			jails = append(jails, jail)
+			name = ""
+			values = map[string]string{}
+			jail = domain.Jail{}
+		}
+
+	}
+
+	return jails, nil
 }
 
 func stripComment(line string) string {

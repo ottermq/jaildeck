@@ -3,16 +3,14 @@ package freebsd
 import "testing"
 
 func TestParseSingleJailConfResolvesParenNameVariable(t *testing.T) {
-	jails, err := parseJailConf(`
+	jails := parseJailConf(`)
 web {
 	host.hostname = "$(name).example.test";
 	path = "/usr/local/jails/$(name)";
 	ip4 = "192.0.2.10";
 }
 `)
-	if err != nil {
-		t.Fatal("expected jail conf to parse")
-	}
+
 	if len(jails) != 1 {
 		t.Fatal("expected exactly one jail")
 	}

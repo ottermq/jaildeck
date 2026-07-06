@@ -8,6 +8,7 @@ import (
 	"github.com/otterlabs/jaildeck/internal/handlers"
 	"github.com/otterlabs/jaildeck/internal/services"
 	"github.com/otterlabs/jaildeck/internal/system"
+	"github.com/otterlabs/jaildeck/internal/system/freebsd"
 	"github.com/otterlabs/jaildeck/internal/views"
 )
 
@@ -21,7 +22,8 @@ func New() *App {
 		panic(err)
 	}
 
-	jailSystem := system.NewFakeJailSystem()
+	// jailSystem := system.NewFakeJailSystem()
+	jailSystem := freebsd.NewAdapter(system.NewExecCommandRunner())
 	jailService := services.NewJailService(jailSystem)
 	jailHandler := handlers.NewJailHandler(jailService, renderer)
 

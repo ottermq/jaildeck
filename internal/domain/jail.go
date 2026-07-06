@@ -8,6 +8,10 @@ const (
 )
 
 type Jail struct {
-	Name   string
-	Status JailStatus
+	JID      string
+	Name     string
+	Status   JailStatus
+	Hostname string
+	IP       string
+	Path     string
 }

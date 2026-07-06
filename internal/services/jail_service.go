@@ -57,7 +57,7 @@ func validJailName(name string) bool {
 		if r >= '0' && r <= '9' {
 			continue
 		}
-		if r == '_' || r == '-' {
+		if r == '_' || r == '-' || r == '.' {
 			continue
 		}
 

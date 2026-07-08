@@ -1,0 +1,11 @@
+{{ define "components/jail_action_result.html" }}
+{{ template "components/jail_row.html" .Jail }}
+
+<div id="operation-result" hx-swap-oob="true">
+    {{ if .Result.Success }}
+    <p>{{ .Result.Message }}</p>
+    {{ else }}
+    <p> {{ .Result.Message }}</p>
+    {{ end }}
+</div>
+{{ end }}

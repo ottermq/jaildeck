@@ -85,7 +85,7 @@ func (s *JailService) logJailOperation(ctx context.Context, name, operation stri
 		Timestamp: time.Now(),
 		Operation: operation,
 		Target:    name,
-		Command:   "",
+		Command:   fmt.Sprintf("service jail %s %s", name, operation), // TODO: replace hardcoded for actual command (from system)
 		Success:   opErr == nil,
 	}
 	if opErr != nil {

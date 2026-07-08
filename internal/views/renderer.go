@@ -14,6 +14,7 @@ func NewRenderer() (*Renderer, error) {
 		"web/templates/layouts/base.html",
 		"web/templates/pages/jails.html",
 		"web/templates/components/jail_row.html",
+		"web/templates/components/jail_action_result.html",
 	)
 	if err != nil {
 		return nil, err

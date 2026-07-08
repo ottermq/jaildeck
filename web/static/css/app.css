@@ -1,0 +1,9 @@
+.status-running {
+    color: #137333;
+    font-weight: 600;
+}
+
+.status-stopped {
+    color: #8a1f11;
+    font-weight: 600;
+}

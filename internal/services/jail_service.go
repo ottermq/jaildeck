@@ -84,6 +84,7 @@ func (s *JailService) logJailOperation(ctx context.Context, name, operation stri
 		Operation: operation,
 		Target:    name,
 		Command:   "",
+		Success:   err == nil,
 	}
 	if err != nil {
 		if commandErr, ok := err.(*system.CommandError); ok {

@@ -15,7 +15,7 @@ func LoadConfig() *Config {
 	_ = godotenv.Load()
 
 	return &Config{
-		Host: getEnv("JAILDECK_HOST", ""),
+		Host: getEnv("JAILDECK_HOST", "127.0.0.1"),
 		Port: getEnv("JAILDECK_PORT", "8888"),
 	}
 }

@@ -3,8 +3,8 @@
 <h1>{{ .Title }}</h1>
 
 {{ if .Entries }}
-<p>Showing recent operations.</p>
-<table>
+<p class="page-note">Showing recent operations.</p>
+<table class="data-table operations-table">
     <thead>
         <tr>
             <th>Time</th>
@@ -20,13 +20,20 @@
             <td>{{ .Timestamp }}</td>
             <td>{{ .Operation }}</td>
             <td>{{ .Target }}</td>
-            <td>{{ .Success }}</td>
+            <td>
+                {{ if .Success }}
+                <span class="result result-success">Success</span>
+                {{else}}
+                <span class="result result-failure">Failed</span>
+                {{end}}
+            </td>
             <td>{{ .Error }}</td>
         </tr>
         {{ end }}
     </tbody>
 </table>
 {{ else }}
-<p>No operation history is available yet.</p>
+<p class="empty-statte">No operation history is available yet.</p>
 {{ end }}
+
 {{ end }}

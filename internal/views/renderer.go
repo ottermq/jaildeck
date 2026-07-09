@@ -10,8 +10,7 @@ type Renderer struct {
 }
 
 func NewRenderer() (*Renderer, error) {
-	jailPage, err := template.ParseFiles(
-		"web/templates/layouts/base.html",
+	jailPage, err := parsePage(
 		"web/templates/pages/jails.html",
 		"web/templates/components/jail_row.html",
 		"web/templates/components/jail_action_result.html",
@@ -19,10 +18,7 @@ func NewRenderer() (*Renderer, error) {
 	if err != nil {
 		return nil, err
 	}
-	operationPage, err := template.ParseFiles(
-		"web/templates/layouts/base.html",
-		"web/templates/pages/operations.html",
-	)
+	operationPage, err := parsePage("web/templates/pages/operations.html")
 	if err != nil {
 		return nil, err
 	}
@@ -57,4 +53,14 @@ func (r *Renderer) RenderComponent(w http.ResponseWriter, pageName string, compo
 	w.Header().Set("Content-type", "text/html; charset=utf-8")
 
 	return tmpl.ExecuteTemplate(w, componentName, data)
+}
+
+func parsePage(page string, components ...string) (*template.Template, error) {
+	files := []string{
+		"web/templates/layouts/base.html",
+		page,
+	}
+	files = append(files, components...)
+
+	return template.ParseFiles(files...)
 }

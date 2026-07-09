@@ -45,6 +45,7 @@ func (a *App) Routes() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/jails", http.StatusSeeOther)
 	})

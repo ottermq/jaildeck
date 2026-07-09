@@ -1,7 +1,7 @@
 {{ define "components/jail_row.html" }}
 <tr id="jail-{{ .Name }}">
     <td>{{ .Name }}</td>
-    <td>{{ .Status }}</td>
+    <td class="status status-{{ .Status }}">{{ .Status }}</td>
     <td>
         {{ if eq .Status "running" }}
 

@@ -15,10 +15,16 @@ type Entry struct {
 	Error     string    `json:"error,omitempty"`
 }
 
+type Filter struct {
+	Operation string
+	Targets   []string
+	Success   *bool
+}
+
 type Logger interface {
 	Log(ctx context.Context, entry Entry) error
 }
 
 type Reader interface {
-	Recent(ctx context.Context, limit int, filter map[string]any) ([]Entry, error)
+	Recent(ctx context.Context, limit int, filter Filter) ([]Entry, error)
 }

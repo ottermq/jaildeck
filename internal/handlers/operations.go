@@ -4,7 +4,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/ottermq/jaildeck/internal/operations"
 	"github.com/ottermq/jaildeck/internal/services"
@@ -26,7 +25,7 @@ func NewOperationHandler(service *services.OperationService, renderer *views.Ren
 }
 
 func (h *OperationHandler) List(w http.ResponseWriter, r *http.Request) {
-	filters := make(map[string]any)
+	filters := make(map[string]string)
 	qOperation := r.URL.Query().Get("operation")
 	switch qOperation {
 	case "start", "stop", "restart":
@@ -36,12 +35,11 @@ func (h *OperationHandler) List(w http.ResponseWriter, r *http.Request) {
 	qSuccess := r.URL.Query().Get("success")
 	switch qSuccess {
 	case "true", "false":
-		filters["success"] = qSuccess == "true"
+		filters["success"] = qSuccess
 	default:
 	}
 	if qTarget := r.URL.Query().Get("targets"); qTarget != "" {
-		targets := strings.Split(qTarget, ",")
-		filters["targets"] = targets
+		filters["targets"] = qTarget
 	}
 	qLimit := r.URL.Query().Get("limit")
 	limit, err := strconv.Atoi(qLimit)

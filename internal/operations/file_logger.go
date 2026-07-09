@@ -40,7 +40,7 @@ func (l *FileLogger) Log(ctx context.Context, entry Entry) error {
 	return err
 }
 
-func (l *FileLogger) Recent(ctx context.Context, limit int, filters map[string]any) ([]Entry, error) {
+func (l *FileLogger) Recent(ctx context.Context, limit int, filter Filter) ([]Entry, error) {
 	file, err := os.Open(l.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -57,7 +57,7 @@ func (l *FileLogger) Recent(ctx context.Context, limit int, filters map[string]a
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
 			continue
 		}
-		if !applyFilters(entry, filters) {
+		if !applyFilters(entry, filter) {
 			continue
 		}
 		entries = append(entries, entry)
@@ -74,31 +74,15 @@ func (l *FileLogger) Recent(ctx context.Context, limit int, filters map[string]a
 	return entries, nil
 }
 
-func applyFilters(entry Entry, filters map[string]any) bool {
-	for key, value := range filters {
-		switch key {
-		case "operation":
-			if oparation, ok := value.(string); ok {
-				if entry.Operation != oparation {
-					return false
-				}
-			}
-
-		case "targets":
-			targets, ok := value.([]string)
-			if ok {
-				if !slices.Contains(targets, entry.Target) {
-					return false
-				}
-			}
-		case "success":
-			if success, ok := value.(bool); ok {
-				if entry.Success != success {
-					return false
-				}
-			}
-		default:
-		}
+func applyFilters(entry Entry, filter Filter) bool {
+	if filter.Operation != "" && entry.Operation != filter.Operation {
+		return false
+	}
+	if filter.Success != nil && entry.Success != *filter.Success {
+		return false
+	}
+	if filter.Targets != nil && !slices.Contains(filter.Targets, entry.Target) {
+		return false
 	}
 	return true
 }

@@ -18,7 +18,10 @@ func NewRenderer() (*Renderer, error) {
 	if err != nil {
 		return nil, err
 	}
-	operationPage, err := parsePage("web/templates/pages/operations.html")
+	operationPage, err := parsePage(
+		"web/templates/pages/operations.html",
+		"web/templates/components/operation_filters.html",
+	)
 	if err != nil {
 		return nil, err
 	}

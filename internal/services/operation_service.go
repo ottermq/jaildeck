@@ -26,10 +26,15 @@ func (s *OperationService) Recent(ctx context.Context, limit int, mapFilter map[
 	}
 
 	var targets []string
-	qTargets := mapFilter["targets"]
+	qTargets := strings.TrimSpace(mapFilter["targets"])
 	if qTargets != "" {
-		qTargets = strings.ReplaceAll(qTargets, " ", "")
-		targets = strings.Split(qTargets, ",")
+		tmp := strings.Split(qTargets, ",")
+		for _, t := range tmp {
+			t = strings.TrimSpace(t)
+			if len(t) > 0 {
+				targets = append(targets, t)
+			}
+		}
 	}
 
 	filter := operations.Filter{

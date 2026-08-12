@@ -2,6 +2,8 @@
 
 <h1>{{ .Title }}</h1>
 
+{{ template "components/operation_filters.html" .Filter }}
+
 {{ if .Entries }}
 <p class="page-note">Showing recent operations.</p>
 <table class="data-table operations-table">
@@ -33,7 +35,7 @@
     </tbody>
 </table>
 {{ else }}
-<p class="empty-statte">No operation history is available yet.</p>
+<p class="empty-state">No operation history is available yet.</p>
 {{ end }}
 
 {{ end }}

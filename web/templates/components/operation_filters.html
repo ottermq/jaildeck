@@ -1,0 +1,30 @@
+{{ define "components/operation_filters.html" }}
+<form method="get" class="filters">
+    <label>
+        Result
+        <select name="success">
+            <option value="">All</option>
+            <option value="false">Failed</option>
+            <option value="true">Successful</option>
+        </select>
+    </label>
+
+    <label>
+        Targets
+        <input name="targets" placeholder="ottermq, goodiesdb">
+    </label>
+
+    <label>
+        Operation
+        <select name="operation">
+            <option value="">All</option>
+            <option value="start">Start</option>
+            <option value="stop">Stop</option>
+            <option value="restart">Restart</option>
+        </select>
+    </label>
+
+    <button type="submit">Apply</button>
+    <a href="/operations">Clear</a>
+</form>
+{{ end }}

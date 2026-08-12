@@ -26,17 +26,17 @@ Jail Deck is a system administration tool whose primary responsibilities require
 
 **Status:** Locked
 
-The MVP binds exclusively to:
+The MVP defaults to binding on:
 
 ```
 127.0.0.1
 ```
 
-Remote access is outside the scope of the MVP.
+Jail Deck manages jails on the host it runs on, not a fleet of machines — but that is a scope statement, not an access restriction. The bind address is configurable (`JAILDECK_HOST`), and operators may bind to another interface or `0.0.0.0` at their own risk — for example to reach the dashboard during development, or via a reverse proxy. Doing so with the MVP's current lack of authentication (JD-003) exposes unauthenticated jail control to whatever network can reach that address.
 
 ### Rationale
 
-Local-only access significantly reduces complexity by eliminating authentication, authorization, TLS, and network security concerns during the initial development phase.
+Defaulting to local-only access significantly reduces complexity by eliminating authentication, authorization, TLS, and network security concerns for the common case, while not blocking operators who knowingly need broader access during development or in a trusted environment.
 
 ---
 
@@ -58,22 +58,18 @@ Authentication will become mandatory if remote access is introduced in future ve
 
 **Status:** Locked
 
-Jail Deck discovers jails exclusively through:
+Jail Deck discovers jails through two sources, merged:
 
 ```
-jls
+jls                                    # running jails, authoritative for status
+/etc/jail.conf, /etc/jail.conf.d/*.conf  # configured jails, including stopped ones
 ```
 
-The MVP does **not** parse:
-
-* `/etc/jail.conf`
-* `/etc/jail.conf.d`
-
-Configured-but-stopped jails are outside the scope of the MVP.
+`jls` alone cannot report a jail that is configured but not currently running, so configured-but-stopped jails would otherwise be invisible. Configuration parsing is read-only and best-effort: a jail present in configuration but not in `jls` is shown as stopped; a jail present in `jls` but not found in configuration is still shown (with a warning logged), rather than hidden.
 
 ### Rationale
 
-The objective of the MVP is operational management rather than configuration management.
+The objective of the MVP is operational management, but an operator needs to see a stopped jail in order to start it. Restricting discovery to `jls` only would make that impossible, so configuration parsing is in scope as a read path even though the MVP does not yet edit configuration (config editing remains deferred to `ROADMAP.md` Phase 7).
 
 ---
 

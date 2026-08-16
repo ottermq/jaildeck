@@ -3,6 +3,7 @@ package freebsd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -136,6 +137,9 @@ func listJailsFromConfDir(dir string) ([]domain.Jail, error) {
 
 func listJailsFromConfFile(filename string) ([]domain.Jail, error) {
 	content, err := os.ReadFile(filename)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

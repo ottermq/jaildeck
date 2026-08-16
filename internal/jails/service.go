@@ -41,15 +41,6 @@ func (n JailName) String() string {
 	return string(n)
 }
 
-type Jail struct {
-	JID      string
-	Name     string
-	Status   system.JailStatus
-	Hostname string
-	IP       string
-	Path     string
-}
-
 type JailService struct {
 	system          JailSystem
 	operationLogger audit.Logger
@@ -63,42 +54,38 @@ func NewJailService(system JailSystem, operationLogger audit.Logger) *JailServic
 }
 
 func (s *JailService) List(ctx context.Context) ([]Jail, error) {
-	sjails, err := s.system.List(ctx)
+	jails, err := s.system.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	djails := make([]Jail, len(sjails))
-	for idx, sj := range sjails {
-		djails[idx] = mapSystemToDomainJail(sj)
-	}
-	return djails, nil
+	return jails, nil
 }
 
 func (s *JailService) Start(ctx context.Context, name JailName) (Jail, error) {
 	if _, err := NewJailName(name.String()); err != nil {
 		return Jail{}, err
 	}
-	sjail, err := s.system.Start(ctx, name.String())
+	jail, err := s.system.Start(ctx, name.String())
 	s.logJailOperation(ctx, name.String(), "start", err)
-	return mapSystemToDomainJail(sjail), err
+	return jail, err
 }
 
 func (s *JailService) Stop(ctx context.Context, name JailName) (Jail, error) {
 	if _, err := NewJailName(name.String()); err != nil {
 		return Jail{}, err
 	}
-	sjail, err := s.system.Stop(ctx, name.String())
+	jail, err := s.system.Stop(ctx, name.String())
 	s.logJailOperation(ctx, name.String(), "stop", err)
-	return mapSystemToDomainJail(sjail), err
+	return jail, err
 }
 
 func (s *JailService) Restart(ctx context.Context, name JailName) (Jail, error) {
 	if _, err := NewJailName(name.String()); err != nil {
 		return Jail{}, err
 	}
-	sjail, err := s.system.Restart(ctx, name.String())
+	jail, err := s.system.Restart(ctx, name.String())
 	s.logJailOperation(ctx, name.String(), "restart", err)
-	return mapSystemToDomainJail(sjail), err
+	return jail, err
 }
 
 func (s *JailService) logJailOperation(ctx context.Context, name, operation string, opErr error) {
@@ -123,16 +110,5 @@ func (s *JailService) logJailOperation(ctx context.Context, name, operation stri
 	}
 	if err := s.operationLogger.Log(ctx, entry); err != nil {
 		log.Printf("failed to write operation log: %v", err)
-	}
-}
-
-func mapSystemToDomainJail(sjail system.Jail) Jail {
-	return Jail{
-		JID:      sjail.JID,
-		Name:     sjail.Name,
-		Status:   sjail.Status,
-		Hostname: sjail.Hostname,
-		IP:       sjail.IP,
-		Path:     sjail.Path,
 	}
 }

@@ -24,7 +24,7 @@ func New() *App {
 		panic(err)
 	}
 
-	// jailSystem := system.NewFakeJailSystem()
+	// jailSystem := fake.NewJailSystem()
 	jailSystem := freebsd.NewAdapter(system.NewExecCommandRunner())
 	jailService := jails.NewJailService(jailSystem, operationLogger)
 	jailHandler := jails.NewJailHandler(jailService, renderer)

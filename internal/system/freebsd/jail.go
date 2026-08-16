@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ottermq/jaildeck/internal/jails"
 	"github.com/ottermq/jaildeck/internal/system"
 )
 
@@ -28,7 +29,7 @@ var jlsListCommand = system.Command{
 	Args: []string{"--libxo=json", "jid", "name", "host.hostname", "ip4.addr", "path"},
 }
 
-func (a *Adapter) List(ctx context.Context) ([]system.Jail, error) {
+func (a *Adapter) List(ctx context.Context) ([]jails.Jail, error) {
 	configured, err := a.listConfiguredJails()
 	if err != nil {
 		return nil, err
@@ -42,7 +43,7 @@ func (a *Adapter) List(ctx context.Context) ([]system.Jail, error) {
 	return mergeJails(configured, running), nil
 }
 
-func (a *Adapter) runService(ctx context.Context, name, action string) (system.Jail, error) {
+func (a *Adapter) runService(ctx context.Context, name, action string) (jails.Jail, error) {
 	cmd := system.Command{
 		Name: "service",
 		Args: []string{"jail", action, name},
@@ -61,12 +62,12 @@ func (a *Adapter) runService(ctx context.Context, name, action string) (system.J
 	if stateErr != nil {
 		if runErr != nil {
 			cmdErr.Err = runErr
-			return system.Jail{}, cmdErr
+			return jails.Jail{}, cmdErr
 		}
 		if summary != "" {
 			cmdErr.Err = errors.New(summary)
 		}
-		return system.Jail{}, cmdErr
+		return jails.Jail{}, cmdErr
 	}
 	if runErr != nil {
 		cmdErr.Err = runErr
@@ -82,26 +83,26 @@ func (a *Adapter) runService(ctx context.Context, name, action string) (system.J
 	return jail, nil
 }
 
-func desiredStatusForAction(action string) system.JailStatus {
+func desiredStatusForAction(action string) jails.JailStatus {
 	switch action {
 	case "start", "restart":
-		return system.JailStatusRunning
+		return jails.JailStatusRunning
 	case "stop":
-		return system.JailStatusStopped
+		return jails.JailStatusStopped
 	default:
 		return ""
 	}
 }
 
-func (a *Adapter) Start(ctx context.Context, name string) (system.Jail, error) {
+func (a *Adapter) Start(ctx context.Context, name string) (jails.Jail, error) {
 	return a.runService(ctx, name, "start")
 }
 
-func (a *Adapter) Stop(ctx context.Context, name string) (system.Jail, error) {
+func (a *Adapter) Stop(ctx context.Context, name string) (jails.Jail, error) {
 	return a.runService(ctx, name, "stop")
 }
 
-func (a *Adapter) Restart(ctx context.Context, name string) (system.Jail, error) {
+func (a *Adapter) Restart(ctx context.Context, name string) (jails.Jail, error) {
 	return a.runService(ctx, name, "restart")
 }
 

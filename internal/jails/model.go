@@ -1,4 +1,4 @@
-package system
+package jails
 
 type Jail struct {
 	JID      string

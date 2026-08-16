@@ -1,34 +1,32 @@
 # Jail Deck — Project Specification
 
-## Status
-
-Draft. Reset 2026-08-16 — this document previously described a narrower, more cautious MVP (visibility and safe start/stop/restart only). Scope has grown; see `docs/DECISIONS.md` for what's locked and `docs/ROADMAP.md` for sequencing.
-
 ## One-line description
 
 Jail Deck is a lightweight, FreeBSD-first web dashboard for inspecting, operating, and creating FreeBSD jails through native system tools.
 
 ## Purpose
 
-Jail Deck exists to make day-to-day jail administration more practical and pleasant without hiding FreeBSD behind an alien abstraction. It should help an operator see what is running, understand how each jail is configured, perform common actions safely, create new jails from prepared templates, and inspect related system resources such as networking, storage, services, logs, and snapshots.
+Jail Deck exists to make day-to-day jail administration more practical and pleasant without hiding FreeBSD behind an alien abstraction. It helps an operator see what is running, understand how each jail is configured, perform common actions safely, create new jails from prepared templates, and inspect related system resources such as networking, storage, services, logs, and snapshots.
 
 The project should feel like a thin, helpful layer over FreeBSD rather than a separate platform.
 
 ## Origin and inspiration
 
-Jail Deck started as a personal project to build real Go and FreeBSD skills, not as a product. That's still true — it's built for one operator's own use on their own host(s). [Sylve](https://github.com/AlchemillaHQ/Sylve) was discovered after Jail Deck was already underway and has become an inspiration, but Jail Deck is not trying to match it feature-for-feature. Features get added because they make sense for how Jail Deck is actually used, not for completeness — bhyve/VM management, for instance, is intentionally not a direction Jail Deck is pursuing.
+Jail Deck is a personal project built to develop real Go and FreeBSD skills, not a product for general distribution. It is designed for a single operator's own use on their own host(s).
+
+[Sylve](https://github.com/AlchemillaHQ/Sylve) is a more complete FreeBSD jail/VM management tool and serves as an inspiration, but Jail Deck is not trying to match it feature-for-feature. Features are added because they make sense for how Jail Deck is actually used, not for completeness — bhyve/VM management, for instance, is intentionally not a direction Jail Deck is pursuing.
 
 ## Product philosophy
 
 ### 1. FreeBSD first
 
-Jail Deck is designed specifically for FreeBSD jails. It should embrace FreeBSD terminology, file locations, service management, ZFS integration, and operational conventions.
+Jail Deck is designed specifically for FreeBSD jails. It embraces FreeBSD terminology, file locations, service management, ZFS integration, and operational conventions.
 
 It should not pretend that jails are Linux containers, virtual machines, or cloud workloads.
 
 ### 2. Integrate, do not replace
 
-Jail Deck should orchestrate and inspect existing tools instead of reimplementing them:
+Jail Deck orchestrates and inspects existing tools instead of reimplementing them:
 
 - `jls`, `jail`, `jexec`, `service`, `sysrc`, `pkg`
 - `zfs`
@@ -44,17 +42,17 @@ Prefer the Go standard library and small, focused dependencies on the backend. A
 
 ### 4. Single binary as the default deployment model
 
-The ideal distribution model is a single Go binary with static assets embedded into it — including the built Vue frontend (see `docs/DECISIONS.md`, JD-009). Node.js is a build-time tool, never a production dependency.
+The distribution model is a single Go binary with static assets embedded into it — including the built Vue frontend (see `docs/DECISIONS.md`, JD-009). Node.js is a build-time tool, never a production dependency.
 
 Installation should eventually feel natural on FreeBSD, such as `pkg install jaildeck`, or `make install` during early development.
 
 ### 5. API-driven UI
 
-The Vue frontend talks to the Go backend over a JSON API. This is a change from the original server-rendered-HTML-plus-HTMX direction — see `docs/DECISIONS.md` JD-009 for why and when this applies.
+The Vue frontend talks to the Go backend over a JSON API (JD-009).
 
 ### 6. Boring, domain-organized architecture
 
-The application should be easy to understand, build, run, and debug. Code is organized by domain (jail, storage) rather than by technical layer — see `docs/ARCHITECTURE.md`. A new contributor (or future Andre) should be able to open a domain's package and see its whole story in one place.
+The application should be easy to understand, build, run, and debug. Code is organized by domain (jails, storage) rather than by technical layer — see `docs/ARCHITECTURE.md`. A contributor should be able to open a domain's package and see its whole story in one place.
 
 ### 7. Observable and explainable
 
@@ -64,11 +62,11 @@ Errors should be understandable, not cryptic wrappers around command output.
 
 ### 8. Recoverable operations
 
-Operations that modify the system should be designed with safety in mind. When possible, Jail Deck should detect risk, confirm destructive actions, preserve logs, and leave the system in a known state after failures. This matters more now that jail *creation* (ZFS clone, config generation, template preparation) is in scope alongside jail *operation*.
+Operations that modify the system should be designed with safety in mind. When possible, Jail Deck should detect risk, confirm destructive actions, preserve logs, and leave the system in a known state after failures. This matters for jail *creation* (ZFS clone, config generation, template preparation) as much as jail *operation*.
 
-## Initial target user
+## Primary user
 
-Andre, running Jail Deck on his own FreeBSD host(s) to manage jails he administers directly. The product should remain useful to any technical FreeBSD operator who wants a practical local admin interface, but it is not designed for a broader or less technical audience.
+A single technical operator running Jail Deck on FreeBSD host(s) they administer directly. The product should remain useful to any technical FreeBSD operator who wants a practical local admin interface, but it is not designed for a broader or less technical audience.
 
 ## What Jail Deck is
 
@@ -83,7 +81,7 @@ Andre, running Jail Deck on his own FreeBSD host(s) to manage jails he administe
 
 - a replacement for FreeBSD jails
 - a new container runtime
-- a virtualization/bhyve platform (explicitly out of scope — not used by the operator)
+- a virtualization/bhyve platform
 - a Kubernetes-like orchestrator
 - a cloud management platform
 - a multi-host or multi-tenant platform
@@ -97,14 +95,14 @@ Andre, running Jail Deck on his own FreeBSD host(s) to manage jails he administe
 | Backend language | Go | Static binary, good fit for system tooling. |
 | HTTP router | Chi | Small, idiomatic, compatible with `net/http`. |
 | API style | JSON over HTTP | Consumed by the Vue frontend. |
-| Frontend framework | Vue | Andre's existing familiarity; replaces HTMX. |
+| Frontend framework | Vue | Richer client-side interaction than HTMX fragment-swapping. |
 | Frontend build | Node/Vite at build time only | Output embedded via Go `embed`; no Node in production. |
 | Storage backend | ZFS (required) | Jail roots and templates live in ZFS datasets; clone-from-snapshot is the jail creation mechanism. |
-| Operation audit log | Append-only JSON-lines file | Kept for now; a real database is a likely future direction for broader persistence — see `docs/DECISIONS.md` JD-011. |
+| Operation audit log | Append-only JSON-lines file | A database is a likely future direction for broader persistence — see `docs/DECISIONS.md` JD-011. |
 
 ## Core domains
 
-- Jails (list, inspect, start/stop/restart) — implemented, being migrated to the new package structure
+- Jails (list, inspect, start/stop/restart)
 - Jail creation (clone template → configure → start → provision)
 - Release templates (fetch/extract/patch/update/snapshot a FreeBSD userland per version)
 - Storage / ZFS (datasets, clones, snapshots)
@@ -116,20 +114,16 @@ Andre, running Jail Deck on his own FreeBSD host(s) to manage jails he administe
 
 These domains guide code organization (`docs/ARCHITECTURE.md`) and frontend navigation.
 
-## Current-phase scope
+## Implementation status
 
-The active effort (branch `refactor/ddd`) covers:
+**Implemented:** jail listing (merging `jls` and `jail.conf*`), start/stop/restart, operation audit log, and the domain-driven package structure (`docs/ARCHITECTURE.md`) that the rest of this scope is built on.
 
-- Restructuring existing jail management into the domain-driven package layout, with no behavior change
-- A ZFS storage domain: create/clone/snapshot/list datasets and snapshots
-- Release template lifecycle: fetch, extract, patch, `freebsd-update`, snapshot
-- Jail creation: clone a template, generate `jail.conf.d/<name>.conf`, start, verify
-- (Later, sequenced after the above) migrating the frontend from server-rendered HTML/HTMX to the Vue SPA + JSON API
+**Planned, in priority order:** converting the jails and audit endpoints to a JSON API with a minimal Vue UI, while they're still the only two domains/handlers to convert; a ZFS storage domain (create/clone/snapshot/list datasets and snapshots); release template lifecycle (fetch, extract, patch, `freebsd-update`, snapshot); jail creation (clone a template, generate `jail.conf.d/<name>.conf`, start, verify); in-jail provisioning. Each domain added after the API conversion is built API-first from the start. See `docs/ROADMAP.md` for the full phase breakdown.
 
 ### Explicitly deferred
 
-- In-jail service management beyond manual `jexec` provisioning (automating `pkg install` / per-service setup flows is a later step, not blocked but not started)
-- Thin jails, VNET jails — unexplored, candidates for later
+- In-jail service management beyond manual `jexec` provisioning
+- Thin jails, VNET jails
 - Multi-host management, multi-user auth, role-based access
 - Automatic edits to critical configuration files beyond what jail creation itself needs to write
 
@@ -137,7 +131,7 @@ The active effort (branch `refactor/ddd`) covers:
 
 ### No unsafe magic
 
-Jail Deck should not silently modify system files, destroy datasets, remove snapshots, or execute broad commands without clear user intent. This is more load-bearing now than in the original read-mostly MVP, since jail creation involves real destructive-adjacent ZFS operations (clone, snapshot).
+Jail Deck should not silently modify system files, destroy datasets, remove snapshots, or execute broad commands without clear user intent. This is load-bearing once jail creation is implemented, since it involves real destructive-adjacent ZFS operations (clone, snapshot).
 
 ### No hiding native concepts
 
@@ -153,11 +147,11 @@ These are genuinely undecided — track resolution in `docs/DECISIONS.md` as the
 
 ### FreeBSD release support
 
-Should Jail Deck support creating jails on a FreeBSD release other than the host's own version? Cross-version jails (older userland under a newer host kernel) are a normal, supported FreeBSD pattern, so this is expected to work — but hasn't been exercised in this project yet. If supported, should Jail Deck fetch and present the list of available releases from `download.freebsd.org`, or only support the host's current version initially?
+Should Jail Deck support creating jails on a FreeBSD release other than the host's own version? Cross-version jails (older userland under a newer host kernel) are a normal, supported FreeBSD pattern, so this is expected to work, but is unverified in this project. If supported, should Jail Deck fetch and present the list of available releases from `download.freebsd.org`, or only support the host's current version initially?
 
 ### Long-running operations
 
-Template preparation (fetching `base.txz`, `freebsd-update`) can take real time. Synchronous request/response may no longer be sufficient — see `docs/DECISIONS.md` JD-008.
+Template preparation (fetching `base.txz`, `freebsd-update`) can take real time. Synchronous request/response may not be sufficient — see `docs/DECISIONS.md` JD-008.
 
 ### Storage domain granularity
 
@@ -165,7 +159,7 @@ Should ZFS datasets/snapshots and release templates live in one `storage` packag
 
 ### Structured application logging
 
-Andre wants something like Serilog — a real structured application logger — distinct from the operation-history audit log. Not designed yet.
+A structured, leveled application logger, distinct from the operation-history audit log, is a likely future addition. Not designed yet.
 
 ### Packaging
 

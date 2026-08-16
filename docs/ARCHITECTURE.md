@@ -1,9 +1,5 @@
 # Jail Deck — Architecture
 
-## Status
-
-Draft. Reset 2026-08-16 alongside the `refactor/ddd` branch. The previous version described a layer-organized (`domain/`, `handlers/`, `services/`, `system/`), HTMX-driven architecture. That architecture is being replaced; see `docs/DECISIONS.md` JD-009 and JD-010 for why.
-
 ## Architectural summary
 
 Jail Deck is a Go backend exposing a JSON API, paired with a Vue single-page frontend, interacting with FreeBSD through domain-owned adapters around native system commands and files.
@@ -60,9 +56,10 @@ internal/
     config.go                   # env var loading (JAILDECK_HOST, JAILDECK_PORT)
 
   jails/                        # bounded context: Jails
-    service.go                    # Jail entity, JailName value object + validation, JailService
+    model.go                      # Jail entity, JailStatus
+    service.go                     # JailName value object + validation, JailService
     repository.go                  # JailSystem port (List/Start/Stop/Restart)
-    handler.go                     # JailHandler — HTTP handler lives in the domain package, no separate handlers/ package
+    handler.go                     # JailHandler
 
   storage/                      # bounded context: Storage (ZFS + release templates) — not yet built
     dataset.go                    # Dataset, Snapshot entities/value objects
@@ -71,7 +68,7 @@ internal/
     service.go                     # application service
     handler.go
 
-  audit/                        # was internal/operations — shared infra, not a domain
+  audit/                        # shared infra, not a domain
     logger.go                     # Entry, Filter, Logger/Reader interfaces
     file_logger.go                 # FileLogger — append-only JSON-lines file, mutex-guarded
     service.go, handler.go
@@ -82,12 +79,12 @@ internal/
   system/
     command.go                    # Command, CommandResult, CommandRunner interface, CommandError
     exec_runner.go                  # ExecCommandRunner — the only place os/exec is called
-    models.go                       # Jail, JailStatus (currently here; slated to move into internal/jails — see JD-010)
-    fake.go                          # FakeJailSystem, for non-FreeBSD dev (see commented-out line in app.go)
     freebsd/
       adapter.go, jail.go             # implements jails.JailSystem
       jail_helper.go                  # jail.conf / jail.conf.d parsing + merge (JD-004)
       storage_adapter.go              # (not yet built) implements storage.StorageSystem — zfs, fetch, freebsd-update, jexec
+    fake/
+      jail.go                          # in-memory JailSystem, for non-FreeBSD dev (see commented-out line in app.go)
 
 web/                             # Vue frontend (separate module/build) — not yet built, see JD-009
   src/
@@ -111,10 +108,10 @@ Composition root. The only place that knows the full dependency graph: wires eac
 
 Each owns:
 
-- **Entities and value objects** with real behavior and invariants — not anemic structs. Example: `JailName` (`internal/jails/service.go`) enforces the naming rule at construction via `NewJailName`, not a free-floating validation helper; `Dataset`/`Template` will similarly enforce things like "cloning requires a `@base` snapshot to exist."
-- **A repository interface (port)** describing what the domain needs from the system, owned by the domain — not by the infrastructure package that implements it. `jails.JailSystem` is defined in `internal/jails/repository.go`; `freebsd.Adapter` implements it, not the other way around. (One remaining wart here: the port's methods currently return `system.Jail` instead of `jails.Jail` — see the JD-010 follow-up note in `docs/DECISIONS.md`.)
-- **An application service** (`JailService`) that orchestrates the repository, enforces cross-cutting use-case rules (e.g. logging every mutation to the audit log via `internal/audit`), and returns data shaped for the handler.
-- **An HTTP handler** (`JailHandler`) — folded into the same package rather than split into a separate `internal/handlers`, a deliberate call once the domain only has one handler's worth of HTTP surface.
+- **Entities and value objects** with real behavior and invariants — not anemic structs. Example: `JailName` (`internal/jails/service.go`) enforces the naming rule at construction via `NewJailName`; `Dataset`/`Template` will similarly enforce things like "cloning requires a `@base` snapshot to exist."
+- **A repository interface (port)** describing what the domain needs from the system, owned by the domain — not by the infrastructure package that implements it. `jails.JailSystem` is defined in `internal/jails/repository.go` and speaks in `jails.Jail`; `freebsd.Adapter` implements it, not the other way around.
+- **An application service** (`JailService`) that orchestrates the repository, enforces cross-cutting use-case rules (e.g. logging every mutation to the audit log via `internal/audit`), and returns data shaped for the handler. Repeated per-operation logic (validate name, call the system, log the result) is centralized in a single dispatch helper rather than duplicated per action.
+- **An HTTP handler** (`JailHandler`) in the same package — there is no separate presentation-layer package.
 
 ### `internal/audit`
 
@@ -126,7 +123,7 @@ Shared HTTP error plumbing: `AppError` (a status code + message) and `HandlerErr
 
 ### `internal/system`
 
-Shared execution primitives (`CommandRunner`, `Command`, `CommandResult`, `CommandError`) plus the concrete FreeBSD adapters and the `Jail`/`JailStatus` types (`models.go` — slated to move into `internal/jails`, see JD-010) and `FakeJailSystem` (`fake.go`, for non-FreeBSD dev). Everything that shells out goes through `CommandRunner.Run(ctx, Command{Name, Args})` — argument arrays, never string interpolation. Adapters implement the domain-owned repository interfaces; they don't define their own contracts.
+Shared execution primitives (`CommandRunner`, `Command`, `CommandResult`, `CommandError`) plus the concrete adapters (`freebsd`, `fake`) that implement domain-owned repository ports. Everything that shells out goes through `CommandRunner.Run(ctx, Command{Name, Args})` — argument arrays, never string interpolation. Adapters implement the domain-owned repository interfaces; they don't define their own contracts.
 
 ## Request lifecycle
 
@@ -153,7 +150,7 @@ POST /api/jails/{name}/start
   -> Vue updates its local state and re-renders
 ```
 
-A jail-creation flow (new):
+A jail-creation flow:
 
 ```text
 POST /api/jails
@@ -169,8 +166,6 @@ POST /api/jails
 The exact shape of the creation flow (which domain owns orchestration across the jail/storage boundary) is not finalized — worth deciding when jail creation is actually implemented, not guessed here.
 
 ## Command execution model
-
-Unchanged in spirit from the original design:
 
 ```go
 type CommandRunner interface {
@@ -189,17 +184,17 @@ type CommandResult struct {
 }
 ```
 
-Argument arrays, not shell string interpolation. No allowlist enforcement exists yet (still an open item, same as before). Errors from adapters are wrapped in `system.CommandError` (command, args, raw result, underlying cause) — handlers and domain services use `errors.As` to pull it out for user-facing summaries, same pattern as today's `logJailOperation`.
+Argument arrays, not shell string interpolation. No allowlist enforcement exists yet — an open item. Errors from adapters are wrapped in `system.CommandError` (command, args, raw result, underlying cause) — handlers and domain services use `errors.As` to pull it out for user-facing summaries.
 
 ## FreeBSD adapters
 
 ### Jail adapter (`internal/system/freebsd/adapter.go`, `jail.go`)
 
-Implements `jails.JailSystem`: list (merge `jls` + `jail.conf*`), start/stop/restart via `service jail <action> <name>`. This is the existing, working code — the refactor moves and reshapes it, doesn't rewrite its behavior.
+Implements `jails.JailSystem`: list (merge `jls` + `jail.conf*`), start/stop/restart via `service jail <action> <name>`.
 
 ### Storage adapter (`internal/system/freebsd/storage_adapter.go`)
 
-Implements `storage.StorageRepository`. Responsibilities, mapped to Andre's actual manual workflow (`docs/SPEC.md`):
+Implements `storage.StorageSystem`. Responsibilities, mapped to the template/jail-creation workflow described in `docs/SPEC.md`:
 
 - `zfs create`, `zfs clone`, `zfs snapshot`, `zfs list` / `zfs list -t snapshot`
 - fetch a release's `base.txz` (`fetch`)
@@ -208,11 +203,11 @@ Implements `storage.StorageRepository`. Responsibilities, mapped to Andre's actu
 - bring a template to the current patch level (`freebsd-update --currently-running <ver> -b <path> fetch install`)
 - run commands inside a jail (`jexec <name> <cmd>`) for provisioning
 
-ZFS is required (JD-006), so unlike the old "gracefully degrade without ZFS" posture, this adapter can assume ZFS is present.
+ZFS is required (JD-006), so this adapter can assume ZFS is present.
 
 ## API conventions
 
-Replaces the old HTMX/template-rendering conventions. Not fully specified yet — settle this when the Vue migration (JD-009) actually starts, but the shape is expected to be:
+Being settled starting with `jails` and `audit` (`docs/ROADMAP.md` Phase 1); every domain added afterward follows the same shape from the start. Expected shape:
 
 ```text
 GET    /api/jails
@@ -228,19 +223,17 @@ GET    /api/storage/snapshots
 GET    /api/operations
 ```
 
-Until the Vue migration starts, the existing server-rendered/HTMX routes keep working as-is (JD-009) — new backend domain work should expose plain Go APIs on the domain services that either response style can call, rather than being written against one or the other.
-
 ## Error handling
 
-Categories carry over from the original design: validation error, permission error, command not found, command failed, parse error, unsupported system state, timeout, internal error. For a JSON API these map to HTTP status + a structured error body (code, message, and — when safe — the relevant command output), rather than a rendered HTML fragment.
+Categories: validation error, permission error, command not found, command failed, parse error, unsupported system state, timeout, internal error. For a JSON API these map to HTTP status + a structured error body (code, message, and — when safe — the relevant command output).
 
 ## Security model
 
-Unchanged open items: no command allowlist yet, no CSRF protection (less relevant for a JSON API consumed by a same-origin SPA, but worth revisiting once auth exists), jail names and route parameters must still be validated before reaching a command. Destructive storage operations (snapshot rollback, dataset removal) need explicit confirmation semantics once they exist — likely a confirmation flag/step in the API, not just a UI-level dialog, since the UI is no longer trusted as the only client by construction of having a JSON API at all.
+Open items: no command allowlist yet, no CSRF protection (less relevant for a JSON API consumed by a same-origin SPA, but worth revisiting once auth exists), jail names and route parameters must be validated before reaching a command. Destructive storage operations (snapshot rollback, dataset removal) need explicit confirmation semantics once they exist — likely a confirmation flag/step in the API, not just a UI-level dialog, since the API can be called by more than the UI.
 
 ## Testing strategy
 
-Unchanged: unit test domain services with fake repositories, unit test command-output parsers with fixtures, integration-test the real FreeBSD adapters separately (only fully verifiable on FreeBSD). The domain-driven split should make the fake-repository pattern more natural than the old single `FakeJailSystem` — each domain gets its own fake.
+Unit test domain services with fake repositories, unit test command-output parsers with fixtures, integration-test the real FreeBSD adapters separately (only fully verifiable on FreeBSD). Each domain gets its own fake repository implementation for tests.
 
 ## Open architecture questions
 
@@ -249,4 +242,4 @@ Unchanged: unit test domain services with fake repositories, unit test command-o
 3. Should there be a command allowlist, and at what layer?
 4. How should long-running operations (template fetch/extract/update) be represented in the API, once JD-008 is resolved?
 5. Exact REST/JSON API shape — not finalized, see "API conventions" above.
-6. Should `internal/audit` gain a real database backing, and if so, does that pull `storage`/`jail` metadata along with it, or stay scoped to operation history only?
+6. Should `internal/audit` gain a real database backing, and if so, does that pull `storage`/`jails` metadata along with it, or stay scoped to operation history only?

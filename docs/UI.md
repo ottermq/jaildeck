@@ -2,55 +2,31 @@
 
 ## Status
 
-Draft. This document defines the initial UI direction, page structure, component strategy, and interaction model.
+Draft. Reset 2026-08-16. The UX goals, page purposes, and copywriting guidance below mostly carry over unchanged — they're independent of frontend technology. What's gone is everything specific to server-rendered HTML + HTMX (JD-009 in `docs/DECISIONS.md` replaced that with a Vue SPA over a JSON API), and that section is now a set of open questions instead of settled patterns, since the Vue architecture itself hasn't been designed yet.
 
 ## UI goal
 
-Jail Deck should feel like a practical FreeBSD administration panel: clear, fast, restrained, and focused on operational confidence.
-
-The interface should help the user answer:
+Unchanged. Jail Deck should feel like a practical FreeBSD administration panel: clear, fast, restrained, and focused on operational confidence. The interface should help the user answer:
 
 - What jails exist?
 - What is running?
 - What changed?
 - What can I safely do next?
 - What failed, and why?
+- (new) What templates are ready to create a jail from?
+- (new) What's using my ZFS storage?
 
 ## UI personality
 
-The UI should be:
-
-- calm
-- utilitarian
-- readable
-- predictable
-- fast
-- explicit about risk
-- helpful to someone learning FreeBSD
-- efficient enough for repeated daily use
-
-It should avoid feeling like a marketing dashboard or a generic cloud console.
+Unchanged: calm, utilitarian, readable, predictable, fast, explicit about risk, helpful to someone learning FreeBSD, efficient for repeated daily use. Should not feel like a marketing dashboard or generic cloud console.
 
 ## Visual direction
 
-Initial styling should use plain CSS.
-
-Priorities:
-
-- readable tables
-- clear status badges
-- obvious action buttons
-- compact detail panels
-- good spacing
-- useful empty states
-- visible errors
-- responsive enough for laptop and desktop screens
-
-Advanced visual polish can come later.
+No longer tied to "plain CSS initially" as a technology constraint (Vue opens up more options), but the priorities are unchanged: readable tables, clear status badges, obvious action buttons, compact detail panels, good spacing, useful empty states, visible errors. Specific styling approach (plain CSS, a utility framework, component library) is an open question — see below.
 
 ## Layout
 
-The initial layout should use a classic admin structure:
+The original sidebar + top bar admin layout sketch still holds as a starting point:
 
 ```text
 +--------------------------------------------------+
@@ -61,325 +37,133 @@ The initial layout should use a classic admin structure:
 | Dashboard            | Page title                |
 | Jails                | Page actions              |
 | Storage              | Content                   |
+| Templates            |                           |
 | Logs                 |                           |
 | Settings             |                           |
 +----------------------+---------------------------+
 ```
 
-The sidebar should stay simple. Avoid too many sections in the first version.
+`Templates` is new relative to the original sketch, reflecting the release-template domain. Keep the sidebar simple — avoid too many sections before the features justify their own pages.
 
 ## Navigation
 
-Initial navigation:
+Initial: Dashboard, Jails, Storage, Templates, Logs, Settings.
 
-- Dashboard
-- Jails
-- Storage
-- Logs
-- Settings
-
-Possible later navigation:
-
-- Snapshots
-- Tasks
-- Services
-- Packages
-- System
-
-These can remain hidden until the features justify their own pages.
+Possible later: Snapshots (if it earns a page separate from Storage), Tasks (once long-running operations exist), Services, Packages, System.
 
 ## Page specifications
 
-## Dashboard
+### Dashboard
 
-Purpose: provide a quick operational overview.
+Unchanged purpose: quick operational overview. Possible content: host name, FreeBSD version, running/stopped jail counts, storage summary, recent operations/errors, quick links. MVP can stay minimal — Jails and, now, jail creation are the more important flows.
 
-Possible content:
+### Jails page
 
-- host name
-- FreeBSD version
-- number of running jails
-- number of stopped jails, if known
-- storage summary when ZFS is available
-- recent operations
-- recent errors
-- quick link to jails
-
-MVP version can be minimal. The Jails page is more important initially.
-
-## Jails page
-
-Purpose: show all known jails and allow common operations.
-
-Primary content:
-
-- jail name
-- status
-- JID when running
-- hostname
-- IP address or addresses
-- path
-- quick actions
-
-Suggested table columns:
+Unchanged core purpose and columns:
 
 ```text
 Status | Name | JID | Hostname | IP | Path | Actions
 ```
 
-Actions:
+Actions: View, Start, Stop, Restart, and now **Create** (opens the jail-creation flow). Action availability still reflects current state (running: Stop/Restart/View; stopped: Start/View; unknown: View/Refresh).
 
-- View
-- Start
-- Stop
-- Restart
+### Jail creation flow (new)
 
-Action availability should reflect current state.
+Purpose: turn the manual clone-configure-start sequence (`docs/SPEC.md`) into a guided flow.
 
-For example:
+Likely steps:
 
-- running jail: Stop, Restart, View
-- stopped jail: Start, View, if configured jails are known
-- unknown state: View, Refresh
+1. choose a ready template (only templates with a `@base` snapshot are selectable)
+2. name the jail
+3. review/adjust generated config (network interface, any service-specific stanza)
+4. confirm and create — show per-step progress/result (clone, config write, start) since this is a multi-step operation that can partially fail
 
-## Jail detail page
+Exact interaction shape (single form vs. wizard steps, how failures mid-flow are presented) is not designed yet.
 
-Purpose: inspect one jail more deeply.
+### Jail detail page
 
-Possible sections:
+Unchanged sections: summary card, status, network info, root path, services, storage/dataset info, recent logs, recent operations, actions. Should now also show which template/release the jail was created from, if known.
 
-- summary card
-- status
-- network information
-- root path
-- services
-- storage/dataset information
-- recent logs
-- recent operations
-- actions
+### Storage page
 
-The detail page should be useful even before all sections are fully implemented. Unsupported sections should say why they are unavailable.
+Purpose: inspect ZFS storage relevant to jails. Since ZFS is now required (not optional, JD-006), this page doesn't need a "no ZFS" empty state the way the original draft assumed — but should still handle "no datasets under management yet" gracefully. Content: datasets, mountpoints, used/available space, snapshots.
 
-## Storage page
+### Templates page (new)
 
-Purpose: inspect storage relevant to jails.
+Purpose: manage FreeBSD release templates — the thing jail creation depends on.
 
-Initial content:
+Likely content:
 
-- ZFS availability
-- datasets relevant to jails, if detectable
-- used space
-- available space
-- mountpoints
-- snapshots, later
+- list of prepared templates (release version, patch level, state: fetching/extracting/patching/updating/ready, snapshot name)
+- action to prepare a new template for a release
+- (open question) a release picker sourced from `download.freebsd.org`, or manual version entry, depending on how the "which releases are supported" question resolves
 
-The page should gracefully handle systems without ZFS.
+### Logs page
 
-## Logs page
+Unchanged purpose and content: recent Jail Deck operation results, command failures, relevant jail log snippets where feasible.
 
-Purpose: central place to inspect recent Jail Deck operations and relevant system logs.
+### Settings page
 
-Initial content:
+Unchanged: HTTP bind address, detected FreeBSD paths, detected ZFS pool/dataset root, command paths, application version. Still avoid dangerous editable settings.
 
-- recent Jail Deck operation results
-- command failures
-- relevant jail log snippets, where feasible
+## Frontend architecture (open — not designed yet)
 
-This page can start simple and become more useful after task history exists.
+Everything below was previously settled for HTMX and is now genuinely open for Vue. Don't treat any of this as decided:
 
-## Settings page
+1. **State management** — Pinia, plain composables, or something else?
+2. **Routing** — Vue Router, and what the route structure looks like (does it mirror the API path structure from `docs/ARCHITECTURE.md`?)
+3. **Component library / styling approach** — plain CSS (continuing the original minimalism), a utility framework, or a component library?
+4. **API client pattern** — hand-rolled `fetch` wrappers, a generated client, or something like TanStack Query for caching/refetch?
+5. **Real-time/refresh pattern** — replaces HTMX's row-swap-on-mutation pattern. Polling? Optimistic updates? Plain refetch-after-mutation?
+6. **Long-running operation UI** — once JD-008 resolves, how does the frontend represent a multi-minute template-preparation operation? (progress bar, polling a status endpoint, toast-on-completion?)
+7. **Build tooling** — Vite is the likely default given the Vue ecosystem, but not confirmed.
 
-Purpose: expose safe configuration options.
-
-Early settings may include:
-
-- HTTP bind address display
-- detected FreeBSD paths
-- detected ZFS availability
-- command paths
-- application version
-
-Avoid dangerous editable settings in the first version.
-
-## Component strategy
-
-The UI should be built from reusable server-rendered components.
-
-Important initial components:
-
-- `jail_row`
-- `jail_status_badge`
-- `jail_action_buttons`
-- `jail_summary_card`
-- `dataset_row`
-- `snapshot_row`
-- `alert`
-- `operation_result`
-- `empty_state`
-- `confirm_action`
-- `section_card`
-
-Components should be useful both in full-page rendering and HTMX responses.
-
-## HTMX interaction patterns
-
-HTMX should enhance server-rendered pages without becoming a hidden frontend framework.
-
-## Pattern: update one jail row
-
-Action:
-
-```text
-POST /jails/{name}/start
-```
-
-Response:
-
-```text
-components/jail_row.html
-```
-
-Result:
-
-Only that jail row is replaced.
-
-## Pattern: update action buttons
-
-When an operation changes jail state, the returned fragment should include updated action buttons.
-
-For example, after Start succeeds, the row should show Stop and Restart instead of Start.
-
-## Pattern: show operation result
-
-Mutating actions should provide visible feedback.
-
-Possible target:
-
-```html
-<div id="operation-result"></div>
-```
-
-A response may update both the row and the operation result area later, but the first version can keep this simple.
-
-## Pattern: refresh section
-
-A Refresh button can reload a specific section without reloading the whole page.
-
-Examples:
-
-- refresh jail list
-- refresh logs
-- refresh storage summary
-- refresh service status
-
-## Pattern: long-running task
-
-For operations that may take longer, use one of:
-
-- HTMX polling
-- task status component
-- Server-Sent Events later
-
-Do not introduce this until there is a real long-running operation.
+These should be settled together when Phase 6 (`docs/ROADMAP.md`) actually starts, not decided piecemeal ahead of time.
 
 ## States
 
-Every major section should handle these states:
-
-- loading
-- empty
-- success
-- warning
-- error
-- unsupported
+Unchanged: every major section should handle loading, empty, success, warning, error, unsupported. Now also applies to multi-step flows (jail creation, template preparation) at the step level, not just the page level.
 
 ## Empty states
 
-Empty states should explain what is happening.
+Carried over, plus new examples:
 
-Examples:
-
-- No running jails were found.
-- ZFS was not detected on this host.
-- No recent operation history is available yet.
-- This jail is stopped, so service status cannot be inspected.
+- "No running jails were found."
+- "No recent operation history is available yet."
+- "This jail is stopped, so service status cannot be inspected."
+- (new) "No templates are ready yet — prepare one before creating a jail."
+- (new) "No datasets found under the jails storage root."
 
 ## Error states
 
-Errors should show:
-
-- what operation failed
-- short explanation
-- relevant command output when safe
-- next suggested action when obvious
-
-Avoid generic messages like “Something went wrong.”
+Unchanged: show what operation failed, a short explanation, relevant command output when safe, and a next suggested action when obvious. Avoid generic messages like "Something went wrong." For multi-step flows, show *which step* failed, not just that the overall flow failed.
 
 ## Confirmation behavior
 
-Potentially destructive or disruptive operations should require confirmation.
-
-Examples:
-
-- stop jail
-- restart jail
-- rollback snapshot
-- delete snapshot
-- remove dataset
-
-MVP confirmation can be simple. More refined modals can come later.
+Unchanged principle, expanded scope: potentially destructive or disruptive operations require confirmation. Examples now include dataset removal and snapshot rollback (already listed originally) as concrete near-term features rather than hypothetical ones, since storage operations are now actively being built.
 
 ## Accessibility and usability
 
-The UI should use:
-
-- real buttons for actions
-- real links for navigation
-- visible focus states
-- readable contrast
-- form labels
-- meaningful table headers
-- status text in addition to colors
-
-Status should never rely on color alone.
+Unchanged: real buttons, real links, visible focus states, readable contrast, form labels, meaningful table headers, status text in addition to color.
 
 ## Copywriting guidelines
 
-Use FreeBSD-native terminology, but explain risky or confusing operations in plain language.
-
-Good examples:
-
-- “Start jail”
-- “Stop jail”
-- “Restart jail”
-- “View logs”
-- “ZFS is not available on this host.”
-- “The command failed. Review the output below.”
-
-Avoid vague wording:
-
-- “Launch container”
-- “Destroy environment”
-- “Magic sync”
-- “Unknown error”
-
-## MVP UI priorities
-
-The first UI should prioritize:
-
-1. Jails list
-2. Jail detail page
-3. Clear operation feedback
-4. Basic storage visibility
-5. Basic logs visibility
-6. Simple settings/status page
+Unchanged. Use FreeBSD-native terminology, explain risky operations in plain language. Good: "Start jail", "Create jail from template", "ZFS is not available on this host." Avoid vague wording: "Launch container", "Destroy environment", "Unknown error."
 
 ## Open UI questions
 
-1. Should the first design be table-first or card-first?
-2. Should action confirmations use browser confirm dialogs at first or custom components?
+Carried over from the original, still open:
+
+1. Table-first or card-first for the Jails page?
+2. Browser `confirm()` dialogs or custom confirmation components?
 3. Should logs appear inline on jail detail or only on a dedicated logs page?
-4. Should the dashboard be meaningful in MVP, or should `/` redirect to `/jails` initially?
-5. How much explanatory text should the UI include for FreeBSD learners?
-6. Should dark mode be considered early or postponed?
-7. Should the sidebar be collapsible or fixed?
+4. Should the dashboard be meaningful from the start, or should `/` redirect to `/jails`?
+5. How much explanatory text for FreeBSD learners?
+6. Dark mode: early or postponed?
+7. Collapsible or fixed sidebar?
+
+New, from the expanded scope:
+
+8. Wizard-style or single-form jail creation?
+9. How is template preparation progress shown, given it can take real time?
+10. Does the Templates page need its own space, or does it live as a section of Storage?

@@ -2,255 +2,175 @@
 
 ## Status
 
-Draft. This document describes the intended architecture for the first implementation phase.
+Draft. Reset 2026-08-16 alongside the `refactor/ddd` branch. The previous version described a layer-organized (`domain/`, `handlers/`, `services/`, `system/`), HTMX-driven architecture. That architecture is being replaced; see `docs/DECISIONS.md` JD-009 and JD-010 for why.
 
 ## Architectural summary
 
-Jail Deck is a Go web application that renders HTML on the server, enhances selected interactions with HTMX, and interacts with FreeBSD through small service-layer adapters around native system commands and files.
+Jail Deck is a Go backend exposing a JSON API, paired with a Vue single-page frontend, interacting with FreeBSD through domain-owned adapters around native system commands and files.
 
 ```text
-Browser
-  -> HTML pages and HTMX requests
+Browser (Vue SPA)
+  -> JSON API requests
   -> Chi router
   -> HTTP handlers
-  -> application services
-  -> FreeBSD adapters
-  -> native tools and system files
+  -> domain application services (internal/jails, internal/storage)
+  -> FreeBSD adapters (internal/system/freebsd)
+  -> native tools and system files (jls, service, zfs, jexec, fetch, freebsd-update, jail.conf*)
 ```
 
-The application should remain easy to reason about. The web layer should not directly shell out to system commands. System access should pass through explicit services and adapters.
+The web layer never shells out directly. System access always passes through a domain's repository port, implemented by an adapter.
 
 ## Runtime shape
 
-The default runtime shape should be:
-
 ```text
 jaildeck binary
-  - embedded templates
-  - embedded static assets
-  - HTTP server
+  - embedded Vue build output (static JS/CSS/HTML)
+  - HTTP server serving the JSON API and the embedded SPA
   - FreeBSD command adapters
-  - optional local persistence later
+  - append-only operation audit log file
 ```
 
-In production, the goal is to avoid a separate frontend runtime or build pipeline.
+Node.js is required to *build* the frontend; it is never required to *run* jaildeck in production.
 
 ## Baseline stack
 
 | Concern | Choice |
 | --- | --- |
-| Language | Go |
+| Backend language | Go |
 | HTTP router | Chi |
-| HTTP foundation | `net/http` |
-| Templates | `html/template` |
-| UI enhancement | HTMX |
-| Styling | Plain CSS initially |
-| Static assets | Embedded with Go `embed` |
-| Persistence | None initially; SQLite only if needed |
-| Logging | Structured logs preferred |
-| Tests | Go unit tests with fakes around system adapters |
+| API style | JSON over `net/http` |
+| Frontend | Vue, built with Vite, embedded via Go `embed` |
+| Storage | ZFS (required) |
+| Audit log | Append-only JSON-lines file (`internal/audit`) |
+| Tests | Go unit tests with fakes around adapters; FreeBSD-only tests for real adapter behavior |
 
-## Request lifecycle
-
-A typical full-page request:
-
-```text
-GET /jails
-  -> handler loads jail list through JailService
-  -> service asks JailRepository or JailInspector
-  -> adapter reads system state
-  -> handler renders pages/jails.html inside layout/base.html
-  -> browser receives full HTML page
-```
-
-A typical HTMX action:
-
-```text
-POST /jails/{name}/start
-  -> handler validates jail name
-  -> service starts jail through controlled adapter
-  -> service reloads updated jail state
-  -> handler renders components/jail_row.html
-  -> HTMX swaps the updated row into the page
-```
-
-## Proposed directory layout
+## Directory layout
 
 ```text
 cmd/
   jaildeck/
-    main.go
+    main.go                    # loads config, builds App, starts http.ListenAndServe
 
 internal/
   app/
-    server.go
-    routes.go
+    app.go                      # composition root: wires adapters -> services -> handlers,
+                                 # registers all routes
 
   config/
-    config.go
+    config.go                   # env var loading (JAILDECK_HOST, JAILDECK_PORT)
 
-  domain/
-    jail.go
-    service.go
-    dataset.go
-    snapshot.go
-    task.go
+  jails/                        # bounded context: Jails
+    service.go                    # Jail entity, JailName value object + validation, JailService
+    repository.go                  # JailSystem port (List/Start/Stop/Restart)
+    handler.go                     # JailHandler — HTTP handler lives in the domain package, no separate handlers/ package
 
-  handlers/
-    dashboard.go
-    jails.go
-    services.go
-    storage.go
-    logs.go
-    settings.go
+  storage/                      # bounded context: Storage (ZFS + release templates) — not yet built
+    dataset.go                    # Dataset, Snapshot entities/value objects
+    template.go                   # Template entity: release, patch level, lifecycle state
+    repository.go                  # StorageSystem port (create/clone/snapshot/list, fetch/extract/patch/update)
+    service.go                     # application service
+    handler.go
 
-  services/
-    jail_service.go
-    service_service.go
-    storage_service.go
-    log_service.go
-    task_service.go
+  audit/                        # was internal/operations — shared infra, not a domain
+    logger.go                     # Entry, Filter, Logger/Reader interfaces
+    file_logger.go                 # FileLogger — append-only JSON-lines file, mutex-guarded
+    service.go, handler.go
 
-  freebsd/
-    command_runner.go
-    jail_adapter.go
-    service_adapter.go
-    zfs_adapter.go
-    log_adapter.go
+  common/
+    errors.go                     # AppError + HandlerError — shared HTTP error translation used by every domain's handler
 
-  web/
-    renderer.go
-    htmx.go
-    responses.go
-    middleware.go
+  system/
+    command.go                    # Command, CommandResult, CommandRunner interface, CommandError
+    exec_runner.go                  # ExecCommandRunner — the only place os/exec is called
+    models.go                       # Jail, JailStatus (currently here; slated to move into internal/jails — see JD-010)
+    fake.go                          # FakeJailSystem, for non-FreeBSD dev (see commented-out line in app.go)
+    freebsd/
+      adapter.go, jail.go             # implements jails.JailSystem
+      jail_helper.go                  # jail.conf / jail.conf.d parsing + merge (JD-004)
+      storage_adapter.go              # (not yet built) implements storage.StorageSystem — zfs, fetch, freebsd-update, jexec
 
-web/
-  templates/
-    layout/
-      base.html
-      sidebar.html
-      topbar.html
-
-    pages/
-      dashboard.html
-      jails.html
-      jail_detail.html
-      storage.html
-      logs.html
-      settings.html
-
-    components/
-      jail_row.html
-      jail_status_badge.html
-      jail_action_buttons.html
-      dataset_row.html
-      snapshot_row.html
-      alert.html
-      empty_state.html
-      operation_result.html
-
-  static/
-    css/
-      app.css
-    js/
-      htmx.min.js
+web/                             # Vue frontend (separate module/build) — not yet built, see JD-009
+  src/
+    ...
+  dist/                          # build output, embedded into the Go binary
 ```
 
-This layout can change as the code reveals better boundaries, but the principle should remain: handlers handle HTTP, services handle application behavior, adapters handle FreeBSD integration.
+This can change as the code reveals better boundaries — the principle should remain: **a domain package owns its entity, its port, its use cases, and its handler together; adapters only translate domain calls <-> native tools.**
 
 ## Layer responsibilities
 
 ### `cmd/jaildeck`
 
-Owns process startup:
-
-- parse config
-- initialize logger
-- create services
-- create router
-- start HTTP server
-- handle shutdown
-
-It should contain very little business logic.
+Process startup only: parse config, build the app, start the HTTP server, handle shutdown. No business logic.
 
 ### `internal/app`
 
-Owns application assembly:
+Composition root. The only place that knows the full dependency graph: wires each domain's repository implementation into its service, wires services into handlers, registers routes.
 
-- dependency wiring
-- route registration
-- middleware setup
-- server construction
+### `internal/jails`, `internal/storage` (domain packages)
 
-### `internal/domain`
+Each owns:
 
-Contains simple domain types, such as:
+- **Entities and value objects** with real behavior and invariants — not anemic structs. Example: `JailName` (`internal/jails/service.go`) enforces the naming rule at construction via `NewJailName`, not a free-floating validation helper; `Dataset`/`Template` will similarly enforce things like "cloning requires a `@base` snapshot to exist."
+- **A repository interface (port)** describing what the domain needs from the system, owned by the domain — not by the infrastructure package that implements it. `jails.JailSystem` is defined in `internal/jails/repository.go`; `freebsd.Adapter` implements it, not the other way around. (One remaining wart here: the port's methods currently return `system.Jail` instead of `jails.Jail` — see the JD-010 follow-up note in `docs/DECISIONS.md`.)
+- **An application service** (`JailService`) that orchestrates the repository, enforces cross-cutting use-case rules (e.g. logging every mutation to the audit log via `internal/audit`), and returns data shaped for the handler.
+- **An HTTP handler** (`JailHandler`) — folded into the same package rather than split into a separate `internal/handlers`, a deliberate call once the domain only has one handler's worth of HTTP surface.
 
-- `Jail`
-- `JailStatus`
-- `JailService`
-- `Dataset`
-- `Snapshot`
-- `Task`
-- `OperationResult`
+### `internal/audit`
 
-These should avoid HTTP-specific and command-specific details.
+Shared infrastructure, not a bounded context — no business rules of its own, just an append-only log of what happened. Used by domain services (currently `JailService`; `storage`'s service will use it too once ZFS mutations exist).
 
-### `internal/handlers`
+### `internal/common`
 
-Contains HTTP handlers.
+Shared HTTP error plumbing: `AppError` (a status code + message) and `HandlerError(w, err)`, used by every domain's handler to turn a domain/service error into a consistent HTTP response instead of each handler reimplementing that translation.
 
-Handlers should:
+### `internal/system`
 
-- parse route parameters and form values
-- call services
-- decide whether to render a page or component
-- return appropriate HTTP status codes
-- avoid direct shell execution
+Shared execution primitives (`CommandRunner`, `Command`, `CommandResult`, `CommandError`) plus the concrete FreeBSD adapters and the `Jail`/`JailStatus` types (`models.go` — slated to move into `internal/jails`, see JD-010) and `FakeJailSystem` (`fake.go`, for non-FreeBSD dev). Everything that shells out goes through `CommandRunner.Run(ctx, Command{Name, Args})` — argument arrays, never string interpolation. Adapters implement the domain-owned repository interfaces; they don't define their own contracts.
 
-### `internal/services`
+## Request lifecycle
 
-Contains application use cases.
+A typical read:
 
-Services should:
+```text
+GET /api/jails
+  -> handler calls JailService.List
+  -> service calls jails.JailSystem.List
+  -> freebsd adapter shells out to jls, reads jail.conf*, merges
+  -> handler serializes []Jail as JSON
+  -> Vue renders the list
+```
 
-- coordinate operations
-- enforce safety rules
-- normalize errors
-- reload state after mutations
-- produce data suitable for rendering
+A typical mutation:
 
-### `internal/freebsd`
+```text
+POST /api/jails/{name}/start
+  -> handler validates the name is present, calls JailService.Start
+  -> service constructs/validates a JailName, calls JailSystem.Start
+  -> adapter runs `service jail start <name>`, re-reads state to confirm
+  -> service logs the operation to internal/audit
+  -> handler serializes the updated Jail (or an error) as JSON
+  -> Vue updates its local state and re-renders
+```
 
-Contains adapters around system tools and files.
+A jail-creation flow (new):
 
-Adapters should:
+```text
+POST /api/jails
+  -> handler parses {name, template} from the request body
+  -> JailService (or a coordinating service) calls
+       storage.Service.CloneTemplate(template, name)     -> zfs clone
+       JailService.WriteConfig(name, ...)                 -> jail.conf.d/<name>.conf
+       JailService.Start(name)                            -> service jail start
+  -> each step's failure is reported distinctly; a partial failure should
+     leave the system in a diagnosable state, not a silent half-created jail
+```
 
-- execute allowlisted commands
-- parse command output
-- read system files safely
-- return typed results
-- preserve useful stderr/stdout for diagnostics
-- avoid UI-specific concerns
-
-### `internal/web`
-
-Contains rendering and HTTP helpers.
-
-Likely responsibilities:
-
-- template loading
-- template execution
-- common response helpers
-- HTMX detection helpers
-- error rendering helpers
-- shared middleware
+The exact shape of the creation flow (which domain owns orchestration across the jail/storage boundary) is not finalized — worth deciding when jail creation is actually implemented, not guessed here.
 
 ## Command execution model
 
-System commands should go through a dedicated runner, not through ad hoc `exec.Command` calls scattered across handlers.
-
-A possible interface:
+Unchanged in spirit from the original design:
 
 ```go
 type CommandRunner interface {
@@ -269,246 +189,64 @@ type CommandResult struct {
 }
 ```
 
-The runner should support:
-
-- context cancellation
-- timeouts
-- structured logging
-- argument separation, not shell string interpolation
-- allowlisted commands
-- captured stdout/stderr
-
-Avoid using a shell unless absolutely necessary.
+Argument arrays, not shell string interpolation. No allowlist enforcement exists yet (still an open item, same as before). Errors from adapters are wrapped in `system.CommandError` (command, args, raw result, underlying cause) — handlers and domain services use `errors.As` to pull it out for user-facing summaries, same pattern as today's `logJailOperation`.
 
 ## FreeBSD adapters
 
-### Jail adapter
+### Jail adapter (`internal/system/freebsd/adapter.go`, `jail.go`)
 
-Likely responsibilities:
+Implements `jails.JailSystem`: list (merge `jls` + `jail.conf*`), start/stop/restart via `service jail <action> <name>`. This is the existing, working code — the refactor moves and reshapes it, doesn't rewrite its behavior.
 
-- list running jails
-- inspect jail IDs, names, paths, hostnames, IPs, and status
-- start jail
-- stop jail
-- restart jail
-- optionally inspect configured but stopped jails later
+### Storage adapter (`internal/system/freebsd/storage_adapter.go`)
 
-Possible native tools:
+Implements `storage.StorageRepository`. Responsibilities, mapped to Andre's actual manual workflow (`docs/SPEC.md`):
 
-- `jls`
-- `jail`
-- `service jail onestart <name>`
-- `service jail onestop <name>`
-- `service jail onerestart <name>`
+- `zfs create`, `zfs clone`, `zfs snapshot`, `zfs list` / `zfs list -t snapshot`
+- fetch a release's `base.txz` (`fetch`)
+- extract it into a template dataset
+- patch `resolv.conf`/`localtime` into a template
+- bring a template to the current patch level (`freebsd-update --currently-running <ver> -b <path> fetch install`)
+- run commands inside a jail (`jexec <name> <cmd>`) for provisioning
 
-Exact commands should be validated during FreeBSD testing.
+ZFS is required (JD-006), so unlike the old "gracefully degrade without ZFS" posture, this adapter can assume ZFS is present.
 
-### Service adapter
+## API conventions
 
-Likely responsibilities:
-
-- list available services inside a jail, if feasible
-- check service status
-- start, stop, restart selected services inside a jail
-
-Possible native tools:
-
-- `jexec`
-- `service`
-
-This area needs careful safety boundaries.
-
-### ZFS adapter
-
-Likely responsibilities:
-
-- detect whether ZFS is available
-- list relevant datasets
-- show mountpoints, used space, available space, and origin
-- list snapshots
-- create snapshots later
-- rollback snapshots later, with strong confirmation
-
-Possible native tools:
-
-- `zfs list`
-- `zfs list -t snapshot`
-- `zfs get`
-- `zfs snapshot`
-- `zfs rollback`
-
-ZFS should be optional but first-class when present.
-
-### Log adapter
-
-Likely responsibilities:
-
-- show relevant recent logs
-- filter by jail name when possible
-- expose command output for operations
-
-Initial implementation can be simple and conservative.
-
-## Template architecture
-
-Templates should be organized around pages and reusable components.
-
-### Pages
-
-Pages are full views rendered inside the base layout.
-
-Examples:
-
-- dashboard
-- jail list
-- jail detail
-- storage
-- logs
-- settings
-
-### Components
-
-Components are reusable fragments. HTMX endpoints should usually return components rather than full pages.
-
-Examples:
-
-- jail row
-- jail action buttons
-- status badge
-- alert
-- operation result
-- dataset row
-- snapshot row
-
-## Rendering conventions
-
-Suggested conventions:
-
-- full-page handlers render templates under `pages/`
-- HTMX handlers render templates under `components/`
-- every mutation should return either an updated component or an operation result component
-- errors should be renderable as HTML fragments
-- components should avoid hidden dependencies on global page state
-
-## Routing conventions
-
-Possible initial routes:
+Replaces the old HTMX/template-rendering conventions. Not fully specified yet — settle this when the Vue migration (JD-009) actually starts, but the shape is expected to be:
 
 ```text
-GET  /
-GET  /jails
-GET  /jails/{name}
-POST /jails/{name}/start
-POST /jails/{name}/stop
-POST /jails/{name}/restart
-GET  /jails/{name}/logs
-GET  /storage
-GET  /logs
-GET  /settings
+GET    /api/jails
+GET    /api/jails/{name}
+POST   /api/jails/{name}/start
+POST   /api/jails/{name}/stop
+POST   /api/jails/{name}/restart
+POST   /api/jails                    # create (clone template + configure + start)
+GET    /api/templates
+POST   /api/templates                # prepare a new release template
+GET    /api/storage/datasets
+GET    /api/storage/snapshots
+GET    /api/operations
 ```
 
-Later routes can be added for snapshots, services, package inspection, and configuration editing.
-
-## HTMX conventions
-
-HTMX should be used when it reduces complexity.
-
-Good uses:
-
-- refreshing a jail row after start/stop
-- loading a detail panel
-- polling an operation status
-- replacing an alert area
-- submitting small forms without a full page reload
-
-Avoid using HTMX to recreate a complex client-side application.
+Until the Vue migration starts, the existing server-rendered/HTMX routes keep working as-is (JD-009) — new backend domain work should expose plain Go APIs on the domain services that either response style can call, rather than being written against one or the other.
 
 ## Error handling
 
-Errors should be categorized before rendering.
-
-Suggested categories:
-
-- validation error
-- permission error
-- command not found
-- command failed
-- parse error
-- unsupported system state
-- timeout
-- internal error
-
-The UI should show enough information to help the operator diagnose the issue, especially when native command output is relevant.
+Categories carry over from the original design: validation error, permission error, command not found, command failed, parse error, unsupported system state, timeout, internal error. For a JSON API these map to HTTP status + a structured error body (code, message, and — when safe — the relevant command output), rather than a rendered HTML fragment.
 
 ## Security model
 
-The security design is not finalized.
-
-Important constraints:
-
-- assume operations may be privileged
-- never build shell commands from unsanitized user input
-- validate jail names and route parameters
-- use CSRF protection for mutating requests
-- default to safe binding, probably localhost during early development
-- make destructive actions explicit
-- log privileged operations
-
-## Authentication
-
-Authentication remains open.
-
-Possible first steps:
-
-- localhost-only without login during early development
-- single admin password
-- reverse proxy authentication
-- built-in sessions
-
-This should be decided after the privilege model is clearer.
-
-## Persistence
-
-The first version should not require a database.
-
-System state should be read from FreeBSD directly.
-
-Persistence may be introduced later for:
-
-- user settings
-- task history
-- operation logs
-- UI preferences
-- authentication sessions
-- cached metadata
-
-SQLite is the preferred first persistence option if needed.
+Unchanged open items: no command allowlist yet, no CSRF protection (less relevant for a JSON API consumed by a same-origin SPA, but worth revisiting once auth exists), jail names and route parameters must still be validated before reaching a command. Destructive storage operations (snapshot rollback, dataset removal) need explicit confirmation semantics once they exist — likely a confirmation flag/step in the API, not just a UI-level dialog, since the UI is no longer trusted as the only client by construction of having a JSON API at all.
 
 ## Testing strategy
 
-The code should be testable without requiring dangerous system operations.
-
-Suggested approach:
-
-- unit test services with fake adapters
-- unit test command output parsers with sample outputs
-- unit test handlers with fake services
-- integration test FreeBSD adapters separately
-- keep command runner behavior small and well covered
-
-## Development constraints
-
-Some behavior can be developed on non-FreeBSD systems using fakes, but real adapter testing must happen on FreeBSD.
-
-The architecture should make this split natural.
+Unchanged: unit test domain services with fake repositories, unit test command-output parsers with fixtures, integration-test the real FreeBSD adapters separately (only fully verifiable on FreeBSD). The domain-driven split should make the fake-repository pattern more natural than the old single `FakeJailSystem` — each domain gets its own fake.
 
 ## Open architecture questions
 
-1. What privilege model should be used?
-2. Should there be a privileged helper process?
-3. Should the first version bind only to localhost?
-4. How should CSRF protection be implemented with HTMX?
-5. Should task history exist before long-running operations are introduced?
-6. How much jail configuration parsing belongs in the MVP?
-7. Which commands are safe enough for initial operation support?
-8. Should logs be read directly, through system tools, or both?
+1. Which domain (or a new coordinating layer) owns orchestration for multi-step flows that cross the jail/storage boundary, like jail creation?
+2. What does partial-failure recovery look like for jail creation (clone succeeded, config write failed — now what)?
+3. Should there be a command allowlist, and at what layer?
+4. How should long-running operations (template fetch/extract/update) be represented in the API, once JD-008 is resolved?
+5. Exact REST/JSON API shape — not finalized, see "API conventions" above.
+6. Should `internal/audit` gain a real database backing, and if so, does that pull `storage`/`jail` metadata along with it, or stay scoped to operation history only?

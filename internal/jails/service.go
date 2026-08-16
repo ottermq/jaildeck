@@ -75,18 +75,27 @@ func (s *JailService) List(ctx context.Context) ([]Jail, error) {
 }
 
 func (s *JailService) Start(ctx context.Context, name JailName) (Jail, error) {
+	if _, err := NewJailName(name.String()); err != nil {
+		return Jail{}, err
+	}
 	sjail, err := s.system.Start(ctx, name.String())
 	s.logJailOperation(ctx, name.String(), "start", err)
 	return mapSystemToDomainJail(sjail), err
 }
 
 func (s *JailService) Stop(ctx context.Context, name JailName) (Jail, error) {
+	if _, err := NewJailName(name.String()); err != nil {
+		return Jail{}, err
+	}
 	sjail, err := s.system.Stop(ctx, name.String())
 	s.logJailOperation(ctx, name.String(), "stop", err)
 	return mapSystemToDomainJail(sjail), err
 }
 
 func (s *JailService) Restart(ctx context.Context, name JailName) (Jail, error) {
+	if _, err := NewJailName(name.String()); err != nil {
+		return Jail{}, err
+	}
 	sjail, err := s.system.Restart(ctx, name.String())
 	s.logJailOperation(ctx, name.String(), "restart", err)
 	return mapSystemToDomainJail(sjail), err

@@ -57,12 +57,13 @@ func (h *JailHandler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *JailHandler) Start(w http.ResponseWriter, r *http.Request) {
 	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
 
 	var result OperationResultView
 	jail, err := h.service.Start(r.Context(), name)
-	if err != nil {
-		common.HandlerError(w, err)
-	}
 	if err != nil {
 		result = OperationResultView{
 			Success: false,

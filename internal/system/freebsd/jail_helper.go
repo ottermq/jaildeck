@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ottermq/jaildeck/internal/domain"
+	"github.com/ottermq/jaildeck/internal/system"
 )
 
 const (
@@ -21,7 +21,7 @@ const (
 
 var assignmentRE = regexp.MustCompile(`^\s*([a-zA-Z0-9_.-]+)\s*=\s*"?([^";]+)"?\s*;`)
 
-func (a *Adapter) listConfiguredJails() ([]domain.Jail, error) {
+func (a *Adapter) listConfiguredJails() ([]system.Jail, error) {
 	mapConfigJails := make(map[string]bool)
 	dirJails, err := listJailsFromConfDir(defaultJailConfDir)
 	if err != nil {
@@ -34,7 +34,7 @@ func (a *Adapter) listConfiguredJails() ([]domain.Jail, error) {
 	if err != nil {
 		return nil, err
 	}
-	jails := make([]domain.Jail, 0, len(dirJails)+len(fileJails))
+	jails := make([]system.Jail, 0, len(dirJails)+len(fileJails))
 	jails = append(jails, dirJails...)
 	for _, j := range fileJails {
 		if ok := mapConfigJails[j.Name]; !ok {
@@ -44,7 +44,7 @@ func (a *Adapter) listConfiguredJails() ([]domain.Jail, error) {
 	return jails, nil
 }
 
-func (a *Adapter) runningJails(ctx context.Context) ([]domain.Jail, error) {
+func (a *Adapter) runningJails(ctx context.Context) ([]system.Jail, error) {
 	result, err := a.runner.Run(ctx, jlsListCommand)
 	if err != nil {
 		return nil, fmt.Errorf("list jails: %w", err)
@@ -53,12 +53,12 @@ func (a *Adapter) runningJails(ctx context.Context) ([]domain.Jail, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fail parsing jls output: %w", err)
 	}
-	jails := make([]domain.Jail, len(parsedOutput.JailInformation.Jails))
+	jails := make([]system.Jail, len(parsedOutput.JailInformation.Jails))
 	for idx, j := range parsedOutput.JailInformation.Jails {
-		jails[idx] = domain.Jail{
+		jails[idx] = system.Jail{
 			JID:      j.JID,
 			Name:     j.Name,
-			Status:   domain.JailStatusRunning,
+			Status:   system.JailStatusRunning,
 			Hostname: j.Hostname,
 			IP:       strings.Join(j.IP4, ", "),
 			Path:     j.Path,
@@ -67,10 +67,10 @@ func (a *Adapter) runningJails(ctx context.Context) ([]domain.Jail, error) {
 	return jails, nil
 }
 
-func (a *Adapter) getJailByName(ctx context.Context, name string) (domain.Jail, error) {
+func (a *Adapter) getJailByName(ctx context.Context, name string) (system.Jail, error) {
 	jails, err := a.List(ctx)
 	if err != nil {
-		return domain.Jail{}, err
+		return system.Jail{}, err
 	}
 
 	for _, jail := range jails {
@@ -79,7 +79,7 @@ func (a *Adapter) getJailByName(ctx context.Context, name string) (domain.Jail, 
 		}
 	}
 
-	return domain.Jail{}, fmt.Errorf("jail %q not found", name)
+	return system.Jail{}, fmt.Errorf("jail %q not found", name)
 }
 
 func parseJLSOutput(stdout string) (jlsOutput, error) {
@@ -91,10 +91,10 @@ func parseJLSOutput(stdout string) (jlsOutput, error) {
 	return output, nil
 }
 
-func mergeJails(configured, running []domain.Jail) []domain.Jail {
+func mergeJails(configured, running []system.Jail) []system.Jail {
 	maxLen := len(configured) + len(running)
-	merged := make([]domain.Jail, 0, maxLen)
-	runningNotConfigured := make([]domain.Jail, 0, len(running))
+	merged := make([]system.Jail, 0, maxLen)
+	runningNotConfigured := make([]system.Jail, 0, len(running))
 	merged = append(merged, configured...)
 
 	for _, running := range running {
@@ -115,13 +115,13 @@ func mergeJails(configured, running []domain.Jail) []domain.Jail {
 	return merged
 }
 
-func listJailsFromConfDir(dir string) ([]domain.Jail, error) {
+func listJailsFromConfDir(dir string) ([]system.Jail, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "*.conf"))
 	if err != nil {
 		return nil, err
 	}
 
-	jails := make([]domain.Jail, 0, len(files))
+	jails := make([]system.Jail, 0, len(files))
 	for _, file := range files {
 		content, err := os.ReadFile(file)
 		if err != nil {
@@ -135,7 +135,7 @@ func listJailsFromConfDir(dir string) ([]domain.Jail, error) {
 	return jails, nil
 }
 
-func listJailsFromConfFile(filename string) ([]domain.Jail, error) {
+func listJailsFromConfFile(filename string) ([]system.Jail, error) {
 	content, err := os.ReadFile(filename)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -146,11 +146,11 @@ func listJailsFromConfFile(filename string) ([]domain.Jail, error) {
 	return parseJailConf(string(content)), nil
 }
 
-func parseJailConf(content string) []domain.Jail {
+func parseJailConf(content string) []system.Jail {
 	lines := strings.Split(content, "\n")
 
-	var jails []domain.Jail
-	var jail domain.Jail
+	var jails []system.Jail
+	var jail system.Jail
 	var name string
 	values := map[string]string{}
 
@@ -178,9 +178,9 @@ func parseJailConf(content string) []domain.Jail {
 			if name == "" {
 				continue
 			}
-			jail = domain.Jail{
+			jail = system.Jail{
 				Name:     name,
-				Status:   domain.JailStatusStopped,
+				Status:   system.JailStatusStopped,
 				Hostname: values["host.hostname"],
 				IP:       values["ip4"],
 				Path:     values["path"],
@@ -191,7 +191,7 @@ func parseJailConf(content string) []domain.Jail {
 			jails = append(jails, jail)
 			name = ""
 			values = map[string]string{}
-			jail = domain.Jail{}
+			jail = system.Jail{}
 		}
 	}
 

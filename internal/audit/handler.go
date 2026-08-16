@@ -1,12 +1,10 @@
-package handlers
+package audit
 
 import (
 	"log"
 	"net/http"
 	"strconv"
 
-	"github.com/ottermq/jaildeck/internal/operations"
-	"github.com/ottermq/jaildeck/internal/services"
 	"github.com/ottermq/jaildeck/internal/views"
 )
 
@@ -15,8 +13,8 @@ const (
 	maxLimit     = 200
 )
 
-type OperationHandler struct {
-	service  *services.OperationService
+type AuditHandler struct {
+	service  *AuditService
 	renderer *views.Renderer
 }
 
@@ -26,11 +24,11 @@ type OperationFilterView struct {
 	Success   string
 }
 
-func NewOperationHandler(service *services.OperationService, renderer *views.Renderer) *OperationHandler {
-	return &OperationHandler{service: service, renderer: renderer}
+func NewOperationHandler(service *AuditService, renderer *views.Renderer) *AuditHandler {
+	return &AuditHandler{service: service, renderer: renderer}
 }
 
-func (h *OperationHandler) List(w http.ResponseWriter, r *http.Request) {
+func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	operationParam := r.URL.Query().Get("operation")
 	successParam := r.URL.Query().Get("success")
 	targetsParam := r.URL.Query().Get("targets")
@@ -48,7 +46,7 @@ func (h *OperationHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	data := struct {
 		Title   string
-		Entries []operations.Entry
+		Entries []Entry
 		Filter  OperationFilterView
 	}{
 		Title:   "Operations",

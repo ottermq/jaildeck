@@ -1,4 +1,4 @@
-package handlers
+package jails
 
 import (
 	"errors"
@@ -7,14 +7,13 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/ottermq/jaildeck/internal/domain"
-	"github.com/ottermq/jaildeck/internal/services"
+	"github.com/ottermq/jaildeck/internal/common"
 	"github.com/ottermq/jaildeck/internal/system"
 	"github.com/ottermq/jaildeck/internal/views"
 )
 
 type JailHandler struct {
-	service  *services.JailService
+	service  *JailService
 	renderer *views.Renderer
 }
 
@@ -24,11 +23,11 @@ type OperationResultView struct {
 }
 
 type JailActionResultView struct {
-	Jail   domain.Jail
+	Jail   Jail
 	Result OperationResultView
 }
 
-func NewJailHandler(jailService *services.JailService, renderer *views.Renderer) *JailHandler {
+func NewJailHandler(jailService *JailService, renderer *views.Renderer) *JailHandler {
 	return &JailHandler{
 		service:  jailService,
 		renderer: renderer,
@@ -57,13 +56,17 @@ func (h *JailHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *JailHandler) Start(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
+	name, err := NewJailName(chi.URLParam(r, "name"))
+
 	var result OperationResultView
 	jail, err := h.service.Start(r.Context(), name)
 	if err != nil {
+		common.HandlerError(w, err)
+	}
+	if err != nil {
 		result = OperationResultView{
 			Success: false,
-			Message: operationFailureMessage("start", name, err),
+			Message: operationFailureMessage("start", name.String(), err),
 		}
 	} else {
 		result = OperationResultView{
@@ -83,13 +86,17 @@ func (h *JailHandler) Start(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *JailHandler) Stop(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
 	var result OperationResultView
 	jail, err := h.service.Stop(r.Context(), name)
 	if err != nil {
 		result = OperationResultView{
 			Success: false,
-			Message: operationFailureMessage("stop", name, err),
+			Message: operationFailureMessage("stop", name.String(), err),
 		}
 	} else {
 		result = OperationResultView{
@@ -109,13 +116,17 @@ func (h *JailHandler) Stop(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *JailHandler) Restart(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
 	var result OperationResultView
 	jail, err := h.service.Restart(r.Context(), name)
 	if err != nil {
 		result = OperationResultView{
 			Success: false,
-			Message: operationFailureMessage("restart", name, err),
+			Message: operationFailureMessage("restart", name.String(), err),
 		}
 	} else {
 		result = OperationResultView{

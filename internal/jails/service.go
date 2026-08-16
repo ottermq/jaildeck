@@ -61,31 +61,25 @@ func (s *JailService) List(ctx context.Context) ([]Jail, error) {
 	return jails, nil
 }
 
-func (s *JailService) Start(ctx context.Context, name JailName) (Jail, error) {
+func (s *JailService) do(ctx context.Context, name JailName, action string, call func(context.Context, string) (Jail, error)) (Jail, error) {
 	if _, err := NewJailName(name.String()); err != nil {
 		return Jail{}, err
 	}
-	jail, err := s.system.Start(ctx, name.String())
-	s.logJailOperation(ctx, name.String(), "start", err)
+	jail, err := call(ctx, name.String())
+	s.logJailOperation(ctx, name.String(), action, err)
 	return jail, err
+}
+
+func (s *JailService) Start(ctx context.Context, name JailName) (Jail, error) {
+	return s.do(ctx, name, "start", s.system.Start)
 }
 
 func (s *JailService) Stop(ctx context.Context, name JailName) (Jail, error) {
-	if _, err := NewJailName(name.String()); err != nil {
-		return Jail{}, err
-	}
-	jail, err := s.system.Stop(ctx, name.String())
-	s.logJailOperation(ctx, name.String(), "stop", err)
-	return jail, err
+	return s.do(ctx, name, "stop", s.system.Stop)
 }
 
 func (s *JailService) Restart(ctx context.Context, name JailName) (Jail, error) {
-	if _, err := NewJailName(name.String()); err != nil {
-		return Jail{}, err
-	}
-	jail, err := s.system.Restart(ctx, name.String())
-	s.logJailOperation(ctx, name.String(), "restart", err)
-	return jail, err
+	return s.do(ctx, name, "restart", s.system.Restart)
 }
 
 func (s *JailService) logJailOperation(ctx context.Context, name, operation string, opErr error) {

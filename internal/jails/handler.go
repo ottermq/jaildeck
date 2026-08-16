@@ -1,6 +1,7 @@
 package jails
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -55,7 +56,7 @@ func (h *JailHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *JailHandler) Start(w http.ResponseWriter, r *http.Request) {
+func (h *JailHandler) do(w http.ResponseWriter, r *http.Request, action, verbPast string, call func(context.Context, JailName) (Jail, error)) {
 	name, err := NewJailName(chi.URLParam(r, "name"))
 	if err != nil {
 		common.HandlerError(w, err)
@@ -63,16 +64,16 @@ func (h *JailHandler) Start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var result OperationResultView
-	jail, err := h.service.Start(r.Context(), name)
+	jail, err := call(r.Context(), name)
 	if err != nil {
 		result = OperationResultView{
 			Success: false,
-			Message: operationFailureMessage("start", name.String(), err),
+			Message: operationFailureMessage(action, name.String(), err),
 		}
 	} else {
 		result = OperationResultView{
 			Success: true,
-			Message: fmt.Sprintf("Started jail %q.", name),
+			Message: fmt.Sprintf("%s jail %q.", verbPast, name),
 		}
 	}
 
@@ -84,66 +85,18 @@ func (h *JailHandler) Start(w http.ResponseWriter, r *http.Request) {
 	if err := h.renderer.RenderComponent(w, "jails", "components/jail_action_result.html", data); err != nil {
 		http.Error(w, "failed to render jail action result", http.StatusInternalServerError)
 	}
+}
+
+func (h *JailHandler) Start(w http.ResponseWriter, r *http.Request) {
+	h.do(w, r, "start", "Started", h.service.Start)
 }
 
 func (h *JailHandler) Stop(w http.ResponseWriter, r *http.Request) {
-	name, err := NewJailName(chi.URLParam(r, "name"))
-	if err != nil {
-		common.HandlerError(w, err)
-		return
-	}
-	var result OperationResultView
-	jail, err := h.service.Stop(r.Context(), name)
-	if err != nil {
-		result = OperationResultView{
-			Success: false,
-			Message: operationFailureMessage("stop", name.String(), err),
-		}
-	} else {
-		result = OperationResultView{
-			Success: true,
-			Message: fmt.Sprintf("Stopped jail %q.", name),
-		}
-	}
-
-	data := JailActionResultView{
-		Jail:   jail,
-		Result: result,
-	}
-
-	if err := h.renderer.RenderComponent(w, "jails", "components/jail_action_result.html", data); err != nil {
-		http.Error(w, "failed to render jail action result", http.StatusInternalServerError)
-	}
+	h.do(w, r, "stop", "Stopped", h.service.Stop)
 }
 
 func (h *JailHandler) Restart(w http.ResponseWriter, r *http.Request) {
-	name, err := NewJailName(chi.URLParam(r, "name"))
-	if err != nil {
-		common.HandlerError(w, err)
-		return
-	}
-	var result OperationResultView
-	jail, err := h.service.Restart(r.Context(), name)
-	if err != nil {
-		result = OperationResultView{
-			Success: false,
-			Message: operationFailureMessage("restart", name.String(), err),
-		}
-	} else {
-		result = OperationResultView{
-			Success: true,
-			Message: fmt.Sprintf("Restarted jail %q.", name),
-		}
-	}
-
-	data := JailActionResultView{
-		Jail:   jail,
-		Result: result,
-	}
-
-	if err := h.renderer.RenderComponent(w, "jails", "components/jail_action_result.html", data); err != nil {
-		http.Error(w, "failed to render jail action result", http.StatusInternalServerError)
-	}
+	h.do(w, r, "restart", "Restarted", h.service.Restart)
 }
 
 func operationFailureMessage(action, name string, err error) string {

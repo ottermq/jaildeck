@@ -8,14 +8,10 @@ import (
 )
 
 var (
-	ErrInvalidOwnerID     = NewAppError(http.StatusBadRequest, "invalid owner ID")
-	ErrInvalidUserID      = NewAppError(http.StatusBadRequest, "invalid user ID")
-	ErrInvalidWorkspaceID = NewAppError(http.StatusBadRequest, "invalid workspace ID")
-	ErrInvalidProjectID   = NewAppError(http.StatusBadRequest, "invalid project ID")
-	ErrForbidden          = NewAppError(http.StatusForbidden, "forbidden")
-	ErrUnauthorized       = NewAppError(http.StatusUnauthorized, "unauthorized")
-	ErrBadRequest         = NewAppError(http.StatusBadRequest, "invalid request")
-	ErrInvalidAssigneeID  = NewAppError(http.StatusBadRequest, "invalid assignee ID")
+	ErrForbidden         = NewAppError(http.StatusForbidden, "forbidden")
+	ErrUnauthorized      = NewAppError(http.StatusUnauthorized, "unauthorized")
+	ErrBadRequest        = NewAppError(http.StatusBadRequest, "invalid request")
+	ErrInvalidAssigneeID = NewAppError(http.StatusBadRequest, "invalid assignee ID")
 )
 
 type AppError struct {

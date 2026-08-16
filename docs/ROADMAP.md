@@ -1,315 +1,182 @@
 # Jail Deck — Roadmap
 
-## Status
-
-Draft. This roadmap is intentionally capability-based rather than date-based.
+Capability-based rather than date-based.
 
 ## Roadmap philosophy
 
-Jail Deck should grow from visibility to safe operation, then to controlled management.
+Grow from visibility to safe operation to controlled management. Don't edit critical system configuration or invent complex abstractions before the code has shown a real need for them. This is why the domain-driven organization (`docs/ARCHITECTURE.md`) introduces only the domains actually needed — `jails`, and `storage` next — instead of speculative bounded contexts.
 
-The project should not start by editing critical system configuration or inventing complex abstractions. It should first become a trustworthy dashboard over the system as it already exists.
+## Implemented
 
-## Phase 0 — Research and validation
+- HTTP server, Chi routing, embedded templates/static assets
+- Jail listing, merging `jls` (running) with `jail.conf`/`jail.conf.d` (configured but stopped)
+- Jail start/stop/restart via `service jail <action> <name>`
+- Append-only operation audit log (`internal/audit`)
+- Operations page with filtering
+- Domain-driven package structure (`internal/jails`, `internal/audit`, `internal/common`, `internal/system` + adapters) — see `docs/ARCHITECTURE.md`
 
-Goal: understand the FreeBSD surface area before committing to implementation details.
+## Phase 1 — JSON API and minimal Vue UI
 
-### Outcomes
-
-- confirm how to list running jails reliably
-- confirm how to identify configured but stopped jails
-- confirm common jail configuration locations
-- confirm safe start/stop/restart commands
-- confirm how service management behaves inside jails
-- confirm useful ZFS commands and output formats
-- confirm log locations and patterns
-- decide initial privilege model
-- decide initial authentication/bind strategy
-
-### Deliverables
-
-- command notes
-- sample command outputs
-- parser fixtures
-- privilege model decision
-- MVP route list
-
-### Open decisions for this phase
-
-- run as root, use `doas`, or use a privileged helper?
-- bind to localhost only or support LAN access from the start?
-- inspect only running jails first or include configured stopped jails?
-- require ZFS for early testing or support non-ZFS immediately?
-
-## Phase 1 — Skeleton application
-
-Goal: create the basic Go application structure.
+Goal: convert the jails and audit (operations) endpoints from server-rendered HTML to a JSON API, and build a minimal Vue UI consuming it, while these are still the only two handlers in the codebase. Every domain added afterward (storage, templates) is then built API-first from the start, avoiding a larger migration later.
 
 ### Capabilities
 
-- start HTTP server
-- use Chi router
-- render base layout
-- serve embedded static assets
-- load embedded templates
-- show a basic dashboard page
-- show application version/build info
-- establish initial CSS
-- establish component-oriented template layout
+- jails list, start/stop/restart, and operation history available as a JSON API
+- a minimal Vue UI: jails list with start/stop/restart actions and operation result feedback, plus an operations/history view
 
 ### Technical tasks
 
-- create repository structure
-- add `cmd/jaildeck/main.go`
-- add route registration
-- add renderer
-- add base layout
-- add app CSS
-- add Makefile
-- add basic tests
+- settle the JSON API shape for `internal/jails` and `internal/audit` (see `docs/ARCHITECTURE.md` "API conventions")
+- convert `JailHandler` and `internal/audit`'s handler to serve JSON instead of HTML fragments
+- stand up the Vue project + build pipeline, `embed.FS` the build output
+- minimal Vue app covering the jails list and operations views
+- retire `internal/views` and the HTML templates once the Vue UI covers the same functionality
 
 ### Completion criteria
 
-The application can run locally and render a simple Jail Deck page without external frontend tooling.
+Jails and operations are served by the Vue SPA over the JSON API; no HTML-fragment rendering remains in the backend.
 
-## Phase 2 — Read-only jail visibility
+## Phase 2 — ZFS storage domain
 
-Goal: make Jail Deck useful without modifying the host.
+Goal: build the `storage` domain's foundation — dataset/snapshot primitives — since both template preparation and jail creation depend on it.
 
 ### Capabilities
 
-- list running jails
-- parse jail metadata
-- display status badges
-- show jail list page
-- show jail detail page
-- display raw diagnostic information when parsing is incomplete
-- handle empty state when no jails are running
+- create a dataset
+- clone a dataset from a snapshot
+- create a snapshot
+- list datasets / list snapshots
 
 ### Technical tasks
 
-- implement command runner
-- implement jail adapter
-- implement parser tests with sample outputs
-- implement `JailService`
-- implement jails handlers
-- implement `jail_row` component
-- implement jail detail page
+- define `Dataset`, `Snapshot` entities and the `StorageSystem` port in `internal/storage`
+- implement `storage_adapter.go` in `internal/system/freebsd` (`zfs create/clone/snapshot/list`)
+- parser/fixture tests for `zfs list` output, same pattern as the existing `jls` parser tests
+- `storage.Service` with a fake repository implementation, unit tested without touching real ZFS
+- expose the domain through the JSON API and minimal Vue UI established in Phase 1
 
 ### Completion criteria
 
-A user can open Jail Deck and understand what jails are currently running.
+The app can create/clone/snapshot/list ZFS datasets programmatically, through the API and UI.
 
-## Phase 3 — Safe jail operations
+## Phase 3 — Release template lifecycle
 
-Goal: support basic jail lifecycle actions.
+Goal: automate the template-preparation workflow described in `docs/SPEC.md`.
 
 ### Capabilities
 
-- start jail
-- stop jail
-- restart jail
-- refresh jail row through HTMX
-- show operation success/failure
-- capture relevant command output
-- prevent invalid actions when state is known
+- create a template dataset for a FreeBSD release
+- fetch that release's `base.txz`
+- extract it into the template dataset
+- patch in host `resolv.conf`/`localtime`
+- bring the template to the current patch level via `freebsd-update`
+- snapshot the template as `@base`
 
 ### Technical tasks
 
-- add mutation routes
-- add CSRF protection
-- add operation result component
-- add confirmation for stop/restart
-- add command timeout handling
-- add structured operation logging
+- `Template` entity in `internal/storage` with lifecycle state (created -> fetched -> extracted -> patched -> updated -> ready)
+- extend `StorageSystem` (or a sibling port) with fetch/extract/patch/update operations
+- resolve JD-008 (long-running operations) enough to actually run `freebsd-update` from a request without a naive indefinite blocking call
+- resolve the open question on release version normalization (strip `-pN` from `freebsd-version` for the fetch URL) and, if in scope this phase, cross-version support / fetching the available release list from `download.freebsd.org`
 
 ### Completion criteria
 
-A user can start, stop, and restart known jails from the UI and receive clear feedback.
+A template for a given FreeBSD release can be prepared end-to-end from the UI or API, ending in a usable `@base` snapshot, without manual shell steps.
 
-## Phase 4 — Logs and operation history
+## Phase 4 — Jail creation
 
-Goal: make actions explainable.
+Goal: create a new jail from a ready template.
 
 ### Capabilities
 
-- show recent Jail Deck operations
-- show command result history for current session
-- show relevant system log snippets where feasible
-- show failures in a readable format
-- add logs page
-- add recent operations section to jail detail
+- confirm a template's `@base` snapshot exists (precondition)
+- clone the snapshot into the jail's own dataset
+- generate `jail.conf.d/<name>.conf`
+- start the jail
+- surface clear, step-by-step failure state if any stage fails
 
 ### Technical tasks
 
-- define operation result model
-- decide whether history is memory-only or persisted
-- implement log adapter
-- implement logs page
-- implement operation result components
+- decide orchestration ownership across `jails`/`storage` (see `docs/ARCHITECTURE.md` open question)
+- `jail.conf.d` config generation (likely `text/template`, not string concatenation)
+- handle service-specific config needs (e.g. database servers that need extra stanzas) — exact mechanism (profiles? post-create hooks?) not yet designed
+- partial-failure handling: a failed config write after a successful clone shouldn't leave an undiagnosable half-created jail
 
 ### Completion criteria
 
-After an action fails, the user can inspect what was attempted and why it failed.
+A new jail can be created end-to-end (clone -> configure -> start) without manually touching `zfs` or `jail.conf.d`.
 
-## Phase 5 — Storage visibility
+## Phase 5 — In-jail provisioning
 
-Goal: expose ZFS information without performing destructive operations.
+Goal: reduce (not necessarily eliminate) the manual `jexec ... ; pkg update` step.
 
 ### Capabilities
 
-- detect ZFS availability
-- list relevant datasets
-- show mountpoints
-- show used and available space
-- show snapshots, if straightforward
-- handle systems without ZFS gracefully
+- run a command inside a jail via `jexec`
+- at minimum, trigger `pkg update`/`pkg install <pkg>` after creation
+- service-specific provisioning as a distinct, later capability
 
 ### Technical tasks
 
-- implement ZFS adapter
-- add parser tests for ZFS output
-- implement storage service
-- implement storage page
-- implement dataset row component
-- implement snapshot row component
+- `jexec` wrapped through the existing `CommandRunner` pattern
+- decide how much of "configure the service" is automated vs. left as a documented manual step per service type
 
 ### Completion criteria
 
-A user can understand the storage layout related to jails, especially on ZFS-based hosts.
+A freshly created jail can have baseline packages installed without a manual `jexec` session, for at least the common case.
 
-## Phase 6 — Services inside jails
+## Phase 6 — Logging and persistence evolution
 
-Goal: inspect and control selected services inside a jail.
+Goal: a structured application logger distinct from the operations audit log, and persistence beyond flat files where justified.
 
 ### Capabilities
 
-- inspect service status inside a running jail
-- start selected service
-- stop selected service
-- restart selected service
-- show service operation output
+- structured application logging, separate from the operation-history audit trail
+- a real database, if by this point there's a concrete justification (template/dataset metadata, richer operation history, etc.) — not adopted speculatively
 
 ### Technical tasks
 
-- validate safe `jexec` usage
-- implement service adapter
-- add service section to jail detail
-- add service action components
-- add confirmation where needed
+- not designed yet — this phase starts with a design discussion, not implementation
 
 ### Completion criteria
 
-A user can manage common rc.d services inside a running jail through controlled UI actions.
+To be defined at design time.
 
-## Phase 7 — Safer management features
-
-Goal: move from operation to controlled management.
-
-Possible capabilities:
-
-- create ZFS snapshot
-- rollback ZFS snapshot with strong confirmation
-- inspect installed packages inside a jail
-- show jail configuration source
-- edit limited safe settings
-- reload jail configuration
-- create a jail through a guided flow
-
-These features should wait until the privilege model, command runner, logging, and confirmation patterns are mature.
-
-## Phase 8 — Packaging and distribution
+## Phase 7 — Packaging and distribution
 
 Goal: make Jail Deck feel native to install and operate on FreeBSD.
 
 ### Capabilities
 
-- install binary
-- install rc.d service script
-- install default config
+- install binary, rc.d service script, default config
 - document safe deployment modes
-- provide upgrade path
-- prepare FreeBSD package or port work
-
-### Technical tasks
-
-- refine Makefile with `PREFIX` and `BINDIR`
-- add rc.d script
-- add sample config file
-- add installation docs
-- add release build workflow
+- provide an upgrade path
+- prepare FreeBSD package/port work
 
 ### Completion criteria
 
-A user can install Jail Deck on FreeBSD in a repeatable way and run it as a service.
+Jail Deck can be installed on FreeBSD in a repeatable way and run as a service.
 
-## Not planned for early versions
-
-The following should not distract the first implementation phases:
+## Not planned
 
 - multi-host management
 - cluster orchestration
+- bhyve/VM management
 - complex user/team permissions
 - full terminal emulator
-- broad configuration management
+- broad configuration management beyond what jail creation itself needs
 - plugin system
-- heavy frontend framework
 - production Node.js dependency
 - remote cloud control plane
 
 ## Cross-cutting work
 
-These concerns apply across phases.
-
-### Documentation
-
-Maintain:
-
-- project specification
-- architecture notes
-- command behavior notes
-- installation notes
-- security notes
-- troubleshooting notes
-
-### Testing
-
-Maintain:
-
-- parser fixtures
-- service unit tests
-- handler tests
-- adapter tests on FreeBSD
-- regression tests for dangerous command construction
-
-### Security
-
-Continuously review:
-
-- privilege boundaries
-- command allowlist
-- route validation
-- CSRF protection
-- default bind address
-- authentication model
-- destructive action confirmation
-
-### UX
-
-Continuously improve:
-
-- status clarity
-- operation feedback
-- empty states
-- error messages
-- FreeBSD terminology explanations
+Applies across every phase: keep docs current as domains land, keep parser/fixture and service-level tests passing, keep reviewing privilege boundaries and destructive-action confirmation as storage/template/creation features add real teeth.
 
 ## Current highest-priority open questions
 
-1. What is the safest and simplest privilege model?
-2. Should the first runnable version bind only to localhost?
-3. How should configured but stopped jails be discovered?
-4. What exact native commands should be used for start/stop/restart?
-5. Should operation history be persisted or memory-only at first?
-6. How should Jail Deck behave on systems without ZFS?
-7. Should the first version include authentication, or rely on deployment constraints?
+1. Who orchestrates the multi-step jail-creation flow across the `jails`/`storage` boundary?
+2. How should long-running template operations (fetch, `freebsd-update`) be represented — sync with a long timeout, polling, task queue, SSE?
+3. Is cross-FreeBSD-version jail support in scope soon, and does that imply a release picker sourced from `download.freebsd.org`?
+4. How much in-jail provisioning gets automated vs. documented as a manual step, per service type?
+5. Exact JSON API shape for jails/audit — being settled in Phase 1.

@@ -1,21 +1,19 @@
-package services
+package audit
 
 import (
 	"context"
 	"strings"
-
-	"github.com/ottermq/jaildeck/internal/operations"
 )
 
-type OperationService struct {
-	reader operations.Reader
+type AuditService struct {
+	reader Reader
 }
 
-func NewOperationService(reader operations.Reader) *OperationService {
-	return &OperationService{reader: reader}
+func NewOperationService(reader Reader) *AuditService {
+	return &AuditService{reader: reader}
 }
 
-func (s *OperationService) Recent(ctx context.Context, limit int, mapFilter map[string]string) ([]operations.Entry, error) {
+func (s *AuditService) Recent(ctx context.Context, limit int, mapFilter map[string]string) ([]Entry, error) {
 	operation := strings.ToLower(mapFilter["operation"])
 
 	var success *bool
@@ -37,7 +35,7 @@ func (s *OperationService) Recent(ctx context.Context, limit int, mapFilter map[
 		}
 	}
 
-	filter := operations.Filter{
+	filter := Filter{
 		Operation: operation,
 		Success:   success,
 		Targets:   targets,

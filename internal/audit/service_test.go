@@ -1,22 +1,20 @@
-package services
+package audit
 
 import (
 	"context"
 	"errors"
 	"slices"
 	"testing"
-
-	"github.com/ottermq/jaildeck/internal/operations"
 )
 
 type fakeReader struct {
 	gotLimit  int
-	gotFilter operations.Filter
-	entries   []operations.Entry
+	gotFilter Filter
+	entries   []Entry
 	err       error
 }
 
-func (f *fakeReader) Recent(ctx context.Context, limit int, filter operations.Filter) ([]operations.Entry, error) {
+func (f *fakeReader) Recent(ctx context.Context, limit int, filter Filter) ([]Entry, error) {
 	f.gotLimit = limit
 	f.gotFilter = filter
 	return f.entries, f.err
@@ -124,7 +122,7 @@ func TestOperationService_Recent_PassesLimitThrough(t *testing.T) {
 
 func TestOperationService_Recent_ReturnsReaderResult(t *testing.T) {
 	reader := &fakeReader{
-		entries: []operations.Entry{{Operation: "start", Target: "ottermq", Success: true}},
+		entries: []Entry{{Operation: "start", Target: "ottermq", Success: true}},
 	}
 	svc := NewOperationService(reader)
 

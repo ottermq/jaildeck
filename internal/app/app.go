@@ -5,37 +5,36 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/ottermq/jaildeck/internal/handlers"
-	"github.com/ottermq/jaildeck/internal/operations"
-	"github.com/ottermq/jaildeck/internal/services"
+	"github.com/ottermq/jaildeck/internal/audit"
+	"github.com/ottermq/jaildeck/internal/jails"
 	"github.com/ottermq/jaildeck/internal/system"
 	"github.com/ottermq/jaildeck/internal/system/freebsd"
 	"github.com/ottermq/jaildeck/internal/views"
 )
 
 type App struct {
-	jailHandler      *handlers.JailHandler
-	operationHandler *handlers.OperationHandler
+	jailHandler  *jails.JailHandler
+	auditHandler *audit.AuditHandler
 }
 
 func New() *App {
-	operationLogger := operations.NewFileLogger("jaildeck-operations.log")
+	operationLogger := audit.NewFileLogger("jaildeck-audit.log")
 	renderer, err := views.NewRenderer()
 	if err != nil {
 		panic(err)
 	}
 
-	// jailSystem := system.NewFakeJailSystem()
+	// jailSystem := fake.NewJailSystem()
 	jailSystem := freebsd.NewAdapter(system.NewExecCommandRunner())
-	jailService := services.NewJailService(jailSystem, operationLogger)
-	jailHandler := handlers.NewJailHandler(jailService, renderer)
+	jailService := jails.NewJailService(jailSystem, operationLogger)
+	jailHandler := jails.NewJailHandler(jailService, renderer)
 
-	operationService := services.NewOperationService(operationLogger)
-	operationHandler := handlers.NewOperationHandler(operationService, renderer)
+	operationService := audit.NewOperationService(operationLogger)
+	operationHandler := audit.NewOperationHandler(operationService, renderer)
 
 	return &App{
-		jailHandler:      jailHandler,
-		operationHandler: operationHandler,
+		jailHandler:  jailHandler,
+		auditHandler: operationHandler,
 	}
 }
 
@@ -62,7 +61,7 @@ func (a *App) Routes() http.Handler {
 	})
 
 	r.Route("/operations", func(r chi.Router) {
-		r.Get("/", a.operationHandler.List)
+		r.Get("/", a.auditHandler.List)
 	})
 
 	return r

@@ -2,13 +2,10 @@ package jails
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/ottermq/jaildeck/internal/common"
-	"github.com/ottermq/jaildeck/internal/system"
 )
 
 type JailHandler struct {
@@ -58,19 +55,4 @@ func (h *JailHandler) Stop(w http.ResponseWriter, r *http.Request) {
 
 func (h *JailHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	h.do(w, r, h.service.Restart)
-}
-
-func operationFailureMessage(action, name string, err error) string {
-	if err == nil {
-		return ""
-	}
-	var errMsg string
-	var cmdErr *system.CommandError
-	if errors.As(err, &cmdErr) {
-		errMsg = cmdErr.Summary()
-	} else {
-		errMsg = err.Error()
-	}
-
-	return fmt.Sprintf("Failed to %s jail %q: %s", action, name, errMsg)
 }

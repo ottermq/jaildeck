@@ -16,12 +16,6 @@ type AuditHandler struct {
 	service *AuditService
 }
 
-type OperationFilterView struct {
-	Operation string
-	Targets   string
-	Success   string
-}
-
 func NewAuditHandler(service *AuditService) *AuditHandler {
 	return &AuditHandler{service: service}
 }

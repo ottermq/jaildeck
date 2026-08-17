@@ -16,6 +16,7 @@ import (
 
 var (
 	ErrInvalidJailName = common.NewAppError(http.StatusBadRequest, "invalid jail name")
+	ErrJailNotFound    = common.NewAppError(http.StatusNotFound, "jail not found")
 )
 
 type JailName string
@@ -67,7 +68,7 @@ func (s *JailService) do(ctx context.Context, name JailName, action string, call
 	}
 	jail, err := call(ctx, name.String())
 	s.logJailOperation(ctx, name.String(), action, err)
-	return jail, err
+	return jail, toAppError(name.String(), action, err)
 }
 
 func (s *JailService) Start(ctx context.Context, name JailName) (Jail, error) {
@@ -105,4 +106,20 @@ func (s *JailService) logJailOperation(ctx context.Context, name, operation stri
 	if err := s.operationLogger.Log(ctx, entry); err != nil {
 		log.Printf("failed to write operation log: %v", err)
 	}
+}
+
+func toAppError(name, action string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var appErr *common.AppError
+	if errors.As(err, &appErr) {
+		return appErr
+	}
+	msg := err.Error()
+	var cmdErr *system.CommandError
+	if errors.As(err, &cmdErr) {
+		msg = cmdErr.Summary()
+	}
+	return common.NewAppError(http.StatusInternalServerError, fmt.Sprintf("failed to %s jail %q: %s", action, name, msg))
 }

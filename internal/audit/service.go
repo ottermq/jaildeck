@@ -9,7 +9,7 @@ type AuditService struct {
 	reader Reader
 }
 
-func NewOperationService(reader Reader) *AuditService {
+func NewAuditService(reader Reader) *AuditService {
 	return &AuditService{reader: reader}
 }
 

@@ -129,17 +129,17 @@ Worth deciding deliberately once template preparation is actually being built, r
 
 ---
 
-## JD-009 — Frontend: Vue SPA
+## JD-009 — Frontend: Svelte SPA
 
 **Status:** Locked
 
-Jail Deck's UI is a **Vue** single-page application. The backend exposes a JSON API; handlers do not render HTML fragments.
+Jail Deck's UI is a **Svelte** single-page application. The backend exposes a JSON API; handlers do not render HTML fragments.
 
-Production still ships as a single Go binary: the Vue build output is embedded via `embed.FS`, the same way templates and static assets were previously. Node.js is a build-time dependency only, never a production one.
+Production still ships as a single Go binary: the Svelte build output is embedded via `embed.FS`, the same way templates and static assets were previously. Node.js is a build-time dependency only, never a production one.
 
 ### Rationale
 
-The growing feature set (templates, ZFS operations, jail creation flows) benefits from richer client-side interaction than server-rendered HTML fragment-swapping comfortably provides. The migration happens early — while `jails` and the audit log are the only existing domains, there is a small, well-understood surface to convert. Every domain added afterward (storage, templates) is built API-first from the start, avoiding a larger migration later — see `docs/ROADMAP.md`.
+The growing feature set (templates, ZFS operations, jail creation flows) benefits from richer client-side interaction than server-rendered HTML fragment-swapping comfortably provides. Svelte was chosen over Vue after direct comparison. The migration happens early — while `jails` and the audit log are the only existing domains, there is a small, well-understood surface to convert. Every domain added afterward (storage, templates) is built API-first from the start, avoiding a larger migration later — see `docs/ROADMAP.md`. The JSON API landed first (Phase 1a); the Svelte UI itself is Phase 1b and not yet built.
 
 ---
 

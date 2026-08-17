@@ -8,33 +8,48 @@ Grow from visibility to safe operation to controlled management. Don't edit crit
 
 ## Implemented
 
-- HTTP server, Chi routing, embedded templates/static assets
+- HTTP server, Chi routing
 - Jail listing, merging `jls` (running) with `jail.conf`/`jail.conf.d` (configured but stopped)
-- Jail start/stop/restart via `service jail <action> <name>`
+- Jail start/stop/restart via `service jail <action> <name>`, idempotent (start/stop on a jail already in the desired state succeeds rather than erroring)
 - Append-only operation audit log (`internal/audit`)
-- Operations page with filtering
 - Domain-driven package structure (`internal/jails`, `internal/audit`, `internal/common`, `internal/system` + adapters) — see `docs/ARCHITECTURE.md`
+- JSON API for `internal/jails` and `internal/audit`; server-rendered HTML, `internal/views`, and `web/templates` are fully removed — the backend is JSON-only (Phase 1a below)
+- Typed error mapping (`common.AppError`) from adapter-level failures to HTTP status codes, e.g. jail-not-found → 404, extensible to further typed errors without changing the translation boundary
 
-## Phase 1 — JSON API and minimal Vue UI
+## Phase 1a — JSON API for jails and audit — done
 
-Goal: convert the jails and audit (operations) endpoints from server-rendered HTML to a JSON API, and build a minimal Vue UI consuming it, while these are still the only two handlers in the codebase. Every domain added afterward (storage, templates) is then built API-first from the start, avoiding a larger migration later.
+Goal: convert the jails and audit (operations) endpoints from server-rendered HTML to a JSON API, while these are still the only two handlers in the codebase. Every domain added afterward (storage, templates) is then built API-first from the start, avoiding a larger migration later.
 
 ### Capabilities
 
 - jails list, start/stop/restart, and operation history available as a JSON API
-- a minimal Vue UI: jails list with start/stop/restart actions and operation result feedback, plus an operations/history view
 
 ### Technical tasks
 
 - settle the JSON API shape for `internal/jails` and `internal/audit` (see `docs/ARCHITECTURE.md` "API conventions")
 - convert `JailHandler` and `internal/audit`'s handler to serve JSON instead of HTML fragments
-- stand up the Vue project + build pipeline, `embed.FS` the build output
-- minimal Vue app covering the jails list and operations views
-- retire `internal/views` and the HTML templates once the Vue UI covers the same functionality
+- retire `internal/views` and the HTML templates
 
 ### Completion criteria
 
-Jails and operations are served by the Vue SPA over the JSON API; no HTML-fragment rendering remains in the backend.
+Jails and operations are served over the JSON API; no HTML-fragment rendering remains in the backend. Met.
+
+## Phase 1b — Minimal Svelte UI
+
+Goal: build a minimal Svelte UI consuming the JSON API from Phase 1a, while jails/audit are still the only two domains to build a UI against. Every domain added afterward is then built against this same frontend pattern from the start.
+
+### Capabilities
+
+- a minimal Svelte UI: jails list with start/stop/restart actions and operation result feedback, plus an operations/history view
+
+### Technical tasks
+
+- stand up the Svelte project + build pipeline, `embed.FS` the build output
+- minimal Svelte app covering the jails list and operations views
+
+### Completion criteria
+
+Jails and operations are served by the Svelte app over the JSON API from Phase 1a. The backend currently has no browser UI at all; this phase is what closes that gap.
 
 ## Phase 2 — ZFS storage domain
 
@@ -53,7 +68,7 @@ Goal: build the `storage` domain's foundation — dataset/snapshot primitives �
 - implement `storage_adapter.go` in `internal/system/freebsd` (`zfs create/clone/snapshot/list`)
 - parser/fixture tests for `zfs list` output, same pattern as the existing `jls` parser tests
 - `storage.Service` with a fake repository implementation, unit tested without touching real ZFS
-- expose the domain through the JSON API and minimal Vue UI established in Phase 1
+- expose the domain through the JSON API and minimal Svelte UI established in Phase 1a/1b
 
 ### Completion criteria
 

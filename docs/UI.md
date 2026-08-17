@@ -106,15 +106,16 @@ Purpose: expose safe configuration visibility — HTTP bind address, detected Fr
 
 Not designed yet:
 
-1. **State management** — Pinia, plain composables, or something else?
-2. **Routing** — Vue Router, and whether the route structure mirrors the API path structure from `docs/ARCHITECTURE.md`
-3. **Component library / styling approach** — plain CSS, a utility framework, or a component library?
-4. **API client pattern** — hand-rolled `fetch` wrappers, a generated client, or something like TanStack Query for caching/refetch?
-5. **Refresh pattern** — how the UI reflects state after a mutation: polling, optimistic updates, or plain refetch-after-mutation?
-6. **Long-running operation UI** — once JD-008 resolves, how does the frontend represent a multi-minute template-preparation operation? (progress bar, polling a status endpoint, toast-on-completion?)
-7. **Build tooling** — Vite is the likely default given the Vue ecosystem, but not confirmed.
+1. **Framework mode** — SvelteKit (file-based routing, more structure/conventions) or a plain Svelte + Vite SPA (fewer conventions, hand-rolled routing)? This decides several of the questions below.
+2. **State management** — Svelte's built-in stores (`svelte/store`), Svelte 5 runes, or something else?
+3. **Routing** — SvelteKit's built-in routing, or a lightweight router (`svelte-routing`, `page.js`) for a plain Svelte + Vite app; whether the route structure mirrors the API path structure from `docs/ARCHITECTURE.md`
+4. **Component library / styling approach** — plain CSS, a utility framework, or a component library?
+5. **API client pattern** — hand-rolled `fetch` wrappers, a generated client, or something like TanStack Query (`@tanstack/svelte-query`) for caching/refetch?
+6. **Refresh pattern** — how the UI reflects state after a mutation: polling, optimistic updates, or plain refetch-after-mutation?
+7. **Long-running operation UI** — once JD-008 resolves, how does the frontend represent a multi-minute template-preparation operation? (progress bar, polling a status endpoint, toast-on-completion?)
+8. **Build tooling** — Vite, either standalone or via SvelteKit (which is itself Vite-based) — the specific setup depends on the framework-mode decision above.
 
-These should be settled together when the Vue migration phase (`docs/ROADMAP.md`) actually starts, not decided piecemeal ahead of time.
+These should be settled together when Phase 1b (`docs/ROADMAP.md`) actually starts, not decided piecemeal ahead of time.
 
 ## States
 

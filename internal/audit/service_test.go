@@ -84,7 +84,7 @@ func TestOperationService_Recent_BuildsFilter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reader := &fakeReader{}
-			svc := NewOperationService(reader)
+			svc := NewAuditService(reader)
 
 			if _, err := svc.Recent(context.Background(), 50, tt.mapFilter); err != nil {
 				t.Fatalf("Recent() error = %v", err)
@@ -109,7 +109,7 @@ func TestOperationService_Recent_BuildsFilter(t *testing.T) {
 
 func TestOperationService_Recent_PassesLimitThrough(t *testing.T) {
 	reader := &fakeReader{}
-	svc := NewOperationService(reader)
+	svc := NewAuditService(reader)
 
 	if _, err := svc.Recent(context.Background(), 17, map[string]string{}); err != nil {
 		t.Fatalf("Recent() error = %v", err)
@@ -124,7 +124,7 @@ func TestOperationService_Recent_ReturnsReaderResult(t *testing.T) {
 	reader := &fakeReader{
 		entries: []Entry{{Operation: "start", Target: "ottermq", Success: true}},
 	}
-	svc := NewOperationService(reader)
+	svc := NewAuditService(reader)
 
 	got, err := svc.Recent(context.Background(), 50, map[string]string{})
 	if err != nil {
@@ -138,7 +138,7 @@ func TestOperationService_Recent_ReturnsReaderResult(t *testing.T) {
 func TestOperationService_Recent_PropagatesReaderError(t *testing.T) {
 	wantErr := errors.New("boom")
 	reader := &fakeReader{err: wantErr}
-	svc := NewOperationService(reader)
+	svc := NewAuditService(reader)
 
 	_, err := svc.Recent(context.Background(), 50, map[string]string{})
 	if !errors.Is(err, wantErr) {

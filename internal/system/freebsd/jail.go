@@ -2,7 +2,6 @@ package freebsd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -65,7 +64,7 @@ func (a *Adapter) runService(ctx context.Context, name, action string) (jails.Ja
 			return jails.Jail{}, cmdErr
 		}
 		if summary != "" {
-			cmdErr.Err = errors.New(summary)
+			cmdErr.Err = fmt.Errorf("%s: %w", summary, stateErr)
 		}
 		return jails.Jail{}, cmdErr
 	}

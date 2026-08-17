@@ -42,13 +42,13 @@ Prefer the Go standard library and small, focused dependencies on the backend. A
 
 ### 4. Single binary as the default deployment model
 
-The distribution model is a single Go binary with static assets embedded into it — including the built Vue frontend (see `docs/DECISIONS.md`, JD-009). Node.js is a build-time tool, never a production dependency.
+The distribution model is a single Go binary with static assets embedded into it — including the built Svelte frontend (see `docs/DECISIONS.md`, JD-009). Node.js is a build-time tool, never a production dependency.
 
 Installation should eventually feel natural on FreeBSD, such as `pkg install jaildeck`, or `make install` during early development.
 
 ### 5. API-driven UI
 
-The Vue frontend talks to the Go backend over a JSON API (JD-009).
+The Svelte frontend talks to the Go backend over a JSON API (JD-009).
 
 ### 6. Boring, domain-organized architecture
 
@@ -73,7 +73,7 @@ A single technical operator running Jail Deck on FreeBSD host(s) they administer
 - a web dashboard and control surface for FreeBSD jail lifecycle and creation
 - a local or LAN-facing admin tool for a single operator
 - a thin interface over native FreeBSD and ZFS tools
-- a Go backend with a Vue frontend, shipped as one binary
+- a Go backend with a Svelte frontend, shipped as one binary
 - an operational UI for jails, storage, templates, logs, services, and system state
 - a project that values clarity over automation magic, and real invariants over speculative flexibility
 
@@ -94,8 +94,8 @@ A single technical operator running Jail Deck on FreeBSD host(s) they administer
 | --- | --- | --- |
 | Backend language | Go | Static binary, good fit for system tooling. |
 | HTTP router | Chi | Small, idiomatic, compatible with `net/http`. |
-| API style | JSON over HTTP | Consumed by the Vue frontend. |
-| Frontend framework | Vue | Richer client-side interaction than HTMX fragment-swapping. |
+| API style | JSON over HTTP | Consumed by the Svelte frontend. |
+| Frontend framework | Svelte | Richer client-side interaction than HTMX fragment-swapping; chosen over Vue after direct comparison. |
 | Frontend build | Node/Vite at build time only | Output embedded via Go `embed`; no Node in production. |
 | Storage backend | ZFS (required) | Jail roots and templates live in ZFS datasets; clone-from-snapshot is the jail creation mechanism. |
 | Operation audit log | Append-only JSON-lines file | A database is a likely future direction for broader persistence — see `docs/DECISIONS.md` JD-011. |
@@ -116,9 +116,9 @@ These domains guide code organization (`docs/ARCHITECTURE.md`) and frontend navi
 
 ## Implementation status
 
-**Implemented:** jail listing (merging `jls` and `jail.conf*`), start/stop/restart, operation audit log, and the domain-driven package structure (`docs/ARCHITECTURE.md`) that the rest of this scope is built on.
+**Implemented:** jail listing (merging `jls` and `jail.conf*`), idempotent start/stop/restart, operation audit log, the domain-driven package structure (`docs/ARCHITECTURE.md`), and a JSON API for the jails and audit endpoints (no server-rendered HTML remains).
 
-**Planned, in priority order:** converting the jails and audit endpoints to a JSON API with a minimal Vue UI, while they're still the only two domains/handlers to convert; a ZFS storage domain (create/clone/snapshot/list datasets and snapshots); release template lifecycle (fetch, extract, patch, `freebsd-update`, snapshot); jail creation (clone a template, generate `jail.conf.d/<name>.conf`, start, verify); in-jail provisioning. Each domain added after the API conversion is built API-first from the start. See `docs/ROADMAP.md` for the full phase breakdown.
+**Planned, in priority order:** a minimal Svelte UI for jails/audit, while they're still the only two domains/handlers to build a UI against; a ZFS storage domain (create/clone/snapshot/list datasets and snapshots); release template lifecycle (fetch, extract, patch, `freebsd-update`, snapshot); jail creation (clone a template, generate `jail.conf.d/<name>.conf`, start, verify); in-jail provisioning. Each domain added after the API conversion is built API-first from the start. See `docs/ROADMAP.md` for the full phase breakdown.
 
 ### Explicitly deferred
 

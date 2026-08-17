@@ -2,10 +2,10 @@
 
 ## Architectural summary
 
-Jail Deck is a Go backend exposing a JSON API, paired with a Vue single-page frontend, interacting with FreeBSD through domain-owned adapters around native system commands and files.
+Jail Deck is a Go backend exposing a JSON API, paired with a Svelte single-page frontend, interacting with FreeBSD through domain-owned adapters around native system commands and files.
 
 ```text
-Browser (Vue SPA)
+Browser (Svelte SPA)
   -> JSON API requests
   -> Chi router
   -> HTTP handlers
@@ -20,7 +20,7 @@ The web layer never shells out directly. System access always passes through a d
 
 ```text
 jaildeck binary
-  - embedded Vue build output (static JS/CSS/HTML)
+  - embedded Svelte build output (static JS/CSS/HTML)
   - HTTP server serving the JSON API and the embedded SPA
   - FreeBSD command adapters
   - append-only operation audit log file
@@ -35,7 +35,7 @@ Node.js is required to *build* the frontend; it is never required to *run* jaild
 | Backend language | Go |
 | HTTP router | Chi |
 | API style | JSON over `net/http` |
-| Frontend | Vue, built with Vite, embedded via Go `embed` |
+| Frontend | Svelte, built with Vite, embedded via Go `embed` |
 | Storage | ZFS (required) |
 | Audit log | Append-only JSON-lines file (`internal/audit`) |
 | Tests | Go unit tests with fakes around adapters; FreeBSD-only tests for real adapter behavior |
@@ -86,7 +86,7 @@ internal/
     fake/
       jail.go                          # in-memory JailSystem, for non-FreeBSD dev (see commented-out line in app.go)
 
-web/                             # Vue frontend (separate module/build) — not yet built, see JD-009
+web/                             # Svelte frontend (separate module/build) — not yet built, see JD-009 / ROADMAP.md Phase 1b
   src/
     ...
   dist/                          # build output, embedded into the Go binary
@@ -135,7 +135,7 @@ GET /api/jails
   -> service calls jails.JailSystem.List
   -> freebsd adapter shells out to jls, reads jail.conf*, merges
   -> handler serializes []Jail as JSON
-  -> Vue renders the list
+  -> Svelte renders the list
 ```
 
 A typical mutation:
@@ -147,7 +147,7 @@ POST /api/jails/{name}/start
   -> adapter runs `service jail start <name>`, re-reads state to confirm
   -> service logs the operation to internal/audit
   -> handler serializes the updated Jail (or an error) as JSON
-  -> Vue updates its local state and re-renders
+  -> Svelte updates its local state and re-renders
 ```
 
 A jail-creation flow:

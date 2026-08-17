@@ -1,11 +1,10 @@
 package audit
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 
-	"github.com/ottermq/jaildeck/internal/views"
+	"github.com/ottermq/jaildeck/internal/common"
 )
 
 const (
@@ -14,18 +13,11 @@ const (
 )
 
 type AuditHandler struct {
-	service  *AuditService
-	renderer *views.Renderer
+	service *AuditService
 }
 
-type OperationFilterView struct {
-	Operation string
-	Targets   string
-	Success   string
-}
-
-func NewOperationHandler(service *AuditService, renderer *views.Renderer) *AuditHandler {
-	return &AuditHandler{service: service, renderer: renderer}
+func NewAuditHandler(service *AuditService) *AuditHandler {
+	return &AuditHandler{service: service}
 }
 
 func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -40,32 +32,11 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := h.service.Recent(r.Context(), limit, filters)
 	if err != nil {
-		http.Error(w, "failed to list operations", http.StatusInternalServerError)
+		common.HandlerError(w, err)
 		return
 	}
 
-	data := struct {
-		Title   string
-		Entries []Entry
-		Filter  OperationFilterView
-	}{
-		Title:   "Operations",
-		Entries: entries,
-		Filter: OperationFilterView{
-			Operation: operationParam,
-			Success:   successParam,
-			Targets:   targetsParam,
-		},
-	}
-
-	if err := h.renderer.Render(w, "operations", data); err != nil {
-		log.Printf("failed to render page: %s", err.Error())
-		http.Error(w, "failed to render page", http.StatusInternalServerError)
-	}
-
-	// if err := h.renderer.RenderComponent(w, "operations", "components/operation_form.html", data); err != nil {
-	// 	http.Error(w, "failed to render operation form", http.StatusInternalServerError)
-	// }
+	common.WriteJSON(w, http.StatusOK, entries)
 }
 
 func normalizeLimit(limitParam string) int {

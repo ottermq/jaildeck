@@ -79,7 +79,7 @@ func (a *Adapter) getJailByName(ctx context.Context, name string) (jails.Jail, e
 		}
 	}
 
-	return jails.Jail{}, fmt.Errorf("jail %q not found", name)
+	return jails.Jail{}, jails.ErrJailNotFound
 }
 
 func parseJLSOutput(stdout string) (jlsOutput, error) {

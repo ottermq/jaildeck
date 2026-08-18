@@ -3,12 +3,12 @@ package app
 import (
 	"net/http"
 
+	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
+	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
+	"codeberg.org/Otter-Labs/jaildeck/internal/system"
+	"codeberg.org/Otter-Labs/jaildeck/internal/system/freebsd"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/ottermq/jaildeck/internal/audit"
-	"github.com/ottermq/jaildeck/internal/jails"
-	"github.com/ottermq/jaildeck/internal/system"
-	"github.com/ottermq/jaildeck/internal/system/freebsd"
 )
 
 type App struct {

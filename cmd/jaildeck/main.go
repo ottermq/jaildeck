@@ -5,8 +5,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/ottermq/jaildeck/internal/app"
-	"github.com/ottermq/jaildeck/internal/config"
+	"codeberg.org/Otter-Labs/jaildeck/internal/app"
+	"codeberg.org/Otter-Labs/jaildeck/internal/config"
 )
 
 func main() {

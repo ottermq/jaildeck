@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ottermq/jaildeck/internal/jails"
-	"github.com/ottermq/jaildeck/internal/system"
+	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
+	"codeberg.org/Otter-Labs/jaildeck/internal/system"
 )
 
 type jlsOutput struct {

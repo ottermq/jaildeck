@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ottermq/jaildeck/internal/audit"
-	"github.com/ottermq/jaildeck/internal/common"
-	"github.com/ottermq/jaildeck/internal/system"
+	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
+	"codeberg.org/Otter-Labs/jaildeck/internal/common"
+	"codeberg.org/Otter-Labs/jaildeck/internal/system"
 )
 
 var (

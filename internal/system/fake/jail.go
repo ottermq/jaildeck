@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ottermq/jaildeck/internal/jails"
+	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
 )
 
 type JailSystem struct {

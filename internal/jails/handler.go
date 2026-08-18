@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	"codeberg.org/Otter-Labs/jaildeck/internal/common"
 	"github.com/go-chi/chi/v5"
-	"github.com/ottermq/jaildeck/internal/common"
 )
 
 type JailHandler struct {

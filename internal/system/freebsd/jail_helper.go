@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ottermq/jaildeck/internal/jails"
+	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
 )
 
 const (

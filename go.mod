@@ -1,4 +1,4 @@
-module github.com/ottermq/jaildeck
+module codeberg.org/Otter-Labs/jaildeck
 
 go 1.25.11
 

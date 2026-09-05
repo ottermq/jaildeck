@@ -12,7 +12,11 @@ import (
 func main() {
 	cfg := config.LoadConfig()
 
-	a := app.New()
+	a, err := app.New(cfg)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+
 	ip := cfg.Host
 	if ip == "" {
 		ip = "0.0.0.0"
@@ -20,7 +24,7 @@ func main() {
 	addr := fmt.Sprintf("%s:%s", ip, cfg.Port)
 	log.Print("Jail Deck listening on " + addr)
 
-	err := http.ListenAndServe(addr, a.Routes())
+	err = http.ListenAndServe(addr, a.Routes())
 	if err != nil {
 		log.Fatal(err.Error())
 	}

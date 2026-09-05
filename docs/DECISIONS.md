@@ -20,7 +20,7 @@ Jail Deck is a system administration tool whose responsibilities require elevate
 
 ## JD-002 — Binding Model
 
-**Status:** Locked
+**Status:** Locked — revised 2026-09-04
 
 The default bind address is:
 
@@ -28,23 +28,96 @@ The default bind address is:
 127.0.0.1
 ```
 
-Jail Deck manages jails on the host it runs on, not a fleet of machines — that is a scope statement, not an access restriction. The bind address is configurable (`JAILDECK_HOST`), and operators may bind to another interface or `0.0.0.0` at their own risk — for example to reach the dashboard over the LAN during development.
+Jail Deck manages jails on the host it runs on, not a fleet of machines — that is a scope statement, not an access restriction. The bind address is configurable via `JAILDECK_HOST`.
+
+**The bind address is no longer a security control.** Authentication is unconditional (JD-003), so the default exists to reduce attack surface and to keep credentials off the wire by default — not to make anything safe. Binding elsewhere is an ordinary configuration choice.
+
+A non-loopback bind sends the operator's password across the network, so such a deployment is expected to terminate TLS — a reverse proxy is the recommended path. Jail Deck warns at startup when bound non-loopback without TLS in front, but does not refuse: it cannot detect a proxy, and refusing would break the recommended deployment.
+
+The previous wording — "operators may bind to another interface or `0.0.0.0` at their own risk" — is withdrawn. "At their own risk" is not a control, and the risk was mis-stated: Jail Deck runs as root (JD-001) and, from Phase 4 onward, can create and destroy jails and ZFS datasets. An unauthenticated reachable instance is not an information leak, it is unauthenticated root-equivalent control of the host.
 
 ### Rationale
 
-Defaulting to local-only access eliminates authentication/authorization/TLS concerns for the common case, without blocking operators who knowingly need broader access.
+An earlier revision of this decision made a non-loopback bind conditional on authentication being configured, enforced at startup. That interlock is withdrawn — not because it was wrong, but because it is unnecessary once authentication is unconditional. There is no longer a configuration in which the bind address determines whether the application is safe.
+
+Defaulting to loopback still earns its place: it keeps the login form and session cookie off the network for the common single-host case, and it means the reverse-proxy deployment is the path of least resistance rather than an extra step.
+
+What does not survive is the previous framing that local-only access "eliminates authentication concerns." It does not — see JD-003.
+
+For reaching a localhost-bound instance from another machine without weakening the bind, see the operator guidance: an SSH `LocalForward` for ad-hoc access, or a reverse proxy terminating TLS for a permanent one.
 
 ---
 
 ## JD-003 — Authentication
 
-**Status:** Locked for now — revisit if remote/multi-user access becomes real
+**Status:** Locked — revised 2026-09-04, supersedes the previous "no authentication" decision
 
-Jail Deck implements **no authentication**.
+The previous decision recorded its own trigger: *"revisit if remote/multi-user access becomes real."* Remote access became real — requiring an operator to set up an SSH tunnel before opening a web UI is poor ergonomics for a tool whose stated goal is to be the first thing opened after logging in. This decision is the revisit.
+
+Jail Deck implements **mandatory single-operator authentication**. There is no unauthenticated mode, on any bind address, including loopback. There is no flag to disable it.
+
+**Session model — opaque token in a cookie, not JWT.**
+
+- On successful login the server issues a cryptographically random token and stores it server-side, keyed to an expiry.
+- The token is delivered as a cookie with `HttpOnly`, `Secure`, `SameSite=Strict`, and an explicit `Path` and `MaxAge`.
+- The frontend never reads, stores, or attaches the credential; the browser does. The SPA determines login state by calling an identity endpoint and branching on `200` vs `401`.
+- Logout deletes the server-side entry, which revokes the session immediately.
+
+**Credential storage:** a single operator password, stored as an **argon2id** hash in the application state file (JD-011). No user management, no roles, no registration — consistent with "complex user/team permissions" being out of scope.
+
+**Credential bootstrapping — a CLI subcommand, not a first-run screen and not a printed token.**
+
+```
+jaildeck passwd                 # prompts on the tty, no echo
+jaildeck passwd --stdin         # reads from stdin, for unattended installs
+```
+
+The subcommand is the only writer of the credential; it hashes with argon2id and writes the state file atomically with restrictive permissions. It requires root, consistent with JD-001. The credential is **not** also accepted from configuration or the environment: two sources for one credential produces a precedence question that will be answered wrongly at the worst moment.
+
+**Starting without a credential is a fatal error**, naming the fix. Fail closed — consistent with there being no unauthenticated mode.
+
+The resulting installation sequence:
+
+```sh
+pkg install jaildeck
+jaildeck passwd
+sysrc jaildeck_enable=YES
+service jaildeck start
+```
+
+Changing the credential invalidates existing sessions.
+
+**There is no password-recovery flow.** Root on the host runs `jaildeck passwd` again. This is not a gap: root can already do everything Jail Deck can do, so there is no privilege to protect behind a recovery mechanism and nothing to design.
+
+**Optional API token:** a separate, long-lived token accepted in an `Authorization` header, for scripting the JSON API. This is a distinct credential from the browser session and is not a reason to change the session model.
 
 ### Rationale
 
-The application is reachable only through localhost by default (JD-002). Authentication would add real implementation cost for little benefit at the current single-operator, single-host scope. This will need to change if Jail Deck is ever exposed beyond a trusted LAN or gains multiple users.
+**Why authentication is unconditional, including on loopback.** An earlier revision made authentication optional for a loopback bind, on the reasoning that localhost is reachable only by the operator. That reasoning is wrong, and wrong in a way that matters specifically for this application:
+
+- **A jail with `ip4=inherit` shares the host's network stack, including `127.0.0.1`.** A jail host is precisely the environment where loopback is not a private channel. A compromised jail could reach an unauthenticated Jail Deck and, through it, control every other jail and the host. The tool's own threat model contains the thing it manages.
+- **Any unprivileged local user can connect to a loopback port.** With no authentication, that is a direct path from an ordinary shell account to root-equivalent control.
+- **A web page the operator visits can issue cross-origin requests to `127.0.0.1`.** Same-site cookie policy and CORS mitigate much of this, but an endpoint requiring no credential at all has nothing to mitigate.
+
+"Localhost only" was never an access control; it was an assumption about who is on the machine. For an application running as root with `zfs destroy` in reach, that assumption is not worth the convenience it buys.
+
+Making authentication unconditional also removes a whole category of configuration state: there is no "is auth enabled" branch, no startup interlock, no combination of settings that is quietly unsafe.
+
+**Why not JWT.** JWT solves problems Jail Deck does not have: stateless verification across independent services, cross-origin frontends, and third-party API consumers. Jail Deck is one binary serving both the SPA and the API from one origin (JD-009), for one operator, on one host.
+
+What remains is JWT's costs. Revocation requires a server-side denylist, which discards the statelessness that was the only reason to choose it — and for a tool running as root with `zfs destroy` in reach, immediate revocation is the single most important security operation, not an afterthought. Browser storage is the other cost: `localStorage` is readable by any successful XSS, whereas an `HttpOnly` cookie is not; and storing a JWT in a cookie concedes the argument. Finally, JWT carries a class of implementation vulnerabilities — algorithm confusion, `alg: none`, expiry and refresh-token handling — that opaque tokens simply do not have.
+
+A server-side session store for a single operator is one map behind a mutex. The "stateless scales better" argument has no force at n=1, and sessions not surviving a restart is acceptable — arguably desirable — for an administrative tool.
+
+**Why not PAM.** Authenticating against the host's own users is the more FreeBSD-native option and was considered. It is rejected because Go PAM bindings require **cgo**, which forfeits the pure-Go property that lets a FreeBSD binary be cross-compiled from another platform in seconds. That build simplicity is worth more than avoiding one password hash, and a single-operator credential fits the scope better than host-user integration.
+
+**Why a subcommand rather than a one-time token printed at startup.** The printed-token pattern (as used by Jupyter) depends on the program running in the foreground with an operator watching its output. Jail Deck is started by `rc.d` and daemonizes; its output goes to a log file or to `/dev/null`, and nobody is watching. The token would come to rest inside `/var/log`, where it is a live credential at rest in a file that may be world-readable, log-rotated, or shipped to a remote syslog — taking the credential off the machine entirely. The pattern is a poor fit for a service, as opposed to an interactive application.
+
+A CLI subcommand is also the established convention for exactly this problem: `htpasswd` for Apache and nginx, `initdb` for PostgreSQL. Credentials are established out of band from the daemon's lifecycle, by an administrator who is present, rather than by the daemon at a moment when nobody is.
+
+**CSRF.** `SameSite=Strict` addresses cross-site request forgery for the cookie path; the `Authorization` header path is immune by construction. This supersedes any earlier treatment of CSRF written against server-rendered HTML forms.
+
+**TLS.** Authentication over plaintext on a LAN is weak. A non-loopback deployment is expected to terminate TLS — a reverse proxy is the recommended path, keeping certificate handling out of Jail Deck. `Secure` cookies remain valid over `http://localhost`, so the loopback development case needs no exception.
 
 ---
 
@@ -119,13 +192,19 @@ Templates are shared, immutable-once-snapshotted bases; jails are cheap clones o
 
 ## JD-008 — Long-running Operations
 
-**Status:** Open
+**Status:** Open — scope narrowed 2026-09-04
 
-Fetching `base.txz`, extracting it, and running `freebsd-update` can take real time. Whether this needs task queues, polling, or Server-Sent Events, versus staying synchronous with a longer timeout, is not yet decided.
+Fetching `base.txz`, extracting it, and running `freebsd-update` can take real time. Whether this needs task queues, polling, or Server-Sent Events, versus staying synchronous with a longer timeout, is still undecided.
+
+**What is now settled is the scope of the question: it applies to the template domain only.** Template preparation is a distinct, operator-initiated step — not part of application setup, and not folded into jail creation (JD-007). Jail creation stays synchronous and fast, because cloning a snapshot is a copy-on-write operation that returns immediately. Jail lifecycle operations are already fast.
+
+So the remaining decision is a progress mechanism for one domain and a handful of endpoints, not a general asynchronous-execution strategy for the application.
 
 ### Rationale
 
 Worth deciding deliberately once template preparation is actually being built, rather than guessing ahead of the real shape of the problem.
+
+Separating template preparation from jail creation shrank this problem considerably. The earlier framing implied every long operation across the app needed an answer; in fact only one flow is slow, which makes polling or SSE on a single resource a proportionate solution and removes any argument for a task queue at this scale.
 
 ---
 
@@ -171,17 +250,56 @@ Organizing by domain keeps each bounded context's rules, contract, and orchestra
 
 ---
 
-## JD-011 — Operation History
+## JD-011 — State and Persistence
 
-**Status:** Locked for now — persistence direction is open, see below
+**Status:** Locked — expanded 2026-09-05 (was "Operation History")
 
-Every mutating jail operation is recorded in an append-only JSON-lines log file (`internal/audit`): timestamp, operation, target, command, exit code, success/failure, error summary.
+Jail Deck has **no database**, and none of its currently scoped features require one.
 
-**Open:** a structured application logger distinct from this audit trail, and a move to database-backed persistence for operation history (and eventually template/dataset/jail records as those domains grow state worth tracking beyond what ZFS/`jail.conf` already hold) are anticipated directions. Neither is scheduled or designed.
+State is classified three ways, and each kind has exactly one home:
+
+**1. Operator configuration** — what the administrator sets. Bind address, port, pool name. Read from the environment (`godotenv`). Jail Deck reads this and never writes it.
+
+**2. Application state** — what Jail Deck itself owns and must persist. Currently the operator password hash (argon2id) and any API tokens. Held in a state file that Jail Deck owns, **separate from operator configuration**, written atomically (temp file plus rename) with restrictive permissions.
+
+Note this is a genuinely new capability: until authentication (JD-003), Jail Deck only ever *read* configuration. Writing a password change back into the operator's `.env` would destroy their formatting and comments, which is why the two are separate files rather than one.
+
+**3. Derived state** — everything else. Not stored, because the system already holds it authoritatively:
+
+| Question | Answer |
+| --- | --- |
+| Which jails exist, and are they running? | `jls` merged with `jail.conf`/`jail.conf.d` (JD-004) |
+| How is a jail configured? | `jail.conf.d/<name>.conf` *is* the record |
+| Which datasets and snapshots exist? | `zfs list` |
+| What state is a template in? | Dataset exists? `base.txz` present in `media/`? `@base` snapshot exists? Those checks **are** the state machine |
+| Which template was this jail cloned from? | `zfs get origin <dataset>` |
+| When was it created? | `zfs get creation <dataset>` |
+| Can this dataset be destroyed? | `zfs get clones` plus snapshot listing |
+| What has been done to the system? | The append-only JSON-lines audit log |
+
+Template metadata that is genuinely underivable — the patch level `freebsd-update` brought a template to, for example — is stored in a small file **inside the template's own dataset**, not in a central store. It then clones with the template, is destroyed with it, and cannot outlive what it describes.
+
+Every mutating operation continues to be recorded in the append-only JSON-lines audit log (`internal/audit`): timestamp, operation, target, command, exit code, success/failure, error summary.
+
+**Still open, with explicit triggers rather than vague intent:**
+
+- **Metrics history.** Live values need no storage; a trailing window is served by an in-memory ring buffer that may die on restart. Durable time-series storage becomes necessary only when the requirement is a chart *over time* that survives restarts. That is the trigger — not "we have metrics."
+- **Audit log at scale.** Filtering currently scans the whole file. For a single operator this is harmless for years. Log rotation is the cheaper answer and should be tried first; richer querying is the trigger for anything more.
+- **Structured application logging**, distinct from the audit trail. Not designed.
+
+**If a database is ever adopted, it must be a pure-Go driver.** SQLite is the obvious candidate, but `mattn/go-sqlite3` requires cgo, which forfeits the same property that ruled out PAM in JD-003: a FreeBSD binary cross-compiles from another platform in seconds with no toolchain. `modernc.org/sqlite` is pure Go and preserves it.
 
 ### Rationale
 
-The flat-file audit log works and nothing forces a change today. Flagging the direction here so it isn't lost, without prematurely picking a database or schema before the domains that would need it exist in code.
+The flat-file audit log works and nothing forces a change today. But the stronger reason for having no database is not simplicity — it is correctness.
+
+A database here would be a **second source of truth that can disagree with the first**. If a stored record says a jail exists and `jls` says it does not, the dashboard has to choose, and any choice is sometimes wrong. For an application whose entire purpose is showing the operator the true state of the system (JD-012, and the "thin abstraction" principle), a cache that can drift is a liability, not a feature.
+
+Deriving state instead makes whole categories of bug impossible rather than merely unlikely. It also pays off in the awkward cases: a crash midway through template preparation leaves "dataset extracted, no `@base` snapshot" — which is a meaningful, recoverable, *automatically correct* state, obtained for free. A job table recording "preparation in progress" would, after the same crash, be confidently wrong.
+
+ZFS in particular is already a metadata store. `origin` and `creation` answer provenance and timestamp questions that look like relational data, and they cannot drift because they are not records *of* the clone — they are properties *of* it.
+
+This decision is therefore not "a database is premature." It is that most of what would go in one is better answered by asking the system, and the parts that are not — a password hash, an API token — do not need one.
 
 ---
 

@@ -98,7 +98,7 @@ A single technical operator running Jail Deck on FreeBSD host(s) they administer
 | Frontend framework | Svelte | Richer client-side interaction than HTMX fragment-swapping; chosen over Vue after direct comparison. |
 | Frontend build | Node/Vite at build time only | Output embedded via Go `embed`; no Node in production. |
 | Storage backend | ZFS (required) | Jail roots and templates live in ZFS datasets; clone-from-snapshot is the jail creation mechanism. |
-| Operation audit log | Append-only JSON-lines file | A database is a likely future direction for broader persistence — see `docs/DECISIONS.md` JD-011. |
+| Operation audit log | Append-only JSON-lines file | Jail Deck has no database, and most state is derived from `jls`/`jail.conf`/`zfs` rather than stored — see `docs/DECISIONS.md` JD-011 for the three-way split between operator config, application state, and derived state, and for the explicit triggers that would justify revisiting. |
 
 ## Core domains
 

@@ -18,9 +18,6 @@ func main() {
 	}
 
 	ip := cfg.Host
-	if ip == "" {
-		ip = "0.0.0.0"
-	}
 	addr := fmt.Sprintf("%s:%s", ip, cfg.Port)
 	log.Print("Jail Deck listening on " + addr)
 

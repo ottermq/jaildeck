@@ -3,6 +3,7 @@ package audit
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/common"
 )
@@ -52,6 +53,7 @@ func normalizeLimit(limitParam string) int {
 
 func buildOperationFilters(operationParam string, successParam string, targetsParam string) map[string]string {
 	filters := make(map[string]string)
+	operationParam = strings.ToLower(operationParam)
 	switch operationParam {
 	case "start", "stop", "restart":
 		filters["operation"] = operationParam

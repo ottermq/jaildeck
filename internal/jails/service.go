@@ -62,31 +62,31 @@ func (s *JailService) List(ctx context.Context) ([]Jail, error) {
 	return jails, nil
 }
 
-func (s *JailService) do(ctx context.Context, name JailName, action string, call func(context.Context, string) (Jail, error)) (Jail, error) {
+func (s *JailService) do(ctx context.Context, name JailName, op Operation, call func(context.Context, string) (Jail, error)) (Jail, error) {
 	if _, err := NewJailName(name.String()); err != nil {
 		return Jail{}, err
 	}
 	jail, err := call(ctx, name.String())
-	s.logJailOperation(ctx, name.String(), action, err)
-	return jail, toAppError(name.String(), action, err)
+	s.logJailOperation(ctx, name.String(), op, err)
+	return jail, toAppError(name.String(), op, err)
 }
 
 func (s *JailService) Start(ctx context.Context, name JailName) (Jail, error) {
-	return s.do(ctx, name, "start", s.system.Start)
+	return s.do(ctx, name, OperationStart, s.system.Start)
 }
 
 func (s *JailService) Stop(ctx context.Context, name JailName) (Jail, error) {
-	return s.do(ctx, name, "stop", s.system.Stop)
+	return s.do(ctx, name, OperationStop, s.system.Stop)
 }
 
 func (s *JailService) Restart(ctx context.Context, name JailName) (Jail, error) {
-	return s.do(ctx, name, "restart", s.system.Restart)
+	return s.do(ctx, name, OperationRestart, s.system.Restart)
 }
 
-func (s *JailService) logJailOperation(ctx context.Context, name, operation string, opErr error) {
+func (s *JailService) logJailOperation(ctx context.Context, name string, operation Operation, opErr error) {
 	entry := audit.Entry{
 		Timestamp: time.Now(),
-		Operation: operation,
+		Operation: operation.String(),
 		Target:    name,
 		Command:   fmt.Sprintf("service jail %s %s", operation, name), // TODO: replace hardcoded for actual command (from system)
 		Success:   opErr == nil,
@@ -108,7 +108,7 @@ func (s *JailService) logJailOperation(ctx context.Context, name, operation stri
 	}
 }
 
-func toAppError(name, action string, err error) error {
+func toAppError(name string, op Operation, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -121,5 +121,5 @@ func toAppError(name, action string, err error) error {
 	if errors.As(err, &cmdErr) {
 		msg = cmdErr.Summary()
 	}
-	return common.NewAppError(http.StatusInternalServerError, fmt.Sprintf("failed to %s jail %q: %s", action, name, msg))
+	return common.NewAppError(http.StatusInternalServerError, fmt.Sprintf("failed to %s jail %q: %s", op, name, msg))
 }

@@ -42,10 +42,10 @@ func (a *Adapter) List(ctx context.Context) ([]jails.Jail, error) {
 	return mergeJails(configured, running), nil
 }
 
-func (a *Adapter) runService(ctx context.Context, name, action string) (jails.Jail, error) {
+func (a *Adapter) runService(ctx context.Context, name string, op jails.Operation) (jails.Jail, error) {
 	cmd := system.Command{
 		Name: "service",
-		Args: []string{"jail", action, name},
+		Args: []string{"jail", op.String(), name},
 	}
 
 	result, runErr := a.runner.Run(ctx, cmd)
@@ -57,7 +57,7 @@ func (a *Adapter) runService(ctx context.Context, name, action string) (jails.Ja
 		Err:     stateErr,
 	}
 
-	summary := summarizeJailActionFailure(name, action, result)
+	summary := summarizeJailActionFailure(name, op, result)
 	if stateErr != nil {
 		if runErr != nil {
 			cmdErr.Err = runErr
@@ -72,7 +72,7 @@ func (a *Adapter) runService(ctx context.Context, name, action string) (jails.Ja
 		cmdErr.Err = runErr
 		return jail, cmdErr
 	}
-	want := desiredStatusForAction(action)
+	want := op.DesiredStatus()
 
 	if jail.Status != want {
 		cmdErr.Err = fmt.Errorf("%s: jail status is '%s', want '%s'", summary, jail.Status, want)
@@ -82,30 +82,19 @@ func (a *Adapter) runService(ctx context.Context, name, action string) (jails.Ja
 	return jail, nil
 }
 
-func desiredStatusForAction(action string) jails.JailStatus {
-	switch action {
-	case "start", "restart":
-		return jails.JailStatusRunning
-	case "stop":
-		return jails.JailStatusStopped
-	default:
-		return ""
-	}
-}
-
 func (a *Adapter) Start(ctx context.Context, name string) (jails.Jail, error) {
-	return a.runService(ctx, name, "start")
+	return a.runService(ctx, name, jails.OperationStart)
 }
 
 func (a *Adapter) Stop(ctx context.Context, name string) (jails.Jail, error) {
-	return a.runService(ctx, name, "stop")
+	return a.runService(ctx, name, jails.OperationStop)
 }
 
 func (a *Adapter) Restart(ctx context.Context, name string) (jails.Jail, error) {
-	return a.runService(ctx, name, "restart")
+	return a.runService(ctx, name, jails.OperationRestart)
 }
 
-func summarizeJailActionFailure(name, action string, result system.CommandResult) string {
+func summarizeJailActionFailure(name string, op jails.Operation, result system.CommandResult) string {
 	output := strings.TrimSpace(result.Stderr)
 	if output == "" {
 		output = strings.TrimSpace(result.Stdout)
@@ -131,7 +120,7 @@ func summarizeJailActionFailure(name, action string, result system.CommandResult
 	output = strings.Trim(output, ".: ")
 
 	if output == "" {
-		return fmt.Sprintf("%s jail %q failed", action, name)
+		return fmt.Sprintf("%s jail %q failed", op, name)
 	}
 
 	return output

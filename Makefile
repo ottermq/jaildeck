@@ -10,8 +10,7 @@ GO?=go
 ## build: compile the binary into bin/
 build:
 	@mkdir -p $(BUILD_DIR)
-	@VERSION=$$(git describe --tags --always 2>/dev/null || echo dev);\
-		$(GO) build -ldflags "-X main.version=$$VERSION" -o ./$(BUILD_DIR)/$(BINARY_NAME) ./$(MAIN_PATH)
+	@$(GO) build -o ./$(BUILD_DIR)/$(BINARY_NAME) ./$(MAIN_PATH)
 
 ## run: build and run against the real FreeBSD adapter (requires FreeBSD)
 run: build

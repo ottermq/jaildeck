@@ -1,0 +1,599 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-01-01T00:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v0.3.0-alpha.1",
+  "resources": [
+    {
+      "_id": "wrk_9b339d7edd5b13f843f793b6ec4f3b6c",
+      "_type": "workspace",
+      "parentId": null,
+      "scope": "collection",
+      "name": "jaildeck API",
+      "description": "Jail Deck JSON API collection for Insomnium / Insomnia (export format v4).\n\nImport: Create -> Import -> File -> collections/insomnium.json\n\nNO AUTHENTICATION YET. Mandatory single-operator auth is the Access Control milestone (JD-003); when it lands this collection needs a login request and a session cookie.\n\nENVIRONMENTS\n  FreeBSD guest (SSH tunnel)  http://localhost:8888  jail=ottermq\n  Local (fake adapter)        http://localhost:8889  jail=nginx\n\nJail Deck binds 127.0.0.1 only (JD-002), so reaching a FreeBSD host needs a tunnel:\n    ssh -N -L 8888:127.0.0.1:8888 <freebsd-host>\n\nThe fake-adapter environment uses a different port so it can run alongside that tunnel:\n    JAILDECK_PORT=8889 JAILDECK_ADAPTER=fake ./bin/jaildeck\n\nAdjust `jail` in each environment to a jail that exists there.\n\nRESPONSE QUIRKS\n  1. /jails keys are PascalCase (JID, Name, Status, Hostname, IP, Path) because the Jail struct has no json tags; /audit keys are snake_case.\n  2. An empty /audit result is `null`, not `[]`.\n\nMAINTAINING THIS FILE\nIDs and __export_date are fixed so regenerating does not churn the diff. Re-exporting from the app rewrites both, so prefer editing this file directly.",
+      "created": 1767225600000,
+      "modified": 1767225600000
+    },
+    {
+      "_id": "env_491dc04451cc5f50fc845a1d718aa4ad",
+      "_type": "environment",
+      "parentId": "wrk_9b339d7edd5b13f843f793b6ec4f3b6c",
+      "name": "Base Environment",
+      "data": {
+        "baseUrl": "http://localhost:8888",
+        "jail": "ottermq"
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "baseUrl",
+          "jail"
+        ]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1767225600000,
+      "created": 1767225600000,
+      "modified": 1767225600000
+    },
+    {
+      "_id": "env_f62401542826755f1aea8c7fdb598f77",
+      "_type": "environment",
+      "parentId": "env_491dc04451cc5f50fc845a1d718aa4ad",
+      "name": "Local (fake adapter, port 8889)",
+      "data": {
+        "baseUrl": "http://localhost:8889",
+        "jail": "nginx"
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "baseUrl",
+          "jail"
+        ]
+      },
+      "color": "#00e61b",
+      "isPrivate": false,
+      "metaSortKey": 1767225600001,
+      "created": 1767225600000,
+      "modified": 1767225600000
+    },
+    {
+      "_id": "env_0a3c31414f00a3c861a24801ad053603",
+      "_type": "environment",
+      "parentId": "env_491dc04451cc5f50fc845a1d718aa4ad",
+      "name": "FreeBSD guest (SSH tunnel)",
+      "data": {
+        "baseUrl": "http://localhost:8888",
+        "jail": "ottermq"
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "baseUrl",
+          "jail"
+        ]
+      },
+      "color": "#2a7fff",
+      "isPrivate": false,
+      "metaSortKey": 1767225600002,
+      "created": 1767225600000,
+      "modified": 1767225600000
+    },
+    {
+      "_id": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "_type": "request_group",
+      "parentId": "wrk_9b339d7edd5b13f843f793b6ec4f3b6c",
+      "name": "Jails",
+      "description": "Jail listing and lifecycle. Mutations are logged to the audit trail.",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -3000,
+      "created": 1767225600000,
+      "modified": 1767225600000
+    },
+    {
+      "_id": "fld_d232fe1732e9dc4a8be23df7f3df5873",
+      "_type": "request_group",
+      "parentId": "wrk_9b339d7edd5b13f843f793b6ec4f3b6c",
+      "name": "Audit",
+      "description": "Operation history. Append-only JSON-lines file, filtered server-side.",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -2000,
+      "created": 1767225600000,
+      "modified": 1767225600000
+    },
+    {
+      "_id": "fld_94d4fcd0d6ad851777e19c71c1151c84",
+      "_type": "request_group",
+      "parentId": "wrk_9b339d7edd5b13f843f793b6ec4f3b6c",
+      "name": "Errors & edge cases",
+      "description": "Deliberately invalid input, to see the real error surface.",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1000,
+      "created": 1767225600000,
+      "modified": 1767225600000
+    },
+    {
+      "_id": "req_6eca10fe64d522e921bdb35ad0ee733b",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "List jails",
+      "description": "Merges `jls` (running) with `/etc/jail.conf` + `/etc/jail.conf.d/*.conf` (configured but stopped), so stopped jails appear too (JD-004). A missing jail.conf means zero jails, not an error.\n\nResponse 200: JSON array of jail objects.\n\nNOTE: the Jail struct has no json tags, so keys are Go field names in PascalCase:\n`JID`, `Name`, `Status`, `Hostname`, `IP`, `Path`. `Status` is `running` or `stopped`.\n\nThis is inconsistent with /audit, which uses snake_case. Worth reconciling before a UI depends on it.\n\nOn failure List does NOT go through toAppError, so an adapter error surfaces as 500 `{\"error\": \"internal server error\"}` with the detail only in the server log.\n\nExample response:\n  [{\"JID\":\"4\",\"Name\":\"ottermq\",\"Status\":\"running\",\"Hostname\":\"ottermq\",\"IP\":\"\",\"Path\":\"/usr/local/jails/containers/ottermq\"}]\n\n`IP` is empty because that jail uses `ip4 = inherit`, so it shares the host addresses rather than having one of its own. Do not treat an empty IP as an error.",
+      "method": "GET",
+      "url": "{{baseUrl}}/jails",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -3000,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_114b402e981ddcaea6db829bf03c40d9",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Root (redirects to /jails)",
+      "description": "Returns 303 See Other with `Location: /jails`.\n\nInsomnium follows redirects according to the global setting, so you will normally see the /jails response. Turn redirect-following off in this request's settings to observe the 303 itself.",
+      "method": "GET",
+      "url": "{{baseUrl}}/",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2900,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_0ae99df86b49c0f38e4555c4bcc38e6b",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Start jail",
+      "description": "`service jail start <name>` (JD-005). Idempotent: starting an already-running jail succeeds.\n\nResponse 200: the single updated jail object (same PascalCase keys as List).\n\nErrors are `{\"error\": \"...\"}` with `Content-Type: application/json`.",
+      "method": "POST",
+      "url": "{{baseUrl}}/jails/{{jail}}/start",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2800,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_d3782351ac1d84fe6eb5c25ae98d954c",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Stop jail",
+      "description": "`service jail stop <name>`. Idempotent in the other direction.\n\nResponse 200: the single updated jail object.\n\nErrors are `{\"error\": \"...\"}` with `Content-Type: application/json`.",
+      "method": "POST",
+      "url": "{{baseUrl}}/jails/{{jail}}/stop",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2700,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_43670f5bba47d5b71810a5ca10839d10",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Restart jail",
+      "description": "`service jail restart <name>`.\n\nResponse 200: the single updated jail object.\n\nErrors are `{\"error\": \"...\"}` with `Content-Type: application/json`.",
+      "method": "POST",
+      "url": "{{baseUrl}}/jails/{{jail}}/restart",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2600,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_73ad47fd47fad6eb9aa3508596248d69",
+      "_type": "request",
+      "parentId": "fld_d232fe1732e9dc4a8be23df7f3df5873",
+      "name": "Recent operations",
+      "description": "Response 200: JSON array of audit entries, newest first, snake_case keys:\n`timestamp`, `operation`, `target`, `command`, `exit_code`, `success`, `error` (omitted when empty).\n\nDefault limit 50, maximum 200.\n\nAn empty result is the JSON literal `null`, not `[]` — both when nothing matches and when the audit log does not exist yet (it is created on the first mutating operation).",
+      "method": "GET",
+      "url": "{{baseUrl}}/audit",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2000,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_4a43f7383b7b93e6675d302fbbd6f652",
+      "_type": "request",
+      "parentId": "fld_d232fe1732e9dc4a8be23df7f3df5873",
+      "name": "Filter by operation + limit",
+      "description": "`operation` is lowercased and matched exactly against the logged operation. Any value is accepted — audit records operations from every domain, so it does not keep a list of valid ones. An operation that was never logged simply matches nothing.\n\n`limit`: non-numeric, empty, zero or negative fall back to 50; anything above 200 clamps to 200.\n\nAn empty result is the JSON literal `null`, not `[]` — both when nothing matches and when the audit log does not exist yet (it is created on the first mutating operation).",
+      "method": "GET",
+      "url": "{{baseUrl}}/audit",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "operation",
+          "value": "start",
+          "disabled": false
+        },
+        {
+          "name": "limit",
+          "value": "10",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -1900,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_aab5b64a4e8c811bf882976808c5d6d1",
+      "_type": "request",
+      "parentId": "fld_d232fe1732e9dc4a8be23df7f3df5873",
+      "name": "Failures only",
+      "description": "`success` accepts only the strings `true` or `false`; any other value is ignored and no success filter is applied.\n\nAn empty result is the JSON literal `null`, not `[]` — both when nothing matches and when the audit log does not exist yet (it is created on the first mutating operation).",
+      "method": "GET",
+      "url": "{{baseUrl}}/audit",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "success",
+          "value": "false",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -1800,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_23503e17402df74e0bc7f744b91b0f57",
+      "_type": "request",
+      "parentId": "fld_d232fe1732e9dc4a8be23df7f3df5873",
+      "name": "Filter by targets",
+      "description": "`targets` is comma-separated; entries are trimmed and blanks discarded. A value that is only commas or whitespace means no filter.\n\nMatching is case-sensitive, deliberately: FreeBSD jail names are case-sensitive, so `MyJail` and `myjail` are different jails. Only `operation` is normalised.\n\nAn empty result is the JSON literal `null`, not `[]` — both when nothing matches and when the audit log does not exist yet (it is created on the first mutating operation).",
+      "method": "GET",
+      "url": "{{baseUrl}}/audit",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "targets",
+          "value": "nginx,postgres",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -1700,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_b12d684fe93bcf56bf9c82687a39fb18",
+      "_type": "request",
+      "parentId": "fld_94d4fcd0d6ad851777e19c71c1151c84",
+      "name": "Unknown jail",
+      "description": "Behaviour differs by adapter, which is itself worth knowing:\n\n- `JAILDECK_ADAPTER=freebsd`: 404 `{\"error\": \"jail not found\"}` (the only place ErrJailNotFound is raised is freebsd/jail_helper.go).\n- `JAILDECK_ADAPTER=fake`: the fake returns a plain error, so toAppError wraps it as 500 `{\"error\": \"failed to start jail \\\"does-not-exist\\\": jail \\\"does-not-exist\\\" not found\"}`.\n\nSo 404 is unreachable on the fake adapter.",
+      "method": "POST",
+      "url": "{{baseUrl}}/jails/does-not-exist/start",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -1000,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_6daf67057dd1ca5e296f29a38563e5e5",
+      "_type": "request",
+      "parentId": "fld_94d4fcd0d6ad851777e19c71c1151c84",
+      "name": "Invalid jail name",
+      "description": "Names allow only `A-Z a-z 0-9 _ - .` — anything else is rejected by NewJailName.\n\nResponse 400: `{\"error\": \"invalid jail name \\\"bad name\\\"\"}`.\n\nAn empty name is also invalid but unreachable through routing, since `/jails//start` matches no route.",
+      "method": "POST",
+      "url": "{{baseUrl}}/jails/bad name/start",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -900,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_bdb5b74690a68672213e17072b70a294",
+      "_type": "request",
+      "parentId": "fld_94d4fcd0d6ad851777e19c71c1151c84",
+      "name": "limit above maximum",
+      "description": "Clamps to 200 rather than erroring.\n\nEMPTY RESULT: returns the literal `null`, not `[]`. Confirmed from inside the guest, so it is not a tunnel artifact. The log file is created lazily on the first mutating operation, relative to the process working directory.",
+      "method": "GET",
+      "url": "{{baseUrl}}/audit",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "limit",
+          "value": "9999",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -800,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_b4564b1a637add5394320ec6d5662f8d",
+      "_type": "request",
+      "parentId": "fld_94d4fcd0d6ad851777e19c71c1151c84",
+      "name": "limit non-numeric",
+      "description": "Falls back to the default of 50 rather than erroring.\n\nEMPTY RESULT: returns the literal `null`, not `[]`. Confirmed from inside the guest, so it is not a tunnel artifact. The log file is created lazily on the first mutating operation, relative to the process working directory.",
+      "method": "GET",
+      "url": "{{baseUrl}}/audit",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "limit",
+          "value": "abc",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -700,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_be9ee22f82d41231fc413695bdee69c0",
+      "_type": "request",
+      "parentId": "fld_d232fe1732e9dc4a8be23df7f3df5873",
+      "name": "Operation is case-insensitive",
+      "description": "`START` is lowercased before matching, so it returns entries logged as `start`.\n\nAn empty result is the JSON literal `null`, not `[]` — both when nothing matches and when the audit log does not exist yet (it is created on the first mutating operation).",
+      "method": "GET",
+      "url": "{{baseUrl}}/audit",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "operation",
+          "value": "START",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -1600,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_45950698f7c6b1fa35c3ef9679ebbc5b",
+      "_type": "request",
+      "parentId": "fld_94d4fcd0d6ad851777e19c71c1151c84",
+      "name": "Unknown operation matches nothing",
+      "description": "Returns `null`, because no logged entry has operation `bogus`.\n\nBefore the audit filter was reworked, unknown operations were silently dropped and the request returned the unfiltered list instead.",
+      "method": "GET",
+      "url": "{{baseUrl}}/audit",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "operation",
+          "value": "bogus",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -600,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    }
+  ]
+}

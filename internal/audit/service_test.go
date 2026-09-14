@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"errors"
+	"net/url"
 	"slices"
 	"testing"
 )
@@ -22,62 +23,62 @@ func (f *fakeReader) Recent(ctx context.Context, limit int, filter Filter) ([]En
 
 func boolPtr(b bool) *bool { return &b }
 
-func TestOperationService_Recent_BuildsFilter(t *testing.T) {
+func TestParseFilter(t *testing.T) {
 	tests := []struct {
 		name          string
-		mapFilter     map[string]string
+		query         url.Values
 		wantOperation string
 		wantSuccess   *bool
 		wantTargets   []string
 	}{
 		{
-			name:      "empty filter map",
-			mapFilter: map[string]string{},
+			name:  "empty filter map",
+			query: url.Values{},
 		},
 		{
 			name:          "operation is lowercased",
-			mapFilter:     map[string]string{"operation": "START"},
+			query:         url.Values{"operation": {"START"}},
 			wantOperation: "start",
 		},
 		{
 			name:        "success true",
-			mapFilter:   map[string]string{"success": "true"},
+			query:       url.Values{"success": {"true"}},
 			wantSuccess: boolPtr(true),
 		},
 		{
 			name:        "success false",
-			mapFilter:   map[string]string{"success": "false"},
+			query:       url.Values{"success": {"false"}},
 			wantSuccess: boolPtr(false),
 		},
 		{
-			name:      "success invalid value is ignored",
-			mapFilter: map[string]string{"success": "maybe"},
+			name:  "success invalid value is ignored",
+			query: url.Values{"success": {"maybe"}},
 		},
 		{
 			name:        "single target",
-			mapFilter:   map[string]string{"targets": "ottermq"},
+			query:       url.Values{"targets": {"ottermq"}},
 			wantTargets: []string{"ottermq"},
 		},
 		{
 			name:        "multiple targets with spacing",
-			mapFilter:   map[string]string{"targets": "ottermq, goodiesdb"},
+			query:       url.Values{"targets": {"ottermq, goodiesdb"}},
 			wantTargets: []string{"ottermq", "goodiesdb"},
 		},
 		{
 			name:        "embedded empty elements are dropped",
-			mapFilter:   map[string]string{"targets": "ottermq,,goodiesdb,"},
+			query:       url.Values{"targets": {"ottermq,,goodiesdb,"}},
 			wantTargets: []string{"ottermq", "goodiesdb"},
 		},
 		{
 			// Regression test for #69: a whitespace-only value must be treated
 			// as "no filter", not as a filter that matches nothing.
-			name:      "whitespace-only targets is treated as no filter",
-			mapFilter: map[string]string{"targets": " "},
+			name:  "whitespace-only targets is treated as no filter",
+			query: url.Values{"targets": {" "}},
 		},
 		{
 			// Regression test for #69: a lone comma used to panic.
-			name:      "comma-only targets is treated as no filter",
-			mapFilter: map[string]string{"targets": ","},
+			name:  "comma-only targets is treated as no filter",
+			query: url.Values{"targets": {","}},
 		},
 	}
 
@@ -85,16 +86,21 @@ func TestOperationService_Recent_BuildsFilter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			reader := &fakeReader{}
 			svc := NewAuditService(reader)
-
-			if _, err := svc.Recent(context.Background(), 50, tt.mapFilter); err != nil {
+			filter := parseFilter(tt.query)
+			if _, err := svc.Recent(context.Background(), 50, filter); err != nil {
 				t.Fatalf("Recent() error = %v", err)
 			}
 
 			got := reader.gotFilter
+
 			if got.Operation != tt.wantOperation {
 				t.Errorf("Operation = %q, want %q", got.Operation, tt.wantOperation)
 			}
-			if !slices.Equal(got.Targets, tt.wantTargets) {
+			if tt.wantTargets == nil {
+				if got.Targets != nil {
+					t.Errorf("Targets = %#v, want nil (no filter)", got.Targets)
+				}
+			} else if !slices.Equal(got.Targets, tt.wantTargets) {
 				t.Errorf("Targets = %#v, want %#v", got.Targets, tt.wantTargets)
 			}
 			if (got.Success == nil) != (tt.wantSuccess == nil) {
@@ -111,7 +117,7 @@ func TestOperationService_Recent_PassesLimitThrough(t *testing.T) {
 	reader := &fakeReader{}
 	svc := NewAuditService(reader)
 
-	if _, err := svc.Recent(context.Background(), 17, map[string]string{}); err != nil {
+	if _, err := svc.Recent(context.Background(), 17, Filter{}); err != nil {
 		t.Fatalf("Recent() error = %v", err)
 	}
 
@@ -126,7 +132,7 @@ func TestOperationService_Recent_ReturnsReaderResult(t *testing.T) {
 	}
 	svc := NewAuditService(reader)
 
-	got, err := svc.Recent(context.Background(), 50, map[string]string{})
+	got, err := svc.Recent(context.Background(), 50, Filter{})
 	if err != nil {
 		t.Fatalf("Recent() error = %v", err)
 	}
@@ -140,7 +146,7 @@ func TestOperationService_Recent_PropagatesReaderError(t *testing.T) {
 	reader := &fakeReader{err: wantErr}
 	svc := NewAuditService(reader)
 
-	_, err := svc.Recent(context.Background(), 50, map[string]string{})
+	_, err := svc.Recent(context.Background(), 50, Filter{})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Recent() error = %v, want %v", err, wantErr)
 	}

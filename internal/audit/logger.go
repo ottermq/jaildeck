@@ -15,12 +15,6 @@ type Entry struct {
 	Error     string    `json:"error,omitempty"`
 }
 
-type Filter struct {
-	Operation string
-	Targets   []string
-	Success   *bool
-}
-
 type Logger interface {
 	Log(ctx context.Context, entry Entry) error
 }

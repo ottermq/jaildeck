@@ -107,7 +107,7 @@ func TestAuditHandler_List_BuildsFilterReachingReader(t *testing.T) {
 		{name: "operation start", query: "?operation=start", wantOperation: "start"},
 		{name: "operation stop", query: "?operation=stop", wantOperation: "stop"},
 		{name: "operation restart", query: "?operation=restart", wantOperation: "restart"},
-		{name: "unknown operation is not forwarded", query: "?operation=bogus"},
+		{name: "unknown operation is forwarded", query: "?operation=bogus", wantOperation: "bogus"},
 		{name: "success true", query: "?success=true", wantSuccess: boolPtr(true)},
 		{name: "success false", query: "?success=false", wantSuccess: boolPtr(false)},
 		{name: "invalid success is not forwarded", query: "?success=maybe"},
@@ -125,6 +125,7 @@ func TestAuditHandler_List_BuildsFilterReachingReader(t *testing.T) {
 			wantSuccess:   boolPtr(false),
 			wantTargets:   []string{"redis"},
 		},
+		{name: "operation is case-insensitive", query: "?operation=START", wantOperation: "start"},
 	}
 
 	for _, tt := range tests {

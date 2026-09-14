@@ -3,7 +3,6 @@ package audit
 import (
 	"net/http"
 	"strconv"
-	"strings"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/common"
 )
@@ -22,16 +21,9 @@ func NewAuditHandler(service *AuditService) *AuditHandler {
 }
 
 func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
-	operationParam := r.URL.Query().Get("operation")
-	successParam := r.URL.Query().Get("success")
-	targetsParam := r.URL.Query().Get("targets")
-	limitParam := r.URL.Query().Get("limit")
+	q := r.URL.Query()
 
-	filters := buildOperationFilters(operationParam, successParam, targetsParam)
-
-	limit := normalizeLimit(limitParam)
-
-	entries, err := h.service.Recent(r.Context(), limit, filters)
+	entries, err := h.service.Recent(r.Context(), normalizeLimit(q.Get("limit")), parseFilter(q))
 	if err != nil {
 		common.HandlerError(w, err)
 		return
@@ -49,23 +41,4 @@ func normalizeLimit(limitParam string) int {
 		limit = maxLimit
 	}
 	return limit
-}
-
-func buildOperationFilters(operationParam string, successParam string, targetsParam string) map[string]string {
-	filters := make(map[string]string)
-	operationParam = strings.ToLower(operationParam)
-	switch operationParam {
-	case "start", "stop", "restart":
-		filters["operation"] = operationParam
-	default:
-	}
-	switch successParam {
-	case "true", "false":
-		filters["success"] = successParam
-	default:
-	}
-	if targetsParam != "" {
-		filters["targets"] = targetsParam
-	}
-	return filters
 }

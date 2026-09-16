@@ -4,10 +4,17 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
 	"codeberg.org/Otter-Labs/jaildeck/internal/system"
 )
+
+// jailOperationTimeout is a backstop, not the primary limit. FreeBSD bounds a
+// jail stop itself through exec.timeout and stop.timeout, and it cleans up
+// after its own timeouts; killing the command from outside does not. Keep this
+// above exec.timeout + stop.timeout so FreeBSD's limits always fire first.
+const jailOperationTimeout = 150 * time.Second
 
 type jlsOutput struct {
 	JailInformation struct {
@@ -44,8 +51,9 @@ func (a *Adapter) List(ctx context.Context) ([]jails.Jail, error) {
 
 func (a *Adapter) runService(ctx context.Context, name string, op jails.Operation) (jails.Jail, error) {
 	cmd := system.Command{
-		Name: "service",
-		Args: []string{"jail", op.String(), name},
+		Name:    "service",
+		Args:    []string{"jail", op.String(), name},
+		Timeout: jailOperationTimeout,
 	}
 
 	result, runErr := a.runner.Run(ctx, cmd)

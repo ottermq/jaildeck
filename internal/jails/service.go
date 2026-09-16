@@ -63,11 +63,14 @@ func (s *JailService) List(ctx context.Context) ([]Jail, error) {
 }
 
 func (s *JailService) do(ctx context.Context, name JailName, op Operation, call func(context.Context, string) (Jail, error)) (Jail, error) {
+	// A client disconnecting must not abort a jail operation half-way, so drop
+	// the request's cancellation. The runner still enforces the command timeout.
+	opCtx := context.WithoutCancel(ctx)
 	if _, err := NewJailName(name.String()); err != nil {
 		return Jail{}, err
 	}
-	jail, err := call(ctx, name.String())
-	s.logJailOperation(ctx, name.String(), op, err)
+	jail, err := call(opCtx, name.String())
+	s.logJailOperation(opCtx, name.String(), op, err)
 	return jail, toAppError(name.String(), op, err)
 }
 

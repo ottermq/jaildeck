@@ -279,7 +279,11 @@ Note this is a genuinely new capability: until authentication (JD-003), Jail Dec
 
 Template metadata that is genuinely underivable — the patch level `freebsd-update` brought a template to, for example — is stored in a small file **inside the template's own dataset**, not in a central store. It then clones with the template, is destroyed with it, and cannot outlive what it describes.
 
-Every mutating operation continues to be recorded in the append-only JSON-lines audit log (`internal/audit`): timestamp, operation, target, command, exit code, success/failure, error summary.
+Every mutating operation continues to be recorded in the append-only JSON-lines audit log (`internal/audit`): timestamp, operation, target, command, exit code, success/failure, whether the command timed out, and an error summary.
+
+A timeout is recorded as its own field rather than inferred from the exit code, because a killed process and a command that could not start both report `-1`. Distinguishing them matters: one is Jail Deck giving up on the system, the other is the system rejecting the command.
+
+New fields are added with `omitempty`, so lines written before a field existed decode as its zero value. That constraint is inherent to an append-only log: old records are never rewritten, so the reader must tolerate every shape the writer has ever produced.
 
 **Still open, with explicit triggers rather than vague intent:**
 
@@ -328,6 +332,50 @@ The project favors explicit, predictable, maintainable implementations over clev
 ### Rationale
 
 Long-term maintainability is valued over short-term convenience. This is also why the domain-driven organization (JD-010) is scoped to the domains the code has actually needed — not speculative bounded-context ceremony ahead of real requirements.
+
+---
+
+## JD-014 — Command Execution and Timeouts
+
+**Status:** Locked
+
+**No command runs unbounded.** The runner applies `Command.Timeout`, or a package default when that field is zero. The deadline is created inside the runner rather than by callers, so a caller cannot forget to set one — and each command gets its own fresh deadline rather than sharing a budget with whatever ran before it.
+
+**Jail Deck's timeout is a backstop, not the primary limit.** FreeBSD bounds jail operations itself, and it cleans up after its own timeouts; a process killed from outside leaves nobody to clean up. The chain, with the values in use:
+
+```
+rcshutdown_timeout    90s   rc.shutdown's own watchdog          FreeBSD default
+exec.timeout         120s   jail(8) caps each exec.* command    host configuration
+stop.timeout          10s   SIGTERM grace before removal        FreeBSD default
+Jail Deck backstop   150s   jail lifecycle operations           code constant
+Jail Deck default     10s   everything else, e.g. jls           code constant
+```
+
+The inequalities are load-bearing. `exec.timeout` must exceed `rcshutdown_timeout`, or a slow shutdown is cut short and — per jail(8) — the jail "will not be removed", leaving it running. The backstop must exceed `exec.timeout` plus `stop.timeout`, so FreeBSD's orderly path always completes first and the backstop only fires when FreeBSD's own limits have failed.
+
+Two of these values live on the host rather than in Jail Deck, so establishing `exec.timeout` belongs to host setup, not to the binary.
+
+**Mutating operations are detached from client cancellation.** An operator closing a browser tab must not abort a jail stop half way through. `internal/jails` drops the request's cancellation with `context.WithoutCancel` before calling the system; the runner still enforces the command's own timeout. Read operations keep the request context — cancelling a `jls` nobody will read costs nothing.
+
+**A command is terminated as a process group.** The child is started with its own process group, cancellation sends `SIGTERM` to the group rather than to the single process, and a `WaitDelay` bounds how long the runner keeps waiting afterwards.
+
+**A timeout is distinguishable from a failure**, at both boundaries: HTTP `504 Gateway Timeout` rather than `500`, and a dedicated `timed_out` field in the audit entry (JD-011). Cancellation is not a timeout and must not be reported as one.
+
+### Rationale
+
+Every part of this exists because the obvious version does not work.
+
+**Killing from outside is worse than waiting.** `jail(8)` responds to its own timeouts by removing the jail and cleaning up; an external `SIGKILL` mid-shutdown leaves a jail half-stopped with no one responsible for the rest. Deferring to the native limits is JD-012 applied to failure handling, not only to the happy path.
+
+**Signalling one process is not enough.** `service(8)` is a shell script that runs `/etc/rc.d/jail`, which runs `jail(8)`. Killing only the direct child orphans the rest, and those orphans inherit the output pipes — so the runner's `Wait` blocks until they finish anyway. Without the process group and the `WaitDelay`, a timeout bounds nothing at all; it merely changes which error is eventually returned.
+
+**Cancellation and timeout mean opposite things.** A timeout is Jail Deck giving up on the system. A cancellation is the operator walking away. Collapsing them into one status would make the audit log lie about which happened, and the distinction is fragile enough that both the runner and the error mapping have tests pinning it.
+
+**504 rather than 500.** Nothing broke; Jail Deck stopped waiting for something it does not control. `500` claims a fault that did not occur, and `503` claims the service itself is unavailable, which is also untrue.
+
+**Timeouts belong to the runner, not to callers.** Callers wrapping contexts would mean a slow operation consumes the whole budget, leaving nothing for the verification step that follows it — precisely when knowing the jail's real state matters most. It would also make "unbounded" the default for any caller who forgets.
+
+This decision is about bounding individual commands. How a legitimately slow flow is represented to the operator — progress, polling, or SSE during template preparation — remains open under JD-008.
 
 ---
 

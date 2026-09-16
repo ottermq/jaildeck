@@ -12,6 +12,7 @@ type Entry struct {
 	Command   string    `json:"command"`
 	ExitCode  int       `json:"exit_code"`
 	Success   bool      `json:"success"`
+	TimedOut  bool      `json:"timed_out,omitempty"`
 	Error     string    `json:"error,omitempty"`
 }
 

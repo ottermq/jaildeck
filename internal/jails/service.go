@@ -95,6 +95,7 @@ func (s *JailService) logJailOperation(ctx context.Context, name string, operati
 		Success:   opErr == nil,
 	}
 	if opErr != nil {
+		entry.TimedOut = errors.Is(opErr, context.DeadlineExceeded)
 		var commandErr *system.CommandError
 		if errors.As(opErr, &commandErr) {
 			entry.Command = commandErr.Command + " " + strings.Join(commandErr.Args, " ")
@@ -118,6 +119,9 @@ func toAppError(name string, op Operation, err error) error {
 	var appErr *common.AppError
 	if errors.As(err, &appErr) {
 		return appErr
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return common.NewAppError(http.StatusGatewayTimeout, fmt.Sprintf("%s of jail %q timed out and may not have completed", op, name))
 	}
 	msg := err.Error()
 	var cmdErr *system.CommandError

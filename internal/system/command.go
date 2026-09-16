@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type Command struct {
 	Name string
 	Args []string
+	// Timeout bounds this command. Zero means the runner's default.
+	Timeout time.Duration
 }
 
 type CommandResult struct {

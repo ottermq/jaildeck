@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -27,13 +28,20 @@ func NewAppError(code int, message string) *AppError {
 
 func HandlerError(w http.ResponseWriter, err error) {
 	var appErr *AppError
-
 	if errors.As(err, &appErr) {
 		WriteJSON(w, appErr.Code, map[string]string{
 			"error": appErr.Message,
 		})
 		return
 	}
+
+	// The client went away mid-request. Nothing to report, and nobody left to
+	// report it to. Mutations are detached from request cancellation (JD-014),
+	// so the only thing that reaches here is a read whose caller disconnected.
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+
 	log.Printf("unexpected error: %v", err)
 
 	WriteJSON(w, http.StatusInternalServerError, map[string]string{
@@ -41,9 +49,9 @@ func HandlerError(w http.ResponseWriter, err error) {
 	})
 }
 
-func WriteJSON(w http.ResponseWriter, staus int, data any) {
+func WriteJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(staus)
+	w.WriteHeader(status)
 
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		log.Printf("failed to encode JSON response: %v", err)

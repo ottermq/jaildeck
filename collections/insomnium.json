@@ -263,7 +263,7 @@
       "_type": "request",
       "parentId": "fld_d232fe1732e9dc4a8be23df7f3df5873",
       "name": "Recent operations",
-      "description": "Response 200: JSON array of audit entries, newest first, snake_case keys:\n`timestamp`, `operation`, `target`, `command`, `exit_code`, `success`, `error` (omitted when empty).\n\nDefault limit 50, maximum 200.\n\nAn empty result is the JSON literal `null`, not `[]` — both when nothing matches and when the audit log does not exist yet (it is created on the first mutating operation).",
+      "description": "Response 200: JSON array of audit entries, newest first, snake_case keys:\n`timestamp`, `operation`, `target`, `command`, `exit_code`, `success`, plus `timed_out` (omitted when false) and `error` (omitted when empty).\n\nDefault limit 50, maximum 200.\n\nAn empty result is the JSON literal `null`, not `[]` — both when nothing matches and when the audit log does not exist yet (it is created on the first mutating operation).",
       "method": "GET",
       "url": "{{baseUrl}}/audit",
       "body": {},
@@ -551,6 +551,41 @@
       "segmentParams": [],
       "isPrivate": false,
       "metaSortKey": -1600,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_0f1c6a94b7de4852a3117c5ed80b2e6a",
+      "_type": "request",
+      "parentId": "fld_d232fe1732e9dc4a8be23df7f3df5873",
+      "name": "Timeouts only",
+      "description": "`timed_out` accepts only the strings `true` or `false`; any other value is ignored and no timeout filter is applied — the same rules as `success`, which it shares a parser with.\n\nFilters combine with AND. A timed-out operation is also a failure, so `timed_out=true` selects a subset of `success=false`.\n\nIn the response the key is omitted when false, so entries that did not time out carry no `timed_out` field at all.\n\nAn empty result is the JSON literal `null`, not `[]` — both when nothing matches and when the audit log does not exist yet (it is created on the first mutating operation).",
+      "method": "GET",
+      "url": "{{baseUrl}}/audit",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "timed_out",
+          "value": "true",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -1500,
       "created": 1767225600000,
       "modified": 1767225600000,
       "settingDisableRenderRequestBody": false,

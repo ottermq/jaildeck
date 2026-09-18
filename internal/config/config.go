@@ -18,16 +18,18 @@ type Config struct {
 	// Adapter selects the jails.JailSystem implementation: AdapterFreeBSD
 	// (default, requires a real FreeBSD host) or AdapterFake (in-memory,
 	// for development and verification on any OS).
-	Adapter string
+	Adapter  string
+	StateDir string
 }
 
 func LoadConfig() *Config {
 	_ = godotenv.Load()
 
 	return &Config{
-		Host:    getEnv("JAILDECK_HOST", "127.0.0.1"),
-		Port:    getEnv("JAILDECK_PORT", "8888"),
-		Adapter: getEnv("JAILDECK_ADAPTER", AdapterFreeBSD),
+		Host:     getEnv("JAILDECK_HOST", "127.0.0.1"),
+		Port:     getEnv("JAILDECK_PORT", "8888"),
+		Adapter:  getEnv("JAILDECK_ADAPTER", AdapterFreeBSD),
+		StateDir: getEnv("JAILDECK_STATE_DIR", "/var/db/jaildeck"),
 	}
 }
 

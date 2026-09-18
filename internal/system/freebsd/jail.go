@@ -49,7 +49,7 @@ func (a *Adapter) List(ctx context.Context) ([]jails.Jail, error) {
 	return mergeJails(configured, running), nil
 }
 
-func (a *Adapter) runService(ctx context.Context, name string, op jails.Operation) (jails.Jail, error) {
+func (a *Adapter) runService(ctx context.Context, name string, op jails.Operation) (jails.OperationResult, error) {
 	cmd := system.Command{
 		Name:    "service",
 		Args:    []string{"jail", op.String(), name},
@@ -64,41 +64,46 @@ func (a *Adapter) runService(ctx context.Context, name string, op jails.Operatio
 		Result:  result,
 		Err:     stateErr,
 	}
+	opResult := jails.OperationResult{
+		Jail:    jail,
+		Command: cmd.String(),
+	}
 
 	summary := summarizeJailActionFailure(name, op, result)
 	if stateErr != nil {
 		if runErr != nil {
 			cmdErr.Err = runErr
-			return jails.Jail{}, cmdErr
+			return opResult, cmdErr
 		}
 		if summary != "" {
 			cmdErr.Err = fmt.Errorf("%s: %w", summary, stateErr)
 		}
-		return jails.Jail{}, cmdErr
+		return opResult, cmdErr
 	}
 	if runErr != nil {
 		cmdErr.Err = runErr
-		return jail, cmdErr
+
+		return opResult, cmdErr
 	}
 	want := op.DesiredStatus()
 
 	if jail.Status != want {
 		cmdErr.Err = fmt.Errorf("%s: jail status is '%s', want '%s'", summary, jail.Status, want)
-		return jail, cmdErr
+		return opResult, cmdErr
 	}
 
-	return jail, nil
+	return opResult, nil
 }
 
-func (a *Adapter) Start(ctx context.Context, name string) (jails.Jail, error) {
+func (a *Adapter) Start(ctx context.Context, name string) (jails.OperationResult, error) {
 	return a.runService(ctx, name, jails.OperationStart)
 }
 
-func (a *Adapter) Stop(ctx context.Context, name string) (jails.Jail, error) {
+func (a *Adapter) Stop(ctx context.Context, name string) (jails.OperationResult, error) {
 	return a.runService(ctx, name, jails.OperationStop)
 }
 
-func (a *Adapter) Restart(ctx context.Context, name string) (jails.Jail, error) {
+func (a *Adapter) Restart(ctx context.Context, name string) (jails.OperationResult, error) {
 	return a.runService(ctx, name, jails.OperationRestart)
 }
 

@@ -9,6 +9,7 @@ type Filter struct {
 	Operation string
 	Targets   []string
 	Success   *bool
+	TimedOut  *bool
 }
 
 func parseFilter(q url.Values) Filter {
@@ -16,15 +17,8 @@ func parseFilter(q url.Values) Filter {
 
 	f.Operation = strings.ToLower(q.Get("operation"))
 
-	switch q.Get("success") {
-	case "true":
-		ok := true
-		f.Success = &ok
-
-	case "false":
-		ok := false
-		f.Success = &ok
-	}
+	f.Success = parseBool(q.Get("success"))
+	f.TimedOut = parseBool(q.Get("timed_out"))
 
 	for part := range strings.SplitSeq(q.Get("targets"), ",") {
 		if name := strings.TrimSpace(part); name != "" {
@@ -33,4 +27,17 @@ func parseFilter(q url.Values) Filter {
 	}
 
 	return f
+}
+
+func parseBool(v string) *bool {
+	switch v {
+	case "true":
+		t := true
+		return &t
+
+	case "false":
+		t := false
+		return &t
+	}
+	return nil
 }

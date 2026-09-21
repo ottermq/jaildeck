@@ -20,6 +20,7 @@ type Config struct {
 	// for development and verification on any OS).
 	Adapter  string
 	StateDir string
+	AuditLog string
 }
 
 func LoadConfig() *Config {
@@ -30,6 +31,7 @@ func LoadConfig() *Config {
 		Port:     getEnv("JAILDECK_PORT", "8888"),
 		Adapter:  getEnv("JAILDECK_ADAPTER", AdapterFreeBSD),
 		StateDir: getEnv("JAILDECK_STATE_DIR", "/var/db/jaildeck"),
+		AuditLog: getEnv("JAILDECK_AUDIT_LOG", "/var/log/jaildeck/audit.log"),
 	}
 }
 

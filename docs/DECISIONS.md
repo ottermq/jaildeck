@@ -252,11 +252,11 @@ Organizing by domain keeps each bounded context's rules, contract, and orchestra
 
 ## JD-011 — State and Persistence
 
-**Status:** Locked — expanded 2026-09-05 (was "Operation History")
+**Status:** Locked — amended 2026-09-21; expanded 2026-09-05 (was "Operation History")
 
 Jail Deck has **no database**, and none of its currently scoped features require one.
 
-State is classified three ways, and each kind has exactly one home:
+State is classified four ways, and each kind has exactly one home:
 
 **1. Operator configuration** — what the administrator sets. Bind address, port, pool name. Read from the environment (`godotenv`). Jail Deck reads this and never writes it.
 
@@ -275,15 +275,35 @@ Note this is a genuinely new capability: until authentication (JD-003), Jail Dec
 | Which template was this jail cloned from? | `zfs get origin <dataset>` |
 | When was it created? | `zfs get creation <dataset>` |
 | Can this dataset be destroyed? | `zfs get clones` plus snapshot listing |
-| What has been done to the system? | The append-only JSON-lines audit log |
 
 Template metadata that is genuinely underivable — the patch level `freebsd-update` brought a template to, for example — is stored in a small file **inside the template's own dataset**, not in a central store. It then clones with the template, is destroyed with it, and cannot outlive what it describes.
+
+**4. Recorded history** — what Jail Deck *did*. The append-only JSON-lines audit log (`internal/audit`). Jail Deck writes it and reads it back, which makes it look like application state, but it is **expendable**: deleting it costs the operator their history and costs Jail Deck nothing.
+
+That difference is not a judgement call — it is already encoded in the code. A missing audit log is not an error: `Recent` returns an empty result and `Log` creates the file on its first write. A corrupt line is skipped and reading continues. A missing state file, by contrast, is a fatal startup error (JD-003), and a corrupt one is reported as corrupt rather than treated as absent, precisely so an operator is never told to set a new password when the real problem is a damaged file.
+
+Nor is it derived state: `jls` and `zfs` can say what *is*, but nothing on the system can reconstruct who restarted a jail at 03:00 last Tuesday. It is recorded because it cannot be re-derived, and it is discardable because nothing depends on it.
 
 Every mutating operation continues to be recorded in the append-only JSON-lines audit log (`internal/audit`): timestamp, operation, target, command, exit code, success/failure, whether the command timed out, and an error summary.
 
 A timeout is recorded as its own field rather than inferred from the exit code, because a killed process and a command that could not start both report `-1`. Distinguishing them matters: one is Jail Deck giving up on the system, the other is the system rejecting the command.
 
 New fields are added with `omitempty`, so lines written before a field existed decode as its zero value. That constraint is inherent to an append-only log: old records are never rewritten, so the reader must tolerate every shape the writer has ever produced.
+
+**Where each kind lives:**
+
+| Kind | Home | Configurable via |
+| --- | --- | --- |
+| Operator configuration | environment, `.env` | — |
+| Application state | `/var/db/jaildeck/state.json` | `JAILDECK_STATE_DIR` |
+| Recorded history | `/var/log/jaildeck/audit.log` | `JAILDECK_AUDIT_LOG` |
+| Derived state | not stored | — |
+
+`/var/db` is for data a program needs in order to function — lose the pkg database and pkg is broken. The audit log is not that, so it belongs in `/var/log` despite being machine-readable. Being read back by a program has never moved anything out of `/var/log`: `wtmp` is append-only, read by `last(1)`, rotated, and lives there.
+
+**The consequence, accepted deliberately:** `/var/log` invites `newsyslog`, and after a rotation `GET /audit` sees only the current file. History appears to truncate, with no error and nothing in the response to say so. This is the cost of treating the log as a log, and it is preferred to filing it under `/var/db` to avoid an honest consequence. Should richer history matter later, the trigger is recorded below.
+
+Rotation is otherwise safe by construction: `Log` opens with `O_CREATE|O_APPEND` on every write and closes immediately, so Jail Deck never holds a descriptor across a rotation and needs no `SIGHUP` reopen handling.
 
 **Still open, with explicit triggers rather than vague intent:**
 

@@ -53,7 +53,7 @@ internal/
                                  # registers all routes
 
   config/
-    config.go                   # env var loading (JAILDECK_HOST, JAILDECK_PORT)
+    config.go                   # env var loading: JAILDECK_HOST, PORT, ADAPTER, STATE_DIR, AUDIT_LOG
 
   jails/                        # bounded context: Jails
     model.go                      # Jail entity, JailStatus
@@ -73,6 +73,9 @@ internal/
     file_logger.go                 # FileLogger — append-only JSON-lines file, mutex-guarded
     service.go, handler.go
 
+  state/                        # shared infra, not a domain
+    state.go                      # Store — application state file: atomic write (temp + rename), mode 0600
+
   common/
     errors.go                     # AppError + HandlerError — shared HTTP error translation used by every domain's handler
 
@@ -84,7 +87,7 @@ internal/
       jail_helper.go                  # jail.conf / jail.conf.d parsing + merge (JD-004)
       storage_adapter.go              # (not yet built) implements storage.StorageSystem — zfs, fetch, freebsd-update, jexec
     fake/
-      jail.go                          # in-memory JailSystem, for non-FreeBSD dev (see commented-out line in app.go)
+      jail.go                          # in-memory JailSystem, for non-FreeBSD dev (JAILDECK_ADAPTER=fake)
 
 web/                             # Svelte frontend (separate module/build) — not yet built, see JD-009 / ROADMAP.md Phase 1b
   src/

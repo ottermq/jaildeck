@@ -3,6 +3,8 @@ package app
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
 	"codeberg.org/Otter-Labs/jaildeck/internal/config"
@@ -20,7 +22,10 @@ type App struct {
 }
 
 func New(cfg *config.Config) (*App, error) {
-	auditLogger := audit.NewFileLogger("jaildeck-audit.log")
+	auditLogger, err := setupAuditLog(cfg.AuditLog)
+	if err != nil {
+		return nil, err
+	}
 
 	jailSystem, err := newJailSystem(cfg.Adapter)
 	if err != nil {
@@ -37,6 +42,21 @@ func New(cfg *config.Config) (*App, error) {
 		jailHandler:  jailHandler,
 		auditHandler: auditHandler,
 	}, nil
+}
+
+func setupAuditLog(auditLogFilePath string) (*audit.FileLogger, error) {
+	err := os.MkdirAll(filepath.Dir(auditLogFilePath), 0o700)
+	if err != nil {
+		return nil, fmt.Errorf("creating audit log directory: %w", err)
+	}
+	f, err := os.OpenFile(auditLogFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("opening audit log: %w", err)
+	}
+	defer f.Close()
+
+	auditLogger := audit.NewFileLogger(auditLogFilePath)
+	return auditLogger, nil
 }
 
 // newJailSystem selects the jails.JailSystem implementation named by adapter.

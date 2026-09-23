@@ -45,7 +45,9 @@ Node.js is required to *build* the frontend; it is never required to *run* jaild
 ```text
 cmd/
   jaildeck/
-    main.go                    # loads config, builds App, starts http.ListenAndServe
+    main.go                    # subcommand dispatch (version, passwd), then loads config,
+                                # builds App, starts http.ListenAndServe
+    passwd.go                  # `jaildeck passwd [--stdin]` — the only writer of the credential
 
 internal/
   app/
@@ -67,6 +69,9 @@ internal/
     repository.go                  # StorageSystem port (create/clone/snapshot/list, fetch/extract/patch/update)
     service.go                     # application service
     handler.go
+
+  auth/                         # bounded context: Authentication
+    auth.go                       # argon2id Hash/Verify over the PHC string ($argon2id$v=..$m=..)
 
   audit/                        # shared infra, not a domain
     logger.go                     # Entry, Filter, Logger/Reader interfaces

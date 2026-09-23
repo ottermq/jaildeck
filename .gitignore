@@ -34,3 +34,5 @@ go.work.sum
 *.log
 
 CLAUDE.md
+# Binary built by `go build ./cmd/jaildeck` from the repo root
+/jaildeck

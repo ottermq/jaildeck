@@ -14,10 +14,18 @@ import (
 )
 
 func main() {
+
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "version":
 			fmt.Println(buildinfo.Version())
+			return
+		case "passwd":
+			cfg := config.LoadConfig()
+			if err := runPasswd(os.Args, os.Stdin, os.Stdout, cfg.StateDir); err != nil {
+				fmt.Fprintln(os.Stderr, "jaildeck passwd:", err)
+				os.Exit(1)
+			}
 			return
 		default:
 			fmt.Fprintf(os.Stderr, "unknown command: %q\n", os.Args[1])
@@ -26,7 +34,6 @@ func main() {
 	}
 
 	cfg := config.LoadConfig()
-
 	a, err := app.New(cfg)
 	if err != nil {
 		log.Fatal(err.Error())

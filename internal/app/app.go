@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
 	"codeberg.org/Otter-Labs/jaildeck/internal/config"
 	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
+	"codeberg.org/Otter-Labs/jaildeck/internal/state"
 	"codeberg.org/Otter-Labs/jaildeck/internal/system"
 	"codeberg.org/Otter-Labs/jaildeck/internal/system/fake"
 	"codeberg.org/Otter-Labs/jaildeck/internal/system/freebsd"
@@ -16,12 +18,18 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
+var ErrNoCredential = errors.New("no operator credential configured")
+
 type App struct {
 	jailHandler  *jails.JailHandler
 	auditHandler *audit.AuditHandler
 }
 
 func New(cfg *config.Config) (*App, error) {
+	if err := requireCredential(cfg.StateDir); err != nil {
+		return nil, err
+	}
+
 	auditLogger, err := setupAuditLog(cfg.AuditLog)
 	if err != nil {
 		return nil, err
@@ -42,6 +50,23 @@ func New(cfg *config.Config) (*App, error) {
 		jailHandler:  jailHandler,
 		auditHandler: auditHandler,
 	}, nil
+}
+
+func requireCredential(stateDir string) error {
+	store := state.NewStore(stateDir)
+	st, err := store.Load()
+	switch {
+	case errors.Is(err, state.ErrNotConfigured):
+		return fmt.Errorf("%w in %s. Run: jaildeck passwd", ErrNoCredential, stateDir)
+	case err != nil:
+		// corrupted or unreadable:
+		// No need of dedicated sentinels
+		// Load() already names the path and the cause, and this must not be reported as "run jaildeck passwd"
+		return err
+	case st.PasswordHash == "":
+		return fmt.Errorf("%w in %s. Run: jaildeck passwd", ErrNoCredential, stateDir)
+	}
+	return nil
 }
 
 func setupAuditLog(auditLogFilePath string) (*audit.FileLogger, error) {

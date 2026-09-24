@@ -46,7 +46,7 @@ func (s *Store) Load() (State, error) {
 	}
 	var state State
 	if err := json.Unmarshal(data, &state); err != nil {
-		return State{}, fmt.Errorf("decoding state file: %w", err)
+		return State{}, fmt.Errorf("decoding state file %s: %w", filepath.Join(s.dir, fileName), err)
 	}
 	return state, nil
 }

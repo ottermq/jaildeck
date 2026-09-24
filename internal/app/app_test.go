@@ -11,7 +11,55 @@ import (
 	"testing"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
+	"codeberg.org/Otter-Labs/jaildeck/internal/auth"
+	"codeberg.org/Otter-Labs/jaildeck/internal/config"
+	"codeberg.org/Otter-Labs/jaildeck/internal/state"
 )
+
+func TestNew_RequiresCredential(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.Config{
+		Adapter:  config.AdapterFake,
+		StateDir: filepath.Join(root, "state"),
+		AuditLog: filepath.Join(root, "log", "audit.log"),
+	}
+
+	a, err := New(cfg)
+	if a != nil {
+		t.Errorf("New() app = %v, want nil", a)
+	}
+	if !errors.Is(err, ErrNoCredential) {
+		t.Fatalf("New() error = %v, want ErrNoCredential", err)
+	}
+	// The credential check must run before anything touches the filesystem.
+	if _, err := os.Stat(filepath.Dir(cfg.AuditLog)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("audit log directory exists after a failed New(); the credential check must run first")
+	}
+}
+
+func TestNew_SucceedsWithCredential(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.Config{
+		Adapter:  config.AdapterFake,
+		StateDir: filepath.Join(root, "state"),
+		AuditLog: filepath.Join(root, "log", "audit.log"),
+	}
+	hash, err := auth.Hash("test-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.NewStore(cfg.StateDir).Save(state.State{PasswordHash: hash}); err != nil {
+		t.Fatalf("seeding credential: %v", err)
+	}
+
+	a, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if a == nil {
+		t.Fatal("New() app = nil, want non-nil")
+	}
+}
 
 func TestSetupAuditLog(t *testing.T) {
 	t.Run("creates directories and usable log", func(t *testing.T) {
@@ -141,4 +189,51 @@ func TestSetupAuditLog(t *testing.T) {
 			t.Errorf("error = %v, want wrapped permission error", err)
 		}
 	})
+}
+
+func TestRequireCredential(t *testing.T) {
+	hash, err := auth.Hash("test-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := json.Marshal(map[string]string{"password_hash": hash})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name             string
+		contents         string
+		wantErr          bool
+		wantNoCredential bool
+	}{
+		{name: "missing state dir", wantErr: true, wantNoCredential: true},
+		{name: "empty password hash", contents: `{"password_hash":""}`, wantErr: true, wantNoCredential: true},
+		{name: "corrupt JSON", contents: `{`, wantErr: true},
+		{name: "real credential", contents: string(credential)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stateDir := filepath.Join(t.TempDir(), "state")
+			if tt.contents != "" {
+				if err := os.Mkdir(stateDir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(stateDir, "state.json"), []byte(tt.contents), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			err := requireCredential(stateDir)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("requireCredential() error = %v, want error = %v", err, tt.wantErr)
+			}
+			if errors.Is(err, ErrNoCredential) != tt.wantNoCredential {
+				t.Errorf("requireCredential() error = %v, want ErrNoCredential = %v", err, tt.wantNoCredential)
+			}
+			if tt.wantNoCredential && !strings.Contains(err.Error(), stateDir) {
+				t.Errorf("error = %q, want state directory %q", err, stateDir)
+			}
+		})
+	}
 }

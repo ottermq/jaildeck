@@ -223,8 +223,7 @@ func TestRequireCredential(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-
-			err := requireCredential(stateDir)
+			err := requireCredential(state.NewStore(stateDir))
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("requireCredential() error = %v, want error = %v", err, tt.wantErr)
 			}

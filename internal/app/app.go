@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
+	"codeberg.org/Otter-Labs/jaildeck/internal/auth"
 	"codeberg.org/Otter-Labs/jaildeck/internal/config"
 	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
 	"codeberg.org/Otter-Labs/jaildeck/internal/state"
@@ -21,14 +22,20 @@ import (
 var ErrNoCredential = errors.New("no operator credential configured")
 
 type App struct {
+	authHandler  *auth.AuthHandler
 	jailHandler  *jails.JailHandler
 	auditHandler *audit.AuditHandler
 }
 
 func New(cfg *config.Config) (*App, error) {
-	if err := requireCredential(cfg.StateDir); err != nil {
+	authState := state.NewStore(cfg.StateDir)
+	if err := requireCredential(authState); err != nil {
 		return nil, err
 	}
+
+	sessions := auth.NewSessionStore()
+	authService := auth.NewAuthService(authState, sessions)
+	authHandler := auth.NewAuthHandler(authService)
 
 	auditLogger, err := setupAuditLog(cfg.AuditLog)
 	if err != nil {
@@ -47,24 +54,24 @@ func New(cfg *config.Config) (*App, error) {
 	auditHandler := audit.NewAuditHandler(auditService)
 
 	return &App{
+		authHandler:  authHandler,
 		jailHandler:  jailHandler,
 		auditHandler: auditHandler,
 	}, nil
 }
 
-func requireCredential(stateDir string) error {
-	store := state.NewStore(stateDir)
+func requireCredential(store *state.Store) error {
 	st, err := store.Load()
 	switch {
 	case errors.Is(err, state.ErrNotConfigured):
-		return fmt.Errorf("%w in %s. Run: jaildeck passwd", ErrNoCredential, stateDir)
+		return fmt.Errorf("%w in %s. Run: jaildeck passwd", ErrNoCredential, store.Dir())
 	case err != nil:
 		// corrupted or unreadable:
 		// No need of dedicated sentinels
 		// Load() already names the path and the cause, and this must not be reported as "run jaildeck passwd"
 		return err
 	case st.PasswordHash == "":
-		return fmt.Errorf("%w in %s. Run: jaildeck passwd", ErrNoCredential, stateDir)
+		return fmt.Errorf("%w in %s. Run: jaildeck passwd", ErrNoCredential, store.Dir())
 	}
 	return nil
 }
@@ -108,6 +115,8 @@ func (a *App) Routes() http.Handler {
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/jails", http.StatusSeeOther)
 	})
+
+	auth.RegisterAuthRoutes(r, a.authHandler)
 
 	jails.RegisterJailRoutes(r, a.jailHandler)
 

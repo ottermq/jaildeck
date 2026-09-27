@@ -33,6 +33,10 @@ func NewStore(dir string) *Store {
 	}
 }
 
+func (s *Store) Dir() string {
+	return s.dir
+}
+
 // Load reads the state from the store's directory. If the state file does not
 // exist, it returns ErrNotConfigured. If the state file is corrupt or cannot
 // be read, it returns an error.

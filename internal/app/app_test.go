@@ -38,6 +38,16 @@ func TestNew_RequiresCredential(t *testing.T) {
 }
 
 func TestNew_SucceedsWithCredential(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if a == nil {
+		t.Fatal("New() app = nil, want non-nil")
+	}
+}
+
+func newTestApp(t *testing.T) (*App, error) {
 	root := t.TempDir()
 	cfg := &config.Config{
 		Adapter:  config.AdapterFake,
@@ -52,13 +62,7 @@ func TestNew_SucceedsWithCredential(t *testing.T) {
 		t.Fatalf("seeding credential: %v", err)
 	}
 
-	a, err := New(cfg)
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	if a == nil {
-		t.Fatal("New() app = nil, want non-nil")
-	}
+	return New(cfg)
 }
 
 func TestSetupAuditLog(t *testing.T) {

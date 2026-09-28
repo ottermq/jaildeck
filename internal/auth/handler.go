@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -73,18 +74,39 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
-	c, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		common.HandlerError(w, ErrUnauthenticated)
+	session, ok := SessionFromContext(r.Context())
+	if !ok {
+		// The middleware guarantees this;
+		// reaching it means /auth/me was registered without RequireSession.
+		common.HandlerError(w, common.NewAppError(http.StatusInternalServerError, "internal server error"))
 		return
 	}
-	session, err := h.service.Authenticate(r.Context(), c.Value)
-	if err != nil {
-		common.HandlerError(w, err)
-		return
-	}
-
 	common.WriteJSON(w, http.StatusOK, MeResponse{ExpiresAt: session.ExpiresAt})
+}
+
+/* Middleware */
+
+type contextKey struct{}
+
+func (h *AuthHandler) RequireSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := r.Cookie(sessionCookieName)
+		if err != nil {
+			common.HandlerError(w, ErrUnauthenticated)
+			return
+		}
+		session, err := h.service.Authenticate(r.Context(), c.Value)
+		if err != nil {
+			common.HandlerError(w, err)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), contextKey{}, session)))
+	})
+}
+
+func SessionFromContext(ctx context.Context) (Session, bool) {
+	session, ok := ctx.Value(contextKey{}).(Session)
+	return session, ok
 }
 
 func newSessionCookie(value string, maxAge int) *http.Cookie {

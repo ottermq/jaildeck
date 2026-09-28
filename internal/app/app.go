@@ -112,15 +112,16 @@ func (a *App) Routes() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/jails", http.StatusSeeOther)
-	})
-
 	auth.RegisterAuthRoutes(r, a.authHandler)
 
-	jails.RegisterJailRoutes(r, a.jailHandler)
-
-	audit.RegisterAuditHandlers(r, a.auditHandler)
+	r.Group(func(r chi.Router) {
+		r.Use(a.authHandler.RequireSession)
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/jails", http.StatusSeeOther)
+		})
+		jails.RegisterJailRoutes(r, a.jailHandler)
+		audit.RegisterAuditHandlers(r, a.auditHandler)
+	})
 
 	return r
 }

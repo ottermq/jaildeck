@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/state"
+	"github.com/go-chi/chi/v5"
 )
 
 func TestAuthHandlerSessionLifecycle(t *testing.T) {
@@ -23,10 +25,12 @@ func TestAuthHandlerSessionLifecycle(t *testing.T) {
 		return state.State{PasswordHash: hash}, nil
 	}), sessions)
 	h := NewAuthHandler(service)
+	router := chi.NewRouter()
+	RegisterAuthRoutes(router, h)
 
 	t.Run("wrong password", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		h.Login(rec, httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"password":"wrong"}`)))
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"password":"wrong"}`)))
 		resp := rec.Result()
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
@@ -38,7 +42,7 @@ func TestAuthHandlerSessionLifecycle(t *testing.T) {
 	})
 
 	rec := httptest.NewRecorder()
-	h.Login(rec, httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"password":"correct password"}`)))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"password":"correct password"}`)))
 	resp := rec.Result()
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -78,7 +82,7 @@ func TestAuthHandlerSessionLifecycle(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
 	req.AddCookie(cookie)
 	rec = httptest.NewRecorder()
-	h.Me(rec, req)
+	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("me status = %d, want 200", rec.Code)
 	}
@@ -93,7 +97,7 @@ func TestAuthHandlerSessionLifecycle(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 	req.AddCookie(cookie)
 	rec = httptest.NewRecorder()
-	h.Logout(rec, req)
+	router.ServeHTTP(rec, req)
 	resp = rec.Result()
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent || rec.Body.Len() != 0 {
@@ -110,7 +114,7 @@ func TestAuthHandlerSessionLifecycle(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/auth/me", nil)
 	req.AddCookie(cookie)
 	rec = httptest.NewRecorder()
-	h.Me(rec, req)
+	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("me after logout status = %d, want 401", rec.Code)
 	}
@@ -140,18 +144,82 @@ func TestAuthHandlerLoginInvalidBody(t *testing.T) {
 	}
 }
 
-func TestAuthHandlerMeUnauthorized(t *testing.T) {
-	h := NewAuthHandler(NewAuthService(nil, NewSessionStore()))
-	for _, token := range []string{"", "unknown"} {
-		t.Run("token="+token, func(t *testing.T) {
+func TestRequireSession(t *testing.T) {
+	sessions := NewSessionStore()
+	const hash = "stored password hash"
+	h := NewAuthHandler(NewAuthService(credentialReaderFunc(func() (state.State, error) {
+		return state.State{PasswordHash: hash}, nil
+	}), sessions))
+	token, err := sessions.Create(credentialFingerprint(hash))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSession, err := sessions.Get(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name, token string
+		wantStatus  int
+		wantNext    bool
+	}{
+		{"no cookie", "", http.StatusUnauthorized, false},
+		{"unknown token", "unknown", http.StatusUnauthorized, false},
+		{"valid token", token, http.StatusNoContent, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
-			if token != "" {
-				req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+			if tt.token != "" {
+				req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: tt.token})
 			}
 			rec := httptest.NewRecorder()
-			h.Me(rec, req)
-			if rec.Code != http.StatusUnauthorized {
-				t.Errorf("status = %d, want 401", rec.Code)
+			called := false
+			h.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				if got, ok := SessionFromContext(r.Context()); !ok || got != wantSession {
+					t.Errorf("context session = %+v, present = %v; want %+v", got, ok, wantSession)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			})).ServeHTTP(rec, req)
+			if called != tt.wantNext {
+				t.Errorf("next called = %v, want %v", called, tt.wantNext)
+			}
+			if rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestAuthHandlerMe(t *testing.T) {
+	h := NewAuthHandler(nil)
+	session := Session{ExpiresAt: time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)}
+	for _, tt := range []struct {
+		name       string
+		ctx        context.Context
+		wantStatus int
+	}{
+		{"session in context", context.WithValue(context.Background(), contextKey{}, session), http.StatusOK},
+		{"bare context", context.Background(), http.StatusInternalServerError},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.Me(rec, httptest.NewRequest(http.MethodGet, "/auth/me", nil).WithContext(tt.ctx))
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if tt.wantStatus != http.StatusOK {
+				if strings.Contains(rec.Body.String(), `"expires_at"`) {
+					t.Error("unauthorized response includes session data")
+				}
+				return
+			}
+			var me MeResponse
+			if err := json.NewDecoder(rec.Body).Decode(&me); err != nil {
+				t.Fatal(err)
+			}
+			if !me.ExpiresAt.Equal(session.ExpiresAt) {
+				t.Errorf("ExpiresAt = %v, want %v", me.ExpiresAt, session.ExpiresAt)
 			}
 		})
 	}

@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoadConfig(t *testing.T) {
 	tests := []struct {
@@ -47,6 +50,77 @@ func TestLoadConfig(t *testing.T) {
 
 			if got := LoadConfig(); got == nil || *got != tt.want {
 				t.Errorf("LoadConfig() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBindWarning(t *testing.T) {
+	tests := []struct {
+		host         string
+		wantWarning  bool
+		wantMentions string
+	}{
+		{host: "localhost", wantWarning: false},
+		{host: "LOCALHOST", wantWarning: false},
+		{host: "127.0.0.1", wantWarning: false},
+		{host: "::1", wantWarning: false},
+		{host: "0.0.0.0", wantWarning: true},
+		{host: "::", wantWarning: true},
+		{host: "192.168.1.10", wantWarning: true},
+		{host: "example.com", wantWarning: true},
+		{host: "", wantWarning: true, wantMentions: "all interfaces"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.host, func(t *testing.T) {
+			got := BindWarning(tt.host)
+			if tt.wantWarning {
+				mentions := tt.wantMentions
+				if mentions == "" {
+					mentions = tt.host
+				}
+				for _, want := range []string{mentions, "reverse proxy", "LocalForward"} {
+					if !strings.Contains(got, want) {
+						t.Errorf("BindWarning(%q) = %q, want to contain %q", tt.host, got, want)
+					}
+				}
+			} else if got != "" {
+				t.Errorf("BindWarning(%q) = %q, want no warning", tt.host, got)
+			}
+		})
+	}
+}
+
+func TestIsLoopback(t *testing.T) {
+	tests := []struct {
+		host string
+		want bool
+	}{
+		{host: "localhost", want: true},
+		{host: "LoCaLhOsT", want: true},
+		{host: "127.0.0.1", want: true},
+		{host: "127.1.2.3", want: true},
+		{host: "::1", want: true},
+		{host: "0:0:0:0:0:0:0:1", want: true},
+		{host: "::ffff:127.0.0.1", want: true},
+		{host: "0.0.0.0", want: false},
+		{host: "::", want: false},
+		{host: "192.168.1.10", want: false},
+		{host: "2001:db8::1", want: false},
+		{host: "::ffff:192.168.1.10", want: false},
+		{host: "example.com", want: false},
+		{host: "127.0.0.999", want: false},
+		{host: "127.0.0.1:8888", want: false},
+		{host: "[::1]", want: false},
+		{host: " localhost ", want: false},
+		{host: "", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.host, func(t *testing.T) {
+			if got := isLoopback(tt.host); got != tt.want {
+				t.Errorf("isLoopback(%q) = %t, want %t", tt.host, got, tt.want)
 			}
 		})
 	}

@@ -34,6 +34,10 @@ func main() {
 	}
 
 	cfg := config.LoadConfig()
+	warning := config.BindWarning(cfg.Host)
+	if warning != "" {
+		log.Println(warning)
+	}
 	a, err := app.New(cfg)
 	if err != nil {
 		log.Fatal(err.Error())

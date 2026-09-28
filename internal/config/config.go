@@ -1,7 +1,10 @@
 package config
 
 import (
+	"fmt"
+	"net"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -10,6 +13,10 @@ import (
 const (
 	AdapterFreeBSD = "freebsd"
 	AdapterFake    = "fake"
+	warningMessage = `WARNING: listening on %s, which is not loopback. If nothing is terminating
+TLS in front of Jail Deck, the operator password crosses the network in
+plaintext. Use a reverse proxy terminating TLS for a permanent deployment, or an
+SSH LocalForward for ad-hoc access.`
 )
 
 type Config struct {
@@ -40,4 +47,22 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func BindWarning(host string) string {
+	if !isLoopback(host) {
+		if host == "" {
+			host = "all interfaces"
+		}
+		return fmt.Sprintf(warningMessage, host)
+	}
+	return ""
+}
+
+func isLoopback(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

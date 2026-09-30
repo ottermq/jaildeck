@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/auth"
-	"codeberg.org/Otter-Labs/jaildeck/internal/state"
 	"golang.org/x/term"
 )
 
@@ -90,10 +89,8 @@ func runPasswd(args []string, stdin io.Reader, out io.Writer, stateDir string) e
 		return err
 	}
 
-	store := state.NewStore(stateDir)
-	st, err := store.Load()
-	// It is expected on a fresh install
-	if err != nil && !errors.Is(err, state.ErrNotConfigured) {
+	store, st, err := loadState(stateDir)
+	if err != nil {
 		return err
 	}
 	st.PasswordHash = hash

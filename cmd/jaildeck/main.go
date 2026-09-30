@@ -22,8 +22,16 @@ func main() {
 			return
 		case "passwd":
 			cfg := config.LoadConfig()
+			// TODO: fix runPasswd to take subArgs (slice of os.Args) and fix the necessary tests
 			if err := runPasswd(os.Args, os.Stdin, os.Stdout, cfg.StateDir); err != nil {
 				fmt.Fprintln(os.Stderr, "jaildeck passwd:", err)
+				os.Exit(1)
+			}
+			return
+		case "token":
+			cfg := config.LoadConfig()
+			if err := runToken(os.Args[2:], os.Stdout, os.Stderr, cfg.StateDir); err != nil {
+				fmt.Fprintln(os.Stderr, "jaildeck token:", err)
 				os.Exit(1)
 			}
 			return

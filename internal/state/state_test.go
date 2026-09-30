@@ -72,7 +72,7 @@ func TestSave_CreatesFileWith0600(t *testing.T) {
 func TestSave_TwiceReplacesContents(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	first := State{PasswordHash: "original", APITokens: []Token{"token"}}
+	first := State{PasswordHash: "original", APITokens: []Token{{Name: "token"}}}
 	second := State{PasswordHash: "second"}
 
 	if err := store.Save(first); err != nil {

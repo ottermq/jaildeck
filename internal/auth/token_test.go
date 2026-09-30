@@ -2,6 +2,8 @@ package auth
 
 import (
 	"encoding/base64"
+	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -79,6 +81,101 @@ func TestMatchToken(t *testing.T) {
 			got, ok := MatchToken(tt.presented, tt.tokens)
 			if ok != tt.wantOK || got != tt.want {
 				t.Errorf("MatchToken = (%+v, %t), want (%+v, %t)", got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestAddToken(t *testing.T) {
+	now := time.Unix(200, 0)
+	original := []state.Token{{Name: "backup", Hash: HashToken("jd_existing"), CreatedAt: time.Unix(100, 0)}}
+	for _, tt := range []struct {
+		name, input string
+		wantErr     error
+	}{
+		{"empty", "", ErrMissingTokenName},
+		{"whitespace", " \t\n", ErrMissingTokenName},
+		{"control character", "new\x00token", ErrInvalidTokenName},
+		{"embedded newline", "new\ntoken", ErrInvalidTokenName},
+		{"duplicate", "backup", ErrTokenNameAlreadyExists},
+		{"duplicate case", "BACKUP", ErrTokenNameAlreadyExists},
+		{"duplicate trimmed", " backup ", ErrTokenNameAlreadyExists},
+		{"success", " \tnew token\n", nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tokens := slices.Clone(original)
+			got, plaintext, err := AddToken(tokens, tt.input, now)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("AddToken error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr != nil {
+				if !slices.Equal(got, original) {
+					t.Errorf("tokens on error = %+v, want %+v", got, original)
+				}
+				if plaintext != "" {
+					t.Errorf("plaintext on error = %q, want empty", plaintext)
+				}
+				return
+			}
+			if len(got) != len(original)+1 {
+				t.Fatalf("token count = %d, want %d", len(got), len(original)+1)
+			}
+			if !slices.Equal(got[:len(original)], original) {
+				t.Errorf("existing tokens changed: %+v", got)
+			}
+			if plaintext == "" {
+				t.Fatal("AddToken returned empty plaintext")
+			}
+			want := state.Token{Name: "new token", Hash: HashToken(plaintext), CreatedAt: now}
+			if added := got[len(original)]; added != want {
+				t.Errorf("added token = %+v, want %+v", added, want)
+			}
+			for _, token := range got {
+				for _, field := range []string{token.Name, token.Hash, token.CreatedAt.String()} {
+					if strings.Contains(field, plaintext) {
+						t.Errorf("stored field %q contains plaintext token", field)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestRevokeToken(t *testing.T) {
+	original := []state.Token{
+		{Name: "first", Hash: HashToken("jd_first"), CreatedAt: time.Unix(100, 0)},
+		{Name: "second", Hash: HashToken("jd_second"), CreatedAt: time.Unix(200, 0)},
+		{Name: "third", Hash: HashToken("jd_third"), CreatedAt: time.Unix(300, 0)},
+	}
+	for _, tt := range []struct {
+		name, input string
+		want        []state.Token
+		wantErr     error
+	}{
+		{"first", "first", original[1:], nil},
+		{"middle", "second", []state.Token{original[0], original[2]}, nil},
+		{"last", "third", original[:2], nil},
+		{"case insensitive", "SECOND", []state.Token{original[0], original[2]}, nil},
+		{"trimmed", " \tsecond\n", []state.Token{original[0], original[2]}, nil},
+		{"unknown", "missing", original, ErrUnknownToken},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tokens := slices.Clone(original)
+			got, err := RevokeToken(tokens, tt.input)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("RevokeToken error = %v, want %v", err, tt.wantErr)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("RevokeToken = %+v, want %+v", got, tt.want)
+			}
+			if !slices.Equal(tokens, original) {
+				t.Errorf("caller's tokens changed: %+v, want %+v", tokens, original)
+			}
+			if err == nil && len(got) > 0 {
+				got[0].Name = "changed"
+				if !slices.Equal(tokens, original) {
+					t.Errorf("result aliases caller's tokens: %+v", tokens)
+				}
 			}
 		})
 	}

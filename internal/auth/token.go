@@ -6,8 +6,20 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+	"unicode"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/state"
+)
+
+var (
+	ErrUnknownToken           = errors.New("unknown token")
+	ErrTokenNameAlreadyExists = errors.New("token name already exists")
+	ErrInvalidTokenName       = errors.New("token name invalid")
+	ErrMissingTokenName       = errors.New("missing token name")
 )
 
 func GenerateToken() (string, error) {
@@ -32,4 +44,50 @@ func MatchToken(presented string, tokens []state.Token) (state.Token, bool) {
 		}
 	}
 	return state.Token{}, false
+}
+
+func AddToken(tokens []state.Token, name string, now time.Time) ([]state.Token, string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return tokens, "", ErrMissingTokenName
+	}
+	if strings.IndexFunc(name, unicode.IsControl) >= 0 {
+		return tokens, "", fmt.Errorf("%w: name cannot contain control characters", ErrInvalidTokenName)
+	}
+
+	if !isTokenNameUnique(tokens, name) {
+		return tokens, "", ErrTokenNameAlreadyExists
+	}
+
+	plainToken, err := GenerateToken()
+	if err != nil {
+		return tokens, "", err
+	}
+	hash := HashToken(plainToken)
+	tokens = append(tokens, state.Token{Name: name, Hash: hash, CreatedAt: now})
+	return tokens, plainToken, nil
+}
+
+func RevokeToken(tokens []state.Token, name string) ([]state.Token, error) {
+	name = strings.TrimSpace(name)
+	for i, token := range tokens {
+		if strings.EqualFold(token.Name, name) {
+			out := make([]state.Token, 0, len(tokens)-1)
+			out = append(out, tokens[:i]...)
+			return append(out, tokens[i+1:]...), nil
+		}
+	}
+	return tokens, ErrUnknownToken // we return error here. Idempotency could be a choice on higher layers.
+}
+
+func isTokenNameUnique(tokens []state.Token, name string) bool {
+	for _, token := range tokens {
+		// Case-insensitive uniqueness -- deliberate decision since "backup"
+		// and "Backup" would represent an accidental duplicate rather than
+		// meaningfully different tokens.
+		if strings.EqualFold(token.Name, name) {
+			return false
+		}
+	}
+	return true
 }

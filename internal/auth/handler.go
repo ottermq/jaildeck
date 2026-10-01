@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/common"
@@ -24,8 +25,20 @@ type LoginResponse struct {
 }
 
 type MeResponse struct {
-	ExpiresAt time.Time `json:"expires_at"`
+	Principal Principal `json:"principal"`
 }
+
+type Principal struct {
+	Kind      PrincipalKind `json:"kind"`
+	Name      string        `json:"name"`
+	ExpiresAt *time.Time    `json:"expires_at,omitempty"`
+}
+
+type PrincipalKind string //session | token
+const (
+	kindSession PrincipalKind = "session"
+	kindToken   PrincipalKind = "token"
+)
 
 type AuthHandler struct {
 	service *AuthService
@@ -75,21 +88,52 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	session, ok := SessionFromContext(r.Context())
-	if !ok {
-		// The middleware guarantees this;
-		// reaching it means /auth/me was registered without RequireSession.
-		common.HandlerError(w, common.NewAppError(http.StatusInternalServerError, "internal server error"))
+	if ok {
+		common.WriteJSON(w, http.StatusOK, MeResponse{
+			Principal{
+				Kind:      kindSession,
+				Name:      "",
+				ExpiresAt: &session.ExpiresAt,
+			},
+		})
 		return
 	}
-	common.WriteJSON(w, http.StatusOK, MeResponse{ExpiresAt: session.ExpiresAt})
+	name, ok := TokenNameFromContext(r.Context())
+	if ok {
+		common.WriteJSON(w, http.StatusOK, MeResponse{
+			Principal{
+				Kind:      kindToken,
+				Name:      name,
+				ExpiresAt: nil,
+			},
+		})
+		return
+	}
+	// The middleware guarantees this;
+	// reaching it means /auth/me was registered without RequireAuth.
+	common.HandlerError(w, common.NewAppError(http.StatusInternalServerError, "internal server error"))
 }
 
 /* Middleware */
 
-type contextKey struct{}
+type sessionKey struct{}
+type bearerKey struct{}
 
-func (h *AuthHandler) RequireSession(next http.Handler) http.Handler {
+func (h *AuthHandler) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		presented, ok := bearerToken(r)
+		// A bad token deliberately returns 401, rather than falling back to a
+		// valid cookie.
+		if ok {
+			token, err := h.service.AuthenticateToken(r.Context(), presented)
+			if err != nil {
+				common.HandlerError(w, err)
+				return
+			}
+			ctx := context.WithValue(r.Context(), bearerKey{}, token.Name)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
 		c, err := r.Cookie(sessionCookieName)
 		if err != nil {
 			common.HandlerError(w, ErrUnauthenticated)
@@ -100,13 +144,19 @@ func (h *AuthHandler) RequireSession(next http.Handler) http.Handler {
 			common.HandlerError(w, err)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), contextKey{}, session)))
+		ctx := context.WithValue(r.Context(), sessionKey{}, session)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 func SessionFromContext(ctx context.Context) (Session, bool) {
-	session, ok := ctx.Value(contextKey{}).(Session)
+	session, ok := ctx.Value(sessionKey{}).(Session)
 	return session, ok
+}
+
+func TokenNameFromContext(ctx context.Context) (string, bool) {
+	name, ok := ctx.Value(bearerKey{}).(string)
+	return name, ok
 }
 
 func newSessionCookie(value string, maxAge int) *http.Cookie {
@@ -122,4 +172,20 @@ func newSessionCookie(value string, maxAge int) *http.Cookie {
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 	}
+}
+
+func bearerToken(r *http.Request) (string, bool) {
+	auth := r.Header.Get("Authorization")
+
+	scheme, token, ok := strings.Cut(auth, " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return "", false
+	}
+
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", false
+	}
+
+	return token, true
 }

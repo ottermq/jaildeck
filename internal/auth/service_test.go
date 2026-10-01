@@ -232,3 +232,69 @@ func TestAuthServiceSessionMaxAge(t *testing.T) {
 		t.Fatalf("SessionMaxAge() = %v, want %v", got, sessions.maxAge)
 	}
 }
+
+func TestAuthServiceAuthenticateToken(t *testing.T) {
+	first := state.Token{Name: "first", Hash: HashToken("jd_first"), CreatedAt: time.Unix(100, 0)}
+	second := state.Token{Name: "second", Hash: HashToken("jd_second"), CreatedAt: time.Unix(200, 0)}
+	tokens := []state.Token{first, second}
+	loadErr := errors.New("load failed")
+	for _, tt := range []struct {
+		name      string
+		presented string
+		tokens    []state.Token
+		loadErr   error
+		want      state.Token
+		wantErr   error
+	}{
+		{name: "first match", presented: "jd_first", tokens: tokens, want: first},
+		{name: "later match", presented: "jd_second", tokens: tokens, want: second},
+		{name: "unknown token", presented: "jd_unknown", tokens: tokens, wantErr: ErrUnauthenticated},
+		{name: "empty token", tokens: tokens, wantErr: ErrUnauthenticated},
+		{name: "no stored tokens", presented: "jd_first", wantErr: ErrUnauthenticated},
+		{name: "hash is not a token", presented: first.Hash, tokens: tokens, wantErr: ErrUnauthenticated},
+		// a load failure is a server fault, not an authentication failure — so a broken state file cannot be mistaken for a bad credential
+		{name: "load failure", presented: "jd_first", tokens: tokens, loadErr: loadErr, wantErr: loadErr},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			service := NewAuthService(credentialReaderFunc(func() (state.State, error) {
+				calls++
+				return state.State{APITokens: tt.tokens}, tt.loadErr
+			}), NewSessionStore())
+			got, err := service.AuthenticateToken(context.Background(), tt.presented)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("AuthenticateToken() error = %v, want %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("AuthenticateToken() token = %+v, want %+v", got, tt.want)
+			}
+			if calls != 1 {
+				t.Errorf("Load() calls = %d, want 1", calls)
+			}
+		})
+	}
+}
+
+func TestAuthServiceRevokeToken(t *testing.T) {
+	tok := state.Token{Name: "ok", Hash: HashToken("jd_ok"), CreatedAt: time.Unix(100, 0)}
+	tokens := []state.Token{tok}
+	service := NewAuthService(credentialReaderFunc(func() (state.State, error) {
+		return state.State{APITokens: tokens}, nil
+	}), NewSessionStore())
+
+	got, err := service.AuthenticateToken(context.Background(), "jd_ok")
+	if err != nil || got != tok {
+		t.Fatalf("AuthenticateToken() = %+v, %v; want %+v, nil", got, err, tok)
+	}
+
+	// Revoked out from under the running service — no restart, no new service.
+	tokens = nil
+
+	got, err = service.AuthenticateToken(context.Background(), "jd_ok")
+	if !errors.Is(err, ErrUnauthenticated) {
+		t.Errorf("after revocation error = %v, want ErrUnauthenticated", err)
+	}
+	if got != (state.Token{}) {
+		t.Errorf("after revocation token = %+v, want zero", got)
+	}
+}

@@ -115,7 +115,7 @@ func (a *App) Routes() http.Handler {
 	auth.RegisterAuthRoutes(r, a.authHandler)
 
 	r.Group(func(r chi.Router) {
-		r.Use(a.authHandler.RequireSession)
+		r.Use(a.authHandler.RequireAuth)
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/jails", http.StatusSeeOther)
 		})

@@ -90,8 +90,8 @@ func TestAuthHandlerSessionLifecycle(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&me); err != nil {
 		t.Fatal(err)
 	}
-	if want := now.Add(service.SessionMaxAge()); !me.ExpiresAt.Equal(want) {
-		t.Errorf("ExpiresAt = %v, want %v", me.ExpiresAt, want)
+	if want := now.Add(service.SessionMaxAge()); !me.Principal.ExpiresAt.Equal(want) {
+		t.Errorf("ExpiresAt = %v, want %v", me.Principal.ExpiresAt, want)
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
@@ -144,11 +144,16 @@ func TestAuthHandlerLoginInvalidBody(t *testing.T) {
 	}
 }
 
-func TestRequireSession(t *testing.T) {
+func TestRequireAuth(t *testing.T) {
 	sessions := NewSessionStore()
 	const hash = "stored password hash"
+	const apiToken = "jd_test_token"
+	const tokenName = "test token"
 	h := NewAuthHandler(NewAuthService(credentialReaderFunc(func() (state.State, error) {
-		return state.State{PasswordHash: hash}, nil
+		return state.State{
+			PasswordHash: hash,
+			APITokens:    []state.Token{{Name: tokenName, Hash: HashToken(apiToken)}},
+		}, nil
 	}), sessions))
 	token, err := sessions.Create(credentialFingerprint(hash))
 	if err != nil {
@@ -159,24 +164,42 @@ func TestRequireSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
-		name, token string
-		wantStatus  int
-		wantNext    bool
+		name, token, authorization string
+		wantStatus                 int
+		wantNext                   bool
+		wantTokenName              string
 	}{
-		{"no cookie", "", http.StatusUnauthorized, false},
-		{"unknown token", "unknown", http.StatusUnauthorized, false},
-		{"valid token", token, http.StatusNoContent, true},
+		{"no cookie", "", "", http.StatusUnauthorized, false, ""},
+		{"unknown token", "unknown", "", http.StatusUnauthorized, false, ""},
+		{"valid token", token, "", http.StatusNoContent, true, ""},
+		{"valid bearer token", "", "Bearer " + apiToken, http.StatusNoContent, true, tokenName},
+		{"lowercase bearer scheme", "", "bearer " + apiToken, http.StatusNoContent, true, tokenName},
+		{"unknown bearer token", "", "Bearer unknown", http.StatusUnauthorized, false, ""},
+		{"basic with valid cookie", token, "Basic xyz", http.StatusNoContent, true, ""},
+		{"bad bearer with valid cookie", token, "Bearer unknown", http.StatusUnauthorized, false, ""},
+		{"bearer without token with valid cookie", token, "Bearer", http.StatusNoContent, true, ""},
+		{"blank bearer with valid cookie", token, "Bearer    ", http.StatusNoContent, true, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+			if tt.authorization != "" {
+				req.Header.Set("Authorization", tt.authorization)
+			}
 			if tt.token != "" {
 				req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: tt.token})
 			}
 			rec := httptest.NewRecorder()
 			called := false
-			h.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				called = true
-				if got, ok := SessionFromContext(r.Context()); !ok || got != wantSession {
+				if got, ok := TokenNameFromContext(r.Context()); got != tt.wantTokenName || ok != (tt.wantTokenName != "") {
+					t.Errorf("context token name = %q, present = %v; want %q", got, ok, tt.wantTokenName)
+				}
+				if got, ok := SessionFromContext(r.Context()); tt.wantTokenName != "" {
+					if ok {
+						t.Errorf("bearer authentication set a session in context: %+v", got)
+					}
+				} else if !ok || got != wantSession {
 					t.Errorf("context session = %+v, present = %v; want %+v", got, ok, wantSession)
 				}
 				w.WriteHeader(http.StatusNoContent)
@@ -186,6 +209,9 @@ func TestRequireSession(t *testing.T) {
 			}
 			if rec.Code != tt.wantStatus {
 				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if len(rec.Header().Values("Set-Cookie")) != 0 {
+				t.Errorf("authentication set a cookie: %q", rec.Header().Values("Set-Cookie"))
 			}
 		})
 	}
@@ -199,7 +225,7 @@ func TestAuthHandlerMe(t *testing.T) {
 		ctx        context.Context
 		wantStatus int
 	}{
-		{"session in context", context.WithValue(context.Background(), contextKey{}, session), http.StatusOK},
+		{"session in context", context.WithValue(context.Background(), sessionKey{}, session), http.StatusOK},
 		{"bare context", context.Background(), http.StatusInternalServerError},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -218,8 +244,8 @@ func TestAuthHandlerMe(t *testing.T) {
 			if err := json.NewDecoder(rec.Body).Decode(&me); err != nil {
 				t.Fatal(err)
 			}
-			if !me.ExpiresAt.Equal(session.ExpiresAt) {
-				t.Errorf("ExpiresAt = %v, want %v", me.ExpiresAt, session.ExpiresAt)
+			if !me.Principal.ExpiresAt.Equal(session.ExpiresAt) {
+				t.Errorf("ExpiresAt = %v, want %v", me.Principal.ExpiresAt, session.ExpiresAt)
 			}
 		})
 	}

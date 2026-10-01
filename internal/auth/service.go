@@ -108,6 +108,19 @@ func (s *AuthService) SessionMaxAge() time.Duration {
 	return s.sessions.MaxAge()
 }
 
+func (s *AuthService) AuthenticateToken(ctx context.Context, presented string) (state.Token, error) {
+	// no bound here: verification is a single SHA-256, and the argon2id reasoning does not apply
+	st, err := s.state.Load()
+	if err != nil {
+		return state.Token{}, err
+	}
+	token, ok := MatchToken(presented, st.APITokens)
+	if !ok {
+		return state.Token{}, ErrUnauthenticated
+	}
+	return token, nil
+}
+
 func credentialFingerprint(passwordHash string) [32]byte {
 	return sha256.Sum256([]byte(passwordHash))
 }

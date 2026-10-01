@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 var ErrNotConfigured = errors.New("state dir not configured")
@@ -21,7 +22,11 @@ type State struct {
 	APITokens    []Token `json:"api_tokens,omitempty"`
 }
 
-type Token string
+type Token struct {
+	Name      string    `json:"name"`
+	Hash      string    `json:"hash"`
+	CreatedAt time.Time `json:"created_at"`
+}
 
 type Store struct {
 	dir string

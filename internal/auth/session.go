@@ -42,7 +42,7 @@ func (s *SessionStore) MaxAge() time.Duration {
 }
 
 func (s *SessionStore) Create(fingerprint [32]byte) (string, error) {
-	token, err := generateToken()
+	token, err := generateSessionToken()
 	if err != nil {
 		return "", err
 	}
@@ -83,7 +83,7 @@ func (s *SessionStore) Delete(token string) {
 	s.mu.Unlock()
 }
 
-func generateToken() (string, error) {
+func generateSessionToken() (string, error) {
 	b := make([]byte, 32)
 
 	if _, err := rand.Read(b); err != nil {

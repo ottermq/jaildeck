@@ -108,7 +108,7 @@ func TestRunPasswd_PermissionHint(t *testing.T) {
 func TestRunPasswd_ReplacesCredentialAndPreservesTokens(t *testing.T) {
 	dir := t.TempDir()
 	store := state.NewStore(dir)
-	tokens := []state.Token{"first-token", "second-token"}
+	tokens := []state.Token{{Name: "first-token"}, {Name: "second-token"}}
 	if err := store.Save(state.State{APITokens: tokens}); err != nil {
 		t.Fatalf("seeding state: %v", err)
 	}

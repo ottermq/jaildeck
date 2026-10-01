@@ -27,21 +27,21 @@ func (h *JailHandler) List(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, jails)
 }
 
-func (h *JailHandler) do(w http.ResponseWriter, r *http.Request, call func(context.Context, JailName) (Jail, error)) {
+func (h *JailHandler) do(w http.ResponseWriter, r *http.Request, call func(context.Context, JailName) (OperationResult, error)) {
 	name, err := NewJailName(chi.URLParam(r, "name"))
 	if err != nil {
 		common.HandlerError(w, err)
 		return
 	}
 
-	jail, err := call(r.Context(), name)
+	result, err := call(r.Context(), name)
 
 	if err != nil {
 		common.HandlerError(w, err)
 		return
 	}
 
-	common.WriteJSON(w, http.StatusOK, jail)
+	common.WriteJSON(w, http.StatusOK, result.Jail)
 
 }
 

@@ -84,5 +84,8 @@ func applyFilters(entry Entry, filter Filter) bool {
 	if filter.Targets != nil && !slices.Contains(filter.Targets, entry.Target) {
 		return false
 	}
+	if filter.TimedOut != nil && entry.TimedOut != *filter.TimedOut {
+		return false
+	}
 	return true
 }

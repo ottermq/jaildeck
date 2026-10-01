@@ -29,38 +29,46 @@ func (s *JailSystem) List(ctx context.Context) ([]jails.Jail, error) {
 	}, nil
 }
 
-func (s *JailSystem) Start(ctx context.Context, name string) (jails.Jail, error) {
+func (s *JailSystem) Start(ctx context.Context, name string) (jails.OperationResult, error) {
 	jail, ok := s.jails[name]
 	if !ok {
-		return jails.Jail{}, fmt.Errorf("jail %q not found", name)
+		return jails.OperationResult{}, fmt.Errorf("jail %q not found", name)
 	}
 
 	jail.Status = jails.JailStatusRunning
 	s.jails[name] = jail
 
-	return jail, nil
+	return createJailOperationResult(jail), nil
 }
 
-func (s *JailSystem) Stop(ctx context.Context, name string) (jails.Jail, error) {
+func (s *JailSystem) Stop(ctx context.Context, name string) (jails.OperationResult, error) {
 	jail, ok := s.jails[name]
 	if !ok {
-		return jails.Jail{}, fmt.Errorf("jail %q not found", name)
+		return jails.OperationResult{}, fmt.Errorf("jail %q not found", name)
 	}
 
 	jail.Status = jails.JailStatusStopped
 	s.jails[name] = jail
 
-	return jail, nil
+	return createJailOperationResult(jail), nil
 }
 
-func (s *JailSystem) Restart(ctx context.Context, name string) (jails.Jail, error) {
+func (s *JailSystem) Restart(ctx context.Context, name string) (jails.OperationResult, error) {
 	jail, ok := s.jails[name]
 	if !ok {
-		return jails.Jail{}, fmt.Errorf("jail %q not found", name)
+		return jails.OperationResult{}, fmt.Errorf("jail %q not found", name)
 	}
 
 	jail.Status = jails.JailStatusRunning
 	s.jails[name] = jail
 
-	return jail, nil
+	return createJailOperationResult(jail), nil
+}
+
+func createJailOperationResult(jail jails.Jail) jails.OperationResult {
+	opResult := jails.OperationResult{
+		Jail:    jail,
+		Command: "",
+	}
+	return opResult
 }

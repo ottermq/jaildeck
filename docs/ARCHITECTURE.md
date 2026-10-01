@@ -45,7 +45,11 @@ Node.js is required to *build* the frontend; it is never required to *run* jaild
 ```text
 cmd/
   jaildeck/
-    main.go                    # loads config, builds App, starts http.ListenAndServe
+    main.go                    # subcommand dispatch (version, passwd, token), then loads
+                                # config, builds App, starts http.ListenAndServe
+    passwd.go                  # `jaildeck passwd [--stdin]` — the only writer of the credential
+    token.go                   # `jaildeck token add|list|revoke` — the token is printed to
+                                # stdout, everything else to stderr, so it can be redirected
 
 internal/
   app/
@@ -53,7 +57,7 @@ internal/
                                  # registers all routes
 
   config/
-    config.go                   # env var loading (JAILDECK_HOST, JAILDECK_PORT)
+    config.go                   # env var loading: JAILDECK_HOST, PORT, ADAPTER, STATE_DIR, AUDIT_LOG
 
   jails/                        # bounded context: Jails
     model.go                      # Jail entity, JailStatus
@@ -68,10 +72,22 @@ internal/
     service.go                     # application service
     handler.go
 
+  auth/                         # bounded context: Authentication
+    auth.go                       # argon2id Hash/Verify over the PHC string ($argon2id$v=..$m=..)
+    token.go                       # API tokens: random + SHA-256 (fast hash — a 256-bit secret
+                                   # has no entropy to stretch), add/revoke by unique name
+    session.go                     # Session, SessionStore — opaque tokens, in-memory, expiry
+    service.go                     # AuthService: Login, Logout, Authenticate, AuthenticateToken
+    handler.go                     # AuthHandler + RequireAuth middleware (bearer, then cookie)
+    routes.go                      # /auth/login, /auth/logout, /auth/me
+
   audit/                        # shared infra, not a domain
     logger.go                     # Entry, Filter, Logger/Reader interfaces
     file_logger.go                 # FileLogger — append-only JSON-lines file, mutex-guarded
     service.go, handler.go
+
+  state/                        # shared infra, not a domain
+    state.go                      # Store — application state file: atomic write (temp + rename), mode 0600
 
   common/
     errors.go                     # AppError + HandlerError — shared HTTP error translation used by every domain's handler
@@ -84,7 +100,7 @@ internal/
       jail_helper.go                  # jail.conf / jail.conf.d parsing + merge (JD-004)
       storage_adapter.go              # (not yet built) implements storage.StorageSystem — zfs, fetch, freebsd-update, jexec
     fake/
-      jail.go                          # in-memory JailSystem, for non-FreeBSD dev (see commented-out line in app.go)
+      jail.go                          # in-memory JailSystem, for non-FreeBSD dev (JAILDECK_ADAPTER=fake)
 
 web/                             # Svelte frontend (separate module/build) — not yet built, see JD-009 / ROADMAP.md Phase 1b
   src/

@@ -10,7 +10,7 @@
       "parentId": null,
       "scope": "collection",
       "name": "jaildeck API",
-      "description": "Jail Deck JSON API collection for Insomnium / Insomnia (export format v4).\n\nImport: Create -> Import -> File -> collections/insomnium.json\n\nNO AUTHENTICATION YET. Mandatory single-operator auth is the Access Control milestone (JD-003); when it lands this collection needs a login request and a session cookie.\n\nENVIRONMENTS\n  FreeBSD guest (SSH tunnel)  http://localhost:8888  jail=ottermq\n  Local (fake adapter)        http://localhost:8889  jail=nginx\n\nJail Deck binds 127.0.0.1 only (JD-002), so reaching a FreeBSD host needs a tunnel:\n    ssh -N -L 8888:127.0.0.1:8888 <freebsd-host>\n\nThe fake-adapter environment uses a different port so it can run alongside that tunnel:\n    JAILDECK_PORT=8889 JAILDECK_ADAPTER=fake ./bin/jaildeck\n\nAdjust `jail` in each environment to a jail that exists there.\n\nRESPONSE QUIRKS\n  1. /jails keys are PascalCase (JID, Name, Status, Hostname, IP, Path) because the Jail struct has no json tags; /audit keys are snake_case.\n  2. An empty /audit result is `null`, not `[]`.\n\nMAINTAINING THIS FILE\nIDs and __export_date are fixed so regenerating does not churn the diff. Re-exporting from the app rewrites both, so prefer editing this file directly.",
+      "description": "Jail Deck JSON API collection for Insomnium / Insomnia (export format v4).\n\nImport: Create -> Import -> File -> collections/insomnium.json\n\nAUTHENTICATION IS MANDATORY (JD-003). Every request below returns 401 until you\nauthenticate; there is no unauthenticated mode, on any bind address.\n\n  Browser session:  run Auth -> Login once. The cookie jar carries the session\n                    from then on, so the other requests need no changes.\n                    Set `password` in the environment first.\n\n  API token:        jaildeck token add insomnium\n                    Paste the token into `apiToken`, then send\n                    Authorization: Bearer {{apiToken}}.\n                    See Auth -> Bearer token (no cookie) for the shape.\n\nThe session cookie is HttpOnly, Secure and SameSite=Strict. Secure cookies are\naccepted over http://localhost, so loopback works; a non-loopback plain-HTTP host\nwill not keep you logged in (see #17).\n\nENVIRONMENTS\n  FreeBSD guest (SSH tunnel)  http://localhost:8888  jail=ottermq\n  Local (fake adapter)        http://localhost:8889  jail=nginx\n\nJail Deck binds 127.0.0.1 only (JD-002), so reaching a FreeBSD host needs a tunnel:\n    ssh -N -L 8888:127.0.0.1:8888 <freebsd-host>\n\nThe fake-adapter environment uses a different port so it can run alongside that tunnel:\n    JAILDECK_PORT=8889 JAILDECK_ADAPTER=fake ./bin/jaildeck\n\nAdjust `jail` in each environment to a jail that exists there.\n\nRESPONSE QUIRKS\n  1. /jails keys are PascalCase (JID, Name, Status, Hostname, IP, Path) because the Jail struct has no json tags; /audit keys are snake_case.\n  2. An empty /audit result is `null`, not `[]`.\n\nMAINTAINING THIS FILE\nIDs and __export_date are fixed so regenerating does not churn the diff. Re-exporting from the app rewrites both, so prefer editing this file directly.",
       "created": 1767225600000,
       "modified": 1767225600000
     },
@@ -21,12 +21,16 @@
       "name": "Base Environment",
       "data": {
         "baseUrl": "http://localhost:8888",
-        "jail": "ottermq"
+        "jail": "ottermq",
+        "password": "change-me",
+        "apiToken": ""
       },
       "dataPropertyOrder": {
         "&": [
           "baseUrl",
-          "jail"
+          "jail",
+          "password",
+          "apiToken"
         ]
       },
       "color": null,
@@ -76,6 +80,145 @@
       "metaSortKey": 1767225600002,
       "created": 1767225600000,
       "modified": 1767225600000
+    },
+    {
+      "_id": "fld_3c7a1e9b45d82f0a6b1e4d79c0f52a38",
+      "_type": "request_group",
+      "parentId": "wrk_9b339d7edd5b13f843f793b6ec4f3b6c",
+      "name": "Auth",
+      "description": "Login, identity and logout. Run Login first: the cookie jar carries the session into every other request. Token authentication is the alternative and sets no cookie.",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -4000,
+      "created": 1767225600000,
+      "modified": 1767225600000
+    },
+    {
+      "_id": "req_1a4f8c20d9e3b57461c8a0d2f6e31b9c",
+      "_type": "request",
+      "parentId": "fld_3c7a1e9b45d82f0a6b1e4d79c0f52a38",
+      "name": "Login",
+      "description": "Response 200 with `{\"authenticated\": true}` and a Set-Cookie carrying an opaque session token — HttpOnly, Secure, SameSite=Strict, Path=/, MaxAge 12h.\n\nA wrong password returns 401 and sets no cookie. Verification is argon2id at 64 MiB and is deliberately serialised, so concurrent logins queue; past the queue depth the server returns 429 rather than accumulating work.\n\nThe password comes from the `password` environment variable. Set it before sending.",
+      "method": "POST",
+      "url": "{{baseUrl}}/auth/login",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"password\": \"{{password}}\"\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -4000,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_2b5e9d31ea04c68572d9b1e307f42cad",
+      "_type": "request",
+      "parentId": "fld_3c7a1e9b45d82f0a6b1e4d79c0f52a38",
+      "name": "Who am I",
+      "description": "Response 200 with the authenticated principal, or 401 without a valid credential. The SPA calls this on boot and branches on 200 vs 401 — it cannot read the cookie and should not.\n\nA session principal reports `kind: \"session\"` and `expires_at`. A token principal reports `kind: \"token\"`, its `name`, and omits `expires_at` because API tokens do not expire — they are revoked explicitly.",
+      "method": "GET",
+      "url": "{{baseUrl}}/auth/me",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -3900,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_3c60ae42fb15d79683eac2f418053dbe",
+      "_type": "request",
+      "parentId": "fld_3c7a1e9b45d82f0a6b1e4d79c0f52a38",
+      "name": "Logout",
+      "description": "Response 204. Deletes the server-side session and clears the cookie, so the old cookie returns 401 immediately.\n\nIdempotent: logging out with no session, or an expired one, still returns 204 and still clears the cookie. That matters — requiring a valid session to log out would strand an operator holding a stale cookie.",
+      "method": "POST",
+      "url": "{{baseUrl}}/auth/logout",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -3800,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_4d71bf53ac26e807941fbd3529164ecf",
+      "_type": "request",
+      "parentId": "fld_3c7a1e9b45d82f0a6b1e4d79c0f52a38",
+      "name": "Bearer token (no cookie)",
+      "description": "Token authentication, for scripting without a browser session. Create one with:\n\n    jaildeck token add insomnium\n\nThe token is shown once; paste it into the `apiToken` environment variable.\n\nThe Authorization header takes precedence over the cookie, and a bad bearer token returns 401 rather than falling back to one — so this request fails cleanly even while a session is active. Token authentication sets no cookie, and is immune to CSRF by construction.\n\nA revoked token stops working immediately: `jaildeck token revoke insomnium`.",
+      "method": "GET",
+      "url": "{{baseUrl}}/jails",
+      "body": {},
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{apiToken}}"
+        },
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -3700,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
     },
     {
       "_id": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
@@ -263,7 +406,7 @@
       "_type": "request",
       "parentId": "fld_d232fe1732e9dc4a8be23df7f3df5873",
       "name": "Recent operations",
-      "description": "Response 200: JSON array of audit entries, newest first, snake_case keys:\n`timestamp`, `operation`, `target`, `command`, `exit_code`, `success`, `error` (omitted when empty).\n\nDefault limit 50, maximum 200.\n\nAn empty result is the JSON literal `null`, not `[]` — both when nothing matches and when the audit log does not exist yet (it is created on the first mutating operation).",
+      "description": "Response 200: JSON array of audit entries, newest first, snake_case keys:\n`timestamp`, `operation`, `target`, `command`, `exit_code`, `success`, plus `timed_out` (omitted when false) and `error` (omitted when empty).\n\nDefault limit 50, maximum 200.\n\nAn empty result is the JSON literal `null`, not `[]` — both when nothing matches and when the audit log does not exist yet (it is created on the first mutating operation).",
       "method": "GET",
       "url": "{{baseUrl}}/audit",
       "body": {},
@@ -551,6 +694,41 @@
       "segmentParams": [],
       "isPrivate": false,
       "metaSortKey": -1600,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_0f1c6a94b7de4852a3117c5ed80b2e6a",
+      "_type": "request",
+      "parentId": "fld_d232fe1732e9dc4a8be23df7f3df5873",
+      "name": "Timeouts only",
+      "description": "`timed_out` accepts only the strings `true` or `false`; any other value is ignored and no timeout filter is applied — the same rules as `success`, which it shares a parser with.\n\nFilters combine with AND. A timed-out operation is also a failure, so `timed_out=true` selects a subset of `success=false`.\n\nIn the response the key is omitted when false, so entries that did not time out carry no `timed_out` field at all.\n\nAn empty result is the JSON literal `null`, not `[]` — both when nothing matches and when the audit log does not exist yet (it is created on the first mutating operation).",
+      "method": "GET",
+      "url": "{{baseUrl}}/audit",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "timed_out",
+          "value": "true",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -1500,
       "created": 1767225600000,
       "modified": 1767225600000,
       "settingDisableRenderRequestBody": false,

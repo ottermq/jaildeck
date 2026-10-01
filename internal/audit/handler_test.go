@@ -95,37 +95,28 @@ func TestAuditHandler_List_NormalizesLimit(t *testing.T) {
 	}
 }
 
+// TestAuditHandler_List_BuildsFilterReachingReader covers the wiring only:
+// raw query string -> parseFilter -> service -> reader. The parsing rules
+// themselves belong to TestParseFilter and TestParseBool.
 func TestAuditHandler_List_BuildsFilterReachingReader(t *testing.T) {
 	tests := []struct {
 		name          string
 		query         string
 		wantOperation string
 		wantSuccess   *bool
+		wantTimedOut  *bool
 		wantTargets   []string
 	}{
-		{name: "no filters", query: ""},
-		{name: "operation start", query: "?operation=start", wantOperation: "start"},
-		{name: "operation stop", query: "?operation=stop", wantOperation: "stop"},
-		{name: "operation restart", query: "?operation=restart", wantOperation: "restart"},
-		{name: "unknown operation is forwarded", query: "?operation=bogus", wantOperation: "bogus"},
-		{name: "success true", query: "?success=true", wantSuccess: boolPtr(true)},
-		{name: "success false", query: "?success=false", wantSuccess: boolPtr(false)},
-		{name: "invalid success is not forwarded", query: "?success=maybe"},
-		{name: "single target", query: "?targets=ottermq", wantTargets: []string{"ottermq"}},
+		{name: "no query yields an empty filter", query: ""},
 		{
-			name:        "multiple targets are split and trimmed",
-			query:       "?targets=ottermq,%20nginx%20",
-			wantTargets: []string{"ottermq", "nginx"},
-		},
-		{name: "empty targets value is not forwarded", query: "?targets="},
-		{
-			name:          "all filters combined",
-			query:         "?operation=stop&success=false&targets=redis&limit=25",
+			// Distinct success/timed_out values so a swapped assignment fails.
+			name:          "every parameter reaches the reader",
+			query:         "?operation=STOP&success=false&timed_out=true&targets=redis,%20nginx%20",
 			wantOperation: "stop",
 			wantSuccess:   boolPtr(false),
-			wantTargets:   []string{"redis"},
+			wantTimedOut:  boolPtr(true),
+			wantTargets:   []string{"redis", "nginx"},
 		},
-		{name: "operation is case-insensitive", query: "?operation=START", wantOperation: "start"},
 	}
 
 	for _, tt := range tests {
@@ -148,6 +139,12 @@ func TestAuditHandler_List_BuildsFilterReachingReader(t *testing.T) {
 			}
 			if got.Success != nil && *got.Success != *tt.wantSuccess {
 				t.Errorf("Success = %v, want %v", *got.Success, *tt.wantSuccess)
+			}
+			if (got.TimedOut == nil) != (tt.wantTimedOut == nil) {
+				t.Fatalf("TimedOut = %v, want %v", got.TimedOut, tt.wantTimedOut)
+			}
+			if got.TimedOut != nil && *got.TimedOut != *tt.wantTimedOut {
+				t.Errorf("TimedOut = %v, want %v", *got.TimedOut, *tt.wantTimedOut)
 			}
 		})
 	}

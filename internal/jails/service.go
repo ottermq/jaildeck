@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
@@ -62,43 +61,43 @@ func (s *JailService) List(ctx context.Context) ([]Jail, error) {
 	return jails, nil
 }
 
-func (s *JailService) do(ctx context.Context, name JailName, op Operation, call func(context.Context, string) (Jail, error)) (Jail, error) {
+func (s *JailService) do(ctx context.Context, name JailName, op Operation, call func(context.Context, string) (OperationResult, error)) (OperationResult, error) {
 	// A client disconnecting must not abort a jail operation half-way, so drop
 	// the request's cancellation. The runner still enforces the command timeout.
 	opCtx := context.WithoutCancel(ctx)
 	if _, err := NewJailName(name.String()); err != nil {
-		return Jail{}, err
+		return OperationResult{}, err
 	}
-	jail, err := call(opCtx, name.String())
-	s.logJailOperation(opCtx, name.String(), op, err)
-	return jail, toAppError(name.String(), op, err)
+	result, err := call(opCtx, name.String())
+	s.logJailOperation(opCtx, name.String(), op, result.Command, err)
+	return result, toAppError(name.String(), op, err)
 }
 
-func (s *JailService) Start(ctx context.Context, name JailName) (Jail, error) {
+func (s *JailService) Start(ctx context.Context, name JailName) (OperationResult, error) {
 	return s.do(ctx, name, OperationStart, s.system.Start)
 }
 
-func (s *JailService) Stop(ctx context.Context, name JailName) (Jail, error) {
+func (s *JailService) Stop(ctx context.Context, name JailName) (OperationResult, error) {
 	return s.do(ctx, name, OperationStop, s.system.Stop)
 }
 
-func (s *JailService) Restart(ctx context.Context, name JailName) (Jail, error) {
+func (s *JailService) Restart(ctx context.Context, name JailName) (OperationResult, error) {
 	return s.do(ctx, name, OperationRestart, s.system.Restart)
 }
 
-func (s *JailService) logJailOperation(ctx context.Context, name string, operation Operation, opErr error) {
+func (s *JailService) logJailOperation(ctx context.Context, name string, operation Operation, command string, opErr error) {
 	entry := audit.Entry{
 		Timestamp: time.Now(),
 		Operation: operation.String(),
 		Target:    name,
-		Command:   fmt.Sprintf("service jail %s %s", operation, name), // TODO: replace hardcoded for actual command (from system)
+		Command:   command,
 		Success:   opErr == nil,
 	}
+
 	if opErr != nil {
 		entry.TimedOut = errors.Is(opErr, context.DeadlineExceeded)
 		var commandErr *system.CommandError
 		if errors.As(opErr, &commandErr) {
-			entry.Command = commandErr.Command + " " + strings.Join(commandErr.Args, " ")
 			entry.ExitCode = commandErr.Result.ExitCode
 			entry.Error = commandErr.Unwrap().Error()
 

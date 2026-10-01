@@ -22,12 +22,21 @@ func (f *fakeLogger) Log(_ context.Context, e audit.Entry) error {
 	return nil
 }
 
-type stubSystem struct{ err error }
+type stubSystem struct {
+	command string
+	err     error
+}
 
-func (s stubSystem) List(context.Context) ([]Jail, error)          { return nil, s.err }
-func (s stubSystem) Start(context.Context, string) (Jail, error)   { return Jail{}, s.err }
-func (s stubSystem) Stop(context.Context, string) (Jail, error)    { return Jail{}, s.err }
-func (s stubSystem) Restart(context.Context, string) (Jail, error) { return Jail{}, s.err }
+func (s stubSystem) List(context.Context) ([]Jail, error) { return nil, s.err }
+func (s stubSystem) Start(context.Context, string) (OperationResult, error) {
+	return OperationResult{Command: s.command}, s.err
+}
+func (s stubSystem) Stop(context.Context, string) (OperationResult, error) {
+	return OperationResult{Command: s.command}, s.err
+}
+func (s stubSystem) Restart(context.Context, string) (OperationResult, error) {
+	return OperationResult{Command: s.command}, s.err
+}
 
 // Checked when this file compiles, so a mistyped or renamed method fails here
 // instead of at the first use. fakeLogger needs the pointer form because Log
@@ -84,17 +93,38 @@ func TestToAppError(t *testing.T) {
 func TestLogJailOperation_MarksTimeouts(t *testing.T) {
 	tests := []struct {
 		name         string
+		command      string
+		wantCommand  string
 		err          error
 		wantTimedOut bool
 	}{
-		{"timeout is flagged", &system.CommandError{Err: fmt.Errorf("x: %w", context.DeadlineExceeded)}, true},
-		{"ordinary failure is not", &system.CommandError{Err: errors.New("boom")}, false},
+		{
+			"timeout is flagged",
+			"service jail stop ottermq",
+			"service jail stop ottermq",
+			&system.CommandError{Err: fmt.Errorf("x: %w", context.DeadlineExceeded)},
+			true,
+		},
+		{
+			"ordinary failure is not",
+			"service jail stop ottermq",
+			"service jail stop ottermq",
+			&system.CommandError{Err: errors.New("boom")},
+			false,
+		},
+		{
+			"nothing ran is recorded as nothing",
+			"",
+			"",
+			&system.CommandError{Err: errors.New("boom")},
+			false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := &fakeLogger{}
-			svc := NewJailService(stubSystem{err: tt.err}, logger)
+			svc := NewJailService(stubSystem{command: tt.command, err: tt.err}, logger)
 
 			if _, err := svc.Stop(context.Background(), JailName("ottermq")); err == nil {
 				t.Fatal("Stop() returned nil error, want a failure")
@@ -113,13 +143,17 @@ func TestLogJailOperation_MarksTimeouts(t *testing.T) {
 			if got.Operation != "stop" {
 				t.Errorf("Operation = %q, want %q", got.Operation, "stop")
 			}
+
+			if got.Command != tt.wantCommand {
+				t.Errorf("Command = %q, want %q", got.Command, tt.wantCommand)
+			}
 		})
 	}
 }
 
 func TestLogJailOperation_HappyPath(t *testing.T) {
 	logger := &fakeLogger{}
-	svc := NewJailService(stubSystem{}, logger)
+	svc := NewJailService(stubSystem{command: "service jail stop ottermq"}, logger)
 
 	if _, err := svc.Stop(context.Background(), JailName("ottermq")); err != nil {
 		t.Fatalf("Stop() error = %v", err)
@@ -140,5 +174,8 @@ func TestLogJailOperation_HappyPath(t *testing.T) {
 	}
 	if got.Operation != "stop" {
 		t.Errorf("Operation = %q, want %q", got.Operation, "stop")
+	}
+	if got.Command != "service jail stop ottermq" {
+		t.Errorf("Command = %q, want %q", got.Command, "service jail stop ottermq")
 	}
 }

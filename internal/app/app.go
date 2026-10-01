@@ -1,12 +1,17 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
+	"codeberg.org/Otter-Labs/jaildeck/internal/auth"
 	"codeberg.org/Otter-Labs/jaildeck/internal/config"
 	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
+	"codeberg.org/Otter-Labs/jaildeck/internal/state"
 	"codeberg.org/Otter-Labs/jaildeck/internal/system"
 	"codeberg.org/Otter-Labs/jaildeck/internal/system/fake"
 	"codeberg.org/Otter-Labs/jaildeck/internal/system/freebsd"
@@ -14,13 +19,28 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
+var ErrNoCredential = errors.New("no operator credential configured")
+
 type App struct {
+	authHandler  *auth.AuthHandler
 	jailHandler  *jails.JailHandler
 	auditHandler *audit.AuditHandler
 }
 
 func New(cfg *config.Config) (*App, error) {
-	auditLogger := audit.NewFileLogger("jaildeck-audit.log")
+	authState := state.NewStore(cfg.StateDir)
+	if err := requireCredential(authState); err != nil {
+		return nil, err
+	}
+
+	sessions := auth.NewSessionStore()
+	authService := auth.NewAuthService(authState, sessions)
+	authHandler := auth.NewAuthHandler(authService)
+
+	auditLogger, err := setupAuditLog(cfg.AuditLog)
+	if err != nil {
+		return nil, err
+	}
 
 	jailSystem, err := newJailSystem(cfg.Adapter)
 	if err != nil {
@@ -34,9 +54,41 @@ func New(cfg *config.Config) (*App, error) {
 	auditHandler := audit.NewAuditHandler(auditService)
 
 	return &App{
+		authHandler:  authHandler,
 		jailHandler:  jailHandler,
 		auditHandler: auditHandler,
 	}, nil
+}
+
+func requireCredential(store *state.Store) error {
+	st, err := store.Load()
+	switch {
+	case errors.Is(err, state.ErrNotConfigured):
+		return fmt.Errorf("%w in %s. Run: jaildeck passwd", ErrNoCredential, store.Dir())
+	case err != nil:
+		// corrupted or unreadable:
+		// No need of dedicated sentinels
+		// Load() already names the path and the cause, and this must not be reported as "run jaildeck passwd"
+		return err
+	case st.PasswordHash == "":
+		return fmt.Errorf("%w in %s. Run: jaildeck passwd", ErrNoCredential, store.Dir())
+	}
+	return nil
+}
+
+func setupAuditLog(auditLogFilePath string) (*audit.FileLogger, error) {
+	err := os.MkdirAll(filepath.Dir(auditLogFilePath), 0o700)
+	if err != nil {
+		return nil, fmt.Errorf("creating audit log directory: %w", err)
+	}
+	f, err := os.OpenFile(auditLogFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("opening audit log: %w", err)
+	}
+	defer f.Close()
+
+	auditLogger := audit.NewFileLogger(auditLogFilePath)
+	return auditLogger, nil
 }
 
 // newJailSystem selects the jails.JailSystem implementation named by adapter.
@@ -60,13 +112,16 @@ func (a *App) Routes() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/jails", http.StatusSeeOther)
+	auth.RegisterAuthRoutes(r, a.authHandler)
+
+	r.Group(func(r chi.Router) {
+		r.Use(a.authHandler.RequireAuth)
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/jails", http.StatusSeeOther)
+		})
+		jails.RegisterJailRoutes(r, a.jailHandler)
+		audit.RegisterAuditHandlers(r, a.auditHandler)
 	})
-
-	jails.RegisterJailRoutes(r, a.jailHandler)
-
-	audit.RegisterAuditHandlers(r, a.auditHandler)
 
 	return r
 }

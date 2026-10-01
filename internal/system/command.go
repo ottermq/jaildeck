@@ -14,6 +14,16 @@ type Command struct {
 	Timeout time.Duration
 }
 
+func (c Command) String() string {
+	var sb strings.Builder
+	sb.WriteString(c.Name)
+	for _, arg := range c.Args {
+		sb.WriteString(" ")
+		sb.WriteString(arg)
+	}
+	return sb.String()
+}
+
 type CommandResult struct {
 	Stdout   string
 	Stderr   string

@@ -13,6 +13,7 @@ var (
 	ErrUnauthorized      = NewAppError(http.StatusUnauthorized, "unauthorized")
 	ErrBadRequest        = NewAppError(http.StatusBadRequest, "invalid request")
 	ErrInvalidAssigneeID = NewAppError(http.StatusBadRequest, "invalid assignee ID")
+	ErrRequestTooLarge   = NewAppError(http.StatusRequestEntityTooLarge, "request body too large")
 )
 
 type AppError struct {

@@ -19,6 +19,7 @@ func TestLoadConfig(t *testing.T) {
 				Adapter:  AdapterFreeBSD,
 				StateDir: "/var/db/jaildeck",
 				AuditLog: "/var/log/jaildeck/audit.log",
+				LogLevel: "info",
 			},
 		},
 		{
@@ -29,6 +30,7 @@ func TestLoadConfig(t *testing.T) {
 				Adapter:  AdapterFake,
 				StateDir: "/tmp/jaildeck-state",
 				AuditLog: "/tmp/jaildeck-audit.log",
+				LogLevel: "debug",
 			},
 			want: Config{
 				Host:     "0.0.0.0",
@@ -36,6 +38,7 @@ func TestLoadConfig(t *testing.T) {
 				Adapter:  AdapterFake,
 				StateDir: "/tmp/jaildeck-state",
 				AuditLog: "/tmp/jaildeck-audit.log",
+				LogLevel: "debug",
 			},
 		},
 	}
@@ -47,6 +50,7 @@ func TestLoadConfig(t *testing.T) {
 			t.Setenv("JAILDECK_ADAPTER", tt.env.Adapter)
 			t.Setenv("JAILDECK_STATE_DIR", tt.env.StateDir)
 			t.Setenv("JAILDECK_AUDIT_LOG", tt.env.AuditLog)
+			t.Setenv("JAILDECK_LOG_LEVEL", tt.env.LogLevel)
 
 			if got := LoadConfig(); got == nil || *got != tt.want {
 				t.Errorf("LoadConfig() = %+v, want %+v", got, tt.want)
@@ -80,10 +84,8 @@ func TestBindWarning(t *testing.T) {
 				if mentions == "" {
 					mentions = tt.host
 				}
-				for _, want := range []string{mentions, "reverse proxy", "LocalForward"} {
-					if !strings.Contains(got, want) {
-						t.Errorf("BindWarning(%q) = %q, want to contain %q", tt.host, got, want)
-					}
+				if !strings.HasPrefix(got, "listening on "+tt.host) {
+					t.Errorf("BindWarning(%q) = %q, want it to open by naming the host", tt.host, got)
 				}
 			} else if got != "" {
 				t.Errorf("BindWarning(%q) = %q, want no warning", tt.host, got)

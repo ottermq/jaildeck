@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -42,22 +42,30 @@ func main() {
 	}
 
 	cfg := config.LoadConfig()
+	lvl, err := parseLogLevel(cfg.LogLevel)
+	setupLogHandler(lvl)
+	if err != nil {
+		slog.Warn("unknown log level, defaulting to info", "value", cfg.LogLevel)
+	}
+
 	warning := config.BindWarning(cfg.Host)
 	if warning != "" {
-		log.Println(warning)
+		slog.Warn(warning)
 	}
 	a, err := app.New(cfg)
 	if err != nil {
-		log.Fatal(err.Error())
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
 
 	addr := net.JoinHostPort(cfg.Host, cfg.Port)
 	srv := newServer(addr, a.Routes())
-	log.Printf("Jail Deck %s listening on %s", buildinfo.Version(), addr)
+	slog.Info("Jail Deck %s listening on %s", buildinfo.Version(), addr)
 
 	err = srv.ListenAndServe()
 	if err != nil {
-		log.Fatal(err.Error())
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
 }
 
@@ -74,4 +82,26 @@ func newServer(addr string, h http.Handler) *http.Server {
 		// timeout would disconnect the operator while the jail kept changing.
 		// Command timeouts already bound how long a handler can run.
 	}
+}
+
+func setupLogHandler(lvl slog.Level) {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: lvl,
+		// syslog timestamps already (daemon(8) -S; drop ours.
+		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				return slog.Attr{}
+			}
+			return a
+		},
+	})))
+}
+
+func parseLogLevel(levelStr string) (slog.Level, error) {
+	var lvl slog.Level
+	err := lvl.UnmarshalText([]byte(levelStr))
+	if err != nil {
+		lvl = slog.LevelInfo
+	}
+	return lvl, err
 }

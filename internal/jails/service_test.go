@@ -1,9 +1,12 @@
 package jails
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"testing"
 
@@ -44,7 +47,59 @@ func (s stubSystem) Restart(context.Context, string) (OperationResult, error) {
 var (
 	_ JailSystem   = stubSystem{}
 	_ audit.Logger = (*fakeLogger)(nil)
+	_ audit.Logger = erroringLogger{}
 )
+
+// erroringLogger stands in for an audit log that cannot be written — a full
+// disk, a revoked permission, a removed mount.
+type erroringLogger struct{}
+
+func (erroringLogger) Log(context.Context, audit.Entry) error {
+	return errors.New("no space left on device")
+}
+
+// captureLogs redirects the default slog logger into a buffer for the duration
+// of one test. It swaps a global, so no test using it may call t.Parallel.
+//
+// The handler emits JSON so tests can assert on exact field values. Matching
+// substrings of text output is unreliable: "component=jail" is also a substring
+// of "component=jails".
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	return &buf
+}
+
+// logRecord is one decoded line of captureLogs output.
+type logRecord struct {
+	Level     string `json:"level"`
+	Msg       string `json:"msg"`
+	Component string `json:"component"`
+	Operation string `json:"operation"`
+	Target    string `json:"target"`
+	Err       string `json:"err"`
+}
+
+// decodeLogs returns every record written to buf, in order.
+func decodeLogs(t *testing.T, buf *bytes.Buffer) []logRecord {
+	t.Helper()
+
+	var records []logRecord
+	decoder := json.NewDecoder(bytes.NewReader(buf.Bytes()))
+	for decoder.More() {
+		var rec logRecord
+		if err := decoder.Decode(&rec); err != nil {
+			t.Fatalf("decoding log output: %v\nraw: %s", err, buf.String())
+		}
+		records = append(records, rec)
+	}
+	return records
+}
 
 func TestToAppError(t *testing.T) {
 	timedOut := &system.CommandError{
@@ -177,5 +232,34 @@ func TestLogJailOperation_HappyPath(t *testing.T) {
 	}
 	if got.Command != "service jail stop ottermq" {
 		t.Errorf("Command = %q, want %q", got.Command, "service jail stop ottermq")
+	}
+}
+
+func TestLogJailOperation_AuditFailureIsLoggedAtError(t *testing.T) {
+	logs := captureLogs(t)
+	svc := NewJailService(stubSystem{command: "service jail start ottermq"}, erroringLogger{})
+
+	// An audit write that fails must not fail the operation: the jail has
+	// already started, so reporting an error would be a lie (JD-011, #31).
+	if _, err := svc.Start(context.Background(), JailName("ottermq")); err != nil {
+		t.Fatalf("Start() error = %v, want nil — an audit failure must not fail the operation", err)
+	}
+
+	records := decodeLogs(t, logs)
+	if len(records) != 1 {
+		t.Fatalf("logged %d records, want 1: %s", len(records), logs.String())
+	}
+
+	got := records[0]
+	want := logRecord{
+		Level:     "ERROR",
+		Msg:       "failed to write operation log",
+		Component: "jail",
+		Operation: "start",
+		Target:    "ottermq",
+		Err:       "no space left on device",
+	}
+	if got != want {
+		t.Errorf("log record = %+v, want %+v", got, want)
 	}
 }

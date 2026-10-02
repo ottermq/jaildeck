@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"syscall"
 	"time"
+
+	"codeberg.org/Otter-Labs/jaildeck/internal/common"
 )
 
 // commandWaitDelay bounds how long Run keeps waiting once the context has
@@ -46,9 +48,21 @@ func (r *ExecCommandRunner) Run(ctx context.Context, cmd Command) (CommandResult
 	c.Stdout = &stdout
 	c.Stderr = &stderr
 
+	start := time.Now()
 	err := c.Run()
-
+	elapsed := time.Since(start)
 	result := CommandResult{Stdout: stdout.String(), Stderr: stderr.String()}
+
+	// Deferred because the branches below are what set ExitCode: logging here
+	// directly would report 0 for every command, including the failures this
+	// line exists to diagnose. Stdout is deliberately omitted — jls output is
+	// large, and the callers that need it log it themselves.
+	defer func() {
+		common.NewComponentLogger("exec").Debug("command finished",
+			"command", cmd.Name, "args", cmd.Args,
+			"exit_code", result.ExitCode, "duration", elapsed,
+			"stderr", result.Stderr)
+	}()
 
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {

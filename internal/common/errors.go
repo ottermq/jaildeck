@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -43,7 +43,7 @@ func HandlerError(w http.ResponseWriter, err error) {
 		return
 	}
 
-	log.Printf("unexpected error: %v", err)
+	slog.Error("unexpected error", slog.Any("err", err))
 
 	WriteJSON(w, http.StatusInternalServerError, map[string]string{
 		"error": "internal server error",
@@ -55,6 +55,6 @@ func WriteJSON(w http.ResponseWriter, status int, data any) {
 	w.WriteHeader(status)
 
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Printf("failed to encode JSON response: %v", err)
+		slog.Error("failed to encode JSON response", slog.Any("err", err))
 	}
 }

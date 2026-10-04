@@ -228,15 +228,32 @@ func parseJailConf(content string) []jails.Jail {
 }
 
 func stripComment(line string) string {
-	if idx := strings.Index(line, "#"); idx >= 0 {
-		return line[:idx]
+	var quote byte
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case '\\':
+			i++
+		case '\'', '"':
+			if quote == 0 {
+				quote = line[i]
+			} else if quote == line[i] {
+				quote = 0
+			}
+		case '#':
+			if quote == 0 {
+				return line[:i]
+			}
+		}
 	}
 	return line
 }
 
+var bareNameRE = regexp.MustCompile(`\$name\b`)
+
 func resolveVars(value, name string) string {
 	value = strings.TrimSpace(value)
 	value = strings.Trim(value, `"`)
+	value = bareNameRE.ReplaceAllStringFunc(value, func(string) string { return name })
 	value = strings.ReplaceAll(value, "${name}", name)
 	value = strings.ReplaceAll(value, "$(name)", name)
 	if strings.Contains(value, "$") {

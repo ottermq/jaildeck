@@ -13,10 +13,7 @@ import (
 const (
 	AdapterFreeBSD = "freebsd"
 	AdapterFake    = "fake"
-	warningMessage = `WARNING: listening on %s, which is not loopback. If nothing is terminating
-TLS in front of Jail Deck, the operator password crosses the network in
-plaintext. Use a reverse proxy terminating TLS for a permanent deployment, or an
-SSH LocalForward for ad-hoc access.`
+	warningMessage = "listening on %s, which is not loopback. If nothing is terminating TLS in front of Jail Deck, the operator password crosses the network in plaintext. Use a reverse proxy terminating TLS for a permanent deployment, or an SSH LocalForward for ad-hoc access."
 )
 
 type Config struct {
@@ -28,6 +25,7 @@ type Config struct {
 	Adapter  string
 	StateDir string
 	AuditLog string
+	LogLevel string
 }
 
 func LoadConfig() *Config {
@@ -39,6 +37,7 @@ func LoadConfig() *Config {
 		Adapter:  getEnv("JAILDECK_ADAPTER", AdapterFreeBSD),
 		StateDir: getEnv("JAILDECK_STATE_DIR", "/var/db/jaildeck"),
 		AuditLog: getEnv("JAILDECK_AUDIT_LOG", "/var/log/jaildeck/audit.log"),
+		LogLevel: getEnv("JAILDECK_LOG_LEVEL", "info"),
 	}
 }
 

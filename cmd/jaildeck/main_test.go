@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -84,5 +85,42 @@ func TestMainLogsBindWarning(t *testing.T) {
 	}
 	if want := config.BindWarning(host); want == "" || !strings.Contains(string(output), want) {
 		t.Errorf("startup output = %q, want bind warning %q", output, want)
+	}
+}
+
+func TestParseLogLevel(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    slog.Level
+		wantErr bool
+	}{
+		{input: "DEBUG", want: slog.LevelDebug},
+		{input: "INFO", want: slog.LevelInfo},
+		{input: "WARN", want: slog.LevelWarn},
+		{input: "ERROR", want: slog.LevelError},
+		{input: "debug", want: slog.LevelDebug},
+		{input: "WaRn", want: slog.LevelWarn},
+		{input: "INFO+2", want: slog.LevelInfo + 2},
+		{input: "ERROR-2", want: slog.LevelError - 2},
+		// slog names only four levels. "warning", "trace" and "fatal" are the
+		// spellings ottermq's own parser accepts, so they are the likeliest
+		// typo when moving between the two projects.
+		{input: "warning", want: slog.LevelInfo, wantErr: true},
+		{input: "trace", want: slog.LevelInfo, wantErr: true},
+		{input: "fatal", want: slog.LevelInfo, wantErr: true},
+		{input: "", want: slog.LevelInfo, wantErr: true},
+		{input: "invalid", want: slog.LevelInfo, wantErr: true},
+		{input: "DEBUG+invalid", want: slog.LevelInfo, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := parseLogLevel(tt.input)
+			if got != tt.want {
+				t.Errorf("parseLogLevel(%q) level = %v, want %v", tt.input, got, tt.want)
+			}
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseLogLevel(%q) error = %v, want error: %t", tt.input, err, tt.wantErr)
+			}
+		})
 	}
 }

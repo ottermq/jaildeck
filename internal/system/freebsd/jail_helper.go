@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"codeberg.org/Otter-Labs/jaildeck/internal/common"
 	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
 )
 
@@ -51,10 +52,19 @@ func (a *Adapter) runningJails(ctx context.Context) ([]jails.Jail, error) {
 	}
 	parsedOutput, err := parseJLSOutput(result.Stdout)
 	if err != nil {
+		common.NewComponentLogger("freebsd").Debug("failed to parse jls output",
+			"stderr", result.Stderr,
+			slog.Any("err", err))
 		return nil, fmt.Errorf("fail parsing jls output: %w", err)
 	}
 	jailSlice := make([]jails.Jail, len(parsedOutput.JailInformation.Jails))
 	for idx, j := range parsedOutput.JailInformation.Jails {
+		if j.Name == "" {
+			// jls should never report a nameless jail. If it does, its schema
+			// has changed and every name-keyed lookup below is unreliable.
+			common.NewComponentLogger("freebsd").Warn("jls reported a jail with no name",
+				"jid", j.JID)
+		}
 		jailSlice[idx] = jails.Jail{
 			JID:      j.JID,
 			Name:     j.Name,
@@ -109,7 +119,8 @@ func mergeJails(configured, running []jails.Jail) []jails.Jail {
 			continue
 		}
 		runningNotConfigured = append(runningNotConfigured, running)
-		log.Printf("[WARN] jail %s not found in configuration files", running.Name)
+		common.NewComponentLogger("freebsd").Warn("jail not found in configuration files",
+			"jail", running.Name)
 	}
 	merged = append(merged, runningNotConfigured...)
 	return merged
@@ -167,15 +178,24 @@ func parseJailConf(content string) []jails.Jail {
 			continue
 		}
 
+		// understood tracks whether either branch below made sense of the line,
+		// so only genuinely unrecognised syntax is reported. A line can be both
+		// an assignment and the end of a block, hence a flag rather than if/else.
+		understood := false
+
 		matches := assignmentRE.FindStringSubmatch(line)
 		if len(matches) == 3 {
+			understood = true
 			key := matches[1]
 			value := resolveVars(matches[2], name)
 			values[key] = value
 		}
 
 		if strings.HasSuffix(line, "}") {
+			understood = true
 			if name == "" {
+				common.NewComponentLogger("freebsd").Debug("ignored closing brace outside a jail block",
+					"line", line)
 				continue
 			}
 			jail = jails.Jail{
@@ -193,6 +213,14 @@ func parseJailConf(content string) []jails.Jail {
 			values = map[string]string{}
 			jail = jails.Jail{}
 		}
+
+		if !understood {
+			// The channel through which a jail.conf form this parser does not
+			// know silently loses data. Valueless flags such as mount.devfs
+			// land here legitimately; anything else is worth looking at.
+			common.NewComponentLogger("freebsd").Debug("ignored unparsed jail.conf line",
+				"jail", name, "line", line)
+		}
 	}
 
 	return jailSlice
@@ -200,16 +228,37 @@ func parseJailConf(content string) []jails.Jail {
 }
 
 func stripComment(line string) string {
-	if idx := strings.Index(line, "#"); idx >= 0 {
-		return line[:idx]
+	var quote byte
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case '\\':
+			i++
+		case '\'', '"':
+			if quote == 0 {
+				quote = line[i]
+			} else if quote == line[i] {
+				quote = 0
+			}
+		case '#':
+			if quote == 0 {
+				return line[:i]
+			}
+		}
 	}
 	return line
 }
 
+var bareNameRE = regexp.MustCompile(`\$name\b`)
+
 func resolveVars(value, name string) string {
 	value = strings.TrimSpace(value)
 	value = strings.Trim(value, `"`)
+	value = bareNameRE.ReplaceAllStringFunc(value, func(string) string { return name })
 	value = strings.ReplaceAll(value, "${name}", name)
 	value = strings.ReplaceAll(value, "$(name)", name)
+	if strings.Contains(value, "$") {
+		common.NewComponentLogger("freebsd").Debug("jail.conf value has an unresolved variable",
+			"jail", name, "value", value)
+	}
 	return value
 }

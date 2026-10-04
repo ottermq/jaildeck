@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -107,7 +107,10 @@ func (s *JailService) logJailOperation(ctx context.Context, name string, operati
 		}
 	}
 	if err := s.operationLogger.Log(ctx, entry); err != nil {
-		log.Printf("failed to write operation log: %v", err)
+		common.NewComponentLogger("jail").Error("failed to write operation log",
+			slog.String("operation", operation.String()),
+			slog.String("target", name),
+			slog.Any("err", err))
 	}
 }
 

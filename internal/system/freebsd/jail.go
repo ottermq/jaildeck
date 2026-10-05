@@ -120,7 +120,6 @@ func summarizeJailActionFailure(name string, op jails.Operation, result system.C
 		"Starting jails:",
 		"Stopping jails:",
 		fmt.Sprintf("cannot start jail \"%s\":", name),
-		fmt.Sprintf("cannot start jail  \"%s\":", name),
 		fmt.Sprintf("jail: %s:", name),
 		fmt.Sprintf("jail: \"%s\"", name),
 	}

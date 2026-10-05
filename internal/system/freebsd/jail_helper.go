@@ -24,14 +24,14 @@ var assignmentRE = regexp.MustCompile(`^\s*([a-zA-Z0-9_.-]+)\s*=\s*"?([^";]+)"?\
 
 func (a *Adapter) listConfiguredJails() ([]jails.Jail, error) {
 	mapConfigJails := make(map[string]bool)
-	dirJails, err := listJailsFromConfDir(defaultJailConfDir)
+	dirJails, err := listJailsFromConfDir(a.confDir)
 	if err != nil {
 		return nil, err
 	}
 	for _, j := range dirJails {
 		mapConfigJails[j.Name] = true
 	}
-	fileJails, err := listJailsFromConfFile(defaultJailConf)
+	fileJails, err := listJailsFromConfFile(a.confFile)
 	if err != nil {
 		return nil, err
 	}

@@ -75,9 +75,9 @@ func (a *Adapter) runService(ctx context.Context, name string, op jails.Operatio
 			cmdErr.Err = runErr
 			return opResult, cmdErr
 		}
-		if summary != "" {
-			cmdErr.Err = fmt.Errorf("%s: %w", summary, stateErr)
-		}
+		// summarizeJailActionFailure never returns an empty string, so the
+		// state error always gains the command's own diagnostic as context.
+		cmdErr.Err = fmt.Errorf("%s: %w", summary, stateErr)
 		return opResult, cmdErr
 	}
 	if runErr != nil {
@@ -120,7 +120,6 @@ func summarizeJailActionFailure(name string, op jails.Operation, result system.C
 		"Starting jails:",
 		"Stopping jails:",
 		fmt.Sprintf("cannot start jail \"%s\":", name),
-		fmt.Sprintf("cannot start jail  \"%s\":", name),
 		fmt.Sprintf("jail: %s:", name),
 		fmt.Sprintf("jail: \"%s\"", name),
 	}

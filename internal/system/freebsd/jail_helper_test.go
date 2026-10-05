@@ -3,8 +3,14 @@ package freebsd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
+
+	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
 )
 
 func TestParseSingleJailConfResolvesParenNameVariable(t *testing.T) {
@@ -144,5 +150,107 @@ web {
 	}
 	if got.Path != "/jails/web" {
 		t.Errorf("Path = %q, want %q — the bare $name form must resolve", got.Path, "/jails/web")
+	}
+}
+
+func TestListJailsFromConfDir(t *testing.T) {
+	t.Run("loads conf files and ignores other files", func(t *testing.T) {
+		dir := t.TempDir()
+		for filename, content := range map[string]string{
+			"a.conf":      "web {\npath = /jails/web;\n}\n",
+			"b.conf":      "db {\n}\ncache {\n}\n",
+			"ignored.txt": "ignored {\n}\n",
+		} {
+			if err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, err := listJailsFromConfDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []jails.Jail{
+			{Name: "web", Hostname: "web", Path: "/jails/web", Status: jails.JailStatusStopped},
+			{Name: "db", Hostname: "db", Status: jails.JailStatusStopped},
+			{Name: "cache", Hostname: "cache", Status: jails.JailStatusStopped},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("listJailsFromConfDir() = %#v, want %#v", got, want)
+		}
+	})
+	t.Run("propagates read errors", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(dir, "foo.conf"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		got, err := listJailsFromConfDir(dir)
+		if got != nil || err == nil || errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("listJailsFromConfDir() = %#v, %v; want nil and a non-NotExist error", got, err)
+		}
+	})
+}
+
+func TestListJailsFromConfFile(t *testing.T) {
+	t.Run("missing file", func(t *testing.T) {
+		got, err := listJailsFromConfFile(filepath.Join(t.TempDir(), "missing.conf"))
+		if got != nil || err != nil {
+			t.Fatalf("listJailsFromConfFile() = %#v, %v; want nil, nil", got, err)
+		}
+	})
+	t.Run("propagates read errors", func(t *testing.T) {
+		got, err := listJailsFromConfFile(t.TempDir())
+		if got != nil || err == nil || errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("listJailsFromConfFile() = %#v, %v; want nil and a non-NotExist error", got, err)
+		}
+	})
+}
+
+func TestListConfiguredJails(t *testing.T) {
+	t.Run("directory wins over file by name", func(t *testing.T) {
+		dir := t.TempDir()
+		confFile := filepath.Join(t.TempDir(), "jail.conf")
+		if err := os.WriteFile(filepath.Join(dir, "web.conf"), []byte("web {\npath = /from-dir;\n}\ndir-only {\n}\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(confFile, []byte("web {\npath = /from-file;\n}\nfile-only {\n}\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		a := &Adapter{confDir: dir, confFile: confFile}
+		got, err := a.listConfiguredJails()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []jails.Jail{
+			{Name: "web", Hostname: "web", Path: "/from-dir", Status: jails.JailStatusStopped},
+			{Name: "dir-only", Hostname: "dir-only", Status: jails.JailStatusStopped},
+			{Name: "file-only", Hostname: "file-only", Status: jails.JailStatusStopped},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("listConfiguredJails() = %#v, want %#v", got, want)
+		}
+	})
+	for _, source := range []string{"directory", "file"} {
+		t.Run(source+" read error", func(t *testing.T) {
+			a := &Adapter{confDir: t.TempDir(), confFile: filepath.Join(t.TempDir(), "missing.conf")}
+			if source == "directory" {
+				if err := os.Mkdir(filepath.Join(a.confDir, "foo.conf"), 0700); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				a.confFile = t.TempDir()
+			}
+			got, err := a.listConfiguredJails()
+			if got != nil || err == nil || errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("listConfiguredJails() = %#v, %v; want nil and a non-NotExist error", got, err)
+			}
+		})
+	}
+}
+
+func TestNewAdapterUsesSystemConfPaths(t *testing.T) {
+	a := NewAdapter(nil)
+	if a.confFile != defaultJailConf || a.confDir != defaultJailConfDir {
+		t.Errorf("NewAdapter() conf paths = %q, %q; want %q, %q",
+			a.confFile, a.confDir, defaultJailConf, defaultJailConfDir)
 	}
 }

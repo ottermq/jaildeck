@@ -58,7 +58,7 @@ func (r *ExecCommandRunner) Run(ctx context.Context, cmd Command) (CommandResult
 	// line exists to diagnose. Stdout is deliberately omitted — jls output is
 	// large, and the callers that need it log it themselves.
 	defer func() {
-		common.NewComponentLogger("exec").Debug("command finished",
+		common.Logger(ctx, "exec").Debug("command finished",
 			"command", cmd.Name, "args", cmd.Args,
 			"exit_code", result.ExitCode, "duration", elapsed,
 			"stderr", result.Stderr)

@@ -1,16 +1,21 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"codeberg.org/Otter-Labs/jaildeck/internal/common"
 	"codeberg.org/Otter-Labs/jaildeck/internal/state"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 func TestAuthHandlerSessionLifecycle(t *testing.T) {
@@ -168,17 +173,18 @@ func TestRequireAuth(t *testing.T) {
 		wantStatus                 int
 		wantNext                   bool
 		wantTokenName              string
+		wantKind                   PrincipalKind
 	}{
-		{"no cookie", "", "", http.StatusUnauthorized, false, ""},
-		{"unknown token", "unknown", "", http.StatusUnauthorized, false, ""},
-		{"valid token", token, "", http.StatusNoContent, true, ""},
-		{"valid bearer token", "", "Bearer " + apiToken, http.StatusNoContent, true, tokenName},
-		{"lowercase bearer scheme", "", "bearer " + apiToken, http.StatusNoContent, true, tokenName},
-		{"unknown bearer token", "", "Bearer unknown", http.StatusUnauthorized, false, ""},
-		{"basic with valid cookie", token, "Basic xyz", http.StatusNoContent, true, ""},
-		{"bad bearer with valid cookie", token, "Bearer unknown", http.StatusUnauthorized, false, ""},
-		{"bearer without token with valid cookie", token, "Bearer", http.StatusNoContent, true, ""},
-		{"blank bearer with valid cookie", token, "Bearer    ", http.StatusNoContent, true, ""},
+		{"no cookie", "", "", http.StatusUnauthorized, false, "", ""},
+		{"unknown token", "unknown", "", http.StatusUnauthorized, false, "", ""},
+		{"valid token", token, "", http.StatusNoContent, true, "", kindSession},
+		{"valid bearer token", "", "Bearer " + apiToken, http.StatusNoContent, true, tokenName, kindToken},
+		{"lowercase bearer scheme", "", "bearer " + apiToken, http.StatusNoContent, true, tokenName, kindToken},
+		{"unknown bearer token", "", "Bearer unknown", http.StatusUnauthorized, false, "", ""},
+		{"basic with valid cookie", token, "Basic xyz", http.StatusNoContent, true, "", kindSession},
+		{"bad bearer with valid cookie", token, "Bearer unknown", http.StatusUnauthorized, false, "", ""},
+		{"bearer without token with valid cookie", token, "Bearer", http.StatusNoContent, true, "", kindSession},
+		{"blank bearer with valid cookie", token, "Bearer    ", http.StatusNoContent, true, "", kindSession},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
@@ -190,6 +196,8 @@ func TestRequireAuth(t *testing.T) {
 			}
 			rec := httptest.NewRecorder()
 			called := false
+			var logs bytes.Buffer
+			req = req.WithContext(common.ContextWithLogger(req.Context(), slog.New(slog.NewJSONHandler(&logs, nil))))
 			h.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				called = true
 				if got, ok := TokenNameFromContext(r.Context()); got != tt.wantTokenName || ok != (tt.wantTokenName != "") {
@@ -202,6 +210,7 @@ func TestRequireAuth(t *testing.T) {
 				} else if !ok || got != wantSession {
 					t.Errorf("context session = %+v, present = %v; want %+v", got, ok, wantSession)
 				}
+				common.LoggerFromContext(r.Context()).Info("handler")
 				w.WriteHeader(http.StatusNoContent)
 			})).ServeHTTP(rec, req)
 			if called != tt.wantNext {
@@ -212,6 +221,19 @@ func TestRequireAuth(t *testing.T) {
 			}
 			if len(rec.Header().Values("Set-Cookie")) != 0 {
 				t.Errorf("authentication set a cookie: %q", rec.Header().Values("Set-Cookie"))
+			}
+
+			// Gated on wantNext, not on wantKind: every request that reaches a handler must
+			// name its credential kind, so a row that forgets to set one fails here rather
+			// than silently skipping the assertion.
+			if tt.wantNext {
+				var record map[string]any
+				if err := json.NewDecoder(&logs).Decode(&record); err != nil {
+					t.Fatalf("decode handler record: %v; logs: %s", err, logs.String())
+				}
+				if got := record["principal_kind"]; got != string(tt.wantKind) {
+					t.Errorf("principal_kind = %v, want %q", got, tt.wantKind)
+				}
 			}
 		})
 	}
@@ -267,4 +289,73 @@ func TestAuthHandlerLogoutWithoutCookie(t *testing.T) {
 	if got := cookies[0]; got.Name != sessionCookieName || got.Path != "/" || got.MaxAge >= 0 {
 		t.Errorf("unexpected deletion cookie: %+v", got)
 	}
+}
+
+func TestWithPrincipalLogged(t *testing.T) {
+	for _, tt := range []struct {
+		kind PrincipalKind
+		name string
+	}{
+		{kindSession, ""},
+		{kindToken, "automation"},
+	} {
+		t.Run(string(tt.kind), func(t *testing.T) {
+			var logs bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&logs, nil))
+			entry := &principalTestLogEntry{logger: logger}
+			handler := middleware.RequestLogger(entry)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				r = withPrincipalLogged(r, tt.kind, tt.name)
+				common.LoggerFromContext(r.Context()).Info("handler")
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req = req.WithContext(common.ContextWithLogger(req.Context(), logger))
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			decoder := json.NewDecoder(&logs)
+			for _, message := range []string{"handler", "request"} {
+				var record map[string]any
+				if err := decoder.Decode(&record); err != nil {
+					t.Fatalf("decode %s record: %v", message, err)
+				}
+				if got := record["msg"]; got != message {
+					t.Errorf("message = %v, want %q", got, message)
+				}
+				if got := record["principal_kind"]; got != string(tt.kind) {
+					t.Errorf("%s principal_kind = %v, want %q", message, got, tt.kind)
+				}
+				if tt.name != "" {
+					if got := record["principal"]; got != tt.name {
+						t.Errorf("%s principal = %v, want %q", message, got, tt.name)
+					}
+				} else if _, ok := record["principal"]; ok {
+					t.Errorf("%s session record includes principal", message)
+				}
+			}
+			var extra map[string]any
+			if err := decoder.Decode(&extra); err != io.EOF {
+				t.Fatalf("expected exactly two records, got %v, error %v", extra, err)
+			}
+		})
+	}
+}
+
+type principalTestLogEntry struct {
+	logger *slog.Logger
+}
+
+func (e *principalTestLogEntry) NewLogEntry(*http.Request) middleware.LogEntry {
+	return e
+}
+
+func (e *principalTestLogEntry) AddAttrs(args ...any) {
+	e.logger = e.logger.With(args...)
+}
+
+func (e *principalTestLogEntry) Write(int, int, http.Header, time.Duration, any) {
+	e.logger.Info("request")
+}
+
+func (e *principalTestLogEntry) Panic(any, []byte) {
+	e.logger.Error("panic")
 }

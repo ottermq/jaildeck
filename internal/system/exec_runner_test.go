@@ -1,10 +1,15 @@
 package system
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
+
+	"codeberg.org/Otter-Labs/jaildeck/internal/common"
 )
 
 func TestExecCommandRunner_Run_KillsChildrenOnTimeout(t *testing.T) {
@@ -79,5 +84,40 @@ func TestExecCommandRunner_Run_CancelledParentIsNotATimeout(t *testing.T) {
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want context.Canceled", err)
+	}
+}
+
+func TestExecCommandRunner_Run_LogsToContextLogger(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	ctx := common.ContextWithLogger(context.Background(), logger)
+
+	result, err := NewExecCommandRunner().Run(ctx, Command{Name: "true"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("ExitCode = %d, want 0", result.ExitCode)
+	}
+
+	var records []map[string]any
+	decoder := json.NewDecoder(&logs)
+	for decoder.More() {
+		var record map[string]any
+		if err := decoder.Decode(&record); err != nil {
+			t.Fatalf("decode log record: %v", err)
+		}
+		records = append(records, record)
+	}
+	if len(records) != 1 {
+		t.Fatalf("logged %d records to context logger, want 1", len(records))
+	}
+	for key, want := range map[string]any{
+		"level": "DEBUG", "msg": "command finished", "component": "exec",
+		"command": "true", "exit_code": float64(0), "stderr": "",
+	} {
+		if got := records[0][key]; got != want {
+			t.Errorf("log %s = %v, want %v", key, got, want)
+		}
 	}
 }

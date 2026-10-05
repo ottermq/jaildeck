@@ -52,7 +52,7 @@ func (a *Adapter) runningJails(ctx context.Context) ([]jails.Jail, error) {
 	}
 	parsedOutput, err := parseJLSOutput(result.Stdout)
 	if err != nil {
-		common.NewComponentLogger("freebsd").Debug("failed to parse jls output",
+		common.Logger(ctx, "freebsd").Debug("failed to parse jls output",
 			"stderr", result.Stderr,
 			slog.Any("err", err))
 		return nil, fmt.Errorf("fail parsing jls output: %w", err)
@@ -62,7 +62,7 @@ func (a *Adapter) runningJails(ctx context.Context) ([]jails.Jail, error) {
 		if j.Name == "" {
 			// jls should never report a nameless jail. If it does, its schema
 			// has changed and every name-keyed lookup below is unreliable.
-			common.NewComponentLogger("freebsd").Warn("jls reported a jail with no name",
+			common.Logger(ctx, "freebsd").Warn("jls reported a jail with no name",
 				"jid", j.JID)
 		}
 		jailSlice[idx] = jails.Jail{

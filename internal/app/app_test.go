@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,8 +14,10 @@ import (
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
 	"codeberg.org/Otter-Labs/jaildeck/internal/auth"
+	"codeberg.org/Otter-Labs/jaildeck/internal/common"
 	"codeberg.org/Otter-Labs/jaildeck/internal/config"
 	"codeberg.org/Otter-Labs/jaildeck/internal/state"
+	"github.com/go-chi/chi/v5"
 )
 
 func TestNew_RequiresCredential(t *testing.T) {
@@ -239,4 +243,60 @@ func TestRequireCredential(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPanicIsLoggedThroughSlog(t *testing.T) {
+	logs := captureRequestLogs(t)
+	r := chi.NewRouter()
+	useObservability(r)
+	r.Get("/boom", func(http.ResponseWriter, *http.Request) { panic("boom") })
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/boom", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	decoder := json.NewDecoder(strings.NewReader(logs.String()))
+	for decoder.More() {
+		var record map[string]any
+		if err := decoder.Decode(&record); err != nil {
+			t.Fatalf("decode request log: %v; logs: %s", err, logs.String())
+		}
+		if record["msg"] == "request panicked" && record["level"] == "ERROR" {
+			return
+		}
+	}
+	t.Fatalf("missing request panicked log at ERROR; logs: %s", logs.String())
+}
+
+func TestUseObservabilityPutsRequestLoggerInContext(t *testing.T) {
+	logs := captureRequestLogs(t)
+	r := chi.NewRouter()
+	useObservability(r)
+	r.Get("/probe", func(_ http.ResponseWriter, req *http.Request) {
+		common.Logger(req.Context(), "probe").Info("handler ran")
+	})
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/probe", nil))
+
+	decoder := json.NewDecoder(strings.NewReader(logs.String()))
+	for decoder.More() {
+		var record map[string]any
+		if err := decoder.Decode(&record); err != nil {
+			t.Fatalf("decode log: %v; logs: %s", err, logs.String())
+		}
+		if record["msg"] != "handler ran" {
+			continue
+		}
+		// The attributes are the assertion. Without the middleware registered,
+		// LoggerFromContext falls back to the default logger and this record
+		// still appears — just without the request's method and path.
+		for key, want := range map[string]any{
+			"component": "probe", "method": "GET", "path": "/probe",
+		} {
+			if got := record[key]; got != want {
+				t.Errorf("log %s = %v, want %v", key, got, want)
+			}
+		}
+		return
+	}
+	t.Fatalf("missing handler log; logs: %s", logs.String())
 }

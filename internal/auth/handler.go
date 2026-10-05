@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/common"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 const (
@@ -19,6 +20,13 @@ const (
 var (
 	ErrInvalidRequestBody = common.NewAppError(http.StatusBadRequest, "invalid request body")
 )
+
+// logEntryEnricher is chi's request log entry, narrowed to the one method
+// RequireAuth needs. Declared here rather than imported so internal/auth does
+// not depend on internal/app, which already imports it.
+type logEntryEnricher interface {
+	AddAttrs(args ...any)
+}
 
 type LoginResponse struct {
 	Authenticated bool `json:"authenticated"`
@@ -131,7 +139,7 @@ func (h *AuthHandler) RequireAuth(next http.Handler) http.Handler {
 				return
 			}
 			ctx := context.WithValue(r.Context(), bearerKey{}, token.Name)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			next.ServeHTTP(w, withPrincipalLogged(r.WithContext(ctx), kindToken, token.Name))
 			return
 		}
 		c, err := r.Cookie(sessionCookieName)
@@ -145,7 +153,7 @@ func (h *AuthHandler) RequireAuth(next http.Handler) http.Handler {
 			return
 		}
 		ctx := context.WithValue(r.Context(), sessionKey{}, session)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(w, withPrincipalLogged(r.WithContext(ctx), kindSession, ""))
 	})
 }
 
@@ -188,4 +196,25 @@ func bearerToken(r *http.Request) (string, bool) {
 	}
 
 	return token, true
+}
+
+// withPrincipalLogged records the authenticated principal on poth log sink and
+// returns the request the handler should receive.
+//
+// Both are needed and neither can server the other: chi's entry is written after
+// the handler returns and is reached throught the request as it stands here,
+// while the context logger travels forward only on the request this returns. An
+// attribute added to one is invisible to the other.
+func withPrincipalLogged(r *http.Request, kind PrincipalKind, name string) *http.Request {
+	attrs := []any{"principal_kind", string(kind)}
+	// A session has no name - there is one operator - so the kind is the whole
+	// story. A token's name is what `jaildeck token revoke` takes.
+	if name != "" {
+		attrs = append(attrs, "principal", name)
+	}
+	if entry, ok := middleware.GetLogEntry(r).(logEntryEnricher); ok {
+		entry.AddAttrs(attrs...)
+	}
+	l := common.LoggerFromContext(r.Context()).With(attrs...)
+	return r.WithContext(common.ContextWithLogger(r.Context(), l))
 }

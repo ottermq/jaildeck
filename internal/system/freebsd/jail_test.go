@@ -450,3 +450,158 @@ func TestGetJailByName(t *testing.T) {
 		})
 	}
 }
+
+func TestRunService(t *testing.T) {
+	serviceErr := errors.New("service exited 1")
+	jlsErr := errors.New("jls unavailable")
+	const webJSON = `{"jid":"7","name":"web","host.hostname":"web.example","ip4.addr":["192.0.2.7"],"path":"/jails/web"}`
+	const webConf = "web {\nhost.hostname = web.conf-host;\npath = /from-conf;\n}\n"
+	fromJLS := jails.Jail{JID: "7", Name: "web", Hostname: "web.example", IP: "192.0.2.7", Path: "/jails/web", Status: jails.JailStatusRunning}
+	fromConf := jails.Jail{Name: "web", Hostname: "web.conf-host", Path: "/from-conf", Status: jails.JailStatusStopped}
+
+	// A jail's status cannot be set directly: jls-listed jails are always
+	// running and configured ones always stopped, so each row drives the status
+	// by choosing which source reports the jail.
+	tests := []struct {
+		name          string
+		op            jails.Operation
+		configured    bool
+		jlsEntries    string
+		jlsErr        error
+		serviceResult system.CommandResult
+		serviceErr    error
+		wantJail      jails.Jail
+		wantErrIs     error
+		wantErrMsg    string
+	}{
+		{
+			// The run error wins and the state error is dropped, so a caller
+			// never learns the lookup failed too.
+			name: "both commands fail", op: jails.OperationStart, configured: true,
+			jlsErr: jlsErr, serviceErr: serviceErr,
+			wantErrIs:  serviceErr,
+			wantErrMsg: "'service jail start web' failed: service exited 1",
+		},
+		{
+			// Absent from both sources, so getJailByName reports not found.
+			name: "state lookup fails", op: jails.OperationStart,
+			serviceResult: system.CommandResult{Stderr: "jail: web: not configured"},
+			wantErrIs:     jails.ErrJailNotFound,
+			wantErrMsg:    "'service jail start web' failed: not configured: jail not found",
+		},
+		{
+			name: "service fails while the state reads fine", op: jails.OperationStart,
+			configured: true, jlsEntries: webJSON,
+			serviceResult: system.CommandResult{Stderr: `cannot start jail "web": already running`, ExitCode: 1},
+			serviceErr:    serviceErr,
+			wantJail:      fromJLS,
+			wantErrIs:     serviceErr,
+			wantErrMsg:    "'service jail start web' failed: service exited 1",
+		},
+		{
+			// Configured but not running, so a start that reports success left
+			// the jail stopped.
+			name: "jail does not reach the desired status", op: jails.OperationStart,
+			configured: true,
+			wantJail:   fromConf,
+			wantErrMsg: `'service jail start web' failed: start jail "web" failed: jail status is 'stopped', want 'running'`,
+		},
+		{name: "start succeeds", op: jails.OperationStart, configured: true, jlsEntries: webJSON, wantJail: fromJLS},
+		{name: "stop succeeds", op: jails.OperationStop, configured: true, wantJail: fromConf},
+		{name: "restart succeeds", op: jails.OperationRestart, configured: true, jlsEntries: webJSON, wantJail: fromJLS},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs := captureDefaultLogs(t)
+			dir := t.TempDir()
+			if tt.configured {
+				if err := os.WriteFile(filepath.Join(dir, "web.conf"), []byte(webConf), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			wantCmd := system.Command{
+				Name:    "service",
+				Args:    []string{"jail", tt.op.String(), "web"},
+				Timeout: jailOperationTimeout,
+			}
+			var order []string
+			adapter := NewAdapter(runnerFunc(func(_ context.Context, cmd system.Command) (system.CommandResult, error) {
+				order = append(order, cmd.Name)
+				switch cmd.Name {
+				case "service":
+					if !reflect.DeepEqual(cmd, wantCmd) {
+						t.Errorf("service command = %#v, want %#v", cmd, wantCmd)
+					}
+					return tt.serviceResult, tt.serviceErr
+				case "jls":
+					return system.CommandResult{Stdout: `{"jail-information":{"jail":[` + tt.jlsEntries + `]}}`}, tt.jlsErr
+				}
+				t.Errorf("unexpected command %q", cmd.Name)
+				return system.CommandResult{}, nil
+			}))
+			adapter.confDir = dir
+			adapter.confFile = filepath.Join(dir, "missing.conf")
+
+			// Driven through the exported methods rather than runService, so a
+			// wrapper passing the wrong Operation cannot hide behind it.
+			var call func(context.Context, string) (jails.OperationResult, error)
+			switch tt.op {
+			case jails.OperationStart:
+				call = adapter.Start
+			case jails.OperationStop:
+				call = adapter.Stop
+			case jails.OperationRestart:
+				call = adapter.Restart
+			default:
+				t.Fatalf("no entry point for operation %q", tt.op)
+			}
+			got, err := call(context.Background(), "web")
+
+			// The service command runs first and the state lookup always
+			// follows, even when the command failed: the result reports where
+			// the jail actually is, after the attempt, rather than what was
+			// asked for. Reversed, a successful start would still be compared
+			// against the jail's pre-operation status.
+			if want := []string{"service", "jls"}; !reflect.DeepEqual(order, want) {
+				t.Errorf("command order = %v, want %v", order, want)
+			}
+			if want := wantCmd.String(); got.Command != want {
+				t.Errorf("Command = %q, want %q", got.Command, want)
+			}
+			if !reflect.DeepEqual(got.Jail, tt.wantJail) {
+				t.Errorf("Jail = %#v, want %#v", got.Jail, tt.wantJail)
+			}
+			if tt.wantErrMsg == "" {
+				if err != nil {
+					t.Fatalf("runService() error = %v, want nil", err)
+				}
+			} else {
+				if err == nil {
+					t.Fatalf("runService() error = nil, want %q", tt.wantErrMsg)
+				}
+				if err.Error() != tt.wantErrMsg {
+					t.Errorf("runService() error = %q, want %q", err.Error(), tt.wantErrMsg)
+				}
+				if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
+					t.Errorf("runService() error does not wrap %v", tt.wantErrIs)
+				}
+				var cmdErr *system.CommandError
+				if !errors.As(err, &cmdErr) {
+					t.Fatalf("runService() error is not a *system.CommandError: %v", err)
+				}
+				// Result must carry the service command's output: nothing else
+				// tells it apart from the jls result the lookup produced.
+				if !reflect.DeepEqual(cmdErr.Result, tt.serviceResult) {
+					t.Errorf("CommandError.Result = %#v, want the service result %#v", cmdErr.Result, tt.serviceResult)
+				}
+				if cmdErr.Command != "service" || !reflect.DeepEqual(cmdErr.Args, wantCmd.Args) {
+					t.Errorf("CommandError = %q %v, want %q %v", cmdErr.Command, cmdErr.Args, "service", wantCmd.Args)
+				}
+			}
+			if logs.Len() != 0 {
+				t.Errorf("unexpected log output: %s", logs.String())
+			}
+		})
+	}
+}

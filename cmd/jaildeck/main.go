@@ -60,7 +60,7 @@ func main() {
 
 	addr := net.JoinHostPort(cfg.Host, cfg.Port)
 	srv := newServer(addr, a.Routes())
-	slog.Info("Jail Deck %s listening on %s", buildinfo.Version(), addr)
+	slog.Info(fmt.Sprintf("Jail Deck %s listening on %s", buildinfo.Version(), addr))
 
 	err = srv.ListenAndServe()
 	if err != nil {

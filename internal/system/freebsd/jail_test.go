@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -68,7 +70,7 @@ func TestSummarizeJailActionFailure(t *testing.T) {
 			want: "mount failed",
 		},
 		{
-			name:   "extra spaces in start prefix",
+			name:   "whitespace is collapsed before prefixes are stripped",
 			op:     jails.OperationStart,
 			result: system.CommandResult{Stderr: "cannot start jail  \"goodiesdb\": invalid configuration"},
 			want:   "invalid configuration",
@@ -299,6 +301,7 @@ func TestRunningJails(t *testing.T) {
 	}
 }
 
+// captureDefaultLogs swaps the global logger; callers must not use t.Parallel.
 func captureDefaultLogs(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	previous := slog.Default()
@@ -314,4 +317,136 @@ func captureRequestLogs(t *testing.T, attrs ...any) (context.Context, *bytes.Buf
 	var requestLogs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&requestLogs, &slog.HandlerOptions{Level: slog.LevelDebug})).With(attrs...)
 	return common.ContextWithLogger(context.Background(), logger), &requestLogs
+}
+
+func TestAdapterList(t *testing.T) {
+	runnerErr := errors.New("jls unavailable")
+	stopped := jails.Jail{Name: "web", Hostname: "configured-web", Path: "/from-conf", Status: jails.JailStatusStopped}
+	running := jails.Jail{JID: "7", Name: "web", Path: "/jails/web", Status: jails.JailStatusRunning}
+	worker := jails.Jail{JID: "8", Name: "worker", Status: jails.JailStatusRunning}
+	tests := []struct {
+		name         string
+		configured   bool
+		stdout       string
+		runnerErr    error
+		configErr    bool
+		want         []jails.Jail
+		wantCalls    int
+		wantWarnings []string
+	}{
+		{name: "configured only", configured: true, stdout: `{"jail-information":{"jail":[]}}`, want: []jails.Jail{stopped}, wantCalls: 1},
+		{name: "running only", stdout: `{"jail-information":{"jail":[{"jid":"7","name":"web","path":"/jails/web"}]}}`, want: []jails.Jail{running}, wantCalls: 1, wantWarnings: []string{"web"}},
+		{name: "in both", configured: true, stdout: `{"jail-information":{"jail":[{"jid":"7","name":"web","path":"/jails/web"}]}}`, want: []jails.Jail{running}, wantCalls: 1},
+		{name: "partial overlap", configured: true, stdout: `{"jail-information":{"jail":[{"jid":"8","name":"worker"}]}}`, want: []jails.Jail{stopped, worker}, wantCalls: 1, wantWarnings: []string{"worker"}},
+		{name: "jls error", runnerErr: runnerErr, wantCalls: 1},
+		{name: "configDir error", configErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs := captureDefaultLogs(t)
+			dir := t.TempDir()
+			if tt.configured {
+				if err := os.WriteFile(filepath.Join(dir, "web.conf"), []byte("web {\nhost.hostname = configured-web;\npath = /from-conf;\n}\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tt.configErr {
+				if err := os.Mkdir(filepath.Join(dir, "foo.conf"), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ctx := context.Background()
+			calls := 0
+			adapter := NewAdapter(runnerFunc(func(gotCtx context.Context, cmd system.Command) (system.CommandResult, error) {
+				calls++
+				if gotCtx != ctx {
+					t.Error("runner did not receive the list context")
+				}
+				if !reflect.DeepEqual(cmd, jlsListCommand) {
+					t.Errorf("command = %#v, want %#v", cmd, jlsListCommand)
+				}
+				return system.CommandResult{Stdout: tt.stdout}, tt.runnerErr
+			}))
+			adapter.confDir = dir
+			adapter.confFile = filepath.Join(dir, "missing.conf")
+			got, err := adapter.List(ctx)
+			if calls != tt.wantCalls {
+				t.Errorf("runner calls = %d, want %d", calls, tt.wantCalls)
+			}
+			switch {
+			case tt.runnerErr != nil:
+				if !errors.Is(err, tt.runnerErr) {
+					t.Errorf("List() error = %v, want wrapped %v", err, tt.runnerErr)
+				}
+			case tt.configErr:
+				var pathErr *os.PathError
+				if !errors.As(err, &pathErr) || pathErr.Path != filepath.Join(dir, "foo.conf") || errors.Is(err, os.ErrNotExist) {
+					t.Errorf("List() error = %v, want read error for foo.conf", err)
+				}
+			default:
+				if err != nil {
+					t.Fatalf("List() error = %v", err)
+				}
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("List() = %#v, want %#v", got, tt.want)
+			}
+			var warnings []string
+			decoder := json.NewDecoder(bytes.NewReader(logs.Bytes()))
+			for decoder.More() {
+				var record map[string]any
+				if err := decoder.Decode(&record); err != nil {
+					t.Fatalf("decode log: %v", err)
+				}
+				if record["level"] != "WARN" || record["msg"] != "jail not found in configuration files" {
+					t.Errorf("unexpected log: %v", record)
+					continue
+				}
+				name, _ := record["jail"].(string)
+				warnings = append(warnings, name)
+			}
+			if !reflect.DeepEqual(warnings, tt.wantWarnings) {
+				t.Errorf("warned about %v, want %v", warnings, tt.wantWarnings)
+			}
+		})
+	}
+}
+
+func TestGetJailByName(t *testing.T) {
+	runnerErr := errors.New("jls unavailable")
+	web := jails.Jail{JID: "7", Name: "web", Hostname: "web.example", IP: "192.0.2.7", Path: "/jails/web", Status: jails.JailStatusRunning}
+	webJSON := `{"jid":"7","name":"web","host.hostname":"web.example","ip4.addr":["192.0.2.7"],"path":"/jails/web"}`
+	tests := []struct {
+		name      string
+		entries   string
+		lookup    string
+		runnerErr error
+		want      jails.Jail
+		wantErr   error
+	}{
+		{name: "found", entries: webJSON, lookup: "web", want: web},
+		{name: "not found", entries: webJSON, lookup: "missing", wantErr: jails.ErrJailNotFound},
+		{name: "List error passes through", lookup: "web", runnerErr: runnerErr, wantErr: runnerErr},
+		{name: "found second in list", entries: `{"jid":"8","name":"worker"},` + webJSON, lookup: "web", want: web},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			captureDefaultLogs(t)
+			adapter := NewAdapter(runnerFunc(func(context.Context, system.Command) (system.CommandResult, error) {
+				return system.CommandResult{Stdout: `{"jail-information":{"jail":[` + tt.entries + `]}}`}, tt.runnerErr
+			}))
+			adapter.confDir = t.TempDir()
+			adapter.confFile = filepath.Join(adapter.confDir, "missing.conf")
+			got, err := adapter.getJailByName(context.Background(), tt.lookup)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("getJailByName() error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.runnerErr != nil && err.Error() != "list jails: "+tt.runnerErr.Error() {
+				t.Errorf("List error changed: %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("getJailByName() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
 }

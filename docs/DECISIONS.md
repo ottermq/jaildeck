@@ -409,6 +409,35 @@ This decision is about bounding individual commands. How a legitimately slow flo
 
 ---
 
+## JD-015 — Frontend Architecture
+
+**Status:** Locked
+
+Settles what JD-009 left to Phase 1b. The UI is a plain **Svelte 5 + Vite** single-page application in TypeScript, not SvelteKit. State is held in runes; routing is a small hand-written router over `history.pushState`; styling is plain CSS with custom properties on `:root`; the API client is a hand-written `fetch` wrapper that centralises the error shape and the 401 path.
+
+The JSON API is served under **`/api`**. Everything else is the SPA: unknown non-`/api` paths return `index.html` so client-side routing works, while unknown `/api` paths return a JSON error. Static assets are served without authentication — the login view has to be reachable — while every `/api` route except login stays behind `RequireAuth` (JD-003).
+
+The Vite dev server proxies `/api` to the Go process, so development and production are same-origin and the session cookie behaves identically in both.
+
+`web/dist/index.html` is committed as a placeholder so `//go:embed` succeeds on a fresh clone; the build overwrites it. Build tags switching between embedded and on-disk assets were rejected: they double the build matrix and make `go build ./...` behave differently for a contributor than for CI.
+
+### Rationale
+
+SvelteKit's value is server-side rendering, adapters and file-based routing. An embedded single-binary SPA uses none of it — `adapter-static` with `ssr = false` is configuration to switch off features that were never wanted, and the conventions remain to be learned regardless. Plain Vite produces an obviously static bundle, which is what `embed.FS` needs, and keeps one layer between the author and the browser rather than two (JD-013).
+
+The `/api` prefix resolves a collision rather than expressing a taste. Without it the page route `/jails` and the API route `/jails` are the same URL, separable only by the `Accept` header — which fails for `curl` with no `Accept`, and leaves `/jails/{name}` ambiguous between a detail page and a resource. `docs/ARCHITECTURE.md` already documented `/api/*`; this aligns the code with the document rather than the reverse. The cost is a breaking change for API consumers, acceptable pre-1.0 with one known consumer.
+
+Plain CSS over a utility framework or component library: `docs/UI.md` asks for something that does not "feel like a marketing dashboard or generic cloud console", and a component library supplies precisely an opinion about appearance. Tokens on `:root` also make `prefers-color-scheme` nearly free.
+
+TanStack Query, a generated client and polling are premature at two domains. Refetch-after-mutation suffices; a jail operation can run to the 150-second backstop (JD-014), so per-row pending state matters more than a cache.
+
+### Still open
+
+- How a multi-minute template preparation is represented in the UI — blocked on JD-008.
+- Table-first or card-first for the jails list; browser `confirm()` or a custom dialog; when dark mode arrives. All reversible, none blocking.
+
+---
+
 ## Decision Policy
 
 Once a decision is marked as **Locked**, it should not be revisited without a clear technical or product justification. Architectural evolution is expected, but changes should be deliberate and documented rather than occurring through incremental drift.

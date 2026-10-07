@@ -9,6 +9,43 @@ alone.
 Dates are the tag date. Issue numbers link to
 [the tracker](https://codeberg.org/Otter-Labs/jaildeck/issues).
 
+## v0.5.2 — 2026-10-07
+
+[Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.5.2)
+
+### Changed
+
+- **The request log is now structured, and on stderr.** It previously came from
+  chi's own middleware as free-form lines on stdout; it now goes through
+  `log/slog` alongside every other record — one record per request, with the level
+  taken from the status: 5xx `ERROR`, 4xx `WARN`, otherwise `INFO`. Anything
+  reading stdout for request lines will find nothing there. (#44)
+- **The startup line is structured**: `msg=listening version=… addr=…`, in place
+  of a prose sentence.
+
+### Added
+
+- `principal_kind` on every authenticated request record, and `principal` when the
+  credential has a name — a token's name, the one `jaildeck token revoke` takes. A
+  session has no name; there is one operator. (#44)
+- Records emitted while serving a request now carry that request's `method`,
+  `path` and principal. A failed jail command's DEBUG record therefore says which
+  request and which credential produced it. (#44)
+
+### Fixed
+
+- The startup record was malformed. `slog.Info` was called with a format string
+  and positional arguments, so slog paired them as an attribute and the version
+  became the *key*: `msg="Jail Deck %s listening on %s" v0.5.1=127.0.0.1:8888`.
+
+### Known issues
+
+- **`jail.conf` shared defaults are ignored.** A stopped jail configured the way
+  the FreeBSD handbook recommends — shared defaults in `/etc/jail.conf`, one file
+  per jail in `/etc/jail.conf.d/` — reports an empty `Path`, and `ip4 = inherit`
+  surfaces as the literal string `inherit`. Running jails are unaffected, because
+  `jls` supplies the real values. (#51)
+
 ## v0.5.1 — 2026-10-04
 
 [Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.5.1)

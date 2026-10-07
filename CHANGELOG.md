@@ -16,7 +16,7 @@ Dates are the tag date. Issue numbers link to
 - **The JSON API moved under `/api`.** Every path changed: `/jails` is now
   `/api/jails`, `/audit` is `/api/audit`, `/auth/login` is `/api/auth/login`.
   Clients need their base URL updated — appending `/api` is enough, which is all
-  the bundled Insomnium collection required. The root path is being handled to the
+  the bundled Insomnium collection required. The root path is being handed to the
   web interface (#58), so the API needed a namespace of its own. (#57)
 
 ## v0.5.2 — 2026-10-07

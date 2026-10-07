@@ -20,7 +20,7 @@
       "parentId": "wrk_9b339d7edd5b13f843f793b6ec4f3b6c",
       "name": "Base Environment",
       "data": {
-        "baseUrl": "http://localhost:8888",
+        "baseUrl": "http://localhost:8888/api",
         "jail": "ottermq",
         "password": "change-me",
         "apiToken": ""
@@ -45,7 +45,7 @@
       "parentId": "env_491dc04451cc5f50fc845a1d718aa4ad",
       "name": "Local (fake adapter, port 8889)",
       "data": {
-        "baseUrl": "http://localhost:8889",
+        "baseUrl": "http://localhost:8889/api",
         "jail": "nginx"
       },
       "dataPropertyOrder": {
@@ -66,7 +66,7 @@
       "parentId": "env_491dc04451cc5f50fc845a1d718aa4ad",
       "name": "FreeBSD guest (SSH tunnel)",
       "data": {
-        "baseUrl": "http://localhost:8888",
+        "baseUrl": "http://localhost:8888/api",
         "jail": "ottermq"
       },
       "dataPropertyOrder": {

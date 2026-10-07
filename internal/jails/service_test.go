@@ -83,6 +83,8 @@ type logRecord struct {
 	Operation string `json:"operation"`
 	Target    string `json:"target"`
 	Err       string `json:"err"`
+	Method    string `json:"method"`
+	Path      string `json:"path"`
 }
 
 // decodeLogs returns every record written to buf, in order.
@@ -236,12 +238,12 @@ func TestLogJailOperation_HappyPath(t *testing.T) {
 }
 
 func TestLogJailOperation_AuditFailureIsLoggedAtError(t *testing.T) {
-	logs := captureLogs(t)
+	ctx, logs := captureRequestLogs(t, "component", "jail", "method", "POST", "path", "/jails/ottermq/start")
 	svc := NewJailService(stubSystem{command: "service jail start ottermq"}, erroringLogger{})
 
 	// An audit write that fails must not fail the operation: the jail has
 	// already started, so reporting an error would be a lie (JD-011, #31).
-	if _, err := svc.Start(context.Background(), JailName("ottermq")); err != nil {
+	if _, err := svc.Start(ctx, JailName("ottermq")); err != nil {
 		t.Fatalf("Start() error = %v, want nil — an audit failure must not fail the operation", err)
 	}
 
@@ -258,8 +260,23 @@ func TestLogJailOperation_AuditFailureIsLoggedAtError(t *testing.T) {
 		Operation: "start",
 		Target:    "ottermq",
 		Err:       "no space left on device",
+		Method:    "POST",
+		Path:      "/jails/ottermq/start",
 	}
 	if got != want {
 		t.Errorf("log record = %+v, want %+v", got, want)
 	}
+}
+
+// captureRequestLogs points the default logger at a buffer this test never reads
+// and returns one fed only by a request-scoped logger in the returned context.
+// A record that falls back to the default is therefore absent here — which is
+// what makes common.Logger(ctx, …) and common.NewComponentLogger(…)
+// distinguishable. Sharing one buffer makes any such assertion vacuous.
+func captureRequestLogs(t *testing.T, attrs ...any) (context.Context, *bytes.Buffer) {
+	t.Helper()
+	captureLogs(t) // redirect the default away from this test's assertions
+	var buf bytes.Buffer
+	l := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})).With(attrs...)
+	return common.ContextWithLogger(context.Background(), l), &buf
 }

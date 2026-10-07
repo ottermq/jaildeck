@@ -3,12 +3,14 @@ package app
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
 	"codeberg.org/Otter-Labs/jaildeck/internal/auth"
+	"codeberg.org/Otter-Labs/jaildeck/internal/common"
 	"codeberg.org/Otter-Labs/jaildeck/internal/config"
 	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
 	"codeberg.org/Otter-Labs/jaildeck/internal/state"
@@ -109,11 +111,8 @@ func newJailSystem(adapter string) (jails.JailSystem, error) {
 func (a *App) Routes() http.Handler {
 	r := chi.NewRouter()
 
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-
+	useObservability(r)
 	auth.RegisterAuthRoutes(r, a.authHandler)
-
 	r.Group(func(r chi.Router) {
 		r.Use(a.authHandler.RequireAuth)
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
@@ -124,4 +123,22 @@ func (a *App) Routes() http.Handler {
 	})
 
 	return r
+}
+
+// useObservability registers the two middlewares whose order matters.
+func useObservability(r *chi.Mux) {
+	// RequestLogger before Recoverer deliberately: Recoverer calls
+	// GetLogEntry(r).Panic(...) itself, so the entry must already be in the
+	// context. Reversed, chi falls back to PrintPrettyStack on stdout.
+	r.Use(middleware.RequestLogger(slogFormatter{}))
+	r.Use(middleware.Recoverer)
+	// Every handler below gets a request-scoped logger; RequireAuth enriches it.
+	r.Use(requestContextLogger)
+}
+
+func requestContextLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		l := slog.Default().With("method", r.Method, "path", r.URL.Path)
+		next.ServeHTTP(w, r.WithContext(common.ContextWithLogger(r.Context(), l)))
+	})
 }

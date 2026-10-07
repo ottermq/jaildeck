@@ -107,7 +107,8 @@ func (s *JailService) logJailOperation(ctx context.Context, name string, operati
 		}
 	}
 	if err := s.operationLogger.Log(ctx, entry); err != nil {
-		common.NewComponentLogger("jail").Error("failed to write operation log",
+		common.Logger(ctx, "jail").Error("failed to write operation log",
+			// common.NewComponentLogger("jail").Error("failed to write operation log",
 			slog.String("operation", operation.String()),
 			slog.String("target", name),
 			slog.Any("err", err))

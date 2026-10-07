@@ -236,7 +236,7 @@ GET    /api/templates
 POST   /api/templates                # prepare a new release template
 GET    /api/storage/datasets
 GET    /api/storage/snapshots
-GET    /api/operations
+GET    /api/audit
 ```
 
 ## Error handling

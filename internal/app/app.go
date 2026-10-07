@@ -112,14 +112,16 @@ func (a *App) Routes() http.Handler {
 	r := chi.NewRouter()
 
 	useObservability(r)
-	auth.RegisterAuthRoutes(r, a.authHandler)
-	r.Group(func(r chi.Router) {
-		r.Use(a.authHandler.RequireAuth)
-		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "/jails", http.StatusSeeOther)
+	r.Route("/api", func(r chi.Router) {
+		auth.RegisterAuthRoutes(r, a.authHandler)
+		r.Group(func(r chi.Router) {
+			r.Use(a.authHandler.RequireAuth)
+			r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, "/api/jails", http.StatusSeeOther)
+			})
+			jails.RegisterJailRoutes(r, a.jailHandler)
+			audit.RegisterAuditHandlers(r, a.auditHandler)
 		})
-		jails.RegisterJailRoutes(r, a.jailHandler)
-		audit.RegisterAuditHandlers(r, a.auditHandler)
 	})
 
 	return r

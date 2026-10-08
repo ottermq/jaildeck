@@ -419,7 +419,7 @@ The JSON API is served under **`/api`**. Everything else is the SPA: unknown non
 
 The Vite dev server proxies `/api` to the Go process, so development and production are same-origin and the session cookie behaves identically in both.
 
-`web/dist/index.html` is committed as a placeholder so `//go:embed` succeeds on a fresh clone; the build overwrites it. Build tags switching between embedded and on-disk assets were rejected: they double the build matrix and make `go build ./...` behave differently for a contributor than for CI.
+`web/dist/.gitkeep` is committed so `//go:embed all:dist` succeeds on a fresh clone; the `all:` prefix is required because `embed` skips dotfiles, and a `dist/` holding only `.gitkeep` otherwise fails to compile. When `index.html` is absent the binary serves a page saying to run the frontend build, rather than refusing to start. The placeholder is deliberately not `index.html` itself: that is the path the build writes, so committing it would leave the tree dirty after every build and invite a build artifact into git. Build tags switching between embedded and on-disk assets were rejected: they double the build matrix and make `go build ./...` behave differently for a contributor than for CI.
 
 ### Rationale
 

@@ -5,7 +5,7 @@ COVER_PROFILE=$(BUILD_DIR)/coverage.out
 
 GO?=go
 
-.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help
+.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev all
 
 ## build: compile the binary into bin/
 build:
@@ -76,3 +76,15 @@ clean:
 ## help: list available targets
 help:
 	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/^## /  /'
+
+## web: build the web frontend
+web:
+	@cd web && npm ci && npm run build
+	@touch web/dist/.gitkeep			# Vite emties dist/; the placeholder keeps //go:embed working
+
+## web-dev: run the web frontend in development mode (requires Node.js)
+web-dev:
+	@cd web && npm install && npm run dev
+
+## all: build the backend and frontend
+all: web build

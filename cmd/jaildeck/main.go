@@ -11,6 +11,7 @@ import (
 	"codeberg.org/Otter-Labs/jaildeck/internal/app"
 	"codeberg.org/Otter-Labs/jaildeck/internal/buildinfo"
 	"codeberg.org/Otter-Labs/jaildeck/internal/config"
+	"codeberg.org/Otter-Labs/jaildeck/web"
 )
 
 func main() {
@@ -59,7 +60,8 @@ func main() {
 	}
 
 	addr := net.JoinHostPort(cfg.Host, cfg.Port)
-	srv := newServer(addr, a.Routes())
+
+	srv := newServer(addr, a.Routes(web.Assets()))
 	slog.Info("listening", "version", buildinfo.Version(), "addr", addr)
 
 	err = srv.ListenAndServe()

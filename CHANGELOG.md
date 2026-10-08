@@ -19,6 +19,14 @@ Dates are the tag date. Issue numbers link to
   the bundled Insomnium collection required. The root path is being handed to the
   web interface (#58), so the API needed a namespace of its own. (#57)
 
+### Added
+
+- **A web interface.** The binary now serves a Svelte single-page application at
+  `/`; the JSON API stays under `/api`. The frontend is embedded via `embed.FS`,
+  so there is still one binary and no Node.js at runtime — building it is
+  `make web`, and a clone without that step compiles and runs, serving a page
+  that says so. (#58)
+
 ## v0.5.2 — 2026-10-07
 
 [Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.5.2)

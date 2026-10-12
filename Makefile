@@ -5,7 +5,7 @@ COVER_PROFILE=$(BUILD_DIR)/coverage.out
 
 GO?=go
 
-.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev all
+.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check all
 
 ## build: compile the binary into bin/
 build:

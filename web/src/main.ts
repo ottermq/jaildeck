@@ -1,6 +1,7 @@
 import { mount } from 'svelte'
 import './app.css'
-import App from './App.svelte'
+// @ts-expect-error Svelte components are resolved by the bundler.
+import App from "./App.svelte";
 
 const app = mount(App, {
   target: document.getElementById('app')!,

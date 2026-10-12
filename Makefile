@@ -86,5 +86,9 @@ web:
 web-dev:
 	@cd web && npm install && npm run dev
 
+## web-check: typecheck the frontend (requires Node)
+web-check:
+	@cd web && npm run check
+
 ## all: build the backend and frontend
 all: web build

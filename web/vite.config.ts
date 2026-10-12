@@ -3,6 +3,6 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [svelte()],
-  server: { proxy: { '/api': 'http://localhost:18888' } },
+  server: { proxy: { '/api': 'http://localhost:8888' } },
   build: { outDir: 'dist', emptyOutDir: true } ,
 })

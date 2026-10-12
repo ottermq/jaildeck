@@ -5,7 +5,7 @@ COVER_PROFILE=$(BUILD_DIR)/coverage.out
 
 GO?=go
 
-.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev all
+.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check all
 
 ## build: compile the binary into bin/
 build:
@@ -85,6 +85,10 @@ web:
 ## web-dev: run the web frontend in development mode (requires Node.js)
 web-dev:
 	@cd web && npm install && npm run dev
+
+## web-check: typecheck the frontend (requires Node)
+web-check:
+	@cd web && npm run check
 
 ## all: build the backend and frontend
 all: web build

@@ -15,17 +15,23 @@ Dates are the tag date. Issue numbers link to
 
 - **The JSON API moved under `/api`.** Every path changed: `/jails` is now
   `/api/jails`, `/audit` is `/api/audit`, `/auth/login` is `/api/auth/login`.
-  Clients need their base URL updated — appending `/api` is enough, which is all
-  the bundled Insomnium collection required. The root path is being handed to the
-  web interface (#58), so the API needed a namespace of its own. (#57)
+  Clients need their base URL updated — appending `/api` is enough, which is 
+  all the bundled Insomnium collection required. The root path is being handed 
+  to the web interface (#58), so the API needed a namespace of its own. (#57)
+
+- **`GET /api/jails` now uses JSON tags.** The `Jail` type had no JSON tags, so
+  it emitted Go field names: `JID`, `Name`, `Status`, `Hostname`, `IP`, `Path`.
+  It now emits `jid`, `name`, `status`, `hostname`, `ip`, `path`, matching every
+  other type the API returns. The jail returned by `POST /api/jails/{name}/start`,
+  `/stop` and `/restart` changes the same way. (#60)
 
 ### Added
 
-- **A web interface.** The binary now serves a Svelte single-page application at
-  `/`; the JSON API stays under `/api`. The frontend is embedded via `embed.FS`,
-  so there is still one binary and no Node.js at runtime — building it is
-  `make web`, and a clone without that step compiles and runs, serving a page
-  that says so. (#58)
+- **A web interface.** The binary now serves a Svelte single-page application 
+  at `/`; the JSON API stays under `/api`. The frontend is embedded via 
+  `embed.FS`, so there is still one binary and no Node.js at runtime — building
+  it is `make web`, and a clone without that step compiles and runs, serving a 
+  page that says so. (#58)
 
 ## v0.5.2 — 2026-10-07
 

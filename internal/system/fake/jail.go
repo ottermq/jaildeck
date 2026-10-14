@@ -3,6 +3,7 @@ package fake
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
 )
@@ -69,6 +70,7 @@ func (s *JailSystem) Start(ctx context.Context, name string) (jails.OperationRes
 	jail = s.running(jail)
 	s.jails[name] = jail
 
+	time.Sleep(3 * time.Second)
 	return createJailOperationResult(jail), nil
 }
 
@@ -82,6 +84,7 @@ func (s *JailSystem) Stop(ctx context.Context, name string) (jails.OperationResu
 	jail.JID = ""
 	s.jails[name] = jail
 
+	time.Sleep(3 * time.Second)
 	return createJailOperationResult(jail), nil
 }
 
@@ -95,6 +98,7 @@ func (s *JailSystem) Restart(ctx context.Context, name string) (jails.OperationR
 	jail = s.running(jail)
 	s.jails[name] = jail
 
+	time.Sleep(3 * time.Second)
 	return createJailOperationResult(jail), nil
 }
 

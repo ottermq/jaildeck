@@ -10,6 +10,13 @@
   --social-bg: rgba(244, 243, 236, 0.5);
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  
+  --color-surface-raised: #202733;
+	--color-surface-raised-contrast: #eef1f5;
+
+  --jd-white: rgb(255, 255, 255);
+  --jd-red: rgb(255, 32, 40);
+  --jd-gray: rgb(210,210,210);
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;

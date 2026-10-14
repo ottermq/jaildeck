@@ -1,4 +1,4 @@
-import { onUnauthenticated } from './auth.svelte';
+import { onUnauthenticated } from '../stores/auth.svelte';
 
 
 type Options = RequestInit & { skipAuthRedirect?: boolean }

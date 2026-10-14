@@ -1,6 +1,6 @@
 <script lang="ts">
-    import { ApiError } from "./api";
-import { login } from "./auth.svelte";
+import { ApiError } from "../services/api";
+import { login } from "../stores/auth.svelte";
 
 let error = $state('')
 let password = $state('')

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="109.5 267.5 799 571" role="img" aria-label="Jail Deck JD logo">
+  <rect x="109.5" y="267.5" width="799" height="571" fill="#06152f"/>
+  <!-- White J -->
+  <path fill="#ffffff" d="M345 288H452V650C452 772 386 818 287 818C184 818 130 755 130 672H233C233 713 250 731 287 731C326 731 345 710 345 650Z"/>
+  <!-- FreeBSD-red D -->
+  <path fill="#ff2028" fill-rule="evenodd" d="M493 288H648C816 288 888 392 888 553C888 713 816 816 648 816H493ZM601 378V726H644C737 726 779 670 779 553C779 435 737 378 644 378Z"/>
+</svg>

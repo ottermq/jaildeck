@@ -15,17 +15,35 @@ Dates are the tag date. Issue numbers link to
 
 - **The JSON API moved under `/api`.** Every path changed: `/jails` is now
   `/api/jails`, `/audit` is `/api/audit`, `/auth/login` is `/api/auth/login`.
-  Clients need their base URL updated — appending `/api` is enough, which is all
-  the bundled Insomnium collection required. The root path is being handed to the
-  web interface (#58), so the API needed a namespace of its own. (#57)
+  Clients need their base URL updated — appending `/api` is enough, which is 
+  all the bundled Insomnium collection required. The root path is being handed 
+  to the web interface (#58), so the API needed a namespace of its own. (#57)
+
+- **`GET /api/jails` now uses JSON tags.** The `Jail` type had no JSON tags, so
+  it emitted Go field names: `JID`, `Name`, `Status`, `Hostname`, `IP`, `Path`.
+  It now emits `jid`, `name`, `status`, `hostname`, `ip`, `path`, matching every
+  other type the API returns. The jail returned by `POST /api/jails/{name}/start`,
+  `/stop` and `/restart` changes the same way. (#60)
 
 ### Added
 
-- **A web interface.** The binary now serves a Svelte single-page application at
-  `/`; the JSON API stays under `/api`. The frontend is embedded via `embed.FS`,
-  so there is still one binary and no Node.js at runtime — building it is
-  `make web`, and a clone without that step compiles and runs, serving a page
-  that says so. (#58)
+- **A web interface.** The binary now serves a Svelte single-page application 
+  at `/`; the JSON API stays under `/api`. The frontend is embedded via 
+  `embed.FS`, so there is still one binary and no Node.js at runtime — building
+  it is `make web`, and a clone without that step compiles and runs, serving a 
+  page that says so. (#58)
+
+**The jails list, with `start`, `stop` and `restart`.** `/jails` lists every
+  jail on the host with its JID, hostname, IP and path, and starts, stops or
+  restarts them from the browser; stop and restart confirm first. An operation
+  can run to its 150-second backstop (JD-014), so the row shows progress and
+  refuses a second click until it returns.
+
+  Two behaviours worth knowing. A failure shows the command's own diagnostic
+  rather than a generic message. And a **timed-out** operation is reported as
+  *may still be running* rather than as a failure — Jail Deck stopped waiting,
+  which is not the same as the jail failing to start — with the list refetched
+  so it shows the jail's actual state. (#60)
 
 ## v0.5.2 — 2026-10-07
 

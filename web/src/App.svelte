@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import Login from './lib/Login.svelte';
-  import Shell from './lib/Shell.svelte';
-  import { loadPrincipal, auth } from "./lib/auth.svelte";
-  import { ApiError } from './lib/api';
+  import Login from './lib/pages/Login.svelte';
+  import Shell from './lib/pages/Shell.svelte';
+  import { loadPrincipal, auth } from "./lib/stores/auth.svelte";
+  import { ApiError } from './lib/services/api';
   
 
 

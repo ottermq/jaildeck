@@ -1,12 +1,12 @@
 package jails
 
 type Jail struct {
-	JID      string
-	Name     string
-	Status   JailStatus
-	Hostname string
-	IP       string
-	Path     string
+	JID      string     `json:"jid"`
+	Name     string     `json:"name"`
+	Status   JailStatus `json:"status"`
+	Hostname string     `json:"hostname"`
+	IP       string     `json:"ip"`
+	Path     string     `json:"path"`
 }
 
 type JailStatus string

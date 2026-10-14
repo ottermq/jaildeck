@@ -33,6 +33,18 @@ Dates are the tag date. Issue numbers link to
   it is `make web`, and a clone without that step compiles and runs, serving a 
   page that says so. (#58)
 
+**The jails list, with `start`, `stop` and `restart`.** `/jails` lists every
+  jail on the host with its JID, hostname, IP and path, and starts, stops or
+  restarts them from the browser; stop and restart confirm first. An operation
+  can run to its 150-second backstop (JD-014), so the row shows progress and
+  refuses a second click until it returns.
+
+  Two behaviours worth knowing. A failure shows the command's own diagnostic
+  rather than a generic message. And a **timed-out** operation is reported as
+  *may still be running* rather than as a failure — Jail Deck stopped waiting,
+  which is not the same as the jail failing to start — with the list refetched
+  so it shows the jail's actual state. (#60)
+
 ## v0.5.2 — 2026-10-07
 
 [Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.5.2)

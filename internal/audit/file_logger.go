@@ -41,16 +41,16 @@ func (l *FileLogger) Log(ctx context.Context, entry Entry) error {
 }
 
 func (l *FileLogger) Recent(ctx context.Context, limit int, filter Filter) ([]Entry, error) {
+	entries := make([]Entry, 0)
 	file, err := os.Open(l.path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return entries, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	var entries []Entry
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var entry Entry

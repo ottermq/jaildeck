@@ -1,15 +1,27 @@
 # Changelog
 
 Every released version is recorded here. A version additionally gets a
-[release](https://codeberg.org/Otter-Labs/jaildeck/releases) with full notes when
+[release](https://github.com/ottermq/jaildeck/releases) with full notes when
 it carries something an upgrader has to act on — a changed output format, a new
 mandatory step, a migration. Versions that only fix internal behaviour live here
 alone.
 
 Dates are the tag date. Issue numbers link to
-[the tracker](https://codeberg.org/Otter-Labs/jaildeck/issues).
+[the tracker](https://github.com/ottermq/jaildeck/issues).
+
+The repository moved from Codeberg to GitHub on 2026-10-21. Issue and pull
+request numbers in v0.6.0 and earlier, including the audit cursor entry under
+Unreleased, refer to the archived
+[Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
+versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
+
+### Breaking
+
+- **Module path is now `github.com/ottermq/jaildeck`**, following the move back
+  to GitHub. Builds that stamp the version with `-ldflags -X` need the new
+  package path.
 
 ### Added
 

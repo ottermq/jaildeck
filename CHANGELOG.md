@@ -52,6 +52,21 @@ Dates are the tag date. Issue numbers link to
   returned JSON `null`, so every client had to handle two shapes for "no
   results". `GET /api/jails` already returned `[]`. (#61)
 
+- **`jail.conf` shared defaults are honoured.** Settings outside any jail block
+  apply to every jail below them, which is the layout the FreeBSD handbook
+  recommends: shared defaults in `/etc/jail.conf`, one small file per jail in
+  `/etc/jail.conf.d/`. Jail Deck read only what sat inside a `name { … }` block,
+  so a jail configured that way reported an empty `Path` — and its hostname was
+  correct only by coincidence, since the fallback happens to be the jail's own
+  name. A `${name}` in a shared default is expanded per jail rather than once.
+  Running jails were unaffected because `jls` supplies the real values, so this
+  was visible only for stopped ones. (#51)
+
+- **`ip4` is no longer reported as a jail's address.** It names a mode —
+  `inherit`, `new` or `disable` — while addresses live in `ip4.addr`. A jail
+  configured with `ip4 = inherit` showed the literal string `inherit` where its
+  IP should be; it now shows none, which is also what `jls` reports for it. (#51)
+
 ## v0.5.2 — 2026-10-07
 
 [Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.5.2)

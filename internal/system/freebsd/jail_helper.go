@@ -24,16 +24,22 @@ var assignmentRE = regexp.MustCompile(`^\s*([a-zA-Z0-9_.-]+)\s*=\s*"?([^";]+)"?\
 
 func (a *Adapter) listConfiguredJails() ([]jails.Jail, error) {
 	mapConfigJails := make(map[string]bool)
-	dirJails, err := listJailsFromConfDir(a.confDir)
+
+	// jail.conf is read first, and for its settings rather than its jails: the
+	// handbook layout puts shared defaults at the top of jail.conf and pulls the
+	// per-jail files in afterwards with .include, so those defaults apply to
+	// every jail in jail.conf.d. Reading the directory first would lose them.
+	fileJails, defaults, err := listJailsFromConfFile(a.confFile)
+	if err != nil {
+		return nil, err
+	}
+
+	dirJails, err := listJailsFromConfDir(a.confDir, defaults)
 	if err != nil {
 		return nil, err
 	}
 	for _, j := range dirJails {
 		mapConfigJails[j.Name] = true
-	}
-	fileJails, err := listJailsFromConfFile(a.confFile)
-	if err != nil {
-		return nil, err
 	}
 	jailSlice := make([]jails.Jail, 0, len(dirJails)+len(fileJails))
 	jailSlice = append(jailSlice, dirJails...)
@@ -126,7 +132,10 @@ func mergeJails(configured, running []jails.Jail) []jails.Jail {
 	return merged
 }
 
-func listJailsFromConfDir(dir string) ([]jails.Jail, error) {
+// listJailsFromConfDir parses every *.conf in dir. Defaults carries the
+// settings declared at the top level of jail.conf, which each file's jails
+// inherit; settings a file declares at its own top level apply only within it.
+func listJailsFromConfDir(dir string, defaults map[string]string) ([]jails.Jail, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "*.conf"))
 	if err != nil {
 		return nil, err
@@ -139,31 +148,57 @@ func listJailsFromConfDir(dir string) ([]jails.Jail, error) {
 			return nil, err
 		}
 
-		parsed := parseJailConf(string(content))
+		parsed, _ := parseJailConf(string(content), defaults)
 		jails = append(jails, parsed...)
 	}
 
 	return jails, nil
 }
 
-func listJailsFromConfFile(filename string) ([]jails.Jail, error) {
+// listJailsFromConfFile parses filename, returning both the jails it declares
+// and the settings at its top level, which every jail it .includes inherits.
+func listJailsFromConfFile(filename string) ([]jails.Jail, map[string]string, error) {
 	content, err := os.ReadFile(filename)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return parseJailConf(string(content)), nil
+	jails, defaults := parseJailConf(string(content), nil)
+	return jails, defaults, nil
 }
 
-func parseJailConf(content string) []jails.Jail {
+// parseJailConf reads one jail.conf-format file.
+//
+// Settings outside any block are defaults that every block below them inherits
+// (jail.conf(5)), so they are returned alongside the jails for the caller to
+// pass to the files this one .includes. Inherited carries the defaults from an
+// enclosing file; a setting inside a block overrides one of the same name.
+//
+// Values are stored unresolved and expanded per jail, because ${name} means a
+// different thing in each block that inherits the same default.
+func parseJailConf(content string, inherited map[string]string) ([]jails.Jail, map[string]string) {
 	lines := strings.Split(content, "\n")
 
+	defaults := make(map[string]string, len(inherited))
+	for k, v := range inherited {
+		defaults[k] = v
+	}
+
 	var jailSlice []jails.Jail
-	var jail jails.Jail
 	var name string
 	values := map[string]string{}
+
+	// setting returns the raw value for key in the current block, falling back
+	// to the inherited defaults.
+	setting := func(key string) (string, bool) {
+		if v, ok := values[key]; ok {
+			return v, true
+		}
+		v, ok := defaults[key]
+		return v, ok
+	}
 
 	for _, line := range lines {
 		line = stripComment(line)
@@ -186,9 +221,12 @@ func parseJailConf(content string) []jails.Jail {
 		matches := assignmentRE.FindStringSubmatch(line)
 		if len(matches) == 3 {
 			understood = true
-			key := matches[1]
-			value := resolveVars(matches[2], name)
-			values[key] = value
+			key, raw := matches[1], matches[2]
+			if name == "" {
+				defaults[key] = raw
+			} else {
+				values[key] = raw
+			}
 		}
 
 		if strings.HasSuffix(line, "}") {
@@ -198,12 +236,25 @@ func parseJailConf(content string) []jails.Jail {
 					"line", line)
 				continue
 			}
-			jail = jails.Jail{
+
+			resolved := func(key string) string {
+				raw, ok := setting(key)
+				if !ok {
+					return ""
+				}
+				return resolveVars(raw, name)
+			}
+
+			jail := jails.Jail{
 				Name:     name,
 				Status:   jails.JailStatusStopped,
-				Hostname: values["host.hostname"],
-				IP:       values["ip4"],
-				Path:     values["path"],
+				Hostname: resolved("host.hostname"),
+				// ip4.addr holds addresses. ip4 is a mode — inherit, new or
+				// disable — so reading it here would report "inherit" as though
+				// it were an address. A jail that inherits the host's addresses
+				// has none of its own, which jls also reports as empty.
+				IP:   resolved("ip4.addr"),
+				Path: resolved("path"),
 			}
 			if jail.Hostname == "" {
 				jail.Hostname = name
@@ -211,7 +262,6 @@ func parseJailConf(content string) []jails.Jail {
 			jailSlice = append(jailSlice, jail)
 			name = ""
 			values = map[string]string{}
-			jail = jails.Jail{}
 		}
 
 		if !understood {
@@ -223,8 +273,7 @@ func parseJailConf(content string) []jails.Jail {
 		}
 	}
 
-	return jailSlice
-
+	return jailSlice, defaults
 }
 
 func stripComment(line string) string {

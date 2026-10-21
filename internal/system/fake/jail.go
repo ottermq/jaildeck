@@ -6,7 +6,11 @@ import (
 	"time"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
+	"codeberg.org/Otter-Labs/jaildeck/internal/system"
 )
+
+// fakeOperationTimeout has no effect. It has been keeped for shape fidelity rather than behaviour.
+var fakeOperationTimeout = 150 * time.Second
 
 type JailSystem struct {
 	jails   map[string]jails.Jail
@@ -65,19 +69,19 @@ func (s *JailSystem) List(ctx context.Context) ([]jails.Jail, error) {
 func (s *JailSystem) Start(ctx context.Context, name string) (jails.OperationResult, error) {
 	jail, ok := s.jails[name]
 	if !ok {
-		return jails.OperationResult{}, jails.ErrJailNotFound
+		return createJailOperationResult(jails.Jail{Name: name}, "start"), jails.ErrJailNotFound
 	}
 	jail = s.running(jail)
 	s.jails[name] = jail
 
 	time.Sleep(3 * time.Second)
-	return createJailOperationResult(jail), nil
+	return createJailOperationResult(jail, "start"), nil
 }
 
 func (s *JailSystem) Stop(ctx context.Context, name string) (jails.OperationResult, error) {
 	jail, ok := s.jails[name]
 	if !ok {
-		return jails.OperationResult{}, jails.ErrJailNotFound
+		return createJailOperationResult(jails.Jail{Name: name}, "stop"), jails.ErrJailNotFound
 	}
 
 	jail.Status = jails.JailStatusStopped
@@ -85,13 +89,13 @@ func (s *JailSystem) Stop(ctx context.Context, name string) (jails.OperationResu
 	s.jails[name] = jail
 
 	time.Sleep(3 * time.Second)
-	return createJailOperationResult(jail), nil
+	return createJailOperationResult(jail, "stop"), nil
 }
 
 func (s *JailSystem) Restart(ctx context.Context, name string) (jails.OperationResult, error) {
 	jail, ok := s.jails[name]
 	if !ok {
-		return jails.OperationResult{}, jails.ErrJailNotFound
+		return createJailOperationResult(jails.Jail{Name: name}, "restart"), jails.ErrJailNotFound
 	}
 
 	jail.JID = ""
@@ -99,13 +103,21 @@ func (s *JailSystem) Restart(ctx context.Context, name string) (jails.OperationR
 	s.jails[name] = jail
 
 	time.Sleep(3 * time.Second)
-	return createJailOperationResult(jail), nil
+	return createJailOperationResult(jail, "restart"), nil
 }
 
-func createJailOperationResult(jail jails.Jail) jails.OperationResult {
+func createJailOperationResult(jail jails.Jail, op string) jails.OperationResult {
 	opResult := jails.OperationResult{
 		Jail:    jail,
-		Command: "",
+		Command: createFakeCommand(jail.Name, op).String(),
 	}
 	return opResult
+}
+
+func createFakeCommand(name, op string) system.Command {
+	return system.Command{
+		Name:    "service",
+		Args:    []string{"jail", op, name},
+		Timeout: fakeOperationTimeout,
+	}
 }

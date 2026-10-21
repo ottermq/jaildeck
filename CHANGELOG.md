@@ -47,6 +47,11 @@ Dates are the tag date. Issue numbers link to
 
 ### Fixed
 
+- **`GET /api/audit` returns `[]` rather than `null` when nothing matches.** A
+  fresh install with no audit file, and any filter matching no entries, both
+  returned JSON `null`, so every client had to handle two shapes for "no
+  results". `GET /api/jails` already returned `[]`. (#61)
+
 - **`jail.conf` shared defaults are honoured.** Settings outside any jail block
   apply to every jail below them, which is the layout the FreeBSD handbook
   recommends: shared defaults in `/etc/jail.conf`, one small file per jail in

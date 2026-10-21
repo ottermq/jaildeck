@@ -1,35 +1,35 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import Login from './lib/pages/Login.svelte';
-  import Shell from './lib/pages/Shell.svelte';
-  import { loadPrincipal, auth } from "./lib/stores/auth.svelte";
-  import { ApiError } from './lib/services/api';
-  
+  import { onMount } from 'svelte'
+  import Login from './lib/pages/Login.svelte'
+  import Shell from './lib/pages/Shell.svelte'
+  import { loadPrincipal, auth } from './lib/stores/auth.svelte'
 
-
-  async function getPrincipal(){
-    try {
-      await loadPrincipal();      
-    } catch (error) {
-      if (error instanceof ApiError) {
-        console.log("Status code:" + error.statusCode + " " + error.statusText)
-      }
-    }
-  }
-
-  onMount(()=>{
-    getPrincipal()
-  });
-
+  // loadPrincipal resolves either way: a 401 is the ordinary unauthenticated
+  // state, not a failure, and it leaves auth.principal null so the gate below
+  // renders the login view.
+  onMount(() => {
+    loadPrincipal()
+  })
 </script>
 
-<section id="center">
-  {#if auth.checked === false }
-  <p>placeholder for a spinner</p>
-  {:else if auth.principal}
-  <Shell/>
-  {:else}
-  <Login/>
+{#if !auth.checked}
+  <div class="boot">
+    <p class="boot__text">Starting Jail Deck…</p>
+  </div>
+{:else if auth.principal}
+  <Shell />
+{:else}
+  <Login />
 {/if}
-</section>
 
+<style>
+  .boot {
+    display: grid;
+    place-items: center;
+    min-height: 100svh;
+  }
+
+  .boot__text {
+    color: var(--text-muted);
+  }
+</style>

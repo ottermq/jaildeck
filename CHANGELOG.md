@@ -45,6 +45,13 @@ Dates are the tag date. Issue numbers link to
   which is not the same as the jail failing to start — with the list refetched
   so it shows the jail's actual state. (#60)
 
+### Fixed
+
+- **`GET /api/audit` returns `[]` rather than `null` when nothing matches.** A
+  fresh install with no audit file, and any filter matching no entries, both
+  returned JSON `null`, so every client had to handle two shapes for "no
+  results". `GET /api/jails` already returned `[]`. (#61)
+
 ## v0.5.2 — 2026-10-07
 
 [Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.5.2)

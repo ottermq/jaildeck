@@ -9,6 +9,29 @@ alone.
 Dates are the tag date. Issue numbers link to
 [the tracker](https://codeberg.org/Otter-Labs/jaildeck/issues).
 
+## Unreleased
+
+### Added
+
+- **`GET /api/audit` pages backwards with a cursor.** `?before=<RFC 3339
+  timestamp>` returns entries strictly older than the one given, newest first,
+  and composes with the existing `operation`, `targets`, `success` and
+  `timed_out` filters. Pass the timestamp of the oldest entry already received.
+
+  The response stays a plain array, so a client knows there may be more the
+  same way the interface does: a page that fills `limit` might not be the last
+  one. An unreadable `before` is a `400` rather than being ignored, because a
+  silently dropped cursor returns the first page again and a client paging
+  backwards would loop on it.
+
+  A cursor rather than an offset because the audit log is an append-only file
+  that `newsyslog` rotates and new entries extend — both shift what an offset
+  means between one request and the next, so `?offset=` can skip a page or
+  repeat a row. (#67)
+
+- **A "Load older" control on the operations page**, which appends the next
+  page rather than replacing the table. (#67)
+
 ## v0.6.0 — 2026-10-21
 
 [Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.6.0)

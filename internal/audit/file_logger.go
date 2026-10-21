@@ -87,5 +87,11 @@ func applyFilters(entry Entry, filter Filter) bool {
 	if filter.TimedOut != nil && entry.TimedOut != *filter.TimedOut {
 		return false
 	}
+	// Strictly older, so the entry the cursor names is not repeated. Timestamps
+	// are nanosecond-precision, so two entries sharing one is not a case worth
+	// a tiebreaker.
+	if filter.Before != nil && !entry.Timestamp.Before(*filter.Before) {
+		return false
+	}
 	return true
 }

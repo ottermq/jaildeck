@@ -57,16 +57,24 @@ cmd/
 internal/
   app/
     app.go                      # composition root: wires adapters -> services -> handlers,
-                                 # registers all routes
+                                 # and refuses to start with no operator credential (JD-003)
+    routes.go                    # all HTTP wiring: /api subrouter, auth gate, SPA fallback
+    requestlog.go                 # chi LogFormatter over slog + the request-scoped logger
 
   config/
-    config.go                   # env var loading: JAILDECK_HOST, PORT, ADAPTER, STATE_DIR, AUDIT_LOG
+    config.go                   # env var loading: JAILDECK_HOST, PORT, ADAPTER, STATE_DIR,
+                                 # AUDIT_LOG, LOG_LEVEL
+
+  buildinfo/
+    buildinfo.go                # Version() — the -ldflags value, else Go's VCS stamp, else "dev"
 
   jails/                        # bounded context: Jails
     model.go                      # Jail entity, JailStatus
+    operation.go                   # Operation (start/stop/restart) + its desired status
     service.go                     # JailName value object + validation, JailService
     repository.go                  # JailSystem port (List/Start/Stop/Restart)
     handler.go                     # JailHandler
+    routes.go                      # /jails, /jails/{name}/start|stop|restart
 
   storage/                      # bounded context: Storage (ZFS + release templates) — not yet built
     dataset.go                    # Dataset, Snapshot entities/value objects
@@ -90,13 +98,16 @@ internal/
   audit/                        # shared infra, not a domain
     logger.go                     # Entry, Filter, Logger/Reader interfaces
     file_logger.go                 # FileLogger — append-only JSON-lines file, mutex-guarded
-    service.go, handler.go
+    filter.go                      # query params -> Filter, including the `before` cursor
+    service.go, handler.go, routes.go
 
   state/                        # shared infra, not a domain
     state.go                      # Store — application state file: atomic write (temp + rename), mode 0600
 
   common/
     errors.go                     # AppError + HandlerError — shared HTTP error translation used by every domain's handler
+    logger.go                     # Logger(ctx, component) — the request-scoped logger, or a
+                                   # component logger when there is no request
 
   system/
     command.go                    # Command, CommandResult, CommandRunner interface, CommandError
@@ -108,10 +119,18 @@ internal/
     fake/
       jail.go                          # in-memory JailSystem, for non-FreeBSD dev (JAILDECK_ADAPTER=fake)
 
-web/                             # Svelte frontend (separate module/build) — not yet built, see JD-009 / ROADMAP.md Phase 1b
+web/                             # Svelte frontend, part of the same Go module (JD-015)
+  embed.go                        # //go:embed all:dist + Assets() — the only Go file here
   src/
-    ...
-  dist/                          # build output, embedded into the Go binary
+    main.ts, App.svelte             # mount, then the auth gate: Login or Shell
+    app.css                          # :root design tokens and the shared element classes
+    lib/
+      router.svelte.ts                 # hand-written SPA router: route state + navigate()
+      services/api.ts                  # fetch wrapper: JSON, credentials, ApiError
+      stores/                          # auth, jails, operations — $state plus the API calls
+      pages/                           # Login, Shell, Jails, Operations, NotFound
+  dist/                           # Vite output, embedded into the binary. Only .gitkeep is
+                                   # committed, so a clone without Node still builds
 ```
 
 This can change as the code reveals better boundaries — the principle should remain: **a domain package owns its entity, its port, its use cases, and its handler together; adapters only translate domain calls <-> native tools.**
@@ -216,7 +235,7 @@ Implements `jails.JailSystem`: list (merge `jls` + `jail.conf*`), start/stop/res
 
 Planned with Jail Provisioning: generating stanzas for VNET jails — epair created in `exec.prestart`, destroyed in `exec.poststop`, host end added to the operator's bridge (JD-017) — and applying rctl/cpuset limits (JD-018); exec via `jexec <name> argv...` (JD-016).
 
-### Storage adapter (`internal/system/freebsd/storage_adapter.go`)
+### Storage adapter (`internal/system/freebsd/storage_adapter.go`, not yet built)
 
 Implements `storage.StorageSystem`. Responsibilities, mapped to the template/jail-creation workflow described in `docs/SPEC.md`:
 
@@ -236,7 +255,7 @@ The firewall adapter runs `pfctl` read-only commands (JD-020). The VM adapter's 
 
 ## API conventions
 
-Being settled starting with `jails` and `audit` (`docs/ROADMAP.md` Phase 1); every domain added afterward follows the same shape from the start. Expected shape:
+Settled for the endpoints that exist today — `jails`, `audit` and `auth`, listed in `README.md` — and every domain added afterwards follows the same shape from the start. The fuller shape these conventions are heading for:
 
 ```text
 GET    /api/jails
@@ -267,7 +286,7 @@ Categories: validation error, permission error, command not found, command faile
 
 ## Security model
 
-Open items: no command allowlist yet, no CSRF protection (less relevant for a JSON API consumed by a same-origin SPA, but worth revisiting once auth exists), jail names and route parameters must be validated before reaching a command. Destructive storage operations (snapshot rollback, dataset removal) need explicit confirmation semantics once they exist — a `confirm=<exact name>` parameter in the API (JD-016), not just a UI-level dialog, since the API is called by more than the UI.
+Open items: no command allowlist yet, and jail names and route parameters must be validated before reaching a command. CSRF is settled rather than open — the session cookie is `SameSite=Strict`, and the `Authorization` header path is immune by construction (JD-003). Destructive storage operations (snapshot rollback, dataset removal) need explicit confirmation semantics once they exist — a `confirm=<exact name>` parameter in the API (JD-016), not just a UI-level dialog, since the API is called by more than the UI.
 
 With jail creation from a spec, the jail parameter **allowlist** (JD-018) becomes the API's main security boundary: a spec can never ask for `allow.mount*`, `allow.raw_sockets`, nested jails, or `vnet` with `inherit`. An API token is root-equivalent and should stay on the host it controls (JD-003).
 

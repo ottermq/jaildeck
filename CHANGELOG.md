@@ -9,6 +9,72 @@ alone.
 Dates are the tag date. Issue numbers link to
 [the tracker](https://codeberg.org/Otter-Labs/jaildeck/issues).
 
+## v0.6.0 — 2026-10-21
+
+[Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.6.0)
+
+### Breaking
+
+- **The JSON API moved under `/api`.** Every path changed: `/jails` is now
+  `/api/jails`, `/audit` is `/api/audit`, `/auth/login` is `/api/auth/login`.
+  Clients need their base URL updated — appending `/api` is enough, which is
+  all the bundled Insomnium collection required. The root path is being handed
+  to the web interface (#58), so the API needed a namespace of its own. (#57)
+
+- **`GET /api/jails` now uses JSON tags.** The `Jail` type had no JSON tags, so
+  it emitted Go field names: `JID`, `Name`, `Status`, `Hostname`, `IP`, `Path`.
+  It now emits `jid`, `name`, `status`, `hostname`, `ip`, `path`, matching every
+  other type the API returns. The jail returned by `POST /api/jails/{name}/start`,
+  `/stop` and `/restart` changes the same way. (#60)
+
+### Added
+
+- **A web interface.** The binary now serves a Svelte single-page application
+  at `/`; the JSON API stays under `/api`. The frontend is embedded via
+  `embed.FS`, so there is still one binary and no Node.js at runtime — building
+  it is `make web`, and a clone without that step compiles and runs, serving a
+  page that says so. (#58)
+
+- **The jails list, with `start`, `stop` and `restart`.** `/jails` lists every
+  jail on the host with its JID, hostname, IP and path, and starts, stops or
+  restarts them from the browser; stop and restart confirm first. An operation
+  can run to its 150-second backstop (JD-014), so the row shows progress and
+  refuses a second click until it returns.
+
+  Two behaviours worth knowing. A failure shows the command's own diagnostic
+  rather than a generic message. And a **timed-out** operation is reported as
+  *may still be running* rather than as a failure — Jail Deck stopped waiting,
+  which is not the same as the jail failing to start — with the list refetched
+  so it shows the jail's actual state. (#60)
+
+- **The operations view.** `/operations` lists what Jail Deck has run, newest
+  first, with the command that actually executed and filters for target,
+  operation and outcome. A **timed-out** operation is shown as its own outcome
+  rather than as a failure: the API distinguishes the two deliberately, and
+  before v0.4.0 both reported exit code `-1`. (#61)
+
+### Fixed
+
+- **`GET /api/audit` returns `[]` rather than `null` when nothing matches.** A
+  fresh install with no audit file, and any filter matching no entries, both
+  returned JSON `null`, so every client had to handle two shapes for "no
+  results". `GET /api/jails` already returned `[]`. (#61)
+
+- **`jail.conf` shared defaults are honoured.** Settings outside any jail block
+  apply to every jail below them, which is the layout the FreeBSD handbook
+  recommends: shared defaults in `/etc/jail.conf`, one small file per jail in
+  `/etc/jail.conf.d/`. Jail Deck read only what sat inside a `name { … }` block,
+  so a jail configured that way reported an empty `Path` — and its hostname was
+  correct only by coincidence, since the fallback happens to be the jail's own
+  name. A `${name}` in a shared default is expanded per jail rather than once.
+  Running jails were unaffected because `jls` supplies the real values, so this
+  was visible only for stopped ones. (#51)
+
+- **`ip4` is no longer reported as a jail's address.** It names a mode —
+  `inherit`, `new` or `disable` — while addresses live in `ip4.addr`. A jail
+  configured with `ip4 = inherit` showed the literal string `inherit` where its
+  IP should be; it now shows none, which is also what `jls` reports for it. (#51)
+
 ## v0.5.2 — 2026-10-07
 
 [Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.5.2)

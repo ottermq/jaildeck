@@ -1,0 +1,340 @@
+/*
+ * Jail Deck — foundation styles.
+ *
+ * A single token set, redefined for dark mode, per JD-015. The brand red is
+ * reserved for the logo, destructive actions and focus rings, so red keeps
+ * meaning "risk" rather than doubling as the primary interactive colour
+ * (docs/UI.md: "explicit about risk", "calm, utilitarian, restrained").
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces and text */
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-sunken: #f0f2f5;
+  --text: #333841;
+  --text-muted: #6a7280;
+  --text-strong: #14181e;
+
+  --border: #dde1e7;
+  --border-strong: #c3cad3;
+
+  /* The rail is brand chrome and stays dark in both themes. */
+  --rail-bg: #191d24;
+  --rail-text: #aeb6c2;
+  --rail-text-strong: #ffffff;
+  --rail-border: #2b313a;
+  --rail-active-bg: rgba(255, 255, 255, 0.08);
+
+  /* Brand */
+  --brand: #e11d26;
+  --brand-soft: rgba(225, 29, 38, 0.09);
+
+  /* Status */
+  --ok: #157f4a;
+  --ok-soft: rgba(21, 127, 74, 0.1);
+  --warn: #8a5a06;
+  --warn-soft: rgba(138, 90, 6, 0.12);
+  --danger: #be2630;
+  --danger-soft: rgba(190, 38, 48, 0.1);
+
+  /* Scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius-sm: 4px;
+  --radius: 6px;
+
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  font: 15px/1.5 var(--sans);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c;
+    --surface: #1b1f25;
+    --surface-sunken: #111418;
+    --text: #c2c9d3;
+    --text-muted: #8a93a0;
+    --text-strong: #f1f3f6;
+
+    --border: #2a3038;
+    --border-strong: #3a424d;
+
+    --brand: #ff4b53;
+    --brand-soft: rgba(255, 75, 83, 0.14);
+
+    --ok: #4cc182;
+    --ok-soft: rgba(76, 193, 130, 0.14);
+    --warn: #e0a33c;
+    --warn-soft: rgba(224, 163, 60, 0.14);
+    --danger: #ff6b72;
+    --danger-soft: rgba(255, 107, 114, 0.14);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100svh;
+}
+
+#app {
+  min-height: 100svh;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--text-strong);
+  font-weight: 600;
+  margin: 0;
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: 1.5rem;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  font-size: 1.125rem;
+}
+
+p {
+  margin: 0;
+}
+
+code {
+  font: 0.85em var(--mono);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+/*
+ * Focus is always visible (docs/UI.md), and deliberately hue-free: red is
+ * reserved for risk, so a red ring around an ordinary field would read as an
+ * error. --text-strong gives high contrast against every surface.
+ */
+:focus-visible {
+  outline: 2px solid var(--text-strong);
+  outline-offset: 2px;
+}
+
+/* ---------- Page scaffolding ---------- */
+
+.page-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+}
+
+.page-sub {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* ---------- Controls ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font: inherit;
+  font-weight: 500;
+  line-height: 1;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-strong);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--text-muted);
+  background: var(--surface-sunken);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--text-strong);
+  border-color: var(--text-strong);
+  color: var(--surface);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--text);
+  border-color: var(--text);
+}
+
+/* Destructive: stop, restart, anything that interrupts a running jail. */
+.btn--danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+.btn--small {
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.85rem;
+}
+
+label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+select,
+input {
+  font: inherit;
+  color: var(--text-strong);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
+
+select[multiple] {
+  padding: var(--space-1);
+}
+
+/* ---------- Tables ---------- */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.925rem;
+}
+
+thead th {
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+tbody td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+tbody tr:hover td {
+  background: var(--surface-sunken);
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+/* ---------- Badges ---------- */
+
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.badge--running,
+.badge--succeeded {
+  color: var(--ok);
+  background: var(--ok-soft);
+  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+}
+
+.badge--stopped {
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border-color: var(--border-strong);
+}
+
+.badge--timed-out {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+}
+
+.badge--failed {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+/* ---------- Notices ---------- */
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.notice--error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+}

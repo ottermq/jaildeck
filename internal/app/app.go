@@ -3,22 +3,17 @@ package app
 import (
 	"errors"
 	"fmt"
-	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 
 	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
 	"codeberg.org/Otter-Labs/jaildeck/internal/auth"
-	"codeberg.org/Otter-Labs/jaildeck/internal/common"
 	"codeberg.org/Otter-Labs/jaildeck/internal/config"
 	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
 	"codeberg.org/Otter-Labs/jaildeck/internal/state"
 	"codeberg.org/Otter-Labs/jaildeck/internal/system"
 	"codeberg.org/Otter-Labs/jaildeck/internal/system/fake"
 	"codeberg.org/Otter-Labs/jaildeck/internal/system/freebsd"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 )
 
 var ErrNoCredential = errors.New("no operator credential configured")
@@ -106,39 +101,4 @@ func newJailSystem(adapter string) (jails.JailSystem, error) {
 		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)
 	}
-}
-
-func (a *App) Routes() http.Handler {
-	r := chi.NewRouter()
-
-	useObservability(r)
-	auth.RegisterAuthRoutes(r, a.authHandler)
-	r.Group(func(r chi.Router) {
-		r.Use(a.authHandler.RequireAuth)
-		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "/jails", http.StatusSeeOther)
-		})
-		jails.RegisterJailRoutes(r, a.jailHandler)
-		audit.RegisterAuditHandlers(r, a.auditHandler)
-	})
-
-	return r
-}
-
-// useObservability registers the two middlewares whose order matters.
-func useObservability(r *chi.Mux) {
-	// RequestLogger before Recoverer deliberately: Recoverer calls
-	// GetLogEntry(r).Panic(...) itself, so the entry must already be in the
-	// context. Reversed, chi falls back to PrintPrettyStack on stdout.
-	r.Use(middleware.RequestLogger(slogFormatter{}))
-	r.Use(middleware.Recoverer)
-	// Every handler below gets a request-scoped logger; RequireAuth enriches it.
-	r.Use(requestContextLogger)
-}
-
-func requestContextLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		l := slog.Default().With("method", r.Method, "path", r.URL.Path)
-		next.ServeHTTP(w, r.WithContext(common.ContextWithLogger(r.Context(), l)))
-	})
 }

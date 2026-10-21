@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/fstest"
 	"time"
 )
 
@@ -64,13 +65,15 @@ func TestRoutesLogRequestOnceThroughSlog(t *testing.T) {
 	}
 	logs := captureRequestLogs(t)
 	rec := httptest.NewRecorder()
-	a.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/jails", nil))
+	// fakeAsset is nil, for running against "not built" placeholder. It intents to prove that request logging works whatever state the frontend is in.
+	var fakeAsset fstest.MapFS
+	a.Routes(fakeAsset).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/jails", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
 	assertRequestLog(t, logs, map[string]any{
 		"msg": "request", "level": "WARN", "method": "GET",
-		"path": "/jails", "status": float64(http.StatusUnauthorized),
+		"path": "/api/jails", "status": float64(http.StatusUnauthorized),
 	})
 }
 

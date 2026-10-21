@@ -9,14 +9,16 @@ alone.
 Dates are the tag date. Issue numbers link to
 [the tracker](https://codeberg.org/Otter-Labs/jaildeck/issues).
 
-## Unreleased
+## v0.6.0 — 2026-10-21
+
+[Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.6.0)
 
 ### Breaking
 
 - **The JSON API moved under `/api`.** Every path changed: `/jails` is now
   `/api/jails`, `/audit` is `/api/audit`, `/auth/login` is `/api/auth/login`.
-  Clients need their base URL updated — appending `/api` is enough, which is 
-  all the bundled Insomnium collection required. The root path is being handed 
+  Clients need their base URL updated — appending `/api` is enough, which is
+  all the bundled Insomnium collection required. The root path is being handed
   to the web interface (#58), so the API needed a namespace of its own. (#57)
 
 - **`GET /api/jails` now uses JSON tags.** The `Jail` type had no JSON tags, so
@@ -27,13 +29,13 @@ Dates are the tag date. Issue numbers link to
 
 ### Added
 
-- **A web interface.** The binary now serves a Svelte single-page application 
-  at `/`; the JSON API stays under `/api`. The frontend is embedded via 
+- **A web interface.** The binary now serves a Svelte single-page application
+  at `/`; the JSON API stays under `/api`. The frontend is embedded via
   `embed.FS`, so there is still one binary and no Node.js at runtime — building
-  it is `make web`, and a clone without that step compiles and runs, serving a 
+  it is `make web`, and a clone without that step compiles and runs, serving a
   page that says so. (#58)
 
-**The jails list, with `start`, `stop` and `restart`.** `/jails` lists every
+- **The jails list, with `start`, `stop` and `restart`.** `/jails` lists every
   jail on the host with its JID, hostname, IP and path, and starts, stops or
   restarts them from the browser; stop and restart confirm first. An operation
   can run to its 150-second backstop (JD-014), so the row shows progress and
@@ -44,6 +46,12 @@ Dates are the tag date. Issue numbers link to
   *may still be running* rather than as a failure — Jail Deck stopped waiting,
   which is not the same as the jail failing to start — with the list refetched
   so it shows the jail's actual state. (#60)
+
+- **The operations view.** `/operations` lists what Jail Deck has run, newest
+  first, with the command that actually executed and filters for target,
+  operation and outcome. A **timed-out** operation is shown as its own outcome
+  rather than as a failure: the API distinguishes the two deliberately, and
+  before v0.4.0 both reported exit code `-1`. (#61)
 
 ### Fixed
 

@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/common"
-	"codeberg.org/Otter-Labs/jaildeck/internal/state"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/ottermq/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/state"
 )
 
 func TestAuthHandlerSessionLifecycle(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/common"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/ottermq/jaildeck/internal/common"
 )
 
 const (

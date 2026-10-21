@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"testing"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
-	"codeberg.org/Otter-Labs/jaildeck/internal/common"
-	"codeberg.org/Otter-Labs/jaildeck/internal/system"
+	"github.com/ottermq/jaildeck/internal/audit"
+	"github.com/ottermq/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/system"
 )
 
 // Test doubles live here rather than coming from internal/system/fake: that

@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/auth"
+	"github.com/ottermq/jaildeck/internal/auth"
 	"golang.org/x/term"
 )
 

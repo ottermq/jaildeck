@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/common"
-	"codeberg.org/Otter-Labs/jaildeck/internal/state"
+	"github.com/ottermq/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/state"
 )
 
 const maxLoginQueue = 8

@@ -5,14 +5,17 @@
 Jail Deck is a Go backend exposing a JSON API, paired with a Svelte single-page frontend, interacting with FreeBSD through domain-owned adapters around native system commands and files.
 
 ```text
-Browser (Svelte SPA)
-  -> JSON API requests
+Browser (Svelte SPA)          Automation client on the same host (JD-016)
+  -> JSON API over TCP          -> JSON API over the unix socket, with a token
   -> Chi router
   -> HTTP handlers
-  -> domain application services (internal/jails, internal/storage)
+  -> domain application services (internal/jails, internal/storage; later vms, firewall)
   -> FreeBSD adapters (internal/system/freebsd)
-  -> native tools and system files (jls, service, zfs, jexec, fetch, freebsd-update, jail.conf*)
+  -> native tools and system files (jls, service, zfs, jexec, rctl, ifconfig, pfctl,
+     fetch, freebsd-update, jail.conf*)
 ```
+
+Both consumers reach the same handlers. Nothing in the API is specific to one of them.
 
 The web layer never shells out directly. System access always passes through a domain's repository port, implemented by an adapter.
 
@@ -71,6 +74,9 @@ internal/
     repository.go                  # StorageSystem port (create/clone/snapshot/list, fetch/extract/patch/update)
     service.go                     # application service
     handler.go
+
+  vms/                          # bounded context: bhyve VMs (JD-019) — not yet built
+  firewall/                     # bounded context: PF, read-only first (JD-020) — not yet built
 
   auth/                         # bounded context: Authentication
     auth.go                       # argon2id Hash/Verify over the PHC string ($argon2id$v=..$m=..)
@@ -208,11 +214,14 @@ Argument arrays, not shell string interpolation. No allowlist enforcement exists
 
 Implements `jails.JailSystem`: list (merge `jls` + `jail.conf*`), start/stop/restart via `service jail <action> <name>`.
 
+Planned with Jail Provisioning: generating stanzas for VNET jails — epair created in `exec.prestart`, destroyed in `exec.poststop`, host end added to the operator's bridge (JD-017) — and applying rctl/cpuset limits (JD-018); exec via `jexec <name> argv...` (JD-016).
+
 ### Storage adapter (`internal/system/freebsd/storage_adapter.go`)
 
 Implements `storage.StorageSystem`. Responsibilities, mapped to the template/jail-creation workflow described in `docs/SPEC.md`:
 
 - `zfs create`, `zfs clone`, `zfs snapshot`, `zfs list` / `zfs list -t snapshot`
+- child datasets with properties, ZFS user properties, `zfs rename -u`, snapshot rollback and destroy (Storage Writes; JD-007)
 - fetch a release's `base.txz` (`fetch`)
 - extract it into a template dataset
 - patch `resolv.conf`/`localtime` into a template
@@ -220,6 +229,10 @@ Implements `storage.StorageSystem`. Responsibilities, mapped to the template/jai
 - run commands inside a jail (`jexec <name> <cmd>`) for provisioning
 
 ZFS is required (JD-006), so this adapter can assume ZFS is present.
+
+### Firewall and VM adapters (not yet built)
+
+The firewall adapter runs `pfctl` read-only commands (JD-020). The VM adapter's commands depend on the mechanism JD-019 settles after its spike.
 
 ## API conventions
 
@@ -231,13 +244,22 @@ GET    /api/jails/{name}
 POST   /api/jails/{name}/start
 POST   /api/jails/{name}/stop
 POST   /api/jails/{name}/restart
-POST   /api/jails                    # create (clone template + configure + start)
+POST   /api/jails                    # create (clone template + configure + start), for the UI
+PUT    /api/jails/{name}             # idempotent create from a full spec (JD-016)
+DELETE /api/jails/{name}?confirm={name}
+POST   /api/jails/{name}/exec        # argv, timeout, env -> stdout, stderr, exit code
 GET    /api/templates
 POST   /api/templates                # prepare a new release template
 GET    /api/storage/datasets
 GET    /api/storage/snapshots
+GET    /api/host/readiness           # Host Setup checks
+GET    /api/firewall/...             # read-only PF views (JD-020)
+GET    /api/vms ...                  # once JD-019 settles
 GET    /api/audit
+GET    /metrics                      # Prometheus text format
 ```
+
+Every destructive call takes `confirm=<exact name>`. Every request may carry `X-Request-Id`, recorded in the audit entries it produces (JD-016).
 
 ## Error handling
 
@@ -245,7 +267,9 @@ Categories: validation error, permission error, command not found, command faile
 
 ## Security model
 
-Open items: no command allowlist yet, no CSRF protection (less relevant for a JSON API consumed by a same-origin SPA, but worth revisiting once auth exists), jail names and route parameters must be validated before reaching a command. Destructive storage operations (snapshot rollback, dataset removal) need explicit confirmation semantics once they exist — likely a confirmation flag/step in the API, not just a UI-level dialog, since the API can be called by more than the UI.
+Open items: no command allowlist yet, no CSRF protection (less relevant for a JSON API consumed by a same-origin SPA, but worth revisiting once auth exists), jail names and route parameters must be validated before reaching a command. Destructive storage operations (snapshot rollback, dataset removal) need explicit confirmation semantics once they exist — a `confirm=<exact name>` parameter in the API (JD-016), not just a UI-level dialog, since the API is called by more than the UI.
+
+With jail creation from a spec, the jail parameter **allowlist** (JD-018) becomes the API's main security boundary: a spec can never ask for `allow.mount*`, `allow.raw_sockets`, nested jails, or `vnet` with `inherit`. An API token is root-equivalent and should stay on the host it controls (JD-003).
 
 ## Testing strategy
 

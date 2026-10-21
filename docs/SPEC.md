@@ -2,7 +2,7 @@
 
 ## One-line description
 
-Jail Deck is a lightweight, FreeBSD-first web dashboard for inspecting, operating, and creating FreeBSD jails through native system tools.
+Jail Deck is a lightweight, FreeBSD-first web dashboard and API for inspecting, operating, and creating FreeBSD jails and bhyve virtual machines through native system tools, usable by an operator or by automation.
 
 ## Purpose
 
@@ -14,7 +14,9 @@ The project should feel like a thin, helpful layer over FreeBSD rather than a se
 
 Jail Deck is a personal project built to develop real Go and FreeBSD skills, not a product for general distribution. It is designed for a single operator's own use on their own host(s).
 
-[Sylve](https://github.com/AlchemillaHQ/Sylve) is a more complete FreeBSD jail/VM management tool and serves as an inspiration, but Jail Deck is not trying to match it feature-for-feature. Features are added because they make sense for how Jail Deck is actually used, not for completeness — bhyve/VM management, for instance, is intentionally not a direction Jail Deck is pursuing.
+[Sylve](https://github.com/AlchemillaHQ/Sylve) is a more complete FreeBSD jail/VM management tool and serves as an inspiration, but Jail Deck is not trying to match it feature-for-feature. Features are added because they make sense for how Jail Deck is actually used, not for completeness.
+
+An earlier revision excluded bhyve/VM management outright. That changed on 2026-10-21, when Jail Deck became the host agent for Otter Labs Cloud, the operator's own small FreeBSD cloud: Jail Deck now covers bhyve VMs (JD-019) and read-only PF visibility (JD-020) alongside jails, and treats automation as a first-class API consumer (JD-016). The stance on Sylve is unchanged — Jail Deck still grows by need, not by feature parity.
 
 ## Product philosophy
 
@@ -30,6 +32,9 @@ Jail Deck orchestrates and inspects existing tools instead of reimplementing the
 
 - `jls`, `jail`, `jexec`, `service`, `sysrc`, `pkg`
 - `zfs`
+- `rctl`, `cpuset`, `ifconfig` (epairs and bridge membership)
+- `pfctl` (read-only first)
+- bhyve tooling (mechanism per JD-019)
 - `fetch`, `freebsd-update`
 - log files under `/var/log`
 - `rc.conf` and jail configuration files
@@ -75,16 +80,19 @@ A single technical operator running Jail Deck on FreeBSD host(s) they administer
 - a thin interface over native FreeBSD and ZFS tools
 - a Go backend with a Svelte frontend, shipped as one binary
 - an operational UI for jails, storage, templates, logs, services, and system state
+- a host agent that higher-level tooling (e.g. Otter Labs Cloud) can drive through its API — idempotent, generic primitives over the same native tools the UI uses (JD-016)
 - a project that values clarity over automation magic, and real invariants over speculative flexibility
+
+**The boundary with automation consumers.** Jail Deck exposes *generic* host primitives. Anything that only makes sense for a cloud platform — customers, quotas, billing, configuring PostgreSQL inside a jail — stays in that platform. The test for any feature: would a single operator running Jail Deck on their own box ever want this? If not, it belongs in the consumer.
 
 ## What Jail Deck is not
 
 - a replacement for FreeBSD jails
 - a new container runtime
-- a virtualization/bhyve platform
 - a Kubernetes-like orchestrator
-- a cloud management platform
-- a multi-host or multi-tenant platform
+- a cloud management platform (but it can be driven by one)
+- a multi-host or multi-tenant platform (but it can be driven by one)
+- a firewall policy manager: it never writes `pf.conf` (JD-020)
 - a full configuration management system
 - a mandatory abstraction over FreeBSD concepts
 
@@ -103,12 +111,15 @@ A single technical operator running Jail Deck on FreeBSD host(s) they administer
 ## Core domains
 
 - Jails (list, inspect, start/stop/restart)
-- Jail creation (clone template → configure → start → provision)
+- Jail creation (clone template → configure → start → provision), including VNET networking and resource limits (JD-017, JD-018)
 - Release templates (fetch/extract/patch/update/snapshot a FreeBSD userland per version)
-- Storage / ZFS (datasets, clones, snapshots)
-- Services inside jails (`jexec`-based inspection/provisioning)
+- Storage / ZFS (datasets, clones, snapshots, child datasets and user properties)
+- Exec inside jails (`jexec`-based provisioning, callable through the API)
+- Virtual machines (bhyve; JD-019)
+- Firewall (PF, read-only first; JD-020)
 - Networking
 - Logs
+- Metrics
 - Operation history / audit
 - Settings
 
@@ -116,16 +127,16 @@ These domains guide code organization (`docs/ARCHITECTURE.md`) and frontend navi
 
 ## Implementation status
 
-**Implemented:** jail listing (merging `jls` and `jail.conf*`), idempotent start/stop/restart, operation audit log, the domain-driven package structure (`docs/ARCHITECTURE.md`), and a JSON API for the jails and audit endpoints (no server-rendered HTML remains).
+**Implemented:** jail listing (merging `jls` and `jail.conf*`), idempotent start/stop/restart, operation audit log with cursor paging, mandatory authentication with named API tokens (JD-003), the domain-driven package structure (`docs/ARCHITECTURE.md`), a JSON API under `/api`, and the embedded Svelte web interface for jails and operations (JD-015).
 
-**Planned, in priority order:** a minimal Svelte UI for jails/audit, while they're still the only two domains/handlers to build a UI against; a ZFS storage domain (create/clone/snapshot/list datasets and snapshots); release template lifecycle (fetch, extract, patch, `freebsd-update`, snapshot); jail creation (clone a template, generate `jail.conf.d/<name>.conf`, start, verify); in-jail provisioning. Each domain added after the API conversion is built API-first from the start. See `docs/ROADMAP.md` for the full phase breakdown.
+**Planned, in priority order:** host setup checks; a ZFS storage domain (list, then child datasets, properties, snapshots, rename and destroy); release template lifecycle (fetch, extract, patch, `freebsd-update`, snapshot); jail creation (clone a template, generate `jail.conf.d/<name>.conf` with VNET and limits, start, verify) and destruction; exec and the automation contract; metrics; PF visibility; packaging; bhyve VMs. Each domain is built API-first. See `docs/ROADMAP.md` for the milestones.
 
 ### Explicitly deferred
 
-- In-jail service management beyond manual `jexec` provisioning
-- Thin jails, VNET jails
+- In-jail service management beyond `jexec`-based provisioning
+- Thin jails (clones already make creation cheap, and shared nullfs mounts carry their own risk)
 - Multi-host management, multi-user auth, role-based access
-- Automatic edits to critical configuration files beyond what jail creation itself needs to write
+- Automatic edits to critical configuration files beyond what jail creation itself needs to write. `pf.conf`, `/etc/devfs.rules` and bridge creation stay with the operator
 
 ## Design constraints
 

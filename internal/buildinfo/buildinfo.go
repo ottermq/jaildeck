@@ -4,7 +4,7 @@ import "runtime/debug"
 
 // version is injected for release and package builds:
 //
-//	-ldflags "-X codeberg.org/Otter-Labs/jaildeck/internal/buildinfo.version=vX.Y.Z"
+//	-ldflags "-X github.com/ottermq/jaildeck/internal/buildinfo.version=vX.Y.Z"
 var version string
 
 // Version reports the binary's version. A link-time value wins; otherwise it

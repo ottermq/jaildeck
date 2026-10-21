@@ -6,14 +6,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
-	"codeberg.org/Otter-Labs/jaildeck/internal/auth"
-	"codeberg.org/Otter-Labs/jaildeck/internal/config"
-	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
-	"codeberg.org/Otter-Labs/jaildeck/internal/state"
-	"codeberg.org/Otter-Labs/jaildeck/internal/system"
-	"codeberg.org/Otter-Labs/jaildeck/internal/system/fake"
-	"codeberg.org/Otter-Labs/jaildeck/internal/system/freebsd"
+	"github.com/ottermq/jaildeck/internal/audit"
+	"github.com/ottermq/jaildeck/internal/auth"
+	"github.com/ottermq/jaildeck/internal/config"
+	"github.com/ottermq/jaildeck/internal/jails"
+	"github.com/ottermq/jaildeck/internal/state"
+	"github.com/ottermq/jaildeck/internal/system"
+	"github.com/ottermq/jaildeck/internal/system/fake"
+	"github.com/ottermq/jaildeck/internal/system/freebsd"
 )
 
 var ErrNoCredential = errors.New("no operator credential configured")

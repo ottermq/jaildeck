@@ -1,6 +1,6 @@
 package freebsd
 
-import "codeberg.org/Otter-Labs/jaildeck/internal/system"
+import "github.com/ottermq/jaildeck/internal/system"
 
 type Adapter struct {
 	runner   system.CommandRunner

@@ -8,10 +8,10 @@ import (
 	"os"
 	"time"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/app"
-	"codeberg.org/Otter-Labs/jaildeck/internal/buildinfo"
-	"codeberg.org/Otter-Labs/jaildeck/internal/config"
-	"codeberg.org/Otter-Labs/jaildeck/web"
+	"github.com/ottermq/jaildeck/internal/app"
+	"github.com/ottermq/jaildeck/internal/buildinfo"
+	"github.com/ottermq/jaildeck/internal/config"
+	"github.com/ottermq/jaildeck/web"
 )
 
 func main() {

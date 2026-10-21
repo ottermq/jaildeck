@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/common"
 )
 
 func TestExecCommandRunner_Run_KillsChildrenOnTimeout(t *testing.T) {

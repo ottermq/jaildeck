@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
-	"codeberg.org/Otter-Labs/jaildeck/internal/system"
+	"github.com/ottermq/jaildeck/internal/jails"
+	"github.com/ottermq/jaildeck/internal/system"
 )
 
 // fakeOperationTimeout has no effect. It has been keeped for shape fidelity rather than behaviour.

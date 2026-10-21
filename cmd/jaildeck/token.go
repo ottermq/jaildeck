@@ -7,8 +7,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/auth"
-	"codeberg.org/Otter-Labs/jaildeck/internal/state"
+	"github.com/ottermq/jaildeck/internal/auth"
+	"github.com/ottermq/jaildeck/internal/state"
 )
 
 func runToken(subArgs []string, out, errOut io.Writer, stateDir string) error {

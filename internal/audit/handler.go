@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/common"
 )
 
 const (

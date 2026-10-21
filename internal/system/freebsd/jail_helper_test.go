@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"testing"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
+	"github.com/ottermq/jaildeck/internal/jails"
 )
 
 func TestParseSingleJailConfResolvesParenNameVariable(t *testing.T) {

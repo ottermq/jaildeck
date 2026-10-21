@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/common"
 )
 
 // commandWaitDelay bounds how long Run keeps waiting once the context has

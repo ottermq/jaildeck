@@ -12,7 +12,7 @@ import (
 	"time"
 	"unicode"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/state"
+	"github.com/ottermq/jaildeck/internal/state"
 )
 
 var (

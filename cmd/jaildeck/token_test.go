@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/auth"
-	"codeberg.org/Otter-Labs/jaildeck/internal/state"
+	"github.com/ottermq/jaildeck/internal/auth"
+	"github.com/ottermq/jaildeck/internal/state"
 )
 
 func TestRunToken_AddAndDuplicate(t *testing.T) {

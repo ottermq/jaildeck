@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
-	"codeberg.org/Otter-Labs/jaildeck/internal/system"
+	"github.com/ottermq/jaildeck/internal/jails"
+	"github.com/ottermq/jaildeck/internal/system"
 )
 
 // jailOperationTimeout is a backstop, not the primary limit. FreeBSD bounds a

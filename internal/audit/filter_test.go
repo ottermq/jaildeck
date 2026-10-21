@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestApplyFilters(t *testing.T) {
@@ -175,7 +176,10 @@ func TestParseFilter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			got := parseFilter(tt.query)
+			got, err := parseFilter(tt.query)
+			if err != nil {
+				t.Fatalf("parseFilter() error = %v", err)
+			}
 
 			if got.Operation != tt.wantOperation {
 				t.Errorf("Operation = %q, want %q", got.Operation, tt.wantOperation)
@@ -247,5 +251,89 @@ func TestParseBool(t *testing.T) {
 				t.Fatalf("parseBool(%q) = %v, want %v", tt.input, *got, *tt.expected)
 			}
 		})
+	}
+}
+
+func TestParseFilterCursor(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		raw     string
+		wantErr bool
+		want    time.Time
+	}{
+		{name: "absent leaves the cursor unset", raw: ""},
+		{
+			name: "RFC 3339 with nanoseconds, as the API emits",
+			raw:  "2026-10-20T23:57:44.123456789-03:00",
+			want: time.Date(2026, 10, 20, 23, 57, 44, 123456789, time.FixedZone("", -3*60*60)),
+		},
+		{name: "RFC 3339 without fractional seconds", raw: "2026-10-20T23:57:44Z",
+			want: time.Date(2026, 10, 20, 23, 57, 44, 0, time.UTC)},
+		{name: "not a timestamp", raw: "yesterday", wantErr: true},
+		{name: "a bare date is not enough", raw: "2026-10-20", wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseFilter(url.Values{"before": {tt.raw}})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseFilter(%q) error = nil, want an error — a cursor that cannot be read must not be ignored", tt.raw)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseFilter(%q) error = %v", tt.raw, err)
+			}
+			if tt.raw == "" {
+				if got.Before != nil {
+					t.Errorf("Before = %v, want nil", got.Before)
+				}
+				return
+			}
+			if got.Before == nil {
+				t.Fatalf("Before = nil, want %v", tt.want)
+			}
+			if !got.Before.Equal(tt.want) {
+				t.Errorf("Before = %v, want %v", got.Before, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyFiltersCursor(t *testing.T) {
+	at := func(sec int) time.Time { return time.Date(2026, 10, 20, 12, 0, sec, 0, time.UTC) }
+	cursor := at(30)
+
+	for _, tt := range []struct {
+		name  string
+		entry Entry
+		want  bool
+	}{
+		{name: "older than the cursor is kept", entry: Entry{Timestamp: at(29)}, want: true},
+		{name: "newer than the cursor is dropped", entry: Entry{Timestamp: at(31)}, want: false},
+		{
+			// The cursor is the last entry the client already rendered, so
+			// including it would repeat a row on every page.
+			name: "the cursor entry itself is dropped", entry: Entry{Timestamp: at(30)}, want: false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := applyFilters(tt.entry, Filter{Before: &cursor}); got != tt.want {
+				t.Errorf("applyFilters() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyFiltersCursorComposesWithOtherFilters(t *testing.T) {
+	cursor := time.Date(2026, 10, 20, 12, 0, 30, 0, time.UTC)
+	older := time.Date(2026, 10, 20, 12, 0, 10, 0, time.UTC)
+
+	filter := Filter{Operation: "start", Before: &cursor}
+
+	if !applyFilters(Entry{Timestamp: older, Operation: "start"}, filter) {
+		t.Error("an older start should pass both the cursor and the operation filter")
+	}
+	if applyFilters(Entry{Timestamp: older, Operation: "stop"}, filter) {
+		t.Error("the operation filter must still apply when a cursor is set")
 	}
 }

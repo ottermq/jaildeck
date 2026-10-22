@@ -13,7 +13,7 @@ import (
 const (
 	AdapterFreeBSD = "freebsd"
 	AdapterFake    = "fake"
-	warningMessage = "listening on %s, which is not loopback. If nothing is terminating TLS in front of Jail Deck, the operator password crosses the network in plaintext. Use a reverse proxy terminating TLS for a permanent deployment, or an SSH LocalForward for ad-hoc access."
+	warningMessage = "listening on %s, which is not loopback. Without TLS in front of Jail Deck the operator password crosses the network in plaintext, and no browser can stay signed in: the session cookie is Secure, so plain HTTP discards it. Use a TLS-terminating reverse proxy, or an SSH LocalForward for ad-hoc access."
 )
 
 type Config struct {

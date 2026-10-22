@@ -376,3 +376,17 @@ ubt1 on uhub8
 ubt1: <Apple Inc. Bluetooth USB Host Controller, rev 2.00/2.08, addr 3> on usbus2
 tun0: link state changed to UP
 tun0: changing name to 'tailscale0'
+device_attach: ioapic0 attach returned 6
+device_attach: ioapic0 attach returned 6
+device_attach: ioapic0 attach returned 6
+device_attach: ioapic0 attach returned 6
+hpet0: <High Precision Event Timer> iomem 0xfed00000-0xfedfffff irq 0,8 on acpi0
+device_attach: hpet0 attach returned 12
+bridge0: Ethernet address: xx:xx:xx:xx:xx:xx
+bridge1: Ethernet address: xx:xx:xx:xx:xx:xx
+device_attach: ioapic0 attach returned 6
+device_attach: ioapic0 attach returned 6
+device_attach: ioapic0 attach returned 6
+device_attach: ioapic0 attach returned 6
+hpet0: <High Precision Event Timer> iomem 0xfed00000-0xfedfffff irq 0,8 on acpi0
+device_attach: hpet0 attach returned 12

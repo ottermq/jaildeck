@@ -6,6 +6,7 @@ backup/isengard/tank/jails/containers	none
 backup/isengard/tank/jails/containers/goodiesdb	none
 backup/isengard/tank/jails/containers/ottermq	none
 backup/isengard/tank/jails/containers/postgres	none
+backup/isengard/tank/jails/media	none
 backup/isengard/tank/jails/templates	none
 backup/isengard/tank/jails/templates/15.1-RELEASE	none
 backup/isengard/zroot	none
@@ -26,6 +27,7 @@ tank/jails/containers	/usr/local/jails/containers
 tank/jails/containers/goodiesdb	/usr/local/jails/containers/goodiesdb
 tank/jails/containers/ottermq	/usr/local/jails/containers/ottermq
 tank/jails/containers/postgres	/usr/local/jails/containers/postgres
+tank/jails/media	/usr/local/jails/media
 tank/jails/templates	/usr/local/jails/templates
 tank/jails/templates/15.1-RELEASE	/usr/local/jails/templates/15.1-RELEASE
 zroot	/zroot

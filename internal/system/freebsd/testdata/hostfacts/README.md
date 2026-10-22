@@ -80,9 +80,28 @@ line in particular — and it disagrees with the VM in three ways that matter:
   `tank`.
 - **`racct` is enabled**, from `kern.racct.enable=1` in `/boot/loader.conf`.
 
-Its layout is also not identical to the VM's: `tank/jails` has `containers` and
-`templates` but **no `media`**. Whatever #21 treats as a complete layout, the
-bare-metal host does not have all of it today.
+Its layout matches the VM's — `tank/jails` with `containers`, `media` and `templates`.
+The first capture of this host was missing `media`, because it had been rebuilt and the
+dataset was not recreated; it was added on 2026-10-22 and re-captured. Worth remembering
+as a fact about real hosts rather than a quirk of this one: a layout can be *partly*
+there, which is the ordinary state of a host mid-setup and the reason the layout check
+reports per dataset instead of yes or no.
+
+### `rohan/` — 15.1-RELEASE-p2, bare metal, captured 2026-10-22
+
+A Haswell i5-4278U with two pools (`zroot`, and `media` mounted at `/srv/media`), and the
+set the other two cannot give: **an unprovisioned host.** No jails dataset on either pool,
+no jails running, no `/etc/jail.conf`, `racct` off. This is the state the readiness report
+exists to describe and #21's create path is for — everything before it was captured on a
+host that was already set up.
+
+It contributes two traps of its own:
+
+- **It has been up 83 days, and its kernel message buffer has wrapped.** See the
+  `dmesg.boot` entry below; this host is the reason that mechanism changed.
+- **A pool is named `media`**, which is also one of the four dataset names the layout
+  check looks for. `media` the pool mounts at `/srv/media`; `<pool>/jails/media` is a
+  different thing entirely. Match full dataset paths, not name fragments.
 
 ### `vm-15.1-induced/`, `isengard-induced/` — states no host was in
 
@@ -104,23 +123,24 @@ creation anyway.
 
 ## Where each check stands
 
-| Check | `vm-15.1` | `isengard` | induced |
-| --- | --- | --- | --- |
-| `exec_timeout` | **pass** — `exec.timeout = 120` in `/etc/jail.conf` | **fail** — no `jail.conf`, no stanza sets it | |
-| `racct` | **fail** — `kern.racct.enable` is `0` | **pass** — `1` | |
-| `bridges` | **fail** — `vtnet0 lo0` | **fail** — `em0 em1 lo0 tailscale0` | **pass** — one bridge, then two |
-| `devfs_rulesets` | **pass** — `1 2 3 4 5` | **pass** — `1 2 3 4 5` | |
-| `cpu_virtualization` | **pass**, nested | **pass**, bare metal | |
-| `pf` | **fail** — `pf.ko` not loaded | **fail** — `pf.ko` not loaded | **pass** — disabled, then enabled |
-| `vms` | **fail** — `vmm` not loaded | **fail** — `vmm` not loaded | **loaded** — `hw.vmm` appears |
-| `zfs_pool` | one pool, `zroot` | **three pools** — cannot be guessed | |
-| `zfs_layout` | **pass** — `zroot/jails` → `/usr/local/jails` | **pass** on `tank`; `backup` holds a decoy | |
+| Check | `vm-15.1` | `isengard` | `rohan` | induced |
+| --- | --- | --- | --- | --- |
+| `exec_timeout` | **pass** — `exec.timeout = 120` | **fail** — no `jail.conf` | **fail** — no `jail.conf` | |
+| `racct` | **fail** — `0` | **pass** — `1` | **fail** — `0` | |
+| `bridges` | **fail** — `vtnet0 lo0` | **fail** — `em0 em1 lo0 tailscale0` | **fail** — `bge0 lo0 tailscale0` | **pass** — one bridge, then two |
+| `devfs_rulesets` | **pass** — `1 2 3 4 5` | **pass** — `1 2 3 4 5` | **pass** — `1 2 3 4 5` | |
+| `cpu_virtualization` | **pass**, nested | **pass**, Westmere | **pass** from `dmesg.boot`, **unanswerable** from `dmesg` | |
+| `pf` | **fail** — not loaded | **fail** — not loaded | **fail** — not loaded | **pass** — disabled, then enabled |
+| `vms` | **fail** — `vmm` not loaded | **fail** — `vmm` not loaded | **fail** — `vmm` not loaded | **loaded** — `hw.vmm` appears |
+| `zfs_pool` | one pool, `zroot` | **three pools** — cannot be guessed | two pools, one named `media` | |
+| `zfs_layout` | **pass** — `zroot/jails` → `/usr/local/jails` | **pass** on `tank`; `backup` holds a decoy | **nothing provisioned** | |
 
 ### Still missing
 
 - any check in the **`unknown`** state other than a privilege error
 - `VT-x: (disabled in BIOS)`, and a host with no `VT-x` line at all
-- an **AMD** host: it reports `SVM:` instead of `VT-x:`, and both hosts here are Intel
+- an **AMD** host: it reports `SVM:` instead of `VT-x:`, and all three hosts here are
+  Intel — Westmere, Haswell and a KVM guest. Nothing reachable can produce `SVM:`.
 - the write path: `zfs create` output, and PF with an actual ruleset loaded (`pfctl -s
   rules` with PF enabled and no `pf.conf` is **exit 0 and empty stdout**, which is the
   no-rules case, not an error)
@@ -158,6 +178,23 @@ before the captures existed:
   every pool and chooses none, and a layout check that compares **mountpoints**.
   That replica is also #21's `409`: a dataset that exists where it should, mounted
   somewhere it should not be.
+- **The live `dmesg` buffer wraps; `/var/run/dmesg.boot` does not.** This changed the
+  mechanism, not just the parsing. `rohan` has been up 83 days and its `VT-x:` line is
+  **gone from `dmesg` altogether** — 0 matches in 1651 lines — while `dmesg.boot` still
+  carries it at line 18. A check that runs `dmesg` answers `unknown` on a perfectly
+  capable host for no reason but uptime, and `unknown` was chosen *because* the buffer
+  wraps, so the check would have been permanently unable to answer on exactly the
+  long-running hosts it matters for. Read `/var/run/dmesg.boot` — mode 0644, written once
+  by `/etc/rc.d/dmesg`, no root and no module — and fall back to `dmesg` only when the
+  file is absent. Both are captured, so the difference stays visible.
+  There is no better source. FreeBSD exposes no sysctl for the VMX/SVM CPUID bits:
+  `fastfetch` reads `hw.model`, `hw.ncpu` and `kern.smp.cores` for the CPU and gets
+  feature bits from CPUID directly, which from userland means `/dev/cpuctl` — and
+  `cpuctl.ko` is not loaded on any of these hosts, so reaching it is a write. The one
+  related sysctl, `kern.vm_guest`, answers the opposite question — am I running *inside* a
+  hypervisor. It reads `none` on both bare-metal hosts and `kvm` on the VM, which is a
+  reliable fact and a useful one for JD-019, but it says nothing about whether a host can
+  *run* guests.
 - **The `VT-x:` line is indented two spaces.** `strings.HasPrefix(line, "VT-x:")` finds
   nothing on either host. Trim first.
 - **Its feature list varies by CPU**, so features must be split on `,` and compared as

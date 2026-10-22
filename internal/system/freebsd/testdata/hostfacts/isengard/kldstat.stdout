@@ -1,5 +1,5 @@
 Id Refs Address                Size Name
- 1  102 0xffffffff80200000  23520c8 kernel
+ 1  106 0xffffffff80200000  23520c8 kernel
  2    1 0xffffffff82553000   628ca0 zfs.ko
  3    1 0xffffffff83910000    201dc asmc.ko
  4    1 0xffffffff83931000     21e8 hcons.ko
@@ -29,3 +29,5 @@ Id Refs Address                Size Name
 28    1 0xffffffff83a14000     e4a8 ng_l2cap.ko
 29    1 0xffffffff83a23000    1c0f8 ng_btsocket.ko
 30    1 0xffffffff83a40000     3918 ng_socket.ko
+32    1 0xffffffff83aa9000     8810 if_bridge.ko
+33    1 0xffffffff83ab2000     6120 bridgestp.ko

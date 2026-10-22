@@ -40,6 +40,11 @@ cap() {
 cap version_u 'freebsd-version -u'
 cap version_k 'freebsd-version -k'
 cap uname 'uname -a'
+cap hw_model 'sysctl -n hw.model'
+cap hw_ncpu 'sysctl -n hw.ncpu'
+cap kern_vm_guest 'sysctl -n kern.vm_guest'
+# Uptime, because it explains whether the live dmesg buffer has had time to wrap.
+cap uptime 'uptime'
 
 # --- #1: racct ------------------------------------------------------------
 cap sysctl_racct 'sysctl -n kern.racct.enable'
@@ -66,8 +71,14 @@ cap devfs_rules_etc "$PRIV cat /etc/devfs.rules"
 cap devfs_rules_defaults "$PRIV cat /etc/defaults/devfs.rules"
 
 # --- #1: cpu virtualization -----------------------------------------------
-# The whole buffer. The VT-x line is indented, its feature list varies by CPU, and "UG"
-# is a substring of "root HUB", which dmesg prints once per USB controller.
+# /var/run/dmesg.boot FIRST. It is the boot-time messages written to a file by
+# /etc/rc.d/dmesg, mode 0644, and it DOES NOT WRAP -- whereas the live kernel message
+# buffer does: on a host up 83 days the VT-x line was gone from dmesg entirely while
+# dmesg.boot still had it. Read the file; fall back to dmesg only if it is missing.
+cap dmesg_boot 'cat /var/run/dmesg.boot'
+# The live buffer too, so the difference between them stays visible in the fixtures.
+# The VT-x line is indented, its feature list varies by CPU, and "UG" is a substring of
+# "root HUB", which dmesg prints once per USB controller.
 cap dmesg 'dmesg'
 cap sysctl_vmm 'sysctl hw.vmm'
 cap kldstat 'kldstat'

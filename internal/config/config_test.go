@@ -87,8 +87,14 @@ func TestBindWarning(t *testing.T) {
 				if mentions == "" {
 					mentions = tt.host
 				}
-				if !strings.HasPrefix(got, "listening on "+tt.host) {
-					t.Errorf("BindWarning(%q) = %q, want it to open by naming the host", tt.host, got)
+				if !strings.HasPrefix(got, "listening on "+mentions) {
+					t.Errorf("BindWarning(%q) = %q, want it to open by naming %q", tt.host, got, mentions)
+				}
+				// The warning's lede: on this bind a browser cannot hold a
+				// session at all, which is what the plaintext note alone left
+				// people to discover for themselves (#27).
+				if !strings.Contains(got, "stay signed in") {
+					t.Errorf("BindWarning(%q) = %q, want it to say a browser cannot stay signed in", tt.host, got)
 				}
 			} else if got != "" {
 				t.Errorf("BindWarning(%q) = %q, want no warning", tt.host, got)

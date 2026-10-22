@@ -48,6 +48,8 @@ For reaching a localhost-bound instance from another machine without weakening t
 
 **Amended 2026-10-21 — unix socket listener.** Jail Deck may also listen on a unix socket (`JAILDECK_SOCKET`), next to or instead of TCP. The socket is mode `0660` and owned by a configurable group, so a local automation client (JD-016) needs no TCP port and no TLS, and file permissions become a first access check. They are not the only one: the API token is still required on the socket, because JD-003's reasoning about who can reach loopback applies to anything in the socket's group.
 
+**Amended 2026-10-22 — a browser cannot hold a session over plain HTTP.** "Expected to terminate TLS" above understates it for browser use. The session cookie is `Secure` (JD-003), so a browser discards it on any non-loopback plain-HTTP origin: `POST /api/auth/login` returns `200`, the cookie is dropped, and the next request returns `401` — which looks exactly like a rejected password, and is distinguishable from one only by the response body. TLS in front is therefore a **requirement** for the web interface on a non-loopback bind, not a recommendation. It is not a requirement for automation: `RequireAuth` checks the `Authorization: Bearer` token before any cookie, so an API client (JD-016) is unaffected. Browsers treat `localhost` as a secure context, which is why the default bind and the `LocalForward` above both work without TLS. The startup warning names this consequence as well as the plaintext password.
+
 ---
 
 ## JD-003 — Authentication

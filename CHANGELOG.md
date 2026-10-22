@@ -112,6 +112,17 @@ versions' release notes stay there. GitHub numbering started again at #1.
   `PUT /api/host/layout`: a control that changes the host needs its own
   decision. (#22)
 
+### Fixed
+
+- **The non-loopback startup warning now says that login will not work.** It
+  named the real risk — the operator password crossing the network in
+  plaintext — but not the consequence an operator meets first. The session
+  cookie is `Secure` (JD-003), so a browser on a plain-HTTP origin discards
+  it: the login returns `200` and every request after it returns `401`, which
+  looks exactly like a rejected password. The two `401`s are told apart only
+  by their bodies. The README now says the same where it explains the port
+  forward. (#27)
+
 ## v0.6.0 — 2026-10-21
 
 [Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.6.0)

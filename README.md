@@ -76,6 +76,11 @@ It binds `127.0.0.1:8888` by default. Point a browser there and sign in.
 ssh -L 8888:127.0.0.1:8888 operator@jailhost
 ```
 
+Forwarding is not only safer: on a non-loopback bind over plain HTTP **no browser can
+stay signed in**. The session cookie is `Secure`, so the browser discards it and every
+request after a successful login comes back `401`, which looks exactly like a rejected
+password. Browsers treat `localhost` as a secure context, so a forwarded port is exempt.
+
 Jail Deck warns at startup when it is bound to a non-loopback address, because the
 operator password crosses the network in plaintext unless something is terminating TLS
 in front of it. It warns rather than refuses: a reverse proxy cannot be detected from

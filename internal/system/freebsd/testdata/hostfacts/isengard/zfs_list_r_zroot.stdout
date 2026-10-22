@@ -1,0 +1,15 @@
+zroot	/zroot
+zroot/ROOT	none
+zroot/ROOT/default	/
+zroot/home	/home
+zroot/home/andre	/home/andre
+zroot/tmp	/tmp
+zroot/usr	/usr
+zroot/usr/ports	/usr/ports
+zroot/usr/src	/usr/src
+zroot/var	/var
+zroot/var/audit	/var/audit
+zroot/var/crash	/var/crash
+zroot/var/log	/var/log
+zroot/var/mail	/var/mail
+zroot/var/tmp	/var/tmp

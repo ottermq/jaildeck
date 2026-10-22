@@ -1,0 +1,1 @@
+devfs rule: ioctl DEVFSIO_SGETNEXT: Operation not permitted

@@ -1,0 +1,4 @@
+   JID  IP Address      Hostname                      Path
+     1  192.168.1.101   postgres                      /usr/local/jails/containers/postgres
+     2                  ottermq                       /usr/local/jails/containers/ottermq
+     3                  goodiesdb                     /usr/local/jails/containers/goodiesdb

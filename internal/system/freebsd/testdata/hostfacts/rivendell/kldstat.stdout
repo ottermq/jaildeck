@@ -1,0 +1,4 @@
+Id Refs Address        Size Name
+ 1    6 0xc0000000   d8ad30 kernel
+ 2    1 0xc0d8d000    24d0c umodem.ko
+ 3    2 0xc0db2000    286cc ucom.ko

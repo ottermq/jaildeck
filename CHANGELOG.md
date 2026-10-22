@@ -44,6 +44,34 @@ versions' release notes stay there. GitHub numbering started again at #1.
 - **A "Load older" control on the operations page**, which appends the next
   page rather than replacing the table. (#67)
 
+- **`GET /api/host/readiness` reports what the host can do, per capability.**
+  Six checks — `kern.racct.enable`, `exec.timeout` in the jail.conf defaults,
+  bridges, devfs rulesets, VT-x with EPT and UG, and PF — each answer `pass`,
+  `fail` or `unknown`. Each one states what it observed and which capability
+  it gates (`jails`, `limits`, `vnet`, `provisioning`, `vms`, `firewall`).
+  Every failed check carries a remedy, written as a command to paste into a
+  root shell. Nothing in the path writes to the host.
+
+  Readiness is per capability because "is this host ready" has no single
+  answer: VT-x matters only to someone who wants VMs. A capability is
+  `unavailable` if any check gating it fails, `unknown` if any is unknown, and
+  `ready` otherwise. The report carries both levels so no client reimplements
+  that rule.
+
+  `unknown` is a third answer, not a softer `fail`, and carries no remedy. A
+  kernel without RACCT has no `kern.racct.enable` to set, so the loader.conf
+  advice that fixes a `0` would be wrong there. A host that is not x86 has no
+  VT-x line to find, and an absent line is not proof the CPU lacks it. A wrong
+  `fail` sends the operator to fix something that may be fine.
+
+  The rules were written against real output from four hosts, committed under
+  `internal/system/freebsd/testdata/hostfacts`, and three of them changed
+  because of it. The VT-x line is read from `/var/run/dmesg.boot`, because the
+  live `dmesg` buffer wraps on a long-running host and loses it. devfs
+  rulesets come from the kernel: no captured host has `/etc/devfs.rules`, yet
+  every one has rulesets 1–5 loaded. And a host need not have `/etc/jail.conf`
+  at all. (#1)
+
 ## v0.6.0 — 2026-10-21
 
 [Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.6.0)

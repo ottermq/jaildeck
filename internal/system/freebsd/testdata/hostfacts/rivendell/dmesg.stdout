@@ -1,0 +1,174 @@
+---<<BOOT>>---
+Copyright (c) 1992-2025 The FreeBSD Project.
+Copyright (c) 1979, 1980, 1983, 1986, 1988, 1989, 1991, 1992, 1993, 1994
+	The Regents of the University of California. All rights reserved.
+FreeBSD is a registered trademark of The FreeBSD Foundation.
+FreeBSD 15.1-RELEASE releng/15.1-n283562-96841ea08dcf GENERIC arm
+FreeBSD clang version 19.1.7 (https://github.com/llvm/llvm-project.git llvmorg-19.1.7-0-gcd708029e0b2)
+WARNING: 32-bit kernels are deprecated and may be removed in FreeBSD 16.0.
+VT: init without driver.
+CPU: ARM Cortex-A7 r0p5 (ECO: 0x00000000)
+CPU Features: 
+  Multiprocessing, Thumb2, Security, Virtualization, Generic Timer, VMSAv7,
+  PXN, LPAE, Coherent Walk
+Optional instructions: 
+  SDIV/UDIV, UMULL, SMULL, SIMD(ext)
+LoUU:2 LoC:3 LoUIS:2 
+Cache level 1:
+ 32KB/64B 4-way data cache WB Read-Alloc Write-Alloc
+ 32KB/32B 2-way instruction cache Read-Alloc
+Cache level 2:
+ 512KB/64B 8-way unified cache WB Read-Alloc Write-Alloc
+real memory  = 994045952 (947 MB)
+avail memory = 956788736 (912 MB)
+No PSCI/SMCCC call function found
+FreeBSD/SMP: Multiprocessor System Detected: 4 CPUs
+random: unblocking device.
+random: entropy device external interface
+kbd0 at kbdmux0
+ofwbus0: <Open Firmware Device Tree>
+simplebus0: <Flattened device tree simple bus> on ofwbus0
+ofw_clkbus0: <OFW clocks bus> on ofwbus0
+regfix0: <Fixed Regulator> on ofwbus0
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+regfix1: <Fixed Regulator> on ofwbus0
+regfix2: <Fixed Regulator> on ofwbus0
+regfix3: <Fixed Regulator> on ofwbus0
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+bcm2835_firmware0: <BCM2835 Firmware> on simplebus0
+ofw_clkbus1: <OFW clocks bus> on bcm2835_firmware0
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+cpulist0: <Open Firmware CPU Group> on ofwbus0
+cpu0: <Open Firmware CPU> on cpulist0
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+lintc0: <BCM2836 Interrupt Controller> mem 0x40000000-0x400000ff on simplebus0
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+intc0: <BCM2835 Interrupt Controller> mem 0x7e00b200-0x7e00b3ff irq 39 on simplebus0
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+gpio0: <BCM2708/2835 GPIO controller> mem 0x7e200000-0x7e2000b3 irq 7,8 on simplebus0
+gpiobus0: <OFW GPIO bus> on gpio0
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+mbox0: <BCM2835 VideoCore Mailbox> mem 0x7e00b880-0x7e00b8bf irq 6 on simplebus0
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+generic_timer0: <ARMv7 Generic Timer> irq 1,2,3,4 on ofwbus0
+Timecounter "ARM MPCore Timecounter" frequency 19200000 Hz quality 1000
+Event timer "ARM MPCore Eventtimer" frequency 19200000 Hz quality 1000
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+bcm_dma0: <BCM2835 DMA Controller> mem 0x7e007000-0x7e007eff irq 23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38 on simplebus0
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+gpioc0: <GPIO controller> at pins 0-53 on gpiobus0
+uart0: <PrimeCell UART (PL011)> mem 0x7e201000-0x7e2011ff irq 9 on simplebus0
+uart0: console (115200,n,8,1)
+sdhci_bcm0: <Broadcom 2708 SDHCI controller> mem 0x7e300000-0x7e3000ff irq 17 on simplebus0
+mmc0: <MMC/SD bus> on sdhci_bcm0
+bcm283x_dwcotg0: <DWC OTG 2.0 integrated USB controller (bcm283x)> mem 0x7e980000-0x7e98ffff,0x7e006000-0x7e006fff irq 21,22 on simplebus0
+usbus0 on bcm283x_dwcotg0
+bcmwd0: <BCM2708/2835 Watchdog> mem 0x7e100000-0x7e100113,0x7e00a000-0x7e00a023 on simplebus0
+vchiq0: <BCM2835 VCHIQ> mem 0x7e00b840-0x7e00b87b irq 54 on simplebus0
+vchiq: local ver 8 (min 3), remote ver 8.
+pcm0: <VCHIQ audio> on vchiq0
+fb0: <BCM2835 VT framebuffer driver> on simplebus0
+fb0: keeping existing fb bpp of 32
+fbd0 on fb0
+WARNING: Device "fb" is Giant locked and may be deleted before FreeBSD 16.0.
+VT: initialize with new VT driver "fb".
+fb0: 656x416(656x416@0,0) 32bpp
+fb0: fbswap: 1, pitch 2624, base 0x3eaf0000, screen_size 1091584
+pmu0: <Performance Monitoring Unit> irq 0 on ofwbus0
+bcm2835_cpufreq0: <CPU Frequency Control> on cpu0
+cpufreq0: <CPU frequency control> on cpu0
+clk_fixed2: clock-fixed has no clock-frequency
+clk_fixed2: clock-fixed has no clock-frequency
+gpioled0: <GPIO LEDs> on ofwbus0
+Timecounters tick every 1.000 msec
+usbus0: 480Mbps High Speed USB v2.0
+ugen0.1: <DWCOTG OTG Root HUB> at usbus0
+uhub0 on usbus0
+uhub0: <DWCOTG OTG Root HUB, class 9/0, rev 2.00/1.00, addr 1> on usbus0
+mmcsd0: 32GB <SDHC USD00 1.0 SN 3A5867D3 MFG 05/2025 by 173 LS> at mmc0 50.0MHz/4bit/65535-block
+bcm2835_cpufreq0: ARM 600MHz, Core 250MHz, SDRAM 400MHz, Turbo OFF
+lintc0: using for IPIs
+Release APs
+WARNING: 32-bit kernels are deprecated and may be removed in FreeBSD 16.0.
+Trying to mount root from ufs:/dev/ufs/rootfs [rw]...
+WARNING: / was not properly dismounted
+Warning: no time-of-day clock registered, system time will not be set accurately
+uhub0: 1 port with 1 removable, self powered
+ugen0.2: <vendor 0x0424 product 0x9514> at usbus0
+uhub1 on uhub0
+uhub1: <vendor 0x0424 product 0x9514, class 9/0, rev 2.00/2.00, addr 2> on usbus0
+uhub1: MTT enabled
+uhub1: 5 ports with 4 removable, self powered
+ugen0.3: <vendor 0x0424 product 0xec00> at usbus0
+smsc0 on uhub1
+smsc0: <vendor 0x0424 product 0xec00, rev 2.00/2.00, addr 3> on usbus0
+smsc0: chip 0xec00, rev. 0002
+miibus0: <MII bus> on smsc0
+smscphy0: <SMC LAN8700 10/100 interface> PHY 1 on miibus0
+smscphy0:  10baseT, 10baseT-FDX, 100baseTX, 100baseTX-FDX, auto
+ue0: <USB Ethernet> on smsc0
+ue0: Ethernet address: xx:xx:xx:xx:xx:xx
+ue0: link state changed to DOWN
+ugen0.4: <Seagate Expansion> at usbus0
+umass0 on uhub1
+umass0: <Seagate Expansion, class 0/0, rev 2.10/7.10, addr 4> on usbus0
+umass0:  SCSI over Bulk-Only; quirks = 0x0
+umass0:0:0: Attached to scbus0
+da0 at umass-sim0 bus 0 scbus0 target 0 lun 0
+da0: <Seagate Expansion 0710> Fixed Direct Access SPC-4 SCSI device
+da0: Serial Number 2HC015KJ
+da0: 40.000MB/s transfers
+da0: 715404MB (1465149167 512 byte sectors)
+da0: quirks=0x2<NO_6_BYTE>
+WARNING: /srv was not properly dismounted
+ue0: link state changed to UP
+lo0: link state changed to UP
+smsc0: chip 0xec00, rev. 0002
+ue0: link state changed to DOWN
+ue0: link state changed to UP
+ue0: link state changed to DOWN
+ue0: link state changed to UP

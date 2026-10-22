@@ -103,6 +103,24 @@ It contributes two traps of its own:
   check looks for. `media` the pool mounts at `/srv/media`; `<pool>/jails/media` is a
   different thing entirely. Match full dataset paths, not name fragments.
 
+### `rivendell/` — 15.1-RELEASE, armv7, captured 2026-10-22
+
+A Raspberry Pi 2: Cortex-A7, `hw.machine_arch` **armv7**, root on **UFS with no ZFS at
+all**. Reached through `rohan`, since it has no Tailscale package. It is not a jail host
+and never will be, which is exactly why it is here — it answers the questions the x86
+boxes cannot:
+
+- **the only genuine `unknown`.** `sysctl -n kern.racct.enable` exits 1 with
+  `sysctl: unknown oid 'kern.racct.enable'`: this kernel has no RACCT at all, which is
+  neither pass nor fail.
+- **no `VT-x:` line anywhere** — 0 matches in 172 lines of `dmesg.boot`. The state the
+  `cpu_virtualization` check previously had no bytes for.
+- **no ZFS**, which is what `zfs_pool` exists to report and what JD-006 requires.
+- **an empty `/etc/jail.conf.d/`** — the directory exists and holds nothing.
+
+`CPU Features:` is present and **empty** on this host. A parser that finds the line and
+assumes it has content gets an empty token list, not an error.
+
 ### `vm-15.1-induced/`, `isengard-induced/` — states no host was in
 
 Several checks had no passing capture anywhere, which left their success paths written
@@ -123,40 +141,33 @@ creation anyway.
 
 ## Where each check stands
 
-| Check | `vm-15.1` | `isengard` | `rohan` | induced |
-| --- | --- | --- | --- | --- |
-| `exec_timeout` | **pass** — `exec.timeout = 120` | **fail** — no `jail.conf` | **fail** — no `jail.conf` | |
-| `racct` | **fail** — `0` | **pass** — `1` | **fail** — `0` | |
-| `bridges` | **fail** — `vtnet0 lo0` | **fail** — `em0 em1 lo0 tailscale0` | **fail** — `bge0 lo0 tailscale0` | **pass** — one bridge, then two |
-| `devfs_rulesets` | **pass** — `1 2 3 4 5` | **pass** — `1 2 3 4 5` | **pass** — `1 2 3 4 5` | |
-| `cpu_virtualization` | **pass**, nested | **pass**, Westmere | **pass** from `dmesg.boot`, **unanswerable** from `dmesg` | |
-| `pf` | **fail** — not loaded | **fail** — not loaded | **fail** — not loaded | **pass** — disabled, then enabled |
-| `vms` | **fail** — `vmm` not loaded | **fail** — `vmm` not loaded | **fail** — `vmm` not loaded | **loaded** — `hw.vmm` appears |
-| `zfs_pool` | one pool, `zroot` | **three pools** — cannot be guessed | two pools, one named `media` | |
-| `zfs_layout` | **pass** — `zroot/jails` → `/usr/local/jails` | **pass** on `tank`; `backup` holds a decoy | **nothing provisioned** | |
+| Check | `vm-15.1` | `isengard` | `rohan` | `rivendell` | induced |
+| --- | --- | --- | --- | --- | --- |
+| `exec_timeout` | **pass** — `= 120` | **fail** — no `jail.conf` | **fail** — no `jail.conf` | **fail** — none, and `jail.conf.d` empty | |
+| `racct` | **fail** — `0` | **pass** — `1` | **fail** — `0` | **unknown** — oid absent | |
+| `bridges` | **fail** — `vtnet0 lo0` | **fail** — 4 ifaces | **fail** — 3 ifaces | **fail** — `lo0 ue0` | **pass** — one, then two |
+| `devfs_rulesets` | **pass** — `1 2 3 4 5` | **pass** | **pass** | **pass** — arch-independent | |
+| `cpu_virtualization` | **pass**, nested | **pass**, Westmere | **pass** from `dmesg.boot`, **unanswerable** from `dmesg` | **n/a** — armv7, no line | |
+| `pf` | **fail** — not loaded | **fail** | **fail** | **fail** | **pass** — disabled, then enabled |
+| `vms` | **fail** — no `vmm` | **fail** | **fail** | **fail** — no `hw.vmm` oid | **loaded** — `hw.vmm` appears |
+| `zfs_pool` | one pool, `zroot` | **three pools** — cannot be guessed | two pools, one named `media` | **no ZFS at all** | |
+| `zfs_layout` | **pass** | **pass** on `tank`; `backup` holds a decoy | **nothing provisioned** | **n/a** | |
 
 ### Still missing
 
-- any check in the **`unknown`** state other than a privilege error
-- `VT-x: (disabled in BIOS)`, and a host with no `VT-x` line at all
-- an **AMD** host: it reports `SVM:` instead of `VT-x:`, and all three hosts here are
-  Intel — Westmere, Haswell and a KVM guest. Nothing reachable can produce `SVM:`.
-- a **non-x86** host, where there is no `VT-x:`/`SVM:` line at all and the check does not
-  apply. `hw.machine_arch` is captured on every host so the gate can be written and
-  tested now; `rivendell`, a FreeBSD Raspberry Pi on the same LAN, would supply the
-  arm64 bytes but is not reachable from here yet (no Tailscale package for it, and its
-  ssh keys are elsewhere).
-- a host with **no ZFS pool at all**, which JD-006 makes a hard requirement and the
-  `zfs_pool` check therefore has to report on. `capture.sh` now has the branch for it —
-  it skips the per-pool probes and captures `zfs version` and `kldstat -m zfs` instead —
-  but no reachable host exercises that branch.
-- the write path: `zfs create` output, and PF with an actual ruleset loaded (`pfctl -s
-  rules` with PF enabled and no `pf.conf` is **exit 0 and empty stdout**, which is the
-  no-rules case, not an error)
+Two states need hardware nobody here has:
 
-Until those exist, a parser must fall through to `unknown` on anything it does not
-recognise — a report that says "I could not tell" is correct where a wrong `fail` sends
-someone to reboot a working machine.
+- an **AMD** host: it reports `SVM:` instead of `VT-x:`. The three x86 hosts are all
+  Intel — Westmere, Haswell and a KVM guest — so nothing can produce `SVM:`.
+- `VT-x: (disabled in BIOS)`, which needs a machine whose firmware has VT-x switched off.
+
+And the write path is still unwritten rather than unavailable: `zfs create` output, and PF
+with an actual ruleset loaded. (`pfctl -s rules` with PF enabled and no `pf.conf` is
+**exit 0 and empty stdout** — the no-rules case, not an error.)
+
+Everything else now has bytes. For the two above, and for anything a parser does not
+recognise, fall through to `unknown`: a report that says "I could not tell" is correct
+where a wrong `fail` sends someone to reboot a working machine.
 
 ## What the real output corrected
 
@@ -235,8 +246,24 @@ before the captures existed:
   VM and `0` on `isengard` — exactly where `VID` appears and does not appear in each
   host's `VT-x` line. `/dev/vmm` does not exist until a VM is created, so its absence
   says nothing.
-- **`rctl` states the `racct` remedy itself.** With racct off it exits 1 with
-  `rctl: RACCT/RCTL present, but disabled; enable using kern.racct.enable=1 tunable`;
-  with racct on and no rules configured it exits 0 with empty stdout. `sysctl -n
-  kern.racct.enable` is the simpler primary signal, but the remedy text can be quoted
-  from the tool rather than invented.
+- **`racct` has three kernel states, not two, and the remedy differs.** `sysctl -n
+  kern.racct.enable` returns `1` (isengard), `0` (the VM, rohan), or **exits 1 with
+  `sysctl: unknown oid 'kern.racct.enable'`** (rivendell — the kernel has no RACCT at
+  all). `rctl` names each one: exit 0 when enabled; `RACCT/RCTL present, but disabled;
+  enable using kern.racct.enable=1 tunable`; and `RACCT/RCTL support not present in
+  kernel; see rctl(8) for details`. The distinction is not cosmetic — telling the
+  operator to add `kern.racct.enable=1` to `/boot/loader.conf` is correct for the second
+  and **wrong** for the third, where no tunable exists and the kernel itself lacks the
+  feature. That third state maps to `unknown`, which needs no remedy, so the rule already
+  avoids the bad advice; `rctl`'s message is how the detail field stays accurate.
+- **"No ZFS" is a module-load failure, not a missing binary.** `zpool` and `zfs` are in
+  base on every FreeBSD host, arch regardless. On rivendell they exist and fail:
+  `zpool list` exits 1 with `Failed to load zfs module: Operation not permitted`, while
+  `kldstat -m zfs` exits 1 with `can't find module zfs: No such file or directory` —
+  two different messages for one fact. Anything keying on `exec.ErrNotFound` or
+  "command not found" will not notice that ZFS is absent.
+- **`/etc/jail.conf.d/` can exist and be empty**, which makes three distinct jail-config
+  shapes across the fixtures: `jail.conf` with shared defaults plus an include (the VM),
+  no `jail.conf` and a populated `jail.conf.d` (isengard), and no `jail.conf` with an
+  empty `jail.conf.d` (rivendell, where the glob comes back unexpanded as
+  `cat: /etc/jail.conf.d/*.conf: No such file or directory`).

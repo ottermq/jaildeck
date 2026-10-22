@@ -1,0 +1,2 @@
+NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
+zroot  38.5G  5.84G  32.7G        -         -     8%    15%  1.00x    ONLINE  -

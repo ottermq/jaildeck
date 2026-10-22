@@ -30,7 +30,7 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 			})
 			jails.RegisterJailRoutes(r, a.jailHandler)
 			host.RegisterHostRoutes(r, a.hostHandler)
-			audit.RegisterAuditHandlers(r, a.auditHandler)
+			audit.RegisterAuditRoutes(r, a.auditHandler)
 		})
 	})
 

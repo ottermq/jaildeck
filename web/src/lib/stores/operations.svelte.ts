@@ -18,6 +18,9 @@ export interface AuditQuery {
     timedOut?: boolean
     limit?: number
     targets?: string[]
+    // Entries strictly older than this RFC 3339 timestamp. The cursor for
+    // paging backwards: pass the timestamp of the oldest row already shown.
+    before?: string
 }
 
 export type Outcome = 'succeeded' | 'timed out' | 'failed'
@@ -43,6 +46,7 @@ export async function listOperations(q: AuditQuery|null = null): Promise<AuditEn
     if (q?.timedOut!==undefined) p.set('timed_out', String(q.timedOut))      
     if (q?.limit) p.set('limit', String(q.limit))
     if (q?.targets && q.targets.length > 0) p.set('targets', q.targets.join(','))
+    if (q?.before) p.set('before', q.before)
     const qs =  p.toString()
     return await api<AuditEntry[]>(`/audit${qs ? `?${qs}`:''}`)
 }

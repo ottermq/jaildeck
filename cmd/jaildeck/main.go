@@ -8,10 +8,10 @@ import (
 	"os"
 	"time"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/app"
-	"codeberg.org/Otter-Labs/jaildeck/internal/buildinfo"
-	"codeberg.org/Otter-Labs/jaildeck/internal/config"
-	"codeberg.org/Otter-Labs/jaildeck/web"
+	"github.com/ottermq/jaildeck/internal/app"
+	"github.com/ottermq/jaildeck/internal/buildinfo"
+	"github.com/ottermq/jaildeck/internal/config"
+	"github.com/ottermq/jaildeck/web"
 )
 
 func main() {
@@ -26,6 +26,13 @@ func main() {
 			// TODO: fix runPasswd to take subArgs (slice of os.Args) and fix the necessary tests
 			if err := runPasswd(os.Args, os.Stdin, os.Stdout, cfg.StateDir); err != nil {
 				fmt.Fprintln(os.Stderr, "jaildeck passwd:", err)
+				os.Exit(1)
+			}
+			return
+		case "init":
+			cfg := config.LoadConfig()
+			if err := runInit(os.Args[2:], os.Stdout, os.Stderr, cfg); err != nil {
+				fmt.Fprintln(os.Stderr, "jaildeck init:", err)
 				os.Exit(1)
 			}
 			return

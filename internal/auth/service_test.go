@@ -8,7 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/state"
+	"github.com/ottermq/jaildeck/internal/state"
 )
 
 type credentialReaderFunc func() (state.State, error)

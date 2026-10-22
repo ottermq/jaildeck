@@ -1,0 +1,1 @@
+rctl: RACCT/RCTL present, but disabled; enable using kern.racct.enable=1 tunable

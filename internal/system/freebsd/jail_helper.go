@@ -11,8 +11,8 @@ import (
 	"regexp"
 	"strings"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/common"
-	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
+	"github.com/ottermq/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/jails"
 )
 
 const (

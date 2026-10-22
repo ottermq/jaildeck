@@ -46,6 +46,10 @@ What does not survive is the previous framing that local-only access "eliminates
 
 For reaching a localhost-bound instance from another machine without weakening the bind, see the operator guidance: an SSH `LocalForward` for ad-hoc access, or a reverse proxy terminating TLS for a permanent one.
 
+**Amended 2026-10-21 — unix socket listener.** Jail Deck may also listen on a unix socket (`JAILDECK_SOCKET`), next to or instead of TCP. The socket is mode `0660` and owned by a configurable group, so a local automation client (JD-016) needs no TCP port and no TLS, and file permissions become a first access check. They are not the only one: the API token is still required on the socket, because JD-003's reasoning about who can reach loopback applies to anything in the socket's group.
+
+**Amended 2026-10-22 — a browser cannot hold a session over plain HTTP.** "Expected to terminate TLS" above understates it for browser use. The session cookie is `Secure` (JD-003), so a browser discards it on any non-loopback plain-HTTP origin: `POST /api/auth/login` returns `200`, the cookie is dropped, and the next request returns `401` — which looks exactly like a rejected password, and is distinguishable from one only by the response body. TLS in front is therefore a **requirement** for the web interface on a non-loopback bind, not a recommendation. It is not a requirement for automation: `RequireAuth` checks the `Authorization: Bearer` token before any cookie, so an API client (JD-016) is unaffected. Browsers treat `localhost` as a secure context, which is why the default bind and the `LocalForward` above both work without TLS. The startup warning names this consequence as well as the plaintext password.
+
 ---
 
 ## JD-003 — Authentication
@@ -101,6 +105,8 @@ The reasoning is about who is affected. A session belongs to a human who is pres
 
 The cost is that a password rotation is not a blanket revocation. An operator who needs that must revoke the tokens as a separate, deliberate step.
 
+**A token is root-equivalent** (amended 2026-10-21). Jail Deck runs as root (JD-001), and once jail creation, exec and storage writes exist, any token can create a jail with arbitrary contents, run a command in any jail, or destroy a dataset. A token should therefore be held only on the host it controls — by an automation client running there, reaching Jail Deck over the unix socket (JD-002) — and never copied to another machine. Named tokens are exactly what such a client needs, so no new credential type is introduced.
+
 ### Rationale
 
 **Why authentication is unconditional, including on loopback.** An earlier revision made authentication optional for a loopback bind, on the reasoning that localhost is reachable only by the operator. That reasoning is wrong, and wrong in a way that matters specifically for this application:
@@ -148,6 +154,8 @@ A jail present in configuration but not in `jls` is shown as stopped; a jail pre
 
 An operator needs to see a stopped jail in order to start it, so configuration parsing is a read path even before config editing exists.
 
+**Amended 2026-10-21.** A jail listing also returns the jail's child datasets and its ZFS user properties (`zfs get -H -o property,value -s local all`, filtered to names containing `:`). An automation client tags its jails with properties such as `otter:instance` and finds them again from the listing alone, with nothing stored in Jail Deck (JD-011).
+
 ---
 
 ## JD-005 — Jail Lifecycle Operations
@@ -165,6 +173,8 @@ service jail restart <name>
 ### Rationale
 
 `service` is the standard administrative interface FreeBSD operators already know. Building on it keeps behavior predictable instead of reimplementing jail lifecycle management at a lower level.
+
+**To verify (2026-10-21):** that `service jail start|stop` behaves as expected with VNET stanzas whose `exec.prestart`/`exec.poststop` create and destroy epairs (JD-017), and how `jail_enable`/`jail_list` autostart interacts with `jail.conf.d` on 15.1. Neither is expected to change this decision; both are checked in Jail Provisioning.
 
 ---
 
@@ -198,6 +208,13 @@ Creating a jail is a two-stage process:
 
 Templates are shared, immutable-once-snapshotted bases; jails are cheap clones of them. This keeps jail creation fast and avoids re-fetching/re-patching a userland per jail.
 
+**Amended 2026-10-21 — child datasets and root re-cloning.** A jail may have **child datasets** under its own dataset (e.g. `containers/<name>/data` mounted at `/var/db/postgres`), created with properties at creation time. Two reasons:
+
+- **Quotas belong on a child.** A clone's `referenced` space includes the template's blocks, so a quota on the jail's root dataset counts the userland against the jail. A `refquota` on a child dataset counts only what the jail wrote.
+- **State in a child makes the root replaceable.** A jail whose persistent state lives in a child can have its root re-cloned from a newer template snapshot — move the child aside with `zfs rename -u`, destroy and re-clone the root, move the child back. That is a generally useful upgrade path, not one specific to any consumer.
+
+The same rename is what lets a jail be destroyed while its data is kept: `zfs destroy -r` on the jail takes its children and their snapshots with it, so anything worth keeping is renamed out first.
+
 ---
 
 ## JD-008 — Long-running Operations
@@ -209,6 +226,8 @@ Fetching `base.txz`, extracting it, and running `freebsd-update` can take real t
 **What is now settled is the scope of the question: it applies to the template domain only.** Template preparation is a distinct, operator-initiated step — not part of application setup, and not folded into jail creation (JD-007). Jail creation stays synchronous and fast, because cloning a snapshot is a copy-on-write operation that returns immediately. Jail lifecycle operations are already fast.
 
 So the remaining decision is a progress mechanism for one domain and a handful of endpoints, not a general asynchronous-execution strategy for the application.
+
+**Amended 2026-10-21.** VM image import joins template preparation as the other slow flow that needs the progress mechanism. Jail operations stay synchronous. An automation client that wants asynchronous behaviour provides it itself — it already has its own job state, and a synchronous, idempotent call (JD-016) is easier to retry safely than a job handle Jail Deck would have to remember.
 
 ### Rationale
 
@@ -254,6 +273,8 @@ Domain package names are **plural** (`jails`, and `storage` etc. as they arrive)
 
 There is no separate `internal/handlers` package: a domain's HTTP handler lives in its own package alongside its entity, port, and service.
 
+**Amended 2026-10-21.** Two domains are planned beyond `jails` and `storage`: `vms` (JD-019) and `firewall` (JD-020). `storage` gains write operations. Each follows the same shape when it is built, and not before.
+
 ### Rationale
 
 Organizing by domain keeps each bounded context's rules, contract, and orchestration logic in one place instead of spread across several folders, and scales cleanly as new domains (storage) are added. `internal/system`'s execution primitives (`Command`, `CommandResult`, `CommandRunner`, `CommandError`) are the one deliberate exception — they are domain-agnostic and correctly live outside any domain package.
@@ -285,6 +306,8 @@ Note this is a genuinely new capability: until authentication (JD-003), Jail Dec
 | Which template was this jail cloned from? | `zfs get origin <dataset>` |
 | When was it created? | `zfs get creation <dataset>` |
 | Can this dataset be destroyed? | `zfs get clones` plus snapshot listing |
+| Which consumer object does this jail belong to? | ZFS user properties on its dataset (e.g. `otter:instance`), set by the consumer, passed through and never interpreted by Jail Deck |
+| What limits does this jail have? | Its `jail.conf.d` stanza and `rctl -l jail:<name>` |
 
 Template metadata that is genuinely underivable — the patch level `freebsd-update` brought a template to, for example — is stored in a small file **inside the template's own dataset**, not in a central store. It then clones with the template, is destroyed with it, and cannot outlive what it describes.
 
@@ -317,7 +340,7 @@ Rotation is otherwise safe by construction: `Log` opens with `O_CREATE|O_APPEND`
 
 **Still open, with explicit triggers rather than vague intent:**
 
-- **Metrics history.** Live values need no storage; a trailing window is served by an in-memory ring buffer that may die on restart. Durable time-series storage becomes necessary only when the requirement is a chart *over time* that survives restarts. That is the trigger — not "we have metrics."
+- **Metrics history.** Live values need no storage; a trailing window is served by an in-memory ring buffer that may die on restart. Durable time-series storage becomes necessary only when the requirement is a chart *over time* that survives restarts. That is the trigger — not "we have metrics." A Prometheus `/metrics` endpoint (2026-10-21) meets that requirement outside Jail Deck: Prometheus keeps the history, so the trigger only fires if the chart has to live inside Jail Deck itself.
 - **Audit log at scale.** Filtering currently scans the whole file. For a single operator this is harmless for years. Log rotation is the cheaper answer and should be tried first; richer querying is the trigger for anything more.
 - **Structured application logging**, distinct from the audit trail. Not designed.
 
@@ -345,7 +368,10 @@ Jail Deck integrates existing FreeBSD facilities rather than replacing them:
 
 ```
 service · jls · jail · jexec · zfs · pkg · fetch · freebsd-update · sysrc
+rctl · cpuset · ifconfig · pfctl · bhyve tooling (per JD-019)
 ```
+
+The second line was added 2026-10-21 with VNET jails, resource limits, PF visibility and VMs (JD-017 to JD-020).
 
 ### Rationale
 
@@ -407,6 +433,8 @@ Every part of this exists because the obvious version does not work.
 
 This decision is about bounding individual commands. How a legitimately slow flow is represented to the operator — progress, polling, or SSE during template preparation — remains open under JD-008.
 
+**Amended 2026-10-21 — exec.** The exec endpoint (JD-016) is the one place a caller supplies a command's timeout. It is capped by a server-side maximum, so a caller can shorten the bound but never remove it, and the output kept is capped in size. The cap values are still open.
+
 ---
 
 ## JD-015 — Frontend Architecture
@@ -435,6 +463,167 @@ TanStack Query, a generated client and polling are premature at two domains. Ref
 
 - How a multi-minute template preparation is represented in the UI — blocked on JD-008.
 - Table-first or card-first for the jails list; browser `confirm()` or a custom dialog; when dark mode arrives. All reversible, none blocking.
+
+---
+
+## JD-016 — Automation API Contract
+
+**Status:** Locked — 2026-10-21
+
+Jail Deck has a second kind of API consumer: a program on the same host, driving it as a host agent. The first is Otter Labs Cloud's per-node worker. The API is designed so such a client can retry safely and correlate what it did:
+
+- **Idempotent create.** `PUT /api/jails/{name}` carries the full jail spec (JD-017, JD-018). Absent → create it, `201`. Present and matching → `200`, nothing changed. Present and different → `409` with a field-by-field diff; Jail Deck never reconciles a running jail towards a new spec on its own. `POST /api/jails` remains for the UI.
+- **Confirmed destroy.** `DELETE /api/jails/{name}?confirm={name}`, and the same `confirm` parameter on every destructive storage call. The confirmation lives in the API, so it binds the UI and automation equally. It refuses when the datasets have clones or holds, and says which.
+- **Exec.** `POST /api/jails/{name}/exec` with `{ "argv": [...], "timeout": "60s", "env": {...} }` returns stdout, stderr and exit code. It runs `jexec <name> argv...` through `CommandRunner`: an argument array, no shell, audited, bounded by JD-014. This is root inside the jail, which is no more than the API already implies (JD-001) — it is JD-007's "hand off to in-jail provisioning" made callable.
+- **Correlation.** An `X-Request-Id` header is recorded in every audit entry the request produces, so the client's own job id links both audit trails.
+- **Transport.** A unix socket listener (JD-002) with token auth (JD-003).
+- **Change policy.** Breaking changes are allowed before 1.0 but each is recorded under an **API** heading in the changelog. A client pins a Jail Deck version and runs contract tests before upgrading.
+
+### Rationale
+
+**The desired state lives in the client, not here.** A platform like Otter has a desired-state model — that is its job. Jail Deck stays a desired-state-free executor and reporter, which is what JD-011 asks for. An idempotent `PUT` gives the client everything it needs from that position: after a crash it repeats the call, and the answer (`201`, `200` or `409`) tells it exactly where it stands, derived from the system rather than from a record of what Jail Deck thinks it did.
+
+**Synchronous is better for automation, not worse.** Jail creation is fast (JD-008). A client with its own job queue gains nothing from a Jail Deck job handle except a second piece of state that can disagree with the first.
+
+**Generic primitives only.** Every capability here passes the scope test in `docs/SPEC.md`: an operator on their own box can use `PUT`, `exec` and `confirm` from a script just as well. Nothing in the API knows what a customer, a quota or a database is.
+
+---
+
+## JD-017 — VNET Networking Model
+
+**Status:** Locked — 2026-10-21. Supersedes "VNET jails" in the SPEC's deferred list.
+
+A jail spec may ask for VNET networking:
+
+```json
+"network": { "mode": "vnet", "bridge": "bridge-tenant", "private": true,
+             "ip4": "10.64.0.23/22", "gateway": "10.64.0.1" }
+```
+
+- The epair is created in the generated stanza's `exec.prestart` and destroyed in `exec.poststop`, so a jail started with `service jail start` from a shell gets the same network as one started by Jail Deck.
+- The host end joins the named bridge, as a `private` member when asked, so jails on the same bridge cannot reach each other at layer 2.
+- The address and default route are set inside the jail.
+- **The bridge is the operator's.** Jail Deck adds and removes only its own epairs; it never creates a bridge, adds a physical interface to one, or edits `rc.conf` network settings. Host Setup reports whether the named bridge exists.
+- `ip4=inherit` jails remain supported, unchanged.
+
+### Rationale
+
+VNET gives each jail its own network stack, which is what makes a jail safe to hand to an untrusted workload: no shared `127.0.0.1` (the very risk JD-003 describes), its own firewall view, and isolation enforceable at the bridge. The line between what Jail Deck writes and what the operator writes follows the SPEC: jail creation may write what jail creation needs — the stanza and its epair — and nothing broader. A bridge is host network policy.
+
+---
+
+## JD-018 — Resource Limits and the Jail Parameter Allowlist
+
+**Status:** Locked — 2026-10-21
+
+A jail spec may carry limits and jail(8) parameters:
+
+```json
+"limits": { "memoryuse": "640M", "vmemoryuse": "1G", "maxproc": 100,
+            "openfiles": 2048, "pcpu": 100, "cpuset": "0-3" },
+"params": { "sysvshm": "new", "sysvsem": "new", "sysvmsg": "new",
+            "devfs_ruleset": 4, "securelevel": 3, "enforce_statfs": 2 }
+```
+
+- **Limits** are rctl rules plus a cpuset, applied when the jail starts and removed when it stops. They require `kern.racct.enable=1`, a loader tunable that Host Setup checks and reports; Jail Deck refuses a spec with rctl limits on a host without it rather than creating a jail that silently runs unlimited.
+- **Parameters** come only from an **allowlist**. The API rejects anything else, naming the parameter. The allowlist never includes `allow.mount*`, `allow.raw_sockets`, `children.max` above 0, or `vnet` combined with `inherit`.
+- **devfs** references a ruleset number the operator installed. Jail Deck never appends to `/etc/devfs.rules` at runtime.
+- **Child datasets and user properties** (JD-007, JD-004) are part of the same spec, so one `PUT` describes the whole jail.
+
+### Rationale
+
+**The allowlist is the API's security boundary.** A token holder can already do anything root can (JD-003), but the API should not make it *easy* to create a jail that can escape its own confinement. A denylist fails open the day jail(8) gains a parameter; an allowlist fails closed.
+
+**Refusing beats running unlimited.** A jail that was asked for a 640M memory limit and silently got none is worse than an error: the operator believes something that is false.
+
+### Still open
+
+- Whether limits are applied by `exec.poststart`/`exec.prestop` hooks in the stanza or by the adapter. Leaning hooks, for the same reason as the epair in JD-017: the jail behaves the same however it is started.
+
+---
+
+## JD-019 — Virtual Machines (bhyve)
+
+**Status:** Open — scope locked 2026-10-21; mechanism pending a spike
+
+**Scope (locked).** Jail Deck gains a `vms` domain mirroring jails: list and inspect; create from an image template with CPU, memory and cpuset sizing, a zvol disk and a cloud-init seed; start, stop, restart, destroy with `confirm`; a tap on an operator-owned bridge, as JD-017 does for epairs; serial console through the API later. VM state is derived from the system, never stored (JD-011). The host prerequisite is `VT-x` with `EPT` and `UG` in `dmesg`, reported by Host Setup.
+
+**Mechanism (open).** JD-005 chose `service jail` because it is the standard administrative interface. bhyve has no equivalent in base. The candidates:
+
+| Option | Fit | For | Against |
+| --- | --- | --- | --- |
+| **A. `vm-bhyve`** (`sysutils/vm-bhyve`) | JD-005/JD-012: drive an established admin tool; its per-VM config files and datasets are derivable state | Mature; supervision, taps, UEFI, ISO and cloud images; cloud-init support (to verify) | A dependency outside base; its maintenance cadence needs checking |
+| **B. Direct `bhyve(8)` + `bhyvectl` + `daemon(8)`** | JD-012: base tools only | Full control; no extra dependency; the most to learn | Jail Deck owns supervision across its own restarts, tap lifecycle and host reboots — more code |
+| C. libvirt | Weak: a daemon and abstraction foreign to FreeBSD conventions | Feature-rich | Heavy runtime dependency; needs `libvirtd`; cgo bindings |
+
+Spike A and B at the start of the Virtual Machines milestone, then lock this decision. Leaning **A** for consistency with JD-005, unless the spike shows gaps in cloud-init or maintenance. **C is rejected.**
+
+### Rationale
+
+Jail Deck's owner needs Linux VMs on the same host as the jails, managed the same way. Excluding bhyve was a scope choice, not a technical one, and the reason for it — not chasing Sylve feature-for-feature — still holds: VMs come in because a real consumer needs them, with the smallest surface that serves it.
+
+---
+
+## JD-020 — Firewall (PF) Scope
+
+**Status:** Locked — 2026-10-21
+
+PF support grows in phases, and one thing is never done:
+
+| Phase | Capability | Commands |
+| --- | --- | --- |
+| **1. Visibility** (read-only) | Loaded ruleset with counters, anchors, tables and their contents, state count, PF enabled or not, recent `pflog` lines | `pfctl -s rules -v`, `-s Anchors`, `-s Tables`, `-s info`, `-t <table> -T show` |
+| **2. Tables** | Add or remove addresses in named tables the operator declared in `pf.conf` | `pfctl -t <table> -T add/delete` |
+| **3. Owned anchors** | Load rules into `jaildeck/*` anchors that `pf.conf` includes once; validate with `pfctl -nf` before loading and roll back on failure | `pfctl -a jaildeck/<n> -nf … && pfctl -a jaildeck/<n> -f …` |
+| **Never** | Write `/etc/pf.conf`, or toggle `pf_enable` | — |
+
+Phase 1 is a planned milestone. Phases 2 and 3 wait for a real need.
+
+### Rationale
+
+The firewall policy is the most security-critical file on the host. The operator keeps authorship of it; Jail Deck may only work inside boxes the operator explicitly opened — a table they declared, an anchor they included. This is the deliberate opposite of overwriting `pf.conf`, as Sylve does. Sylve's validate-then-rollback idea is worth adopting for phase 3.
+
+Read-only visibility comes first because it is useful immediately and costs nothing in risk: a consumer like Otter uses a static, address-based policy in `pf.conf` that never changes per tenant, and only needs to *see* that it is loaded and matching.
+
+---
+
+## JD-021 — ZFS Pool Choice and the Jails Dataset Layout
+
+**Status:** Locked — 2026-10-22
+
+The layout is fixed: `<pool>/jails` mounted at `/usr/local/jails`, with `media`, `templates` and `containers` beneath it inheriting that mountpoint. JD-006 names those paths; this decision is about *which pool* and *what may be done to get there*.
+
+**Jail Deck never guesses the pool.**
+
+| Pools imported | `JAILDECK_ZFS_POOL` | Result |
+| --- | --- | --- |
+| one | unset | adopted |
+| several | unset | `zfs_pool` **fails**, listing them |
+| any | names a listed pool | that pool |
+| any | names an absent pool | `zfs_pool` **fails**, listing them |
+| none | — | `zfs_pool` **fails** |
+| no ZFS — `zpool` exits non-zero | — | `zfs_pool` **fails** (JD-006) |
+
+A pool that cannot be chosen **fails the check but never refuses startup**: listing and running jails do not need the layout, and a readiness report that cannot be reached is useless.
+
+**Ensure, never clobber.** `PUT /api/host/layout` and `jaildeck init` are one service method. It creates only what is missing, parent first, and when nothing is missing it runs no `zfs create` at all. Two states refuse the whole request before anything is created:
+
+- a layout dataset that **exists but is mounted somewhere else**
+- a **missing** layout dataset whose expected mountpoint **another dataset already holds** — on any pool, the selected one included
+
+Both are a `409` naming the datasets. Jail Deck will not move a mounted dataset, and will not mount a new one over an existing one: either may hold live jails. Checking the second costs a read of every pool whenever anything is missing, so one unreadable pool makes the layout check `unknown` rather than `fail` — losing the answer is the right way to fail here, because the wrong answer is "run `jaildeck init`".
+
+Afterwards the layout is read back and reported as the system shows it, not as the request believes it made it (JD-011).
+
+Two things are **not** detected. A plain directory with content at a layout path: the `HostSystem` port has no file-system method, and creating the parent would mount over it. And ZFS's own `mounted` state, as opposed to the `mountpoint` property — that needs real captured output before a parser is written for it.
+
+### Rationale
+
+Both rules come from the deployment host's own topology, not from caution in the abstract.
+
+`zpool list` prints `backup`, `tank`, `zroot` on isengard, and the first of those holds a `zrepl` replica of the jails layout with **every mountpoint `none`**. Adopting the first pool printed, or matching the layout on dataset names, reports a fully provisioned host whose datasets are mounted nowhere. Hence an explicit pool, and a layout check that compares mountpoints against **full dataset paths** — another host has a pool called `media`, which is also one of the layout's names.
+
+The mount-over refusal is the same host read the other way round. That replica lives at `backup/isengard/tank/jails`, not `backup/jails`, so with `JAILDECK_ZFS_POOL=backup` the layout is simply *missing* — and creating `backup/jails` with `mountpoint=/usr/local/jails` would have mounted it over the live `tank/jails`, where the jails actually run. The readiness remedy would have been `jaildeck init`: the report would have told the operator to do it.
 
 ---
 

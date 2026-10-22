@@ -1,0 +1,12 @@
+# Shared defaults applied to every jail
+exec.start = "/bin/sh /etc/rc";
+exec.stop = "/bin/sh /etc/rc.shutdown";
+exec.consolelog = "/var/log/jail_console_${name}.log";
+exec.timeout = 120;
+exec.clean;
+mount.devfs;
+host.hostname = "${name}";
+path = "/usr/local/jails/containers/${name}";
+interface = vtnet0;
+
+.include "/etc/jail.conf.d/*.conf";

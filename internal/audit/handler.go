@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/common"
 )
 
 const (
@@ -23,7 +23,13 @@ func NewAuditHandler(service *AuditService) *AuditHandler {
 func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	entries, err := h.service.Recent(r.Context(), normalizeLimit(q.Get("limit")), parseFilter(q))
+	filter, err := parseFilter(q)
+	if err != nil {
+		common.HandlerError(w, common.NewAppError(http.StatusBadRequest, err.Error()))
+		return
+	}
+
+	entries, err := h.service.Recent(r.Context(), normalizeLimit(q.Get("limit")), filter)
 	if err != nil {
 		common.HandlerError(w, err)
 		return

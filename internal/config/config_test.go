@@ -31,6 +31,7 @@ func TestLoadConfig(t *testing.T) {
 				StateDir: "/tmp/jaildeck-state",
 				AuditLog: "/tmp/jaildeck-audit.log",
 				LogLevel: "debug",
+				ZFSPool:  "tank",
 			},
 			want: Config{
 				Host:     "0.0.0.0",
@@ -39,6 +40,7 @@ func TestLoadConfig(t *testing.T) {
 				StateDir: "/tmp/jaildeck-state",
 				AuditLog: "/tmp/jaildeck-audit.log",
 				LogLevel: "debug",
+				ZFSPool:  "tank",
 			},
 		},
 	}
@@ -51,6 +53,7 @@ func TestLoadConfig(t *testing.T) {
 			t.Setenv("JAILDECK_STATE_DIR", tt.env.StateDir)
 			t.Setenv("JAILDECK_AUDIT_LOG", tt.env.AuditLog)
 			t.Setenv("JAILDECK_LOG_LEVEL", tt.env.LogLevel)
+			t.Setenv("JAILDECK_ZFS_POOL", tt.env.ZFSPool)
 
 			if got := LoadConfig(); got == nil || *got != tt.want {
 				t.Errorf("LoadConfig() = %+v, want %+v", got, tt.want)
@@ -84,8 +87,14 @@ func TestBindWarning(t *testing.T) {
 				if mentions == "" {
 					mentions = tt.host
 				}
-				if !strings.HasPrefix(got, "listening on "+tt.host) {
-					t.Errorf("BindWarning(%q) = %q, want it to open by naming the host", tt.host, got)
+				if !strings.HasPrefix(got, "listening on "+mentions) {
+					t.Errorf("BindWarning(%q) = %q, want it to open by naming %q", tt.host, got, mentions)
+				}
+				// The warning's lede: on this bind a browser cannot hold a
+				// session at all, which is what the plaintext note alone left
+				// people to discover for themselves (#27).
+				if !strings.Contains(got, "stay signed in") {
+					t.Errorf("BindWarning(%q) = %q, want it to say a browser cannot stay signed in", tt.host, got)
 				}
 			} else if got != "" {
 				t.Errorf("BindWarning(%q) = %q, want no warning", tt.host, got)

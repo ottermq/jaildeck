@@ -12,12 +12,12 @@ import (
 	"syscall"
 	"testing"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
-	"codeberg.org/Otter-Labs/jaildeck/internal/auth"
-	"codeberg.org/Otter-Labs/jaildeck/internal/common"
-	"codeberg.org/Otter-Labs/jaildeck/internal/config"
-	"codeberg.org/Otter-Labs/jaildeck/internal/state"
 	"github.com/go-chi/chi/v5"
+	"github.com/ottermq/jaildeck/internal/audit"
+	"github.com/ottermq/jaildeck/internal/auth"
+	"github.com/ottermq/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/config"
+	"github.com/ottermq/jaildeck/internal/state"
 )
 
 func TestNew_RequiresCredential(t *testing.T) {

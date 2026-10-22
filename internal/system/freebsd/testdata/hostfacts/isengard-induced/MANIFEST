@@ -1,0 +1,14 @@
+pf_loaded_kldstat	kldstat -m pf	exit=0
+pf_loaded_pfctl_info	doas pfctl -s info	exit=0
+pf_loaded_service_status	doas service pf status	exit=1
+pf_enabled_pfctl_info	doas pfctl -s info	exit=0
+pf_enabled_service_status	doas service pf status	exit=0
+pf_enabled_pfctl_rules	doas pfctl -s rules	exit=0
+bridge_one_group	ifconfig -g bridge	exit=0
+bridge_two_group	ifconfig -g bridge	exit=0
+bridge_two_list	ifconfig -l	exit=0
+bridge_detail	ifconfig bridge0	exit=0
+vmm_loaded_kldstat	kldstat -m vmm	exit=0
+vmm_loaded_sysctl	sysctl hw.vmm	exit=0
+vmm_loaded_sysctl_maxcpu	sysctl -n hw.vmm.maxcpu	exit=0
+vmm_loaded_ls_dev	ls -la /dev/vmm	exit=1

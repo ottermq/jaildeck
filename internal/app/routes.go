@@ -7,12 +7,13 @@ import (
 	"path"
 	"strings"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/audit"
-	"codeberg.org/Otter-Labs/jaildeck/internal/auth"
-	"codeberg.org/Otter-Labs/jaildeck/internal/common"
-	"codeberg.org/Otter-Labs/jaildeck/internal/jails"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/ottermq/jaildeck/internal/audit"
+	"github.com/ottermq/jaildeck/internal/auth"
+	"github.com/ottermq/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/host"
+	"github.com/ottermq/jaildeck/internal/jails"
 )
 
 func (a *App) Routes(assets fs.FS) http.Handler {
@@ -28,6 +29,7 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 				http.Redirect(w, r, "/api/jails", http.StatusSeeOther)
 			})
 			jails.RegisterJailRoutes(r, a.jailHandler)
+			host.RegisterHostRoutes(r, a.hostHandler)
 			audit.RegisterAuditHandlers(r, a.auditHandler)
 		})
 	})

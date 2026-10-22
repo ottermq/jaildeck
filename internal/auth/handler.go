@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/common"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/ottermq/jaildeck/internal/common"
 )
 
 const (
@@ -176,7 +176,7 @@ func newSessionCookie(value string, maxAge int) *http.Cookie {
 		HttpOnly: true,
 		// Browsers treat localhost as a secure context, so loopback development works
 		// over plain HTTP (JD-003). A non-loopback plain-HTTP deployment will not keep
-		// anyone logged in — deliberately; see #17.
+		// anyone logged in — deliberately; see #27.
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 	}

@@ -1,0 +1,6 @@
+zroot/jails	/usr/local/jails
+zroot/jails/containers	/usr/local/jails/containers
+zroot/jails/containers/ottermq	/usr/local/jails/containers/ottermq
+zroot/jails/media	/usr/local/jails/media
+zroot/jails/templates	/usr/local/jails/templates
+zroot/jails/templates/15.1-RELEASE	/usr/local/jails/templates/15.1-RELEASE

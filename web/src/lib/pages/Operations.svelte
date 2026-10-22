@@ -34,15 +34,21 @@ let isFiltered = $derived(
     )
 )
 
-// The audit API has no cursor, so a full page of results may well be truncated.
-// Saying so beats letting someone believe they are seeing everything.
-let maybeTruncated = $derived(ops.length >= (applied?.limit ?? selectedLimit))
+// Whether the most recent request filled its window. Once pages are appended
+// ops.length no longer says anything about whether more remain, so this tracks
+// the last page rather than the total. A full page may be exactly the last one,
+// in which case "Load older" returns nothing and hides itself — one wasted
+// request, which is the price of the API not reporting a total.
+let lastPageFull = $state(false)
+let loadingMore = $state(false)
 
 async function load() {
     loadError = ''
     loading = true
     try {
-        ops = await listOperations(applied)
+        const page = await listOperations(applied)
+        ops = page
+        lastPageFull = page.length >= (applied?.limit ?? selectedLimit)
     } catch (err) {
         loadError = err instanceof ApiError
             ? err.statusText ?? 'Could not load operations'
@@ -88,6 +94,25 @@ async function clearFilters() {
     selectedLimit = LIMITS[0]
     applied = { limit: selectedLimit }
     await load()
+}
+
+// The cursor is the oldest row on screen, which is the last one: the API
+// returns newest first.
+async function loadOlder() {
+    if (loadingMore || ops.length === 0) return
+    loadingMore = true
+    loadError = ''
+    try {
+        const page = await listOperations({ ...applied, before: ops[ops.length - 1].timestamp })
+        ops = [...ops, ...page]
+        lastPageFull = page.length >= (applied?.limit ?? selectedLimit)
+    } catch (err) {
+        loadError = err instanceof ApiError
+            ? err.statusText ?? 'Could not load older operations'
+            : 'Could not reach Jail Deck'
+    } finally {
+        loadingMore = false
+    }
 }
 
 function formatTime(iso: string): string {
@@ -195,9 +220,14 @@ function formatExitCode(code: number): string {
         </table>
     </div>
 
-    <p class="table-foot">
-        {ops.length} operation{ops.length === 1 ? '' : 's'}{maybeTruncated ? ' — the most recent, older entries are not shown' : ''}
-    </p>
+    <div class="table-foot">
+        <span>{ops.length} operation{ops.length === 1 ? '' : 's'}</span>
+        {#if lastPageFull}
+            <button type="button" class="btn btn--small" disabled={loadingMore} onclick={loadOlder}>
+                {loadingMore ? 'Loading…' : 'Load older'}
+            </button>
+        {/if}
+    </div>
 {:else if loading}
     <p class="notice">Loading operations…</p>
 {:else if !loadError}
@@ -242,6 +272,9 @@ function formatExitCode(code: number): string {
 }
 
 .table-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
     margin-top: var(--space-3);
     font-size: 0.85rem;
     color: var(--text-muted);

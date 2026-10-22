@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -231,5 +232,51 @@ func TestMissingIndexServesNotBuiltPage(t *testing.T) {
 				t.Errorf("body = %q, want %q", got, notBuilt)
 			}
 		})
+	}
+}
+
+// The fake host is what make run-fake serves, and its report must carry all
+// three check states for the web interface to have each one to render.
+func TestHostReadinessOverFakeAdapter(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatalf("create test app: %v", err)
+	}
+	router := a.Routes(testAssets())
+	login := httptest.NewRecorder()
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"password":"test-password"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(login, loginReq)
+	if login.Code != http.StatusOK {
+		t.Fatalf("login returned %d, want 200", login.Code)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/host/readiness", nil)
+	for _, cookie := range login.Result().Cookies() {
+		req.AddCookie(cookie)
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/host/readiness returned %d: %s", rec.Code, rec.Body)
+	}
+	var report struct {
+		Capabilities []struct{ Status string } `json:"capabilities"`
+		Checks       []struct{ Status string } `json:"checks"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, c := range report.Checks {
+		seen[c.Status] = true
+	}
+	for _, status := range []string{"pass", "fail", "unknown"} {
+		if !seen[status] {
+			t.Errorf("fake report has no %q check; checks = %+v", status, report.Checks)
+		}
+	}
+	if len(report.Capabilities) != 6 {
+		t.Errorf("capabilities = %d, want 6", len(report.Capabilities))
 	}
 }

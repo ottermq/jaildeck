@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"codeberg.org/Otter-Labs/jaildeck/internal/buildinfo"
-	"codeberg.org/Otter-Labs/jaildeck/internal/config"
+	"github.com/ottermq/jaildeck/internal/buildinfo"
+	"github.com/ottermq/jaildeck/internal/config"
 )
 
 func TestVersionWithoutCredential(t *testing.T) {

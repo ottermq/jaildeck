@@ -1,0 +1,7 @@
+media	/srv/media
+media/.incoming	/srv/media/.incoming
+media/Downloads	/srv/media/Downloads
+media/Movies	/srv/media/Movies
+media/Music	/srv/media/Music
+media/Photos	/srv/media/Photos
+media/TV	/srv/media/TV

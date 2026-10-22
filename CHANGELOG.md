@@ -1,13 +1,129 @@
 # Changelog
 
 Every released version is recorded here. A version additionally gets a
-[release](https://codeberg.org/Otter-Labs/jaildeck/releases) with full notes when
+[release](https://github.com/ottermq/jaildeck/releases) with full notes when
 it carries something an upgrader has to act on — a changed output format, a new
 mandatory step, a migration. Versions that only fix internal behaviour live here
 alone.
 
 Dates are the tag date. Issue numbers link to
-[the tracker](https://codeberg.org/Otter-Labs/jaildeck/issues).
+[the tracker](https://github.com/ottermq/jaildeck/issues).
+
+The repository moved from Codeberg to GitHub on 2026-10-21. Issue and pull
+request numbers in v0.6.0 and earlier, including the audit cursor entry in
+v0.7.0, refer to the archived
+[Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
+versions' release notes stay there. GitHub numbering started again at #1.
+
+## v0.7.0 — 2026-10-22
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.7.0)
+
+### Breaking
+
+- **Module path is now `github.com/ottermq/jaildeck`**, following the move back
+  to GitHub. Builds that stamp the version with `-ldflags -X` need the new
+  package path.
+
+### Added
+
+- **`GET /api/audit` pages backwards with a cursor.** `?before=<RFC 3339
+  timestamp>` returns entries strictly older than the one given, newest first,
+  and composes with the existing `operation`, `targets`, `success` and
+  `timed_out` filters. Pass the timestamp of the oldest entry already received.
+
+  The response stays a plain array, so a client knows there may be more the
+  same way the interface does: a page that fills `limit` might not be the last
+  one. An unreadable `before` is a `400` rather than being ignored, because a
+  silently dropped cursor returns the first page again and a client paging
+  backwards would loop on it.
+
+  A cursor rather than an offset because the audit log is an append-only file
+  that `newsyslog` rotates and new entries extend — both shift what an offset
+  means between one request and the next, so `?offset=` can skip a page or
+  repeat a row. (#67)
+
+- **A "Load older" control on the operations page**, which appends the next
+  page rather than replacing the table. (#67)
+
+- **`GET /api/host/readiness` reports what the host can do, per capability.**
+  Six checks — `kern.racct.enable`, `exec.timeout` in the jail.conf defaults,
+  bridges, devfs rulesets, VT-x with EPT and UG, and PF — each answer `pass`,
+  `fail` or `unknown`. Each one states what it observed and which capability
+  it gates (`jails`, `limits`, `vnet`, `provisioning`, `vms`, `firewall`).
+  Every failed check carries a remedy, written as a command to paste into a
+  root shell. Nothing in the path writes to the host.
+
+  Readiness is per capability because "is this host ready" has no single
+  answer: VT-x matters only to someone who wants VMs. A capability is
+  `unavailable` if any check gating it fails, `unknown` if any is unknown, and
+  `ready` otherwise. The report carries both levels so no client reimplements
+  that rule.
+
+  `unknown` is a third answer, not a softer `fail`, and carries no remedy. A
+  kernel without RACCT has no `kern.racct.enable` to set, so the loader.conf
+  advice that fixes a `0` would be wrong there. A host that is not x86 has no
+  VT-x line to find, and an absent line is not proof the CPU lacks it. A wrong
+  `fail` sends the operator to fix something that may be fine.
+
+  The rules were written against real output from four hosts, committed under
+  `internal/system/freebsd/testdata/hostfacts`, and three of them changed
+  because of it. The VT-x line is read from `/var/run/dmesg.boot`, because the
+  live `dmesg` buffer wraps on a long-running host and loses it. devfs
+  rulesets come from the kernel: no captured host has `/etc/devfs.rules`, yet
+  every one has rulesets 1–5 loaded. And a host need not have `/etc/jail.conf`
+  at all. (#1)
+
+- **`jaildeck init` and `PUT /api/host/layout` ensure the jails dataset
+  layout:** `<pool>/jails` mounted at `/usr/local/jails`, with `media`,
+  `templates` and `containers` beneath it. Both call one service method, and
+  `GET /api/host/layout` reports each dataset, its mountpoint and what is
+  missing. The readiness report gains `zfs_pool` and `zfs_layout`, which gate
+  `provisioning`.
+
+  Ensure, never clobber. When everything is in place no `zfs create` runs and
+  the answer is `200`. When something is missing, only that is created, parent
+  first, and the answer is `201`. A dataset that exists but is mounted
+  somewhere else is a `409` that names it, and nothing is created: fixing it
+  would move a mounted dataset that may hold live jails. So is a missing
+  dataset whose path another dataset already holds, on any pool, since
+  creating it would mount it over that one. `PUT` rather than
+  `POST` because the layout is a singleton whose desired state is fixed
+  (JD-016), and there is no `confirm` parameter because nothing here destroys.
+  Each `zfs create` is its own `create-dataset` audit entry, findable with
+  `?targets=<dataset>`.
+
+  A host with one pool has it adopted. With several, `JAILDECK_ZFS_POOL` must
+  name one, and until it does the `zfs_pool` check fails, listing the pools.
+  Jail Deck does not pick: on the deployment host the first pool printed holds
+  a replica of the layout, mounted nowhere. A missing or ambiguous pool fails
+  the check but never stops Jail Deck from starting, since listing and
+  running jails do not need the layout. A host with no ZFS fails it too,
+  detected by `zpool` exiting non-zero, because the binary is in base even
+  where ZFS is not. (#21)
+
+- **A Host page shows the readiness report**, capability by capability, each
+  with the checks that gate it. It leads with what is ready. An unavailable
+  capability is drawn neutral, not red, because a host without VT-x is a
+  perfectly good jail host. `unknown` is amber, like a timed-out operation,
+  and never reads as a failure: a wrapped `dmesg` buffer is not a CPU without
+  VT-x. Every remedy is shown exactly as the server sends it, as code to
+  paste into a root shell, with a copy button where the browser allows one.
+  The report is recomputed per request (JD-011), so the page keeps nothing
+  between loads and has a Refresh control instead. It has no button for
+  `PUT /api/host/layout`: a control that changes the host needs its own
+  decision. (#22)
+
+### Fixed
+
+- **The non-loopback startup warning now says that login will not work.** It
+  named the real risk — the operator password crossing the network in
+  plaintext — but not the consequence an operator meets first. The session
+  cookie is `Secure` (JD-003), so a browser on a plain-HTTP origin discards
+  it: the login returns `200` and every request after it returns `401`, which
+  looks exactly like a rejected password. The two `401`s are told apart only
+  by their bodies. The README now says the same where it explains the port
+  forward. (#27)
 
 ## v0.6.0 — 2026-10-21
 

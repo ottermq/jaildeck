@@ -10,12 +10,14 @@ Dates are the tag date. Issue numbers link to
 [the tracker](https://github.com/ottermq/jaildeck/issues).
 
 The repository moved from Codeberg to GitHub on 2026-10-21. Issue and pull
-request numbers in v0.6.0 and earlier, including the audit cursor entry under
-Unreleased, refer to the archived
+request numbers in v0.6.0 and earlier, including the audit cursor entry in
+v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.7.0 — 2026-10-22
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.7.0)
 
 ### Breaking
 

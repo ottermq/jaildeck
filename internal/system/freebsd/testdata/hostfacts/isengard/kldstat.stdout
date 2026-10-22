@@ -1,0 +1,31 @@
+Id Refs Address                Size Name
+ 1  102 0xffffffff80200000  23520c8 kernel
+ 2    1 0xffffffff82553000   628ca0 zfs.ko
+ 3    1 0xffffffff83910000    201dc asmc.ko
+ 4    1 0xffffffff83931000     21e8 hcons.ko
+ 5    3 0xffffffff83934000     30a8 hidmap.ko
+ 6    1 0xffffffff83938000     21e8 hms.ko
+ 7    1 0xffffffff8393b000     3355 hmt.ko
+ 8    1 0xffffffff8393f000     22cc hconf.ko
+ 9    1 0xffffffff83942000     21e8 hsctrl.ko
+10    1 0xffffffff83945000     4250 ichsmb.ko
+11    1 0xffffffff8394a000     2178 smbus.ko
+12    1 0xffffffff8394d000    32fa8 if_bwn.ko
+13   14 0xffffffff83980000    38060 bhnd.ko
+14    2 0xffffffff839b9000     6760 gpiobus.ko
+15    4 0xffffffff839c0000     b260 bhndb.ko
+16    1 0xffffffff839cc000     5540 bhndb_pci.ko
+17    1 0xffffffff839d2000     2300 bhnd_pci_hostb.ko
+18    2 0xffffffff839d5000     3244 bhnd_pci.ko
+19    1 0xffffffff839d9000     21b0 bcma_bhndb.ko
+20    1 0xffffffff839dc000     50c8 bcma.ko
+21    1 0xffffffff839e2000     2364 siba_bhndb.ko
+22    1 0xffffffff839e5000     60c8 siba.ko
+23    1 0xffffffff839ec000     8e00 ioat.ko
+24    1 0xffffffff839f5000     5780 ng_ubt.ko
+25    7 0xffffffff839fb000     abb8 netgraph.ko
+26    3 0xffffffff83a06000     a330 ng_hci.ko
+27    4 0xffffffff83a11000     2670 ng_bluetooth.ko
+28    1 0xffffffff83a14000     e4a8 ng_l2cap.ko
+29    1 0xffffffff83a23000    1c0f8 ng_btsocket.ko
+30    1 0xffffffff83a40000     3918 ng_socket.ko

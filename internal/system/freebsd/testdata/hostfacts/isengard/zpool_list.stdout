@@ -1,0 +1,4 @@
+NAME     SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
+backup   464G  5.72G   458G        -         -     0%     1%  1.00x    ONLINE  -
+tank     928G  2.04G   926G        -         -     0%     0%  1.00x    ONLINE  -
+zroot    236G  2.61G   233G        -         -     0%     1%  1.00x    ONLINE  -

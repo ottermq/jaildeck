@@ -1,2 +1,0 @@
-grep: /etc/devfs.rules: No such file or directory
-grep: /etc/defaults/devfs.rules: Permission denied

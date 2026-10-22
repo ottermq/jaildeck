@@ -1,0 +1,9 @@
+bridge0: flags=8802<BROADCAST,SIMPLEX,MULTICAST> metric 0 mtu 1500
+	options=10<VLAN_HWTAGGING>
+	ether xx:xx:xx:xx:xx:xx
+	id xx:xx:xx:xx:xx:xx priority 32768 hellotime 2 fwddelay 15
+	maxage 20 holdcnt 6 proto rstp maxaddr 2000 timeout 1200
+	root id xx:xx:xx:xx:xx:xx priority 0 ifcost 0 port 0
+	bridge flags=0<>
+	groups: bridge
+	nd6 options=9<PERFORMNUD,IFDISABLED>

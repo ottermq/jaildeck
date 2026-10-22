@@ -38,6 +38,13 @@ fixtures are guesses, and guesses here produce a parser that is confidently wron
 the real thing — see "What the real output corrected" below, where a check that had
 already been specified turns out to report `fail` on two hosts that pass it.
 
+The hosts that are *not* the deployment target earn their place by reaching code paths
+`isengard` is not in **today**. `rohan`'s wrapped `dmesg` buffer is the clearest case:
+that bug is latent on isengard too and needs nothing but uptime to surface. `rivendell`'s
+missing sysctl oid is the same — jaildeck will never run on armv7, but "this oid does not
+exist" is reachable on any host. Pruning those two sets on the grounds that only isengard
+matters would delete the fixtures that cover isengard's future.
+
 ## Re-capturing
 
 `capture.sh` is read-only; it changes nothing on the host. It runs no pipelines either,
@@ -153,21 +160,36 @@ creation anyway.
 | `zfs_pool` | one pool, `zroot` | **three pools** — cannot be guessed | two pools, one named `media` | **no ZFS at all** | |
 | `zfs_layout` | **pass** | **pass** on `tank`; `backup` holds a decoy | **nothing provisioned** | **n/a** | |
 
-### Still missing
+### Not covered, by decision
 
-Two states need hardware nobody here has:
+Two states have no capture and are not going to get one, because both need hardware that
+does not exist on this network:
 
-- an **AMD** host: it reports `SVM:` instead of `VT-x:`. The three x86 hosts are all
-  Intel — Westmere, Haswell and a KVM guest — so nothing can produce `SVM:`.
-- `VT-x: (disabled in BIOS)`, which needs a machine whose firmware has VT-x switched off.
+- an **AMD** host, which reports `SVM:` instead of `VT-x:`. All three x86 hosts here are
+  Intel — Westmere, Haswell and a KVM guest.
+- `VT-x: (disabled in BIOS)`, which needs a machine whose firmware has it switched off.
 
-And the write path is still unwritten rather than unavailable: `zfs create` output, and PF
-with an actual ruleset loaded. (`pfctl -s rules` with PF enabled and no `pf.conf` is
-**exit 0 and empty stdout** — the no-rules case, not an error.)
+**This is an end state, not a backlog.** `isengard` is the deployment target, and the
+report is built to answer `unknown` — with no remedy attached — on anything it does not
+recognise. That is the correct answer on an unseen host: a wrong `fail` sends someone to
+reboot a working machine. If jaildeck runs somewhere these fixtures do not describe and
+gets a check wrong, the fix starts with an issue, not with a guess here.
 
-Everything else now has bytes. For the two above, and for anything a parser does not
-recognise, fall through to `unknown`: a report that says "I could not tell" is correct
-where a wrong `fail` sends someone to reboot a working machine.
+**`capture.sh` is the bug report.** It is read-only, runs on any FreeBSD host, and emits
+exactly the bytes needed to write the parser fix:
+
+```sh
+ssh <host> 'sh -s' < capture.sh
+scp -r <host>:/tmp/jd-capture ./<hostname>
+```
+
+Attaching that directory to the issue turns "it does not work on my machine" into a new
+fixture set and a one-commit fix. Without it, a report about an unrecognised host is
+guesswork again — which is the thing this directory exists to prevent.
+
+The write path is a different matter: still unwritten rather than unavailable. `zfs
+create` output, and PF with an actual ruleset loaded. (`pfctl -s rules` with PF enabled
+and no `pf.conf` is **exit 0 and empty stdout** — the no-rules case, not an error.)
 
 ## What the real output corrected
 

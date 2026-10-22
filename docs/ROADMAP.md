@@ -33,6 +33,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - Typed error mapping (`common.AppError`) from adapter failures to HTTP status codes
 - **Access Control** (v0.5.0): mandatory single-operator authentication, `jaildeck passwd`, named API tokens (JD-003)
 - **Web UI** (v0.6.0): embedded Svelte SPA with login, jails and operations views; API moved under `/api` (JD-015); audit log cursor paging
+- **Host Setup** (v0.7.0): host readiness report per capability, through the API and a Host page; ZFS pool discovery with `JAILDECK_ZFS_POOL`; `jaildeck init` and `PUT /api/host/layout` ensure the jails dataset layout, never clobbering one (JD-021)
 
 ---
 
@@ -107,6 +108,8 @@ Jails and operations are usable in a browser, served by the single binary.
 
 ## Milestone: Host Setup
 
+**Status:** done in v0.7.0. Kept for the record of what it set out to do, with two readiness bullets reworded: they named a *configured* bridge and devfs ruleset, and neither is a global setting — both are named per jail spec (JD-017, JD-018), so there is nothing to validate a configured value against. The report answers the host-level question instead.
+
 **Depends on:** nothing. **Precondition for:** Templates, Jail Provisioning. **★ Otter:** node preparation — a node is not usable until these checks pass.
 
 Goal: Jail Deck establishes the dataset layout its own jail and template work depends on, instead of assuming an operator followed a runbook first, and reports whether the host is ready for VNET jails, resource limits and VMs.
@@ -118,8 +121,8 @@ Goal: Jail Deck establishes the dataset layout its own jail and template work de
 - a host readiness report, **reported, never fixed**:
   - `kern.racct.enable` (rctl limits need it, and it takes a reboot to change)
   - `exec.timeout` set in the shared jail.conf defaults (JD-014)
-  - the configured jail bridge exists (JD-017)
-  - the configured devfs ruleset number exists (JD-018)
+  - at least one network bridge exists (JD-017 — a VNET jail names its own in its stanza)
+  - which devfs rulesets the kernel has loaded (JD-018 — a jail spec names one of those numbers)
   - VT-x with EPT and unrestricted guest (`UG`) in `dmesg`, for VMs (JD-019)
   - whether PF is loaded and enabled (JD-020)
 

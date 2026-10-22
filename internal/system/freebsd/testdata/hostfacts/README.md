@@ -54,6 +54,9 @@ Its one edit to a captured byte is to mask MAC addresses, which `dmesg` prints f
 NIC. Nothing any parser reads is affected and the substitution is in the script, so a
 re-capture reproduces these files.
 
+`capture-induced.sh` sits beside it for the states a host is not normally in. That one
+**changes the host** and restores it afterwards — see the induced sets below.
+
 ## Hosts
 
 ### `vm-15.1/` — 15.1-RELEASE-p3, a libvirt VM, captured 2026-10-22
@@ -66,8 +69,8 @@ It is a KVM guest, so its `VT-x` line describes nested virtualisation.
 
 ### `isengard/` — 15.1-RELEASE-p5, bare metal, captured 2026-10-22
 
-The real target host: a Xeon E5620, three pools, three running jails, reached over
-Tailscale. This is the authority for anything the VM cannot answer honestly — the `VT-x`
+The target host: a Xeon E5620, three pools, three running jails, reached over Tailscale.
+A laboratory like the VM — nothing on it is precious and it can be rebuilt. This is the authority for anything the VM cannot answer honestly — the `VT-x`
 line in particular — and it disagrees with the VM in three ways that matter:
 
 - **No `/etc/jail.conf`.** Only `/etc/jail.conf.d/{goodiesdb,ottermq,postgres}.conf`,
@@ -78,29 +81,26 @@ line in particular — and it disagrees with the VM in three ways that matter:
 - **`racct` is enabled**, from `kern.racct.enable=1` in `/boot/loader.conf`.
 
 Its layout is also not identical to the VM's: `tank/jails` has `containers` and
-`templates` but **no `media`**. Whatever #21 treats as a complete layout, the production
-host does not have all of it today.
+`templates` but **no `media`**. Whatever #21 treats as a complete layout, the
+bare-metal host does not have all of it today.
 
-### `vm-15.1-induced/` — states no host was in
+### `vm-15.1-induced/`, `isengard-induced/` — states no host was in
 
-Four checks had no passing capture anywhere, which left their success paths written
-against nothing. These were produced by changing the VM's state, capturing, and putting
-it back:
+Several checks had no passing capture anywhere, which left their success paths written
+against nothing: a bridge, PF loaded, PF enabled, `vmm` loaded. `capture-induced.sh`
+produces them — it loads the modules, creates the interfaces, captures, and puts
+everything back, printing what it restored. Both hosts are laboratories, so it is
+committed next to `capture.sh`, with the difference stated in its header: **this one
+changes the host.** Run it on a box whose state does not matter, and nowhere else.
 
 ```sh
-kldload pf                       # -> pf_loaded_*
-pfctl -e                         # -> pf_enabled_*
-ifconfig bridge0 create          # -> bridge_one_group
-ifconfig bridge1 create          # -> bridge_two_group, bridge_two_list, bridge_detail
-# then, in reverse: ifconfig bridge1 destroy; ifconfig bridge0 destroy
-#                   pfctl -d; kldunload pf
+ssh <host> 'sh -s' < capture-induced.sh
+scp -r <host>:/tmp/jd-capture-induced ./<hostname>-induced
 ```
 
-No script for this is committed on purpose. It mutates the host, and `kldload pf` plus
-`pfctl -e` on a box that matters is not something to leave lying around next to a
-read-only tool — `isengard` runs three jails on `ip4 = inherit`. Reproduce it by hand, on
-a VM, or not at all. MACs are masked here as in the other sets; `bridge0`'s is generated
-fresh at creation anyway.
+Both hosts produced the same shapes, including `vmm` — the VM's nested virtualisation is
+enough to load it. MACs are masked as in the other sets; a bridge is given one at
+creation anyway.
 
 ## Where each check stands
 
@@ -112,16 +112,15 @@ fresh at creation anyway.
 | `devfs_rulesets` | **pass** — `1 2 3 4 5` | **pass** — `1 2 3 4 5` | |
 | `cpu_virtualization` | **pass**, nested | **pass**, bare metal | |
 | `pf` | **fail** — `pf.ko` not loaded | **fail** — `pf.ko` not loaded | **pass** — disabled, then enabled |
-| `vms` | **fail** — `vmm` not loaded | **fail** — `vmm` not loaded | |
+| `vms` | **fail** — `vmm` not loaded | **fail** — `vmm` not loaded | **loaded** — `hw.vmm` appears |
 | `zfs_pool` | one pool, `zroot` | **three pools** — cannot be guessed | |
 | `zfs_layout` | **pass** — `zroot/jails` → `/usr/local/jails` | **pass** on `tank`; `backup` holds a decoy | |
 
 ### Still missing
 
 - any check in the **`unknown`** state other than a privilege error
-- `VT-x: (disabled in BIOS)`, and a host with no `VT-x` line at all — neither host can
-  produce these, and an AMD host would say `SVM:` instead
-- a loaded `vmm`, for JD-019
+- `VT-x: (disabled in BIOS)`, and a host with no `VT-x` line at all
+- an **AMD** host: it reports `SVM:` instead of `VT-x:`, and both hosts here are Intel
 - the write path: `zfs create` output, and PF with an actual ruleset loaded (`pfctl -s
   rules` with PF enabled and no `pf.conf` is **exit 0 and empty stdout**, which is the
   no-rules case, not an error)
@@ -176,6 +175,20 @@ before the captures existed:
   datasets that do exist. Hence `-r <pool>`, one call, match in Go.
 - **A pool's own mountpoint can be `none`** (`zroot`'s is, and every dataset on `backup`),
   so the layout check must not assume every dataset has a filesystem path.
+- **`hw.vmm` exists only while `vmm.ko` is loaded, and its vendor subtrees lie.** Before
+  the load, `sysctl hw.vmm` exits 1 with `sysctl: unknown oid 'hw.vmm'`. After it, the
+  tree carries `hw.vmm.vmx.*` **and** `hw.vmm.svm.*`/`hw.vmm.amdvi.*` on an Intel host,
+  where `hw.vmm.svm.features` reads `4294967295` — `0xffffffff`, a not-applicable
+  sentinel, not a feature mask. Never infer the CPU vendor from which subtree exists.
+  `hw.vmm.vmx.initialized: 1` is the real "bhyve can run here" signal, for JD-019 — but
+  loading a kernel module is a write, and the #1 report is read-only, so `dmesg` stays
+  the mechanism there.
+  The two interfaces agree, which is the best evidence these fixtures offer that the
+  `dmesg` parsing is right: `hw.vmm.vmx.cap.unrestricted_guest` is `1` on both hosts,
+  matching the `UG` token, and `hw.vmm.vmx.cap.virtual_interrupt_delivery` is `1` on the
+  VM and `0` on `isengard` — exactly where `VID` appears and does not appear in each
+  host's `VT-x` line. `/dev/vmm` does not exist until a VM is created, so its absence
+  says nothing.
 - **`rctl` states the `racct` remedy itself.** With racct off it exits 1 with
   `rctl: RACCT/RCTL present, but disabled; enable using kern.racct.enable=1 tunable`;
   with racct on and no rules configured it exits 0 with empty stdout. `sysctl -n

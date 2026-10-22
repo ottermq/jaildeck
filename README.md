@@ -160,7 +160,9 @@ A jail operation can legitimately run to its 150-second backstop, so an API clie
 a generous timeout. A `504` means Jail Deck stopped waiting — not that the jail failed to
 start, and not that it will not finish.
 
-`collections/insomnium.json` is an Insomnium collection covering every endpoint.
+`collections/insomnium.json` is an Insomnium collection covering every endpoint. `make
+check` fails if it stops doing so, in either direction — a route with no request, or a
+request whose route no longer exists — so it cannot quietly fall behind the API.
 
 ## Development
 

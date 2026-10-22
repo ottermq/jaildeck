@@ -141,6 +141,15 @@ creation anyway.
 - `VT-x: (disabled in BIOS)`, and a host with no `VT-x` line at all
 - an **AMD** host: it reports `SVM:` instead of `VT-x:`, and all three hosts here are
   Intel — Westmere, Haswell and a KVM guest. Nothing reachable can produce `SVM:`.
+- a **non-x86** host, where there is no `VT-x:`/`SVM:` line at all and the check does not
+  apply. `hw.machine_arch` is captured on every host so the gate can be written and
+  tested now; `rivendell`, a FreeBSD Raspberry Pi on the same LAN, would supply the
+  arm64 bytes but is not reachable from here yet (no Tailscale package for it, and its
+  ssh keys are elsewhere).
+- a host with **no ZFS pool at all**, which JD-006 makes a hard requirement and the
+  `zfs_pool` check therefore has to report on. `capture.sh` now has the branch for it —
+  it skips the per-pool probes and captures `zfs version` and `kldstat -m zfs` instead —
+  but no reachable host exercises that branch.
 - the write path: `zfs create` output, and PF with an actual ruleset loaded (`pfctl -s
   rules` with PF enabled and no `pf.conf` is **exit 0 and empty stdout**, which is the
   no-rules case, not an error)

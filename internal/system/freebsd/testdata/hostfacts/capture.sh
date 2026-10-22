@@ -41,6 +41,7 @@ cap version_u 'freebsd-version -u'
 cap version_k 'freebsd-version -k'
 cap uname 'uname -a'
 cap hw_model 'sysctl -n hw.model'
+cap hw_machine_arch 'sysctl -n hw.machine_arch'
 cap hw_ncpu 'sysctl -n hw.ncpu'
 cap kern_vm_guest 'sysctl -n kern.vm_guest'
 # Uptime, because it explains whether the live dmesg buffer has had time to wrap.
@@ -116,16 +117,27 @@ cap zfs_list_all_canmount 'zfs list -H -o name,mountpoint,canmount'
 
 # The probes below are about the SHAPE OF FAILURE, not about this host's layout, so any
 # existing pool will do and which one it is carries no meaning.
+#
+# A host may have NO pool at all -- JD-006 requires ZFS, and a host that does not meet
+# that requirement is exactly what the zfs_pool check has to report on. Without this
+# guard an empty pool list would splice an empty string into the commands below and
+# capture the shape of a malformed command instead of the shape of a missing dataset.
 PROBE=$(sed -n 1p "$OUT/zpool_list_h.stdout")
 echo "$PROBE" >"$OUT/PROBE_POOL"
 
-# THE IMPORTANT ONE. Naming several datasets where one is missing exits non-zero and
-# still prints the others on stdout -- a partial success that a parser treating exit != 0
-# as total failure gets wrong. Verified here rather than asserted.
-cap zfs_list_mixed "zfs list -H -o name,mountpoint $PROBE $PROBE/definitely-not-here"
-cap zfs_list_absent "zfs list -H -o name,mountpoint $PROBE/definitely-not-here"
+if [ -n "$PROBE" ]; then
+	# THE IMPORTANT ONE. Naming several datasets where one is missing exits non-zero and
+	# still prints the others on stdout -- a partial success that a parser treating
+	# exit != 0 as total failure gets wrong. Verified here rather than asserted.
+	cap zfs_list_mixed "zfs list -H -o name,mountpoint $PROBE $PROBE/definitely-not-here"
+	cap zfs_list_absent "zfs list -H -o name,mountpoint $PROBE/definitely-not-here"
+	cap zfs_get_mountpoint "zfs get -H -o value mountpoint $PROBE"
+else
+	echo "no pools on this host: skipped the per-pool probes" >"$OUT/PROBE_POOL"
+	cap zfs_version 'zfs version'
+	cap kldstat_zfs 'kldstat -m zfs'
+fi
 cap zfs_list_absent_pool 'zfs list -H -o name,mountpoint -r nosuchpool'
-cap zfs_get_mountpoint "zfs get -H -o value mountpoint $PROBE"
 
 # --- redaction ------------------------------------------------------------
 # dmesg names every NIC's MAC address. Nothing any parser reads is affected, and these

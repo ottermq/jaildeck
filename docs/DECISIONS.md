@@ -587,6 +587,46 @@ Read-only visibility comes first because it is useful immediately and costs noth
 
 ---
 
+## JD-021 — ZFS Pool Choice and the Jails Dataset Layout
+
+**Status:** Locked — 2026-10-22
+
+The layout is fixed: `<pool>/jails` mounted at `/usr/local/jails`, with `media`, `templates` and `containers` beneath it inheriting that mountpoint. JD-006 names those paths; this decision is about *which pool* and *what may be done to get there*.
+
+**Jail Deck never guesses the pool.**
+
+| Pools imported | `JAILDECK_ZFS_POOL` | Result |
+| --- | --- | --- |
+| one | unset | adopted |
+| several | unset | `zfs_pool` **fails**, listing them |
+| any | names a listed pool | that pool |
+| any | names an absent pool | `zfs_pool` **fails**, listing them |
+| none | — | `zfs_pool` **fails** |
+| no ZFS — `zpool` exits non-zero | — | `zfs_pool` **fails** (JD-006) |
+
+A pool that cannot be chosen **fails the check but never refuses startup**: listing and running jails do not need the layout, and a readiness report that cannot be reached is useless.
+
+**Ensure, never clobber.** `PUT /api/host/layout` and `jaildeck init` are one service method. It creates only what is missing, parent first, and when nothing is missing it runs no `zfs create` at all. Two states refuse the whole request before anything is created:
+
+- a layout dataset that **exists but is mounted somewhere else**
+- a **missing** layout dataset whose expected mountpoint **another dataset already holds** — on any pool, the selected one included
+
+Both are a `409` naming the datasets. Jail Deck will not move a mounted dataset, and will not mount a new one over an existing one: either may hold live jails. Checking the second costs a read of every pool whenever anything is missing, so one unreadable pool makes the layout check `unknown` rather than `fail` — losing the answer is the right way to fail here, because the wrong answer is "run `jaildeck init`".
+
+Afterwards the layout is read back and reported as the system shows it, not as the request believes it made it (JD-011).
+
+Two things are **not** detected. A plain directory with content at a layout path: the `HostSystem` port has no file-system method, and creating the parent would mount over it. And ZFS's own `mounted` state, as opposed to the `mountpoint` property — that needs real captured output before a parser is written for it.
+
+### Rationale
+
+Both rules come from the deployment host's own topology, not from caution in the abstract.
+
+`zpool list` prints `backup`, `tank`, `zroot` on isengard, and the first of those holds a `zrepl` replica of the jails layout with **every mountpoint `none`**. Adopting the first pool printed, or matching the layout on dataset names, reports a fully provisioned host whose datasets are mounted nowhere. Hence an explicit pool, and a layout check that compares mountpoints against **full dataset paths** — another host has a pool called `media`, which is also one of the layout's names.
+
+The mount-over refusal is the same host read the other way round. That replica lives at `backup/isengard/tank/jails`, not `backup/jails`, so with `JAILDECK_ZFS_POOL=backup` the layout is simply *missing* — and creating `backup/jails` with `mountpoint=/usr/local/jails` would have mounted it over the live `tank/jails`, where the jails actually run. The readiness remedy would have been `jaildeck init`: the report would have told the operator to do it.
+
+---
+
 ## Decision Policy
 
 Once a decision is marked as **Locked**, it should not be revisited without a clear technical or product justification. Architectural evolution is expected, but changes should be deliberate and documented rather than occurring through incremental drift.

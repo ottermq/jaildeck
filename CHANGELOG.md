@@ -100,6 +100,18 @@ versions' release notes stay there. GitHub numbering started again at #1.
   detected by `zpool` exiting non-zero, because the binary is in base even
   where ZFS is not. (#21)
 
+- **A Host page shows the readiness report**, capability by capability, each
+  with the checks that gate it. It leads with what is ready. An unavailable
+  capability is drawn neutral, not red, because a host without VT-x is a
+  perfectly good jail host. `unknown` is amber, like a timed-out operation,
+  and never reads as a failure: a wrapped `dmesg` buffer is not a CPU without
+  VT-x. Every remedy is shown exactly as the server sends it, as code to
+  paste into a root shell, with a copy button where the browser allows one.
+  The report is recomputed per request (JD-011), so the page keeps nothing
+  between loads and has a Refresh control instead. It has no button for
+  `PUT /api/host/layout`: a control that changes the host needs its own
+  decision. (#22)
+
 ## v0.6.0 — 2026-10-21
 
 [Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.6.0)

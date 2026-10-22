@@ -142,8 +142,8 @@ web/                             # Svelte frontend, part of the same Go module (
     lib/
       router.svelte.ts                 # hand-written SPA router: route state + navigate()
       services/api.ts                  # fetch wrapper: JSON, credentials, ApiError
-      stores/                          # auth, jails, operations — $state plus the API calls
-      pages/                           # Login, Shell, Jails, Operations, NotFound
+      stores/                          # auth, jails, operations, host — $state plus the API calls
+      pages/                           # Login, Shell, Jails, Operations, Host, NotFound
   dist/                           # Vite output, embedded into the binary. Only .gitkeep is
                                    # committed, so a clone without Node still builds
 ```

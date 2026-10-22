@@ -4,6 +4,7 @@ import { route, navigate, onNavClick } from '../router.svelte'
 import { auth, logout } from '../stores/auth.svelte'
 import Jails from './Jails.svelte'
 import Operations from './Operations.svelte'
+import Host from './Host.svelte'
 import NotFound from './NotFound.svelte'
 
 let sessionExpiry = $derived(
@@ -15,6 +16,7 @@ let sessionExpiry = $derived(
 const menu = [
     { label: 'Jails', href: '/jails' },
     { label: 'Operations', href: '/operations' },
+    { label: 'Host', href: '/host' },
 ]
 
 // The landing path is replaced rather than pushed: a push would make Back
@@ -60,6 +62,8 @@ onMount(() => {
             <Jails />
         {:else if route.path === '/operations'}
             <Operations />
+        {:else if route.path === '/host'}
+            <Host />
         {:else}
             <NotFound />
         {/if}

@@ -31,6 +31,7 @@ func TestLoadConfig(t *testing.T) {
 				StateDir: "/tmp/jaildeck-state",
 				AuditLog: "/tmp/jaildeck-audit.log",
 				LogLevel: "debug",
+				ZFSPool:  "tank",
 			},
 			want: Config{
 				Host:     "0.0.0.0",
@@ -39,6 +40,7 @@ func TestLoadConfig(t *testing.T) {
 				StateDir: "/tmp/jaildeck-state",
 				AuditLog: "/tmp/jaildeck-audit.log",
 				LogLevel: "debug",
+				ZFSPool:  "tank",
 			},
 		},
 	}
@@ -51,6 +53,7 @@ func TestLoadConfig(t *testing.T) {
 			t.Setenv("JAILDECK_STATE_DIR", tt.env.StateDir)
 			t.Setenv("JAILDECK_AUDIT_LOG", tt.env.AuditLog)
 			t.Setenv("JAILDECK_LOG_LEVEL", tt.env.LogLevel)
+			t.Setenv("JAILDECK_ZFS_POOL", tt.env.ZFSPool)
 
 			if got := LoadConfig(); got == nil || *got != tt.want {
 				t.Errorf("LoadConfig() = %+v, want %+v", got, tt.want)

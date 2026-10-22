@@ -9,6 +9,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/auth"
 	"github.com/ottermq/jaildeck/internal/config"
+	"github.com/ottermq/jaildeck/internal/host"
 	"github.com/ottermq/jaildeck/internal/jails"
 	"github.com/ottermq/jaildeck/internal/state"
 	"github.com/ottermq/jaildeck/internal/system"
@@ -21,6 +22,7 @@ var ErrNoCredential = errors.New("no operator credential configured")
 type App struct {
 	authHandler  *auth.AuthHandler
 	jailHandler  *jails.JailHandler
+	hostHandler  *host.HostHandler
 	auditHandler *audit.AuditHandler
 }
 
@@ -47,12 +49,21 @@ func New(cfg *config.Config) (*App, error) {
 	jailService := jails.NewJailService(jailSystem, auditLogger)
 	jailHandler := jails.NewJailHandler(jailService)
 
+	hostSystem, err := newHostSystem(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+
+	hostService := host.NewService(hostSystem, auditLogger, cfg.ZFSPool)
+	hostHandler := host.NewHostHandler(hostService)
+
 	auditService := audit.NewAuditService(auditLogger)
 	auditHandler := audit.NewAuditHandler(auditService)
 
 	return &App{
 		authHandler:  authHandler,
 		jailHandler:  jailHandler,
+		hostHandler:  hostHandler,
 		auditHandler: auditHandler,
 	}, nil
 }
@@ -97,6 +108,20 @@ func newJailSystem(adapter string) (jails.JailSystem, error) {
 		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
 	case config.AdapterFake:
 		return fake.NewJailSystem(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
+}
+
+// newHostSystem selects the host.HostSystem implementation named by adapter,
+// with the same refusal to guess as newJailSystem.
+func newHostSystem(adapter string) (host.HostSystem, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewHostSystem(), nil
 	default:
 		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

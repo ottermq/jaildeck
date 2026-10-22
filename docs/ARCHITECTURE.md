@@ -48,11 +48,13 @@ Node.js is required to *build* the frontend; it is never required to *run* jaild
 ```text
 cmd/
   jaildeck/
-    main.go                    # subcommand dispatch (version, passwd, token), then loads
+    main.go                    # subcommand dispatch (version, passwd, token, init), then loads
                                 # config, builds App, starts http.ListenAndServe
     passwd.go                  # `jaildeck passwd [--stdin]` — the only writer of the credential
     token.go                   # `jaildeck token add|list|revoke` — the token is printed to
                                 # stdout, everything else to stderr, so it can be redirected
+    init.go                    # `jaildeck init` — ensures the jails dataset layout; wired
+                                # directly, since it may run before any credential exists
 
 internal/
   app/
@@ -63,7 +65,7 @@ internal/
 
   config/
     config.go                   # env var loading: JAILDECK_HOST, PORT, ADAPTER, STATE_DIR,
-                                 # AUDIT_LOG, LOG_LEVEL
+                                 # AUDIT_LOG, LOG_LEVEL, ZFS_POOL
 
   buildinfo/
     buildinfo.go                # Version() — the -ldflags value, else Go's VCS stamp, else "dev"
@@ -75,6 +77,15 @@ internal/
     repository.go                  # JailSystem port (List/Start/Stop/Restart)
     handler.go                     # JailHandler
     routes.go                      # /jails, /jails/{name}/start|stop|restart
+
+  host/                         # bounded context: Host Setup — what the host can do, and why not
+    model.go                      # Check, Capability, Report; Layout, LayoutDataset, LayoutChange
+    repository.go                  # HostSystem port: raw facts (Sysctl, Bridges, Pools, Datasets, ...)
+                                   # and CreateDataset, its one write
+    service.go                     # every judgment and remedy, the capability rule, pool choice,
+                                   # and EnsureLayout — the one method behind PUT and `init`
+    handler.go                     # HostHandler
+    routes.go                      # /host/readiness, /host/layout (GET reads, PUT ensures)
 
   storage/                      # bounded context: Storage (ZFS + release templates) — not yet built
     dataset.go                    # Dataset, Snapshot entities/value objects
@@ -115,9 +126,13 @@ internal/
     freebsd/
       adapter.go, jail.go             # implements jails.JailSystem
       jail_helper.go                  # jail.conf / jail.conf.d parsing + merge (JD-004)
+      host.go                         # implements host.HostSystem — sysctl, ifconfig, devfs, dmesg.boot,
+                                      # pfctl, zpool list, zfs list and zfs create
+      testdata/hostfacts/             # real output from real hosts, which the host parsers are tested against
       storage_adapter.go              # (not yet built) implements storage.StorageSystem — zfs, fetch, freebsd-update, jexec
     fake/
       jail.go                          # in-memory JailSystem, for non-FreeBSD dev (JAILDECK_ADAPTER=fake)
+      host.go                          # in-memory HostSystem with a mixed readiness report
 
 web/                             # Svelte frontend, part of the same Go module (JD-015)
   embed.go                        # //go:embed all:dist + Assets() — the only Go file here
@@ -127,8 +142,8 @@ web/                             # Svelte frontend, part of the same Go module (
     lib/
       router.svelte.ts                 # hand-written SPA router: route state + navigate()
       services/api.ts                  # fetch wrapper: JSON, credentials, ApiError
-      stores/                          # auth, jails, operations — $state plus the API calls
-      pages/                           # Login, Shell, Jails, Operations, NotFound
+      stores/                          # auth, jails, operations, host — $state plus the API calls
+      pages/                           # Login, Shell, Jails, Operations, Host, NotFound
   dist/                           # Vite output, embedded into the binary. Only .gitkeep is
                                    # committed, so a clone without Node still builds
 ```

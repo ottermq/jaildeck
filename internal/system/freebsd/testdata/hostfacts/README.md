@@ -61,8 +61,9 @@ Its one edit to a captured byte is to mask MAC addresses, which `dmesg` prints f
 NIC. Nothing any parser reads is affected and the substitution is in the script, so a
 re-capture reproduces these files.
 
-`capture-induced.sh` sits beside it for the states a host is not normally in. That one
-**changes the host** and restores it afterwards — see the induced sets below.
+`capture-induced.sh` and `capture-layout-induced.sh` sit beside it for the states a host
+is not normally in. Those two **change the host** and restore it afterwards — see the
+induced sets below.
 
 ## Hosts
 
@@ -146,6 +147,21 @@ Both hosts produced the same shapes, including `vmm` — the VM's nested virtual
 enough to load it. MACs are masked as in the other sets; a bridge is given one at
 creation anyway.
 
+`vm-15.1-induced/` also holds the `layout_*` captures from `capture-layout-induced.sh`,
+run on 2026-10-22 for #21: the jails layout **partly there** (`media` renamed aside),
+**present but mounted elsewhere** (`media` at `/mnt/jd-capture-misplaced`), and the bytes
+of the write path — `zfs create` succeeding (exit 0, nothing on either stream) and
+failing because the dataset exists (exit 1,
+`cannot create 'zroot/jails/media': dataset already exists`). The script refuses to start
+unless the layout is complete, destroys only the replacement it created and marked, and
+renames the original back; on the VM the layout afterwards matched
+`vm-15.1/zfs_list_r_zroot` byte for byte. Laboratory hosts only, like the other one.
+
+```sh
+ssh <host> 'sh -s [pool]' < capture-layout-induced.sh
+scp '<host>:/tmp/jd-capture-layout-induced/layout_*' ./<hostname>-induced/
+```
+
 ## Where each check stands
 
 | Check | `vm-15.1` | `isengard` | `rohan` | `rivendell` | induced |
@@ -158,7 +174,7 @@ creation anyway.
 | `pf` | **fail** — not loaded | **fail** | **fail** | **fail** | **pass** — disabled, then enabled |
 | `vms` | **fail** — no `vmm` | **fail** | **fail** | **fail** — no `hw.vmm` oid | **loaded** — `hw.vmm` appears |
 | `zfs_pool` | one pool, `zroot` | **three pools** — cannot be guessed | two pools, one named `media` | **no ZFS at all** | |
-| `zfs_layout` | **pass** | **pass** on `tank`; `backup` holds a decoy | **nothing provisioned** | **n/a** | |
+| `zfs_layout` | **pass** | **pass** on `tank`; `backup` holds a decoy | **nothing provisioned** | **n/a** | **partial**, **misplaced** |
 
 ### Not covered, by decision
 
@@ -187,8 +203,9 @@ Attaching that directory to the issue turns "it does not work on my machine" int
 fixture set and a one-commit fix. Without it, a report about an unrecognised host is
 guesswork again — which is the thing this directory exists to prevent.
 
-The write path is a different matter: still unwritten rather than unavailable. `zfs
-create` output, and PF with an actual ruleset loaded. (`pfctl -s rules` with PF enabled
+The write path is a different matter: still unwritten rather than unavailable, except for
+`zfs create`, which `capture-layout-induced.sh` now covers. PF with an actual ruleset
+loaded is still missing. (`pfctl -s rules` with PF enabled
 and no `pf.conf` is **exit 0 and empty stdout** — the no-rules case, not an error.)
 
 ## What the real output corrected
@@ -218,8 +235,12 @@ before the captures existed:
   `none`**. A layout check matching on dataset names would call the backup pool a
   provisioned host. Hence an explicit `JAILDECK_ZFS_POOL`, a `zfs_pool` check that lists
   every pool and chooses none, and a layout check that compares **mountpoints**.
-  That replica is also #21's `409`: a dataset that exists where it should, mounted
-  somewhere it should not be.
+  That replica is **not** #21's `409`, though it looks like one: it lives at
+  `backup/isengard/tank/jails`, not at `backup/jails`, so with `JAILDECK_ZFS_POOL=backup`
+  the layout is simply missing. The danger there is the opposite one — creating
+  `backup/jails` would mount it over `tank/jails`, where the jails run — so the layout
+  check also refuses to create a dataset whose path another dataset already holds. The
+  real `409` is in `vm-15.1-induced/layout_misplaced_zfs_list`.
 - **The live `dmesg` buffer wraps; `/var/run/dmesg.boot` does not.** This changed the
   mechanism, not just the parsing. `rohan` has been up 83 days and its `VT-x:` line is
   **gone from `dmesg` altogether** — 0 matches in 1651 lines — while `dmesg.boot` still

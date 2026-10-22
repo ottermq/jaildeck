@@ -72,6 +72,34 @@ versions' release notes stay there. GitHub numbering started again at #1.
   every one has rulesets 1–5 loaded. And a host need not have `/etc/jail.conf`
   at all. (#1)
 
+- **`jaildeck init` and `PUT /api/host/layout` ensure the jails dataset
+  layout:** `<pool>/jails` mounted at `/usr/local/jails`, with `media`,
+  `templates` and `containers` beneath it. Both call one service method, and
+  `GET /api/host/layout` reports each dataset, its mountpoint and what is
+  missing. The readiness report gains `zfs_pool` and `zfs_layout`, which gate
+  `provisioning`.
+
+  Ensure, never clobber. When everything is in place no `zfs create` runs and
+  the answer is `200`. When something is missing, only that is created, parent
+  first, and the answer is `201`. A dataset that exists but is mounted
+  somewhere else is a `409` that names it, and nothing is created: fixing it
+  would move a mounted dataset that may hold live jails. So is a missing
+  dataset whose path another dataset already holds, on any pool, since
+  creating it would mount it over that one. `PUT` rather than
+  `POST` because the layout is a singleton whose desired state is fixed
+  (JD-016), and there is no `confirm` parameter because nothing here destroys.
+  Each `zfs create` is its own `create-dataset` audit entry, findable with
+  `?targets=<dataset>`.
+
+  A host with one pool has it adopted. With several, `JAILDECK_ZFS_POOL` must
+  name one, and until it does the `zfs_pool` check fails, listing the pools.
+  Jail Deck does not pick: on the deployment host the first pool printed holds
+  a replica of the layout, mounted nowhere. A missing or ambiguous pool fails
+  the check but never stops Jail Deck from starting, since listing and
+  running jails do not need the layout. A host with no ZFS fails it too,
+  detected by `zpool` exiting non-zero, because the binary is in base even
+  where ZFS is not. (#21)
+
 ## v0.6.0 — 2026-10-21
 
 [Release notes](https://codeberg.org/Otter-Labs/jaildeck/releases/tag/v0.6.0)

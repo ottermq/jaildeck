@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/host"
 	"github.com/ottermq/jaildeck/internal/system"
 )
@@ -46,16 +48,22 @@ func (r *replayRunner) Run(_ context.Context, cmd system.Command) (system.Comman
 		r.t.Errorf("adapter ran %q, which this test has no capture for", line)
 		return system.CommandResult{ExitCode: -1}, errors.New("no capture")
 	}
+	return replay(r.t, r.set, name)
+}
+
+// replay returns one capture as the real runner would have returned it.
+func replay(t *testing.T, set, name string) (system.CommandResult, error) {
+	t.Helper()
 	read := func(ext string) string {
-		b, err := os.ReadFile(fixture(r.set, name, ext))
+		b, err := os.ReadFile(fixture(set, name, ext))
 		if err != nil {
-			r.t.Fatalf("read capture: %v", err)
+			t.Fatalf("read capture: %v", err)
 		}
 		return string(b)
 	}
 	exit, err := strconv.Atoi(strings.TrimSpace(read("exit")))
 	if err != nil {
-		r.t.Fatalf("capture %s/%s: bad exit status: %v", r.set, name, err)
+		t.Fatalf("capture %s/%s: bad exit status: %v", set, name, err)
 	}
 	result := system.CommandResult{Stdout: read("stdout"), Stderr: read("stderr"), ExitCode: exit}
 	if exit != 0 {
@@ -77,6 +85,36 @@ var readinessCaptures = map[string]string{
 	"devfs rule showsets":         "devfs_rule_showsets",
 	"dmesg":                       "dmesg",
 	"pfctl -s info":               "pfctl_info",
+	"zpool list -H -o name":       "zpool_list_h",
+}
+
+// withPools adds the zfs list -r captures a set has for each pool named.
+func withPools(captures map[string]string, pools ...string) map[string]string {
+	all := make(map[string]string, len(captures)+len(pools))
+	for k, v := range captures {
+		all[k] = v
+	}
+	for _, pool := range pools {
+		all["zfs list -H -o name,mountpoint -r "+pool] = "zfs_list_r_" + pool
+	}
+	return all
+}
+
+// setPools is every pool set has a zfs list -r capture for.
+func setPools(t *testing.T, set string) []string {
+	t.Helper()
+	matches, err := filepath.Glob(fixture(set, "zfs_list_r_*", "exit"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pools := make([]string, 0, len(matches))
+	for _, m := range matches {
+		name := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(m), "zfs_list_r_"), ".exit")
+		if !strings.Contains(name, "_") { // zfs_list_r_zroot_jails lists a dataset, not a pool
+			pools = append(pools, name)
+		}
+	}
+	return pools
 }
 
 // hostAdapter builds an adapter reading set's captured files: jail.conf (absent
@@ -317,6 +355,11 @@ var readOnlyCommands = map[string]bool{
 	"devfs rule showsets":         true,
 	"dmesg":                       true,
 	"pfctl -s info":               true,
+	"zpool list -H -o name":       true,
+}
+
+func readOnly(line string) bool {
+	return readOnlyCommands[line] || strings.HasPrefix(line, "zfs list -H -o name,mountpoint -r ")
 }
 
 // TestReadinessAgainstHostFixtures runs the whole report over each captured
@@ -324,42 +367,64 @@ var readOnlyCommands = map[string]bool{
 func TestReadinessAgainstHostFixtures(t *testing.T) {
 	tests := []struct {
 		set       string
+		pool      string // JAILDECK_ZFS_POOL
 		noBootLog bool
 		want      map[host.CheckID]host.CheckStatus
 	}{
 		{set: "vm-15.1", want: map[host.CheckID]host.CheckStatus{
+			host.CheckZFSPool: host.CheckPass, host.CheckZFSLayout: host.CheckPass,
 			host.CheckRacct: host.CheckFail, host.CheckExecTimeout: host.CheckPass, host.CheckBridges: host.CheckFail,
 			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckPass, host.CheckPF: host.CheckFail,
 		}},
+		// Three pools and none configured: the report will not pick one.
 		{set: "isengard", want: map[host.CheckID]host.CheckStatus{
+			host.CheckZFSPool: host.CheckFail, host.CheckZFSLayout: host.CheckUnknown,
 			host.CheckRacct: host.CheckPass, host.CheckExecTimeout: host.CheckFail, host.CheckBridges: host.CheckFail,
 			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckPass, host.CheckPF: host.CheckFail,
 		}},
-		{set: "rohan", want: map[host.CheckID]host.CheckStatus{
+		{set: "isengard", pool: "tank", want: map[host.CheckID]host.CheckStatus{
+			host.CheckZFSPool: host.CheckPass, host.CheckZFSLayout: host.CheckPass,
+			host.CheckRacct: host.CheckPass, host.CheckExecTimeout: host.CheckFail, host.CheckBridges: host.CheckFail,
+			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckPass, host.CheckPF: host.CheckFail,
+		}},
+		// backup holds a replica of tank's layout, but not at backup/jails.
+		{set: "isengard", pool: "backup", want: map[host.CheckID]host.CheckStatus{
+			host.CheckZFSPool: host.CheckPass, host.CheckZFSLayout: host.CheckFail,
+			host.CheckRacct: host.CheckPass, host.CheckExecTimeout: host.CheckFail, host.CheckBridges: host.CheckFail,
+			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckPass, host.CheckPF: host.CheckFail,
+		}},
+		{set: "rohan", pool: "zroot", want: map[host.CheckID]host.CheckStatus{
+			host.CheckZFSPool: host.CheckPass, host.CheckZFSLayout: host.CheckFail,
 			host.CheckRacct: host.CheckFail, host.CheckExecTimeout: host.CheckFail, host.CheckBridges: host.CheckFail,
 			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckPass, host.CheckPF: host.CheckFail,
 		}},
 		// Without dmesg.boot, rohan's wrapped buffer can only say unknown.
-		{set: "rohan", noBootLog: true, want: map[host.CheckID]host.CheckStatus{
+		{set: "rohan", pool: "zroot", noBootLog: true, want: map[host.CheckID]host.CheckStatus{
+			host.CheckZFSPool: host.CheckPass, host.CheckZFSLayout: host.CheckFail,
 			host.CheckRacct: host.CheckFail, host.CheckExecTimeout: host.CheckFail, host.CheckBridges: host.CheckFail,
 			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckUnknown, host.CheckPF: host.CheckFail,
 		}},
+		// No ZFS at all: zpool exists and fails.
 		{set: "rivendell", want: map[host.CheckID]host.CheckStatus{
+			host.CheckZFSPool: host.CheckFail, host.CheckZFSLayout: host.CheckUnknown,
 			host.CheckRacct: host.CheckUnknown, host.CheckExecTimeout: host.CheckFail, host.CheckBridges: host.CheckFail,
 			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckUnknown, host.CheckPF: host.CheckFail,
 		}},
 	}
 	for _, tt := range tests {
 		name := tt.set
+		if tt.pool != "" {
+			name += " pool " + tt.pool
+		}
 		if tt.noBootLog {
 			name += " without dmesg.boot"
 		}
 		t.Run(name, func(t *testing.T) {
-			a, runner := hostAdapter(t, tt.set, readinessCaptures)
+			a, runner := hostAdapter(t, tt.set, withPools(readinessCaptures, setPools(t, tt.set)...))
 			if tt.noBootLog {
 				a.dmesgBoot = filepath.Join(t.TempDir(), "absent")
 			}
-			report, err := host.NewService(a).Readiness(context.Background())
+			report, err := host.NewService(a, nil, tt.pool).Readiness(context.Background())
 			if err != nil {
 				t.Fatalf("Readiness() error = %v", err)
 			}
@@ -377,10 +442,224 @@ func TestReadinessAgainstHostFixtures(t *testing.T) {
 				t.Errorf("statuses = %v\nwant       %v", got, tt.want)
 			}
 			for _, line := range runner.ran {
-				if !readOnlyCommands[line] {
+				if !readOnly(line) {
 					t.Errorf("readiness ran %q, which is not on the read-only list", line)
 				}
 			}
 		})
+	}
+}
+
+func TestPoolsFixtures(t *testing.T) {
+	tests := []struct {
+		set  string
+		want []string
+	}{
+		{"vm-15.1", []string{"zroot"}},
+		{"isengard", []string{"backup", "tank", "zroot"}},
+		{"rohan", []string{"media", "zroot"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.set, func(t *testing.T) {
+			runner := &replayRunner{t: t, set: tt.set, captures: readinessCaptures}
+			got, err := NewAdapter(runner).Pools(context.Background())
+			if err != nil || !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Pools() = %v, %v; want %v", got, err, tt.want)
+			}
+		})
+	}
+
+	// No ZFS: zpool is there and exits 1. The service needs the exit status to
+	// tell that from a timeout, so it must survive as a CommandError.
+	t.Run("rivendell", func(t *testing.T) {
+		runner := &replayRunner{t: t, set: "rivendell", captures: readinessCaptures}
+		got, err := NewAdapter(runner).Pools(context.Background())
+		var cmdErr *system.CommandError
+		if got != nil || !errors.As(err, &cmdErr) || cmdErr.Result.ExitCode != 1 {
+			t.Fatalf("Pools() = %v, %v; want a CommandError with exit 1", got, err)
+		}
+		if !strings.Contains(err.Error(), "Failed to load zfs module") {
+			t.Errorf("error = %q, want zpool's own message", err)
+		}
+	})
+}
+
+func TestDatasetsFixtures(t *testing.T) {
+	tests := []struct {
+		set, pool string
+		count     int
+		want      host.Dataset // one line the parse must have produced
+	}{
+		{"vm-15.1", "zroot", 21, host.Dataset{Name: "zroot/jails", Mountpoint: "/usr/local/jails"}},
+		{"vm-15.1", "zroot", 21, host.Dataset{Name: "zroot", Mountpoint: "none"}},
+		{"isengard", "tank", 9, host.Dataset{Name: "tank/jails/media", Mountpoint: "/usr/local/jails/media"}},
+		{"isengard", "backup", 23, host.Dataset{Name: "backup/isengard/tank/jails", Mountpoint: "none"}},
+		{"isengard", "zroot", 15, host.Dataset{Name: "zroot", Mountpoint: "/zroot"}},
+		{"rohan", "media", 7, host.Dataset{Name: "media/.incoming", Mountpoint: "/srv/media/.incoming"}},
+		{"rohan", "zroot", 20, host.Dataset{Name: "zroot/srv", Mountpoint: "/srv"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.set+"/"+tt.pool, func(t *testing.T) {
+			runner := &replayRunner{t: t, set: tt.set, captures: withPools(nil, tt.pool)}
+			got, err := NewAdapter(runner).Datasets(context.Background(), tt.pool)
+			if err != nil || len(got) != tt.count || !slices.Contains(got, tt.want) {
+				t.Errorf("Datasets() = %d datasets, %v; want %d including %+v", len(got), err, tt.count, tt.want)
+			}
+		})
+	}
+
+	t.Run("pool gone", func(t *testing.T) {
+		runner := &replayRunner{t: t, set: "vm-15.1",
+			captures: map[string]string{"zfs list -H -o name,mountpoint -r nosuchpool": "zfs_list_absent_pool"}}
+		if got, err := NewAdapter(runner).Datasets(context.Background(), "nosuchpool"); err == nil {
+			t.Errorf("Datasets() = %v, nil; want an error", got)
+		}
+	})
+}
+
+// step is one command an ensure is expected to run, and the capture that
+// answers it.
+type step struct {
+	command   string
+	set, name string
+}
+
+// TestEnsureLayoutCommands drives the whole ensure over captured bytes, the
+// writes included: vm-15.1-induced holds the layout partly there and moved
+// aside, and what zfs create prints when it succeeds and when the dataset
+// already exists (capture-layout-induced.sh).
+func TestEnsureLayoutCommands(t *testing.T) {
+	const zpool, zfsList = "zpool list -H -o name", "zfs list -H -o name,mountpoint -r zroot"
+	reads := func(set, list string) []step {
+		return []step{{zpool, "vm-15.1", "zpool_list_h"}, {zfsList, set, list}}
+	}
+	complete := reads("vm-15.1", "zfs_list_r_zroot")
+	partial := reads("vm-15.1-induced", "layout_partial_zfs_list")
+	createMedia := step{"zfs create zroot/jails/media", "vm-15.1-induced", "layout_zfs_create"}
+
+	tests := []struct {
+		name        string
+		steps       []step
+		wantCreated []string
+		wantErr     string
+	}{
+		// Complete: the reads, and not one zfs create.
+		{name: "complete", steps: complete, wantCreated: []string{}},
+		// media missing: only media is created, bare, and the layout is read
+		// again — now complete.
+		{name: "partial", steps: slices.Concat(partial, []step{createMedia}, complete),
+			wantCreated: []string{"zroot/jails/media"}},
+		// media moved: refused before anything is created.
+		{name: "misplaced", steps: reads("vm-15.1-induced", "layout_misplaced_zfs_list"),
+			wantErr: "zroot/jails/media is mounted at /mnt/jd-capture-misplaced, expected /usr/local/jails/media"},
+		// The dataset appeared between the read and the create.
+		{name: "create races", steps: slices.Concat(partial,
+			[]step{{"zfs create zroot/jails/media", "vm-15.1-induced", "layout_zfs_create_exists"}}),
+			wantErr: "dataset already exists"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ran := 0
+			runner := runnerFunc(func(_ context.Context, cmd system.Command) (system.CommandResult, error) {
+				if ran >= len(tt.steps) {
+					t.Fatalf("ran %q after the last expected command", cmd)
+				}
+				want := tt.steps[ran]
+				ran++
+				if got := cmd.String(); got != want.command {
+					t.Fatalf("command %d = %q, want %q", ran, got, want.command)
+				}
+				return replay(t, want.set, want.name)
+			})
+			logger := audit.NewFileLogger(filepath.Join(t.TempDir(), "audit.log"))
+			change, err := host.NewService(NewAdapter(runner), logger, "").EnsureLayout(context.Background())
+			if ran != len(tt.steps) {
+				t.Errorf("ran %d commands, want %d", ran, len(tt.steps))
+			}
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("EnsureLayout() error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("EnsureLayout() error = %v", err)
+			}
+			if !slices.Equal(change.Created, tt.wantCreated) || len(change.Missing) != 0 {
+				t.Errorf("change = %+v, want created %v and nothing missing", change, tt.wantCreated)
+			}
+		})
+	}
+}
+
+// Captured on rohan, which has no jails dataset on either pool: the parent is
+// created with the mountpoint and the children bare. The argument arrays are
+// compared whole, since two arrays can join to the same string.
+func TestEnsureLayoutCreatesParentFirst(t *testing.T) {
+	var creates [][]string
+	runner := runnerFunc(func(ctx context.Context, cmd system.Command) (system.CommandResult, error) {
+		if cmd.Name == "zfs" && cmd.Args[0] == "create" {
+			creates = append(creates, slices.Clone(cmd.Args))
+			return replay(t, "vm-15.1-induced", "layout_zfs_create")
+		}
+		// zfs list -r media too: with the parent missing, the other pool is
+		// checked for a dataset already mounted at /usr/local/jails.
+		return (&replayRunner{t: t, set: "rohan", captures: withPools(readinessCaptures, "zroot", "media")}).Run(ctx, cmd)
+	})
+	logger := audit.NewFileLogger(filepath.Join(t.TempDir(), "audit.log"))
+	if _, err := host.NewService(NewAdapter(runner), logger, "zroot").EnsureLayout(context.Background()); err != nil {
+		t.Fatalf("EnsureLayout() error = %v", err)
+	}
+	want := [][]string{
+		{"create", "-o", "mountpoint=/usr/local/jails", "zroot/jails"},
+		{"create", "zroot/jails/media"},
+		{"create", "zroot/jails/templates"},
+		{"create", "zroot/jails/containers"},
+	}
+	if !reflect.DeepEqual(creates, want) {
+		t.Errorf("zfs args = %q, want %q", creates, want)
+	}
+	entries, err := logger.Recent(context.Background(), 0, audit.Filter{Operation: host.OperationCreateDataset})
+	if err != nil || len(entries) != 4 {
+		t.Errorf("audit entries = %d, %v; want one per zfs create", len(entries), err)
+	}
+}
+
+// isengard with JAILDECK_ZFS_POOL=backup: backup/jails does not exist, and
+// creating it would mount it over tank/jails, where the jails actually run.
+// The replica under backup/isengard/tank is not at backup/jails, so this is
+// not a misplaced dataset but mountpoints another pool already holds.
+func TestEnsureLayoutRefusesToMountOverAnotherPool(t *testing.T) {
+	newService := func(runner *replayRunner) *host.Service {
+		logger := audit.NewFileLogger(filepath.Join(t.TempDir(), "audit.log"))
+		return host.NewService(NewAdapter(runner), logger, "backup")
+	}
+	captures := withPools(readinessCaptures, setPools(t, "isengard")...)
+
+	runner := &replayRunner{t: t, set: "isengard", captures: captures}
+	_, err := newService(runner).EnsureLayout(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "backup/jails would be mounted at /usr/local/jails, which tank/jails already holds") {
+		t.Fatalf("EnsureLayout() error = %v, want a refusal naming tank/jails", err)
+	}
+	for _, line := range runner.ran {
+		if !readOnly(line) {
+			t.Errorf("ran %q before refusing", line)
+		}
+	}
+
+	a, _ := hostAdapter(t, "isengard", captures)
+	report, err := host.NewService(a, nil, "backup").Readiness(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range report.Checks {
+		if c.ID != host.CheckZFSLayout {
+			continue
+		}
+		// The remedy must not be jaildeck init, which is what would do it.
+		if c.Status != host.CheckFail || !strings.HasPrefix(c.Observed, "backup/jails would be mounted at /usr/local/jails, which tank/jails already holds") ||
+			!strings.Contains(c.Remedy, "one of: tank") {
+			t.Errorf("zfs_layout = %+v", c)
+		}
 	}
 }

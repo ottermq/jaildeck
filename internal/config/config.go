@@ -26,6 +26,9 @@ type Config struct {
 	StateDir string
 	AuditLog string
 	LogLevel string
+	// ZFSPool names the pool holding the jails layout. Empty means discover,
+	// which adopts a pool only when it is the only one.
+	ZFSPool string
 }
 
 func LoadConfig() *Config {
@@ -38,6 +41,7 @@ func LoadConfig() *Config {
 		StateDir: getEnv("JAILDECK_STATE_DIR", "/var/db/jaildeck"),
 		AuditLog: getEnv("JAILDECK_AUDIT_LOG", "/var/log/jaildeck/audit.log"),
 		LogLevel: getEnv("JAILDECK_LOG_LEVEL", "info"),
+		ZFSPool:  getEnv("JAILDECK_ZFS_POOL", ""),
 	}
 }
 

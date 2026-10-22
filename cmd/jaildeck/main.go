@@ -29,6 +29,13 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "init":
+			cfg := config.LoadConfig()
+			if err := runInit(os.Args[2:], os.Stdout, os.Stderr, cfg); err != nil {
+				fmt.Fprintln(os.Stderr, "jaildeck init:", err)
+				os.Exit(1)
+			}
+			return
 		case "token":
 			cfg := config.LoadConfig()
 			if err := runToken(os.Args[2:], os.Stdout, os.Stderr, cfg.StateDir); err != nil {

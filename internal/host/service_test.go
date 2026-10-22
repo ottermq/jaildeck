@@ -8,7 +8,18 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/ottermq/jaildeck/internal/audit"
 )
+
+type fakeLogger struct{ entries []audit.Entry }
+
+func (f *fakeLogger) Log(_ context.Context, e audit.Entry) error {
+	f.entries = append(f.entries, e)
+	return nil
+}
+
+var _ audit.Logger = (*fakeLogger)(nil)
 
 // stubSystem answers with the facts a test sets, and runs nothing. Test
 // doubles live here rather than in internal/system/fake, which imports this
@@ -26,8 +37,20 @@ type stubSystem struct {
 	cpuErr      error
 	pf          PFStatus
 	pfErr       error
+	pools       []string
+	poolsErr    error
+	datasets    map[string][]Dataset
+	datasetsErr error
+	createErr   map[string]error
 
 	cpuAsked bool
+	// creates records every CreateDataset call, in order.
+	creates []createCall
+}
+
+type createCall struct {
+	name  string
+	props map[string]string
 }
 
 func (s *stubSystem) Sysctl(_ context.Context, name string) (string, error) {
@@ -48,6 +71,27 @@ func (s *stubSystem) CPUVirtualization(context.Context) (CPUVirtualization, erro
 	return s.cpu, s.cpuErr
 }
 func (s *stubSystem) PFStatus(context.Context) (PFStatus, error) { return s.pf, s.pfErr }
+func (s *stubSystem) Pools(context.Context) ([]string, error)    { return s.pools, s.poolsErr }
+func (s *stubSystem) Datasets(_ context.Context, pool string) ([]Dataset, error) {
+	return s.datasets[pool], s.datasetsErr
+}
+
+// CreateDataset records the call and, unless told to fail, adds the dataset
+// with the mountpoint zfs would give it.
+func (s *stubSystem) CreateDataset(_ context.Context, name string, props map[string]string) (DatasetResult, error) {
+	s.creates = append(s.creates, createCall{name, props})
+	result := DatasetResult{Dataset: name, Command: "zfs create " + name}
+	if err := s.createErr[name]; err != nil {
+		return result, err
+	}
+	pool, _, _ := strings.Cut(name, "/")
+	mountpoint := props["mountpoint"]
+	if mountpoint == "" {
+		mountpoint = jailsMountpoint + strings.TrimPrefix(name, pool+"/jails")
+	}
+	s.datasets[pool] = append(s.datasets[pool], Dataset{Name: name, Mountpoint: mountpoint})
+	return result, nil
+}
 
 var _ HostSystem = (*stubSystem)(nil)
 
@@ -60,7 +104,24 @@ func readyHost() *stubSystem {
 		rulesets: []DevfsRuleset{{Name: "devfsrules_jail", Number: 4}},
 		cpu:      CPUVirtualization{Reported: true, Features: []string{"PAT", "EPT", "UG", "VPID"}},
 		pf:       PFStatus{Loaded: true, Enabled: true},
+		pools:    []string{"tank"},
+		datasets: map[string][]Dataset{"tank": fullLayout("tank")},
 	}
+}
+
+func fullLayout(pool string) []Dataset {
+	return []Dataset{
+		{Name: pool, Mountpoint: "none"},
+		{Name: pool + "/jails", Mountpoint: "/usr/local/jails"},
+		{Name: pool + "/jails/containers", Mountpoint: "/usr/local/jails/containers"},
+		{Name: pool + "/jails/containers/web", Mountpoint: "/usr/local/jails/containers/web"},
+		{Name: pool + "/jails/media", Mountpoint: "/usr/local/jails/media"},
+		{Name: pool + "/jails/templates", Mountpoint: "/usr/local/jails/templates"},
+	}
+}
+
+func newTestService(system HostSystem) *Service {
+	return NewService(system, &fakeLogger{}, "")
 }
 
 func checkByID(t *testing.T, r Report, id CheckID) Check {
@@ -183,7 +244,7 @@ func TestReadinessChecks(t *testing.T) {
 			if tt.modify != nil {
 				tt.modify(system)
 			}
-			report, err := NewService(system).Readiness(context.Background())
+			report, err := newTestService(system).Readiness(context.Background())
 			if err != nil {
 				t.Fatalf("Readiness() error = %v", err)
 			}
@@ -212,7 +273,7 @@ func TestReadinessChecks(t *testing.T) {
 func TestReadinessSkipsVTxOffX86(t *testing.T) {
 	system := readyHost()
 	system.sysctl[archOID] = "armv7"
-	if _, err := NewService(system).Readiness(context.Background()); err != nil {
+	if _, err := newTestService(system).Readiness(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if system.cpuAsked {
@@ -224,7 +285,7 @@ func TestReadinessShape(t *testing.T) {
 	system := readyHost()
 	system.sysctl[racctOID] = "0"
 	system.cpu = CPUVirtualization{}
-	report, err := NewService(system).Readiness(context.Background())
+	report, err := newTestService(system).Readiness(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +294,8 @@ func TestReadinessShape(t *testing.T) {
 	for _, c := range report.Checks {
 		gotChecks = append(gotChecks, c.ID)
 	}
-	wantChecks := []CheckID{CheckRacct, CheckExecTimeout, CheckBridges, CheckDevfsRulesets, CheckCPUVirtualization, CheckPF}
+	wantChecks := []CheckID{CheckRacct, CheckExecTimeout, CheckBridges, CheckDevfsRulesets,
+		CheckZFSPool, CheckZFSLayout, CheckCPUVirtualization, CheckPF}
 	if !slices.Equal(gotChecks, wantChecks) {
 		t.Errorf("checks = %v, want %v", gotChecks, wantChecks)
 	}
@@ -245,7 +307,7 @@ func TestReadinessShape(t *testing.T) {
 		CapabilityJails:        {CapabilityReady, []CheckID{CheckExecTimeout}},
 		CapabilityLimits:       {CapabilityUnavailable, []CheckID{CheckRacct}},
 		CapabilityVNET:         {CapabilityReady, []CheckID{CheckBridges}},
-		CapabilityProvisioning: {CapabilityReady, []CheckID{CheckDevfsRulesets}},
+		CapabilityProvisioning: {CapabilityReady, []CheckID{CheckDevfsRulesets, CheckZFSPool, CheckZFSLayout}},
 		CapabilityVMs:          {CapabilityUnknown, []CheckID{CheckCPUVirtualization}},
 		CapabilityFirewall:     {CapabilityReady, []CheckID{CheckPF}},
 	}
@@ -266,7 +328,7 @@ func TestReadinessShape(t *testing.T) {
 // Every slice in the response marshals to [], never null: clients iterate
 // them without a guard.
 func TestReadinessJSONHasNoNulls(t *testing.T) {
-	report, err := NewService(readyHost()).Readiness(context.Background())
+	report, err := newTestService(readyHost()).Readiness(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +347,7 @@ func TestReadinessJSONHasNoNulls(t *testing.T) {
 func TestReadinessReturnsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := NewService(readyHost()).Readiness(ctx); !errors.Is(err, context.Canceled) {
+	if _, err := newTestService(readyHost()).Readiness(ctx); !errors.Is(err, context.Canceled) {
 		t.Errorf("Readiness() error = %v, want context.Canceled", err)
 	}
 }

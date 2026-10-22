@@ -54,7 +54,7 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	hostService := host.NewService(hostSystem)
+	hostService := host.NewService(hostSystem, auditLogger, cfg.ZFSPool)
 	hostHandler := host.NewHostHandler(hostService)
 
 	auditService := audit.NewAuditService(auditLogger)

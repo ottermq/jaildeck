@@ -33,6 +33,21 @@ type PFStatus struct {
 	Enabled bool
 }
 
+// Dataset is one line of zfs list. Mountpoint is the property's value, which
+// can be "none": a pool's own root often is, and so is every dataset on a
+// replication target.
+type Dataset struct {
+	Name       string
+	Mountpoint string
+}
+
+// DatasetResult carries the command that ran, so the service can audit what
+// actually happened, as jails.OperationResult does.
+type DatasetResult struct {
+	Dataset string
+	Command string
+}
+
 // HostSystem observes the host. Every method returns what the host said and
 // nothing more: pass, fail and the remedies are the service's, so the rules
 // test on any OS without a FreeBSD host or a faked command.
@@ -46,4 +61,12 @@ type HostSystem interface {
 	DevfsRulesets(ctx context.Context) ([]DevfsRuleset, error)
 	CPUVirtualization(ctx context.Context) (CPUVirtualization, error)
 	PFStatus(ctx context.Context) (PFStatus, error)
+
+	// Pools lists the imported pools in the order zpool prints them. A host
+	// without ZFS does not lack the binary: zpool exits non-zero.
+	Pools(ctx context.Context) ([]string, error)
+	// Datasets lists pool and everything beneath it.
+	Datasets(ctx context.Context, pool string) ([]Dataset, error)
+	// CreateDataset is the only method that writes. props become -o options.
+	CreateDataset(ctx context.Context, name string, props map[string]string) (DatasetResult, error)
 }

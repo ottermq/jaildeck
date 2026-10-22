@@ -48,11 +48,13 @@ Node.js is required to *build* the frontend; it is never required to *run* jaild
 ```text
 cmd/
   jaildeck/
-    main.go                    # subcommand dispatch (version, passwd, token), then loads
+    main.go                    # subcommand dispatch (version, passwd, token, init), then loads
                                 # config, builds App, starts http.ListenAndServe
     passwd.go                  # `jaildeck passwd [--stdin]` — the only writer of the credential
     token.go                   # `jaildeck token add|list|revoke` — the token is printed to
                                 # stdout, everything else to stderr, so it can be redirected
+    init.go                    # `jaildeck init` — ensures the jails dataset layout; wired
+                                # directly, since it may run before any credential exists
 
 internal/
   app/
@@ -63,7 +65,7 @@ internal/
 
   config/
     config.go                   # env var loading: JAILDECK_HOST, PORT, ADAPTER, STATE_DIR,
-                                 # AUDIT_LOG, LOG_LEVEL
+                                 # AUDIT_LOG, LOG_LEVEL, ZFS_POOL
 
   buildinfo/
     buildinfo.go                # Version() — the -ldflags value, else Go's VCS stamp, else "dev"
@@ -77,11 +79,13 @@ internal/
     routes.go                      # /jails, /jails/{name}/start|stop|restart
 
   host/                         # bounded context: Host Setup — what the host can do, and why not
-    model.go                      # Check, Capability, Report; pass|fail|unknown, ready|unavailable|unknown
-    repository.go                  # HostSystem port: raw facts only (Sysctl, Bridges, DevfsRulesets, ...)
-    service.go                     # every judgment and remedy, and the capability derivation rule
+    model.go                      # Check, Capability, Report; Layout, LayoutDataset, LayoutChange
+    repository.go                  # HostSystem port: raw facts (Sysctl, Bridges, Pools, Datasets, ...)
+                                   # and CreateDataset, its one write
+    service.go                     # every judgment and remedy, the capability rule, pool choice,
+                                   # and EnsureLayout — the one method behind PUT and `init`
     handler.go                     # HostHandler
-    routes.go                      # /host/readiness
+    routes.go                      # /host/readiness, /host/layout (GET reads, PUT ensures)
 
   storage/                      # bounded context: Storage (ZFS + release templates) — not yet built
     dataset.go                    # Dataset, Snapshot entities/value objects
@@ -122,7 +126,8 @@ internal/
     freebsd/
       adapter.go, jail.go             # implements jails.JailSystem
       jail_helper.go                  # jail.conf / jail.conf.d parsing + merge (JD-004)
-      host.go                         # implements host.HostSystem — sysctl, ifconfig, devfs, dmesg.boot, pfctl
+      host.go                         # implements host.HostSystem — sysctl, ifconfig, devfs, dmesg.boot,
+                                      # pfctl, zpool list, zfs list and zfs create
       testdata/hostfacts/             # real output from real hosts, which the host parsers are tested against
       storage_adapter.go              # (not yet built) implements storage.StorageSystem — zfs, fetch, freebsd-update, jexec
     fake/

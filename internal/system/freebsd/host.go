@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -27,9 +28,9 @@ var defaultDevfsRulesFiles = []string{"/etc/defaults/devfs.rules", "/etc/devfs.r
 
 var devfsRulesetHeaderRE = regexp.MustCompile(`^\[([^=\]]+)=(\d+)\]`)
 
-// readHost runs a read-only command. A non-zero exit becomes a CommandError
+// runHost runs a host command. A non-zero exit becomes a CommandError
 // carrying the command's own stderr, which is what an unknown check quotes.
-func (a *Adapter) readHost(ctx context.Context, cmd system.Command) (system.CommandResult, error) {
+func (a *Adapter) runHost(ctx context.Context, cmd system.Command) (system.CommandResult, error) {
 	result, err := a.runner.Run(ctx, cmd)
 	if err != nil {
 		if msg := strings.TrimSpace(result.Stderr); msg != "" {
@@ -47,7 +48,7 @@ func exited(result system.CommandResult, err error) bool {
 }
 
 func (a *Adapter) Sysctl(ctx context.Context, name string) (string, error) {
-	result, err := a.readHost(ctx, system.Command{Name: "sysctl", Args: []string{"-n", name}})
+	result, err := a.runHost(ctx, system.Command{Name: "sysctl", Args: []string{"-n", name}})
 	if err != nil {
 		if exited(result, err) && strings.Contains(result.Stderr, "unknown oid") {
 			return "", fmt.Errorf("%w: %w", host.ErrUnknownOID, err)
@@ -65,7 +66,7 @@ func (a *Adapter) JailConfDefaults(ctx context.Context) (map[string]string, erro
 // Bridges lists the interfaces in the bridge group. No bridges is exit 0 with
 // nothing on stdout, which is an answer, not an error.
 func (a *Adapter) Bridges(ctx context.Context) ([]string, error) {
-	result, err := a.readHost(ctx, system.Command{Name: "ifconfig", Args: []string{"-g", "bridge"}})
+	result, err := a.runHost(ctx, system.Command{Name: "ifconfig", Args: []string{"-g", "bridge"}})
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +76,7 @@ func (a *Adapter) Bridges(ctx context.Context) ([]string, error) {
 // DevfsRulesets asks the kernel which rulesets are loaded. It is root-only:
 // unprivileged, showsets exits 1 and that is an error, never "none".
 func (a *Adapter) DevfsRulesets(ctx context.Context) ([]host.DevfsRuleset, error) {
-	result, err := a.readHost(ctx, system.Command{Name: "devfs", Args: []string{"rule", "showsets"}})
+	result, err := a.runHost(ctx, system.Command{Name: "devfs", Args: []string{"rule", "showsets"}})
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +139,7 @@ func parseDevfsRulesetNames(content string) map[int]string {
 func (a *Adapter) CPUVirtualization(ctx context.Context) (host.CPUVirtualization, error) {
 	content, err := os.ReadFile(a.dmesgBoot)
 	if errors.Is(err, os.ErrNotExist) {
-		result, runErr := a.readHost(ctx, system.Command{Name: "dmesg"})
+		result, runErr := a.runHost(ctx, system.Command{Name: "dmesg"})
 		if runErr != nil {
 			return host.CPUVirtualization{}, runErr
 		}
@@ -183,7 +184,7 @@ func parseVTx(text string) host.CPUVirtualization {
 // whether PF is enabled or disabled, so the exit status says only whether
 // /dev/pf exists; the Status field says the rest.
 func (a *Adapter) PFStatus(ctx context.Context) (host.PFStatus, error) {
-	result, err := a.readHost(ctx, system.Command{Name: "pfctl", Args: []string{"-s", "info"}})
+	result, err := a.runHost(ctx, system.Command{Name: "pfctl", Args: []string{"-s", "info"}})
 	if err != nil {
 		// Only a missing /dev/pf means "not loaded". Any other refusal, such
 		// as a permission error, says nothing about PF itself.
@@ -211,6 +212,57 @@ func parsePFInfo(stdout string) (host.PFStatus, error) {
 		}
 	}
 	return host.PFStatus{}, fmt.Errorf("parse pfctl -s info: unrecognised status %q", strings.TrimSpace(rest))
+}
+
+// Pools lists pool names. On a host without ZFS zpool exists and exits 1, with
+// a message that is not "command not found"; that error is passed on as is.
+func (a *Adapter) Pools(ctx context.Context) ([]string, error) {
+	result, err := a.runHost(ctx, system.Command{Name: "zpool", Args: []string{"list", "-H", "-o", "name"}})
+	if err != nil {
+		return nil, err
+	}
+	return nonEmptyLines(result.Stdout), nil
+}
+
+// Datasets lists pool and everything beneath it in one call.
+func (a *Adapter) Datasets(ctx context.Context, pool string) ([]host.Dataset, error) {
+	result, err := a.runHost(ctx, system.Command{Name: "zfs", Args: []string{"list", "-H", "-o", "name,mountpoint", "-r", pool}})
+	if err != nil {
+		return nil, err
+	}
+	return parseZFSList(result.Stdout)
+}
+
+// parseZFSList reads -H output: one dataset per line, its fields separated by
+// a single tab.
+func parseZFSList(stdout string) ([]host.Dataset, error) {
+	lines := nonEmptyLines(stdout)
+	datasets := make([]host.Dataset, 0, len(lines))
+	for _, line := range lines {
+		name, mountpoint, ok := strings.Cut(line, "\t")
+		if !ok {
+			return nil, fmt.Errorf("parse zfs list: no mountpoint field in %q", line)
+		}
+		datasets = append(datasets, host.Dataset{Name: name, Mountpoint: mountpoint})
+	}
+	return datasets, nil
+}
+
+// CreateDataset runs zfs create. Properties become -o options in name order,
+// so the same request always produces the same command.
+func (a *Adapter) CreateDataset(ctx context.Context, name string, props map[string]string) (host.DatasetResult, error) {
+	args := []string{"create"}
+	keys := make([]string, 0, len(props))
+	for k := range props {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		args = append(args, "-o", k+"="+props[k])
+	}
+	cmd := system.Command{Name: "zfs", Args: append(args, name)}
+	_, err := a.runHost(ctx, cmd)
+	return host.DatasetResult{Dataset: name, Command: cmd.String()}, err
 }
 
 func nonEmptyLines(text string) []string {

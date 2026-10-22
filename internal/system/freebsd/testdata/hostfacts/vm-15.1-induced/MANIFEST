@@ -12,3 +12,7 @@ vmm_loaded_kldstat	kldstat -m vmm	exit=0
 vmm_loaded_sysctl	sysctl hw.vmm	exit=0
 vmm_loaded_sysctl_maxcpu	sysctl -n hw.vmm.maxcpu	exit=0
 vmm_loaded_ls_dev	ls -la /dev/vmm	exit=1
+layout_partial_zfs_list	zfs list -H -o name,mountpoint -r zroot	exit=0
+layout_zfs_create	doas zfs create zroot/jails/media	exit=0
+layout_zfs_create_exists	doas zfs create zroot/jails/media	exit=1
+layout_misplaced_zfs_list	zfs list -H -o name,mountpoint -r zroot	exit=0

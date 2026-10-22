@@ -28,6 +28,8 @@ const (
 	CheckDevfsRulesets     CheckID = "devfs_rulesets"
 	CheckCPUVirtualization CheckID = "cpu_virtualization"
 	CheckPF                CheckID = "pf"
+	CheckZFSPool           CheckID = "zfs_pool"
+	CheckZFSLayout         CheckID = "zfs_layout"
 )
 
 type CapabilityID string
@@ -87,6 +89,8 @@ var checkSpecs = []checkSpec{
 	{CheckExecTimeout, "exec.timeout in jail.conf defaults", []CapabilityID{CapabilityJails}},
 	{CheckBridges, "Network bridges", []CapabilityID{CapabilityVNET}},
 	{CheckDevfsRulesets, "devfs rulesets", []CapabilityID{CapabilityProvisioning}},
+	{CheckZFSPool, "ZFS pool", []CapabilityID{CapabilityProvisioning}},
+	{CheckZFSLayout, "Jails dataset layout", []CapabilityID{CapabilityProvisioning}},
 	{CheckCPUVirtualization, "CPU virtualization (VT-x, EPT, UG)", []CapabilityID{CapabilityVMs}},
 	{CheckPF, "PF", []CapabilityID{CapabilityFirewall}},
 }
@@ -98,4 +102,68 @@ var capabilitySpecs = []capabilitySpec{
 	{CapabilityProvisioning, "Jail provisioning"},
 	{CapabilityVMs, "Virtual machines (bhyve)"},
 	{CapabilityFirewall, "Firewall visibility (PF)"},
+}
+
+// OperationCreateDataset names the audit entry for each zfs create. Lowercase
+// is load-bearing: the audit filter lowercases the query value but compares
+// exactly, so a mixed-case name could never be found.
+const OperationCreateDataset = "create-dataset"
+
+// jailsMountpoint is the handbook path, fixed until a host needs otherwise.
+const jailsMountpoint = "/usr/local/jails"
+
+// layoutChildren sit beneath <pool>/jails and inherit its mountpoint, in the
+// order they are reported and created.
+var layoutChildren = []string{"media", "templates", "containers"}
+
+// LayoutDataset is one dataset of the jails layout, present or not.
+type LayoutDataset struct {
+	Name               string `json:"name"`
+	Present            bool   `json:"present"`
+	Mountpoint         string `json:"mountpoint"`
+	ExpectedMountpoint string `json:"expected_mountpoint"`
+	// MountpointTakenBy is set on a missing dataset when another dataset, on
+	// any pool, already has its expected mountpoint. Ensure refuses then.
+	MountpointTakenBy string `json:"mountpoint_taken_by,omitempty"`
+}
+
+// Misplaced reports a dataset that exists but is mounted somewhere else.
+func (d LayoutDataset) Misplaced() bool {
+	return d.Present && d.Mountpoint != d.ExpectedMountpoint
+}
+
+// Layout is what exists of <pool>/jails and its children. It is reported per
+// dataset because a layout is routinely partly there.
+type Layout struct {
+	Pool     string          `json:"pool"`
+	Datasets []LayoutDataset `json:"datasets"`
+	Missing  []string        `json:"missing"`
+}
+
+func (l Layout) misplaced() []LayoutDataset {
+	misplaced := make([]LayoutDataset, 0)
+	for _, d := range l.Datasets {
+		if d.Misplaced() {
+			misplaced = append(misplaced, d)
+		}
+	}
+	return misplaced
+}
+
+func (l Layout) taken() []LayoutDataset {
+	taken := make([]LayoutDataset, 0)
+	for _, d := range l.Datasets {
+		if !d.Present && d.MountpointTakenBy != "" {
+			taken = append(taken, d)
+		}
+	}
+	return taken
+}
+
+// LayoutChange is the outcome of ensuring the layout: the layout as it now
+// stands, and what this request created to get it there.
+type LayoutChange struct {
+	Layout
+	Changed bool     `json:"changed"`
+	Created []string `json:"created"`
 }

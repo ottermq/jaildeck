@@ -94,6 +94,7 @@ loaded if present — see [`.env.sample`](.env.sample).
 | `JAILDECK_AUDIT_LOG` | `/var/log/jaildeck/audit.log` | Append-only JSON lines. Rotate it with `newsyslog` |
 | `JAILDECK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `JAILDECK_ADAPTER` | `freebsd` | `fake` runs against an in-memory host, for development |
+| `JAILDECK_ZFS_POOL` | empty | Pool holding `<pool>/jails`. Empty adopts the only pool; with more than one, set it |
 
 `debug` logs every command Jail Deck runs, which is the fastest way to see what it is
 doing to the host. No credential material is logged at any level.

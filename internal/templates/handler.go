@@ -16,13 +16,19 @@ func NewTemplateHandler(service *Service) *TemplateHandler {
 	return &TemplateHandler{service: service}
 }
 
-// deriveRequest is the body of PUT /api/templates/{name}.
+// deriveRequest is the body of PUT /api/templates/{name}, which builds a
+// template one of two ways. Exactly one of From and Release says which.
 type deriveRequest struct {
 	// From is the template this one is derived from, by name.
 	From string `json:"from"`
 	// Packages are installed with pkg -c into the clone. Empty is allowed and
 	// means a plain copy, which is a reasonable thing to want.
 	Packages []string `json:"packages"`
+	// Release prepares from the FreeBSD mirror instead: fetch base.txz for
+	// that release and build a template from it. Minutes of work, so this one
+	// answers 202 and the client watches the template (JD-008). Empty with no
+	// From means the host's own release, which is also the ceiling.
+	Release string `json:"release"`
 }
 
 // List returns every template on the host.
@@ -78,6 +84,25 @@ func (h *TemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Description  derive leaves behind, and finishing it silently would install packages on
 // @Description  top of whatever that attempt left. Destroy it or inspect it first.
 // @Description
+// @Description  ### Or prepare a release from the mirror
+// @Description
+// @Description  Send `release` instead of `from` and this builds a release template rather
+// @Description  than deriving one: fetch that release's `base.txz` from
+// @Description  download.freebsd.org into `media/`, verified against the release's own
+// @Description  MANIFEST. An empty `release` with no `from` means the host's own, which is
+// @Description  also the ceiling — a jail's userland must be the same as or older than the
+// @Description  kernel it runs under.
+// @Description
+// @Description  **That one answers 202 and does not wait** (JD-008). It is minutes of work;
+// @Description  the response says what state the template is in and the client watches the
+// @Description  template itself. There is no job and no job id — `GET /templates/{name}`
+// @Description  carries a `state` read off the filesystem and a `running` step held in
+// @Description  memory. **200** instead when it was already ready, which is the same
+// @Description  idempotent answer a derive gives.
+// @Description
+// @Description  Naming both `from` and `release` is a 400: they are two ways to build a
+// @Description  template, and picking one for the caller would be guessing.
+// @Description
 // @Description  A package name beginning with a dash is refused: `pkg` would read it as an
 // @Description  option rather than a package, and `install -y -f` is not the command that
 // @Description  was asked for. No shell is involved either way.
@@ -92,6 +117,7 @@ func (h *TemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Param        derive   body      deriveRequest  true  "The parent and the packages"
 // @Success      200      {object}  Template  "Already there and ready"
 // @Success      201      {object}  Template  "Built"
+// @Success      202      {object}  Template  "Preparing a release; watch the template"
 // @Failure      400      {object}  common.ErrorResponse  "A bad name, or a package pkg refused"
 // @Failure      401      {object}  common.ErrorResponse
 // @Failure      404      {object}  common.ErrorResponse  "No such parent template"
@@ -108,6 +134,16 @@ func (h *TemplateHandler) Derive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if body.From != "" && body.Release != "" {
+		common.HandlerError(w, common.NewAppError(http.StatusBadRequest,
+			"from and release are two ways to build a template; name one of them"))
+		return
+	}
+	if body.From == "" {
+		h.prepare(w, r, body.Release)
+		return
+	}
+
 	template, built, err := h.service.Derive(r.Context(), chi.URLParam(r, "name"), body.From, body.Packages)
 	if err != nil {
 		common.HandlerError(w, err)
@@ -118,6 +154,25 @@ func (h *TemplateHandler) Derive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, template)
+}
+
+// prepare starts a release template and answers without waiting for it. 202
+// rather than 201: nothing has been created yet, and the response says what
+// state the template is in rather than claiming it exists (JD-008).
+//
+// 200 when it was already ready, which is the same idempotent answer Derive
+// gives: a client that timed out and repeated the call has not made a mistake.
+func (h *TemplateHandler) prepare(w http.ResponseWriter, r *http.Request, release string) {
+	template, err := h.service.Prepare(r.Context(), chi.URLParam(r, "name"), release)
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	if template.State == StateReady {
+		common.WriteJSON(w, http.StatusOK, template)
+		return
+	}
+	common.WriteJSON(w, http.StatusAccepted, template)
 }
 
 func RegisterTemplateRoutes(r chi.Router, h *TemplateHandler) {

@@ -112,7 +112,7 @@ Purpose: the userlands a jail is cloned from — the thing jail creation depends
 
 Acting on it (JD-029): a template can be **derived** from a ready one with packages, and **removed** — from the list or from its own page, which navigates back when the template is gone. A removal refused over clones or holds is shown where the template is, with the `zfs promote` way out. A **retained dataset can be restored** under any jail, under any name.
 
-Still to come: preparing a release template — the API shape is settled (JD-008: `202`, then poll the template for `state` and `running`), the page is not — and a release picker sourced from `download.freebsd.org` or manual version entry, depending on how "which releases are supported" resolves (`docs/SPEC.md`).
+Preparing a release is there: a form for the release, a **State** column, and the running step with its elapsed time beneath it. The page polls while anything is in flight and stops when nothing is. Only the fetch stage exists so far — extracting the archive and bringing it to a patch level are the stages still to come — and a release picker sourced from `download.freebsd.org` or manual version entry, depending on how "which releases are supported" resolves (`docs/SPEC.md`).
 
 ### Logs page
 

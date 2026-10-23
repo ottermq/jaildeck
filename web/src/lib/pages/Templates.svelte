@@ -1,7 +1,8 @@
 <script lang="ts">
 import { onMount } from 'svelte'
+import { onDestroy } from 'svelte'
 import {
-    listTemplates, listRetained, lineage, deriveTemplate, removeTemplate,
+    listTemplates, listRetained, lineage, deriveTemplate, removeTemplate, prepareRelease,
 } from '../stores/templates.svelte'
 import type { Template, RetainedDataset, Blocked } from '../stores/templates.svelte'
 import { listJails, restoreDataset } from '../stores/jails.svelte'
@@ -35,6 +36,33 @@ async function load() {
 }
 
 onMount(load)
+
+// ---- watching work in flight ------------------------------------------
+//
+// There is no job to ask about: the template is the resource, and its state
+// comes back with every listing (JD-008). So the page reloads while anything
+// is running, and stops when nothing is.
+let working = $derived((templates ?? []).some(t => t.running))
+let poll: ReturnType<typeof setInterval> | null = null
+
+$effect(() => {
+    if (working && poll === null) {
+        poll = setInterval(load, 2000)
+    } else if (!working && poll !== null) {
+        clearInterval(poll)
+        poll = null
+    }
+})
+
+onDestroy(() => {
+    if (poll !== null) clearInterval(poll)
+})
+
+function elapsed(since: string): string {
+    const seconds = Math.max(0, Math.round((Date.now() - new Date(since).getTime()) / 1000))
+    if (seconds < 60) return `${seconds}s`
+    return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
 
 function describe(err: unknown, fallback: string): string {
     if (!(err instanceof ApiError)) return 'Could not reach Jail Deck'
@@ -78,6 +106,30 @@ async function run(key: string, call: () => Promise<unknown>): Promise<boolean> 
         busy = ''
         await load()
     }
+}
+
+// ---- prepare a release --------------------------------------------------
+
+let preparing = $state(false)
+let releaseName = $state('')
+
+function startPrepare() {
+    preparing = true
+    releaseName = ''
+    note = ''
+    delete actionError['prepare']
+}
+
+async function prepare(event: Event) {
+    event.preventDefault()
+    const release = releaseName.trim()
+    const ok = await run('prepare', async () => {
+        const template = await prepareRelease(release, release)
+        note = template.state === 'ready'
+            ? `${template.name} was already ready.`
+            : `Preparing ${template.name}. It keeps going if you leave this page.`
+    })
+    if (ok) preparing = false
 }
 
 // ---- derive -----------------------------------------------------------
@@ -173,12 +225,45 @@ async function restore(event: Event, dataset: RetainedDataset) {
 <section class="panel panel--first">
     <div class="panel__head">
         <h2 class="visually-hidden">Templates</h2>
-        {#if parents.length > 0}
-            <button type="button" class="btn btn--small" onclick={startDerive} disabled={deriving}>
-                Derive a template
+        <div class="actions">
+            <button type="button" class="btn btn--small" onclick={startPrepare} disabled={preparing}>
+                Prepare a release
             </button>
-        {/if}
+            {#if parents.length > 0}
+                <button type="button" class="btn btn--small" onclick={startDerive} disabled={deriving}>
+                    Derive a template
+                </button>
+            {/if}
+        </div>
     </div>
+
+    {#if preparing}
+        <form class="form" onsubmit={prepare}>
+            <div class="form__row">
+                <div class="field field--grow">
+                    <label for="prepare-release">Release</label>
+                    <input id="prepare-release" bind:value={releaseName} placeholder="15.1-RELEASE"
+                           autocomplete="off" spellcheck="false" required />
+                </div>
+            </div>
+            <p class="hint">
+                Fetches that release's <code>base.txz</code> from the FreeBSD mirror and verifies it
+                against the release's own MANIFEST. <strong>The release, never a patch level</strong> —
+                the mirror publishes no <code>15.1-RELEASE-p5</code> directory. A userland must be the
+                same as or older than the host's kernel, so the host's own release is the ceiling.
+                This takes minutes and keeps going whether or not you stay here.
+            </p>
+            {#if actionError['prepare']}
+                <p class="notice notice--error" role="alert">{actionError['prepare']}</p>
+            {/if}
+            <div class="form__actions">
+                <button type="button" class="btn btn--small" onclick={() => (preparing = false)}>Cancel</button>
+                <button type="submit" class="btn btn--small btn--primary" disabled={busy === 'prepare'}>
+                    {busy === 'prepare' ? 'Starting…' : 'Prepare'}
+                </button>
+            </div>
+        </form>
+    {/if}
 
     {#if deriving}
         <form class="form" onsubmit={derive}>
@@ -226,7 +311,7 @@ async function restore(event: Event, dataset: RetainedDataset) {
                 <thead>
                     <tr>
                         <th>Template</th>
-                        <th>Ready</th>
+                        <th>State</th>
                         <th>Derived from</th>
                         <th class="num">Used</th>
                         <th class="num">Referenced</th>
@@ -243,10 +328,13 @@ async function restore(event: Event, dataset: RetainedDataset) {
                                 </a>
                             </td>
                             <td>
-                                {#if template.ready}
+                                {#if template.running}
+                                    <span class="badge badge--timed-out">{template.state}</span>
+                                    <div class="step">{template.running.step} · {elapsed(template.running.since)}</div>
+                                {:else if template.ready}
                                     <span class="badge badge--running">ready</span>
                                 {:else}
-                                    <span class="badge badge--stopped">not ready</span>
+                                    <span class="badge badge--stopped">{template.state}</span>
                                 {/if}
                             </td>
                             <td>{#if template.parent}<code>{template.parent}</code>{:else}—{/if}</td>
@@ -256,7 +344,8 @@ async function restore(event: Event, dataset: RetainedDataset) {
                                 <button
                                     type="button"
                                     class="btn btn--small btn--danger"
-                                    disabled={!!busy}
+                                    disabled={!!busy || !!template.running}
+                                    title={template.running ? 'Something is working on this template' : undefined}
                                     onclick={() => remove(template)}
                                 >Remove</button>
                             </td>
@@ -298,10 +387,13 @@ async function restore(event: Event, dataset: RetainedDataset) {
             </table>
         </div>
         <p class="hint">
-            A template is usable only once its <code>@base</code> snapshot exists. One that is
-            <em>not ready</em> is a derive that failed part way through — it can be removed and
-            tried again. <code>Used</code> is what a derived template costs; the userland it
-            shares with its parent is in <code>Referenced</code>.
+            A template is usable only once its <code>@base</code> snapshot exists. The state is
+            read off the host — the archive is in <code>media/</code> or it is not, the dataset
+            exists or it does not — so a reload, or a restart of Jail Deck, shows where the work
+            actually got to rather than what it was last told. <em>extracted</em> is a template that
+            exists and is not usable, which is also what a failed derive leaves behind.
+            <code>Used</code> is what a derived template costs; the userland it shares with its
+            parent is in <code>Referenced</code>.
         </p>
     {:else if templates !== null && !loadError}
         <p class="notice">
@@ -425,6 +517,17 @@ async function restore(event: Event, dataset: RetainedDataset) {
     justify-content: flex-end;
     gap: var(--space-4);
     margin-bottom: var(--space-3);
+}
+
+.actions {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.step {
+    margin-top: var(--space-1);
+    font-size: 0.75rem;
+    color: var(--text-muted);
 }
 
 /* The table's own header says "Template", so a visible heading above it would

@@ -1712,7 +1712,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "A release template plus packages, re-snapshotted — a PostgreSQL template,\nsay, so every postgres jail starts with it installed (#7, JD-027).\n\nThree steps: clone the parent's `@base`, `pkg -c \u003croot\u003e install -y` the\npackages, snapshot the result as `@base`.\n\n`pkg -c` chroots, so nothing is started: no jail, no stanza, no networking\nfor a temporary jail. It is the same shape as JD-007's `freebsd-update -b`,\nwhich already runs against an unbooted template root.\n\n**It installs packages and nothing else.** For anything further — `sysrc`, a\nconfiguration file, an `initdb` — configure a jail and clone it with\n`POST /api/jails/{name}/template` instead (JD-027).\n\n**201** built · **200** it was already there and ready, so a client that\ntimed out can repeat the call (JD-016).\n\n**409 if it exists but is not ready.** That is what a previous failed\nderive leaves behind, and finishing it silently would install packages on\ntop of whatever that attempt left. Destroy it or inspect it first.\n\nA package name beginning with a dash is refused: `pkg` would read it as an\noption rather than a package, and `install -y -f` is not the command that\nwas asked for. No shell is involved either way.\n\nIf `pkg` fails, the clone stays **without** its `@base` and the listing\nreports it as not ready. pkg's own message comes back, as a `400` when pkg\nran and refused — a package that does not exist is the request's fault.",
+                "description": "A release template plus packages, re-snapshotted — a PostgreSQL template,\nsay, so every postgres jail starts with it installed (#7, JD-027).\n\nThree steps: clone the parent's `@base`, `pkg -c \u003croot\u003e install -y` the\npackages, snapshot the result as `@base`.\n\n`pkg -c` chroots, so nothing is started: no jail, no stanza, no networking\nfor a temporary jail. It is the same shape as JD-007's `freebsd-update -b`,\nwhich already runs against an unbooted template root.\n\n**It installs packages and nothing else.** For anything further — `sysrc`, a\nconfiguration file, an `initdb` — configure a jail and clone it with\n`POST /api/jails/{name}/template` instead (JD-027).\n\n**201** built · **200** it was already there and ready, so a client that\ntimed out can repeat the call (JD-016).\n\n**409 if it exists but is not ready.** That is what a previous failed\nderive leaves behind, and finishing it silently would install packages on\ntop of whatever that attempt left. Destroy it or inspect it first.\n\n### Or prepare a release from the mirror\n\nSend `release` instead of `from` and this builds a release template rather\nthan deriving one: fetch that release's `base.txz` from\ndownload.freebsd.org into `media/`, verified against the release's own\nMANIFEST. An empty `release` with no `from` means the host's own, which is\nalso the ceiling — a jail's userland must be the same as or older than the\nkernel it runs under.\n\n**That one answers 202 and does not wait** (JD-008). It is minutes of work;\nthe response says what state the template is in and the client watches the\ntemplate itself. There is no job and no job id — `GET /templates/{name}`\ncarries a `state` read off the filesystem and a `running` step held in\nmemory. **200** instead when it was already ready, which is the same\nidempotent answer a derive gives.\n\nNaming both `from` and `release` is a 400: they are two ways to build a\ntemplate, and picking one for the caller would be guessing.\n\nA package name beginning with a dash is refused: `pkg` would read it as an\noption rather than a package, and `install -y -f` is not the command that\nwas asked for. No shell is involved either way.\n\nIf `pkg` fails, the clone stays **without** its `@base` and the listing\nreports it as not ready. pkg's own message comes back, as a `400` when pkg\nran and refused — a package that does not exist is the request's fault.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1750,6 +1750,12 @@
                     },
                     "201": {
                         "description": "Built",
+                        "schema": {
+                            "$ref": "#/definitions/templates.Template"
+                        }
+                    },
+                    "202": {
+                        "description": "Preparing a release; watch the template",
                         "schema": {
                             "$ref": "#/definitions/templates.Template"
                         }
@@ -2545,8 +2551,20 @@
                     "description": "Referenced is the whole userland; for a derived template most of it is\nstill shared with its parent, so Used is what the packages cost.",
                     "type": "integer"
                 },
+                "running": {
+                    "description": "Running is the step executing right now, absent when nothing is. Held in\nmemory and never written down: a restart kills the work, so a marker\nthat survived it would be claiming something false.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/templates.Running"
+                        }
+                    ]
+                },
                 "snapshot": {
                     "description": "Snapshot is the full dataset@base once it exists, which is what a jail\nis cloned from.",
+                    "type": "string"
+                },
+                "state": {
+                    "description": "State is where this template has got to, read off the filesystem except\nfor the -ing forms, which come from what this process is doing (JD-008).\nA template that has only been fetched has no dataset and still has a\nstate, because the resource a client watches has to exist from the\nmoment the work starts.",
                     "type": "string"
                 },
                 "used": {
@@ -2569,6 +2587,18 @@
                     "type": "boolean"
                 },
                 "template": {
+                    "type": "string"
+                }
+            }
+        },
+        "templates.Running": {
+            "type": "object",
+            "properties": {
+                "since": {
+                    "type": "string"
+                },
+                "step": {
+                    "description": "Step is the stage in the operator's words, not a command line.",
                     "type": "string"
                 }
             }
@@ -2599,8 +2629,20 @@
                     "description": "Referenced is the whole userland; for a derived template most of it is\nstill shared with its parent, so Used is what the packages cost.",
                     "type": "integer"
                 },
+                "running": {
+                    "description": "Running is the step executing right now, absent when nothing is. Held in\nmemory and never written down: a restart kills the work, so a marker\nthat survived it would be claiming something false.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/templates.Running"
+                        }
+                    ]
+                },
                 "snapshot": {
                     "description": "Snapshot is the full dataset@base once it exists, which is what a jail\nis cloned from.",
+                    "type": "string"
+                },
+                "state": {
+                    "description": "State is where this template has got to, read off the filesystem except\nfor the -ing forms, which come from what this process is doing (JD-008).\nA template that has only been fetched has no dataset and still has a\nstate, because the resource a client watches has to exist from the\nmoment the work starts.",
                     "type": "string"
                 },
                 "used": {
@@ -2621,6 +2663,10 @@
                     "items": {
                         "type": "string"
                     }
+                },
+                "release": {
+                    "description": "Release prepares from the FreeBSD mirror instead: fetch base.txz for\nthat release and build a template from it. Minutes of work, so this one\nanswers 202 and the client watches the template (JD-008). Empty with no\nFrom means the host's own release, which is also the ceiling.",
+                    "type": "string"
                 }
             }
         }

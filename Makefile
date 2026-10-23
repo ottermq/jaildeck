@@ -5,7 +5,12 @@ COVER_PROFILE=$(BUILD_DIR)/coverage.out
 
 GO?=go
 
-.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check all
+# Installation paths. PREFIX is where FreeBSD puts local software; DESTDIR
+# stages the same layout somewhere else, which is what a package build wants.
+PREFIX?=/usr/local
+DESTDIR?=
+
+.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check all install
 
 ## build: compile the binary into bin/
 build:
@@ -68,6 +73,13 @@ tidy-check:
 ## check: the full verification gate — formatting, vet, build, tests
 check: fmt-check vet build test
 	@echo "check: OK"
+
+## install: install the binary and rc.d script under PREFIX (run on the FreeBSD host, or stage with DESTDIR)
+install: build
+	@install -d $(DESTDIR)$(PREFIX)/sbin $(DESTDIR)$(PREFIX)/etc/rc.d
+	@install -m 0555 ./$(BUILD_DIR)/$(BINARY_NAME) $(DESTDIR)$(PREFIX)/sbin/$(BINARY_NAME)
+	@install -m 0555 ./rc.d/$(BINARY_NAME) $(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)
+	@echo "installed $(DESTDIR)$(PREFIX)/sbin/$(BINARY_NAME) and $(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)"
 
 ## clean: remove build artifacts
 clean:

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ottermq/jaildeck/internal/audit"
@@ -26,6 +27,13 @@ type stubSystem struct {
 	// make the next one fail.
 	ran      []string
 	writeErr error
+	// The snapshot half.
+	snapshots     []Snapshot
+	snapshotErr   error
+	holds         []Hold
+	clones        map[string][]string
+	dependencyErr error
+	nextTXG       uint64
 }
 
 func (s *stubSystem) Pools(context.Context) ([]string, error) { return s.pools, s.poolsErr }
@@ -228,4 +236,110 @@ type fakeLogger struct{ entries []audit.Entry }
 func (f *fakeLogger) Log(_ context.Context, e audit.Entry) error {
 	f.entries = append(f.entries, e)
 	return nil
+}
+
+// The snapshot half of the stub. Snapshots are ordered by a monotonic
+// transaction group, as ZFS orders them, so "newer" means the same thing here
+// as on a host.
+func (s *stubSystem) Snapshots(_ context.Context, roots []string) ([]Snapshot, error) {
+	if s.snapshotErr != nil {
+		return nil, s.snapshotErr
+	}
+	found := make([]Snapshot, 0, len(s.snapshots))
+	for _, snapshot := range s.snapshots {
+		for _, root := range roots {
+			if snapshot.Dataset == root || strings.HasPrefix(snapshot.Dataset, root+"/") {
+				found = append(found, snapshot)
+				break
+			}
+		}
+	}
+	return found, nil
+}
+
+func (s *stubSystem) CreateSnapshot(_ context.Context, dataset, short string, recursive bool) (Result, error) {
+	command := "zfs snapshot"
+	if recursive {
+		command += " -r"
+	}
+	command += " " + dataset + "@" + short
+	s.ran = append(s.ran, command)
+	if s.writeErr != nil {
+		return Result{Dataset: dataset + "@" + short, Command: command}, s.writeErr
+	}
+	for _, target := range s.descendants(dataset, recursive) {
+		s.nextTXG++
+		s.snapshots = append(s.snapshots, Snapshot{
+			Name: target + "@" + short, Dataset: target, Short: short, CreateTXG: s.nextTXG,
+		})
+	}
+	return Result{Dataset: dataset + "@" + short, Command: command}, nil
+}
+
+func (s *stubSystem) DestroySnapshot(_ context.Context, dataset, short string, recursive bool) (Result, error) {
+	command := "zfs destroy"
+	if recursive {
+		command += " -r"
+	}
+	command += " " + dataset + "@" + short
+	s.ran = append(s.ran, command)
+	if s.writeErr != nil {
+		return Result{Dataset: dataset + "@" + short, Command: command}, s.writeErr
+	}
+	targets := s.descendants(dataset, recursive)
+	s.snapshots = slices.DeleteFunc(s.snapshots, func(x Snapshot) bool {
+		return x.Short == short && slices.Contains(targets, x.Dataset)
+	})
+	return Result{Dataset: dataset + "@" + short, Command: command}, nil
+}
+
+func (s *stubSystem) Rollback(_ context.Context, dataset, short string, destroyNewer bool) (Result, error) {
+	command := "zfs rollback"
+	if destroyNewer {
+		command += " -r"
+	}
+	command += " " + dataset + "@" + short
+	s.ran = append(s.ran, command)
+	if s.writeErr != nil {
+		return Result{Dataset: dataset + "@" + short, Command: command}, s.writeErr
+	}
+	var txg uint64
+	for _, snapshot := range s.snapshots {
+		if snapshot.Name == dataset+"@"+short {
+			txg = snapshot.CreateTXG
+		}
+	}
+	if destroyNewer {
+		s.snapshots = slices.DeleteFunc(s.snapshots, func(x Snapshot) bool {
+			return x.Dataset == dataset && x.CreateTXG > txg
+		})
+	}
+	return Result{Dataset: dataset + "@" + short, Command: command}, nil
+}
+
+func (s *stubSystem) Clones(_ context.Context, snapshot string) ([]string, error) {
+	return s.clones[snapshot], s.dependencyErr
+}
+
+func (s *stubSystem) Holds(_ context.Context, snapshot string) ([]Hold, error) {
+	found := make([]Hold, 0)
+	for _, hold := range s.holds {
+		if hold.Snapshot == snapshot {
+			found = append(found, hold)
+		}
+	}
+	return found, s.dependencyErr
+}
+
+func (s *stubSystem) descendants(dataset string, recursive bool) []string {
+	if !recursive {
+		return []string{dataset}
+	}
+	targets := make([]string, 0, 2)
+	for _, d := range s.datasets {
+		if d.Name == dataset || strings.HasPrefix(d.Name, dataset+"/") {
+			targets = append(targets, d.Name)
+		}
+	}
+	return targets
 }

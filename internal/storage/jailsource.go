@@ -158,3 +158,71 @@ func (s *JailSource) datasetFor(ctx context.Context, jailPath, child string) (st
 }
 
 var _ jails.DatasetWriter = (*JailSource)(nil)
+
+func (s *JailSource) Snapshots(ctx context.Context, jailPath string) ([]jails.Snapshot, error) {
+	root, err := s.datasetFor(ctx, jailPath, "")
+	if err != nil {
+		return nil, err
+	}
+	snapshots, err := s.service.SnapshotsOf(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]jails.Snapshot, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		out = append(out, jails.Snapshot{
+			Name: snapshot.Name, Dataset: snapshot.Dataset, Short: snapshot.Short,
+			Used: snapshot.Used, Referenced: snapshot.Referenced,
+			Created: snapshot.Created, CreateTXG: snapshot.CreateTXG,
+		})
+	}
+	return out, nil
+}
+
+func (s *JailSource) CreateSnapshot(ctx context.Context, jailPath, child, short string, recursive bool) (jails.SnapshotResult, error) {
+	return s.snapshotCall(ctx, jailPath, child, func(dataset string) (SnapshotResult, error) {
+		return s.service.CreateSnapshot(ctx, dataset, short, recursive)
+	})
+}
+
+func (s *JailSource) DestroySnapshot(ctx context.Context, jailPath, child, short, confirm string, recursive bool) (jails.SnapshotResult, error) {
+	return s.snapshotCall(ctx, jailPath, child, func(dataset string) (SnapshotResult, error) {
+		return s.service.DestroySnapshot(ctx, dataset, short, confirm, recursive)
+	})
+}
+
+func (s *JailSource) Rollback(ctx context.Context, jailPath, child, short, confirm string, destroyNewer bool) (jails.SnapshotResult, error) {
+	return s.snapshotCall(ctx, jailPath, child, func(dataset string) (SnapshotResult, error) {
+		return s.service.Rollback(ctx, dataset, short, confirm, destroyNewer)
+	})
+}
+
+// snapshotCall resolves the dataset once and translates the result into the
+// jails domain's types, which is all these three have in common.
+func (s *JailSource) snapshotCall(ctx context.Context, jailPath, child string, call func(string) (SnapshotResult, error)) (jails.SnapshotResult, error) {
+	dataset, err := s.datasetFor(ctx, jailPath, child)
+	if err != nil {
+		return jails.SnapshotResult{}, err
+	}
+	result, err := call(dataset)
+	if err != nil {
+		return jails.SnapshotResult{}, err
+	}
+	out := jails.SnapshotResult{
+		Snapshot:  result.Snapshot,
+		Created:   result.Created,
+		Destroyed: result.Destroyed,
+		Existed:   result.Existed,
+	}
+	if result.Blocked != nil {
+		out.Blocked = &jails.SnapshotBlock{
+			Reason: result.Blocked.Reason,
+			Newer:  result.Blocked.Newer,
+			Clones: result.Blocked.Clones,
+			Holds:  result.Blocked.Holds,
+		}
+	}
+	return out, nil
+}
+
+var _ jails.SnapshotWriter = (*JailSource)(nil)

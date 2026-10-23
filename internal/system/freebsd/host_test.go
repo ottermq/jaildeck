@@ -487,23 +487,26 @@ func TestPoolsFixtures(t *testing.T) {
 func TestDatasetsFixtures(t *testing.T) {
 	tests := []struct {
 		set, pool string
-		count     int
 		want      host.Dataset // one line the parse must have produced
 	}{
-		{"vm-15.1", "zroot", 21, host.Dataset{Name: "zroot/jails", Mountpoint: "/usr/local/jails"}},
-		{"vm-15.1", "zroot", 21, host.Dataset{Name: "zroot", Mountpoint: "none"}},
-		{"isengard", "tank", 9, host.Dataset{Name: "tank/jails/media", Mountpoint: "/usr/local/jails/media"}},
-		{"isengard", "backup", 23, host.Dataset{Name: "backup/isengard/tank/jails", Mountpoint: "none"}},
-		{"isengard", "zroot", 15, host.Dataset{Name: "zroot", Mountpoint: "/zroot"}},
-		{"rohan", "media", 7, host.Dataset{Name: "media/.incoming", Mountpoint: "/srv/media/.incoming"}},
-		{"rohan", "zroot", 20, host.Dataset{Name: "zroot/srv", Mountpoint: "/srv"}},
+		{"vm-15.1", "zroot", host.Dataset{Name: "zroot/jails", Mountpoint: "/usr/local/jails"}},
+		{"vm-15.1", "zroot", host.Dataset{Name: "zroot", Mountpoint: "none"}},
+		{"isengard", "tank", host.Dataset{Name: "tank/jails/media", Mountpoint: "/usr/local/jails/media"}},
+		{"isengard", "backup", host.Dataset{Name: "backup/isengard/tank/jails", Mountpoint: "none"}},
+		{"isengard", "zroot", host.Dataset{Name: "zroot", Mountpoint: "/zroot"}},
+		{"rohan", "media", host.Dataset{Name: "media/.incoming", Mountpoint: "/srv/media/.incoming"}},
+		{"rohan", "zroot", host.Dataset{Name: "zroot/srv", Mountpoint: "/srv"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.set+"/"+tt.pool, func(t *testing.T) {
 			runner := &replayRunner{t: t, set: tt.set, captures: withPools(nil, tt.pool)}
 			got, err := NewAdapter(runner).Datasets(context.Background(), tt.pool)
-			if err != nil || len(got) != tt.count || !slices.Contains(got, tt.want) {
-				t.Errorf("Datasets() = %d datasets, %v; want %d including %+v", len(got), err, tt.count, tt.want)
+			// The count comes from the capture, not from a number written
+			// here: a re-capture moves it, and it still catches a parse that
+			// drops or merges a line, which is all it was ever for.
+			want := capturedLines(t, tt.set, "zfs_list_r_"+tt.pool)
+			if err != nil || len(got) != want || !slices.Contains(got, tt.want) {
+				t.Errorf("Datasets() = %d datasets, %v; want %d including %+v", len(got), err, want, tt.want)
 			}
 		})
 	}

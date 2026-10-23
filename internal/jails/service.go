@@ -51,14 +51,17 @@ type JailService struct {
 	// datasetWriter may be nil on the same terms as datasets, and every write
 	// checks it rather than assuming the application wired one.
 	datasetWriter DatasetWriter
+	// snapshots may be nil on the same terms as the other two.
+	snapshots SnapshotWriter
 }
 
-func NewJailService(system JailSystem, operationLogger audit.Logger, datasets DatasetSource, datasetWriter DatasetWriter) *JailService {
+func NewJailService(system JailSystem, operationLogger audit.Logger, datasets DatasetSource, datasetWriter DatasetWriter, snapshots SnapshotWriter) *JailService {
 	return &JailService{
 		system:          system,
 		operationLogger: operationLogger,
 		datasets:        datasets,
 		datasetWriter:   datasetWriter,
+		snapshots:       snapshots,
 	}
 }
 

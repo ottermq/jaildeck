@@ -16,8 +16,9 @@ import (
 // thing that reaches the host -- CommandRunner runs no shell, so the array is
 // the command, and getting it right is the whole job of this file.
 type recordingRunner struct {
-	ran []system.Command
-	err error
+	ran    []system.Command
+	stdout string
+	err    error
 }
 
 func (r *recordingRunner) Run(_ context.Context, cmd system.Command) (system.CommandResult, error) {
@@ -25,7 +26,7 @@ func (r *recordingRunner) Run(_ context.Context, cmd system.Command) (system.Com
 	if r.err != nil {
 		return system.CommandResult{ExitCode: 1, Stderr: r.err.Error()}, r.err
 	}
-	return system.CommandResult{}, nil
+	return system.CommandResult{Stdout: r.stdout}, nil
 }
 
 func TestStorageWriteCommands(t *testing.T) {
@@ -143,7 +144,7 @@ func TestStorageWriteReportsTheCommandOnFailure(t *testing.T) {
 func TestStorageAdapterStillReads(t *testing.T) {
 	runner := &replayRunner{t: t, set: "isengard", captures: withStorageRoots("tank")}
 	datasets, err := NewStorageAdapter(runner).DatasetsUnder(context.Background(), []string{"tank"})
-	if err != nil || len(datasets) != 9 {
-		t.Errorf("DatasetsUnder() = %d datasets, %v; want 9", len(datasets), err)
+	if want := capturedLines(t, "isengard", "zfs_list_space_rp_tank"); err != nil || len(datasets) != want {
+		t.Errorf("DatasetsUnder() = %d datasets, %v; want %d", len(datasets), err, want)
 	}
 }

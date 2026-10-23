@@ -150,3 +150,105 @@ func decodeJSON(r *http.Request, target any) error {
 	}
 	return nil
 }
+
+func (h *JailHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	snapshots, err := h.service.Snapshots(r.Context(), name)
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, snapshots)
+}
+
+// The jail's own routes take it and its children at one point in time; the
+// child routes take that dataset alone. recursive is the difference, and it is
+// the route that decides it rather than a parameter a caller can forget.
+func (h *JailHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
+	h.createSnapshot(w, r, "", true)
+}
+
+func (h *JailHandler) CreateDatasetSnapshot(w http.ResponseWriter, r *http.Request) {
+	h.createSnapshot(w, r, chi.URLParam(r, "child"), false)
+}
+
+func (h *JailHandler) DestroySnapshot(w http.ResponseWriter, r *http.Request) {
+	h.destroySnapshot(w, r, "", true)
+}
+
+func (h *JailHandler) DestroyDatasetSnapshot(w http.ResponseWriter, r *http.Request) {
+	h.destroySnapshot(w, r, chi.URLParam(r, "child"), false)
+}
+
+func (h *JailHandler) Rollback(w http.ResponseWriter, r *http.Request) {
+	h.rollback(w, r, "")
+}
+
+func (h *JailHandler) RollbackDataset(w http.ResponseWriter, r *http.Request) {
+	h.rollback(w, r, chi.URLParam(r, "child"))
+}
+
+func (h *JailHandler) createSnapshot(w http.ResponseWriter, r *http.Request, child string, recursive bool) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	result, err := h.service.CreateSnapshot(r.Context(), name, child, chi.URLParam(r, "snapshot"), recursive)
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	if result.Existed {
+		common.WriteJSON(w, http.StatusOK, result)
+		return
+	}
+	common.WriteJSON(w, http.StatusCreated, result)
+}
+
+func (h *JailHandler) destroySnapshot(w http.ResponseWriter, r *http.Request, child string, recursive bool) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	result, err := h.service.DestroySnapshot(r.Context(), name, child,
+		chi.URLParam(r, "snapshot"), r.URL.Query().Get("confirm"), recursive)
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	writeSnapshotResult(w, result)
+}
+
+func (h *JailHandler) rollback(w http.ResponseWriter, r *http.Request, child string) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	// Anything but the literal "true" is not consent. A client that sends
+	// destroy_newer=maybe has not said yes.
+	destroyNewer := r.URL.Query().Get("destroy_newer") == "true"
+	result, err := h.service.Rollback(r.Context(), name, child,
+		chi.URLParam(r, "snapshot"), r.URL.Query().Get("confirm"), destroyNewer)
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	writeSnapshotResult(w, result)
+}
+
+// A refusal is 409: the request was well formed and the host's state is what
+// says no.
+func writeSnapshotResult(w http.ResponseWriter, result SnapshotResult) {
+	if result.Blocked != nil {
+		common.WriteJSON(w, http.StatusConflict, result)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, result)
+}

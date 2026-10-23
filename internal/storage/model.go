@@ -1,5 +1,7 @@
 package storage
 
+import "time"
+
 // Dataset is one line of the batched zfs list: a filesystem's identity, where
 // it is mounted, and its three space figures in bytes.
 //
@@ -41,4 +43,32 @@ type Property struct {
 type Inventory struct {
 	Datasets   []Dataset
 	Properties map[string]map[string]string
+}
+
+// Snapshot is one line of the batched snapshot listing.
+type Snapshot struct {
+	// Name is the full "dataset@snapshot" as zfs prints it, which is also what
+	// confirm= has to equal on a destroy or a rollback (JD-024).
+	Name    string
+	Dataset string
+	// Short is the part after the @, which is what a client names in a URL.
+	Short string
+	Used  int64
+	// Referenced is what the snapshot still refers to; Used is what it alone
+	// keeps alive, which is usually 0 until something changes after it.
+	Referenced int64
+	Created    time.Time
+	// CreateTXG orders snapshots exactly. Created is a second-granularity
+	// timestamp and two snapshots taken in the same second share it, so "which
+	// of these is newer" cannot be answered from it -- and that question is
+	// precisely what decides whether a rollback destroys anything. The
+	// transaction group is ZFS's own total order and never ties.
+	CreateTXG uint64
+}
+
+// Hold is one zfs hold on a snapshot: a named reason it cannot be destroyed,
+// which zfs destroy reports without naming (it says to run zfs holds instead).
+type Hold struct {
+	Snapshot string
+	Tag      string
 }

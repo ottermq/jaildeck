@@ -218,6 +218,44 @@ if [ -n "$PROBE_DS" ]; then
 	# has none produces that second shape in zfs_list_snapshots above, as an
 	# exit 0 with empty stdout -- see the README's table for which hosts do.)
 	cap zfs_list_snapshots_absent "zfs list -H -d 1 -t snapshot -o name,used,refer,creation $PROBE_DS/definitely-not-here"
+	# What stops a destroy, asked structurally instead of read out of the
+	# error zfs would raise. A snapshot with neither answers "-" and nothing,
+	# which is the shape the no-blockers path has to recognise.
+	FIRST_SNAP=$(zfs list -H -d 1 -t snapshot -o name "$PROBE_DS" | head -1)
+	if [ -n "$FIRST_SNAP" ]; then
+		cap zfs_get_clones_none "zfs get -H -o value clones $FIRST_SNAP"
+		cap zfs_holds_none "zfs holds -H $FIRST_SNAP"
+	fi
+fi
+
+# --- #4: snapshots of one jail -------------------------------------------
+# Scoped to a single jail's dataset, not to <pool>/jails. The adapter asks
+# recursively so that a jail's child datasets are included, and recursive over
+# the whole layout is 276 lines on this host, 256 of them hourly zrepl
+# snapshots that teach a parser nothing and rewrite the fixture every hour.
+# One jail is the scope the API actually uses and it carries the whole format.
+# Prefer a jail that has a child dataset of its own, the same way PROBE_DS
+# prefers a pool that has the layout: a jail with no children cannot show what
+# a recursive snapshot produces, which is the format this capture exists for.
+PROBE_JAIL=""
+if [ -n "$PROBE_DS" ]; then
+	for jail in $(zfs list -H -o name -d 1 "$PROBE_DS/containers" 2>/dev/null | sed 1d); do
+		[ -z "$PROBE_JAIL" ] && PROBE_JAIL="$jail"
+		if [ "$(zfs list -H -o name -d 1 "$jail" 2>/dev/null | sed 1d | wc -l)" -gt 0 ]; then
+			PROBE_JAIL="$jail"
+			break
+		fi
+	done
+fi
+echo "$PROBE_JAIL" >"$OUT/PROBE_JAIL"
+
+if [ -n "$PROBE_JAIL" ]; then
+	# The exact command the storage adapter runs. createtxg is why this is its
+	# own capture: creation has second granularity, so two snapshots taken in
+	# the same second tie on it, and "which of these is newer" is precisely the
+	# question a rollback asks before deciding what to destroy. The transaction
+	# group is ZFS's own total order and never ties.
+	cap zfs_list_snapshots_txg "zfs list -H -p -t snapshot -o name,used,refer,creation,createtxg -r $PROBE_JAIL"
 fi
 
 # --- redaction ------------------------------------------------------------

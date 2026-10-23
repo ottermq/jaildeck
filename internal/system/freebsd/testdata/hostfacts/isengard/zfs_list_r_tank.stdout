@@ -3,6 +3,7 @@ tank/jails	/usr/local/jails
 tank/jails/containers	/usr/local/jails/containers
 tank/jails/containers/goodiesdb	/usr/local/jails/containers/goodiesdb
 tank/jails/containers/ottermq	/usr/local/jails/containers/ottermq
+tank/jails/containers/ottermq/data	/usr/local/jails/containers/ottermq/data
 tank/jails/containers/postgres	/usr/local/jails/containers/postgres
 tank/jails/media	/usr/local/jails/media
 tank/jails/templates	/usr/local/jails/templates

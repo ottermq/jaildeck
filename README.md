@@ -189,6 +189,13 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `PUT /api/jails/{name}/datasets/{child}` | create a child dataset, or converge an existing one |
 | `PATCH /api/jails/{name}/properties` | tag the jail's own dataset |
 | `PATCH /api/jails/{name}/datasets/{child}/properties` | tag one of its children |
+| `GET /api/jails/{name}/snapshots` | every snapshot of its datasets, oldest first |
+| `PUT /api/jails/{name}/snapshots/{snapshot}` | snapshot the jail and its children, atomically |
+| `DELETE /api/jails/{name}/snapshots/{snapshot}` | destroy it, with `confirm=` |
+| `POST /api/jails/{name}/snapshots/{snapshot}/rollback` | roll the jail's own dataset back |
+| `PUT /api/jails/{name}/datasets/{child}/snapshots/{snapshot}` | one dataset only |
+| `DELETE /api/jails/{name}/datasets/{child}/snapshots/{snapshot}` | |
+| `POST /api/jails/{name}/datasets/{child}/snapshots/{snapshot}/rollback` | |
 | `POST /api/jails/{name}/start` | |
 | `POST /api/jails/{name}/stop` | |
 | `POST /api/jails/{name}/restart` | |
@@ -246,6 +253,39 @@ curl -X PATCH .../api/jails/ottermq/properties \
 properties — the name must contain a colon — and the value is passed through untouched (JD-011).
 `PATCH` rather than `PUT` so that a replacing write cannot strip a tag another tool set; on a
 real host `zrepl:placeholder` and `com.sun:auto-snapshot` both live in this namespace.
+
+### Snapshots
+
+A jail-level snapshot is `zfs snapshot -r`: the jail **and every child dataset at one point in
+time**, which is what makes a root re-clonable while its data stays consistent with it.
+
+```sh
+curl -X PUT .../api/jails/ottermq/snapshots/before-upgrade
+# 201 {"created":["tank/.../ottermq@before-upgrade","tank/.../ottermq/data@before-upgrade"]}
+```
+
+**A rollback is never recursive**, because ZFS offers no way to make it so — `zfs rollback` has
+no flag that descends into children, and its own `-r` means "destroy the snapshots newer than
+this one". So a jail-level rollback returns the jail's own dataset and leaves its children where
+they are. Roll a child back through its own route.
+
+Destroy and rollback both take `confirm=`, and it is the snapshot's **full** name:
+
+```sh
+curl -X POST '.../snapshots/before-upgrade/rollback?confirm=tank/jails/containers/ottermq@before-upgrade'
+# 409 {"blocked":{"newer":["tank/jails/containers/ottermq@after-upgrade"], ...}}
+# add &destroy_newer=true to accept losing exactly those
+```
+
+A refusal names what is in the way, and comes **before** anything destructive runs — what blocks
+a destroy is asked for with `zfs get clones` and `zfs holds`, not read out of the error `zfs
+destroy` would have raised. A clone or a hold cannot be overridden here at all: getting past a
+clone needs `zfs destroy -R`, which takes the clone with it, and a hold exists to say "not this
+one".
+
+Snapshots are ordered by `create_txg`, ZFS's transaction group, not by `created`: a timestamp has
+second granularity and two snapshots taken in the same second tie on it, which is precisely when
+getting the order wrong destroys something it should not have.
 
 Authenticate with a token, as a script would:
 

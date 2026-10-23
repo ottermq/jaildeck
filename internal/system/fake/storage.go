@@ -27,11 +27,17 @@ type StorageSystem struct {
 	mu         sync.Mutex
 	datasets   []storage.Dataset
 	properties []storage.Property
+	snapshots  []storage.Snapshot
+	holds      []storage.Hold
+	clones     map[string][]string
+	// nextTXG stands in for ZFS's transaction group counter, which is what
+	// orders snapshots exactly. Monotonic, as the real one is.
+	nextTXG uint64
 }
 
 func NewStorageSystem() *StorageSystem {
 	const gib = 1 << 30
-	return &StorageSystem{
+	system := &StorageSystem{
 		datasets: []storage.Dataset{
 			{Name: "zroot", Mountpoint: "none", Used: 12 * gib, Available: 400 * gib, Referenced: 96 << 10},
 			{Name: "zroot/jails", Mountpoint: "/fake/jail", Used: 9 * gib, Available: 400 * gib, Referenced: 157 << 20},
@@ -53,6 +59,8 @@ func NewStorageSystem() *StorageSystem {
 			{Dataset: "zroot/jails/redis", Name: "otter:instance", Value: "cache-01"},
 		},
 	}
+	system.seedSnapshots()
+	return system
 }
 
 func (s *StorageSystem) Pools(ctx context.Context) ([]string, error) {

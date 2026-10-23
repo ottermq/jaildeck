@@ -24,6 +24,32 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### API
 
+- **Snapshots.** `GET /api/jails/{name}/snapshots` lists every snapshot of a jail's datasets;
+  `PUT`, `DELETE` and `POST .../rollback` under `/snapshots/{snapshot}` take, destroy and roll
+  back, with the same routes under `/datasets/{child}/` for one dataset alone. Every call is
+  audited. (#4, JD-024)
+
+  **A jail-level snapshot is recursive and atomic** — `zfs snapshot -r` takes the jail and
+  every child at one point in time, which is what lets a root be re-cloned while its data
+  dataset stays consistent with it (JD-007). **A rollback is never recursive**, because ZFS
+  offers no way to make it so: `zfs rollback` cannot descend into children, and its own `-r`
+  means "destroy the snapshots newer than this one". A jail-level rollback therefore leaves
+  the children where they are.
+
+  **Destroy and rollback take `confirm=`, and it is the snapshot's full `dataset@snapshot`** —
+  not the word already in the path, so a script looping over jails with one snapshot name in a
+  variable cannot confirm every one of them by accident (JD-016).
+
+  **Refusals come before anything destructive runs.** A rollback that would destroy newer
+  snapshots is `409` naming every one of them, until `destroy_newer=true` accepts losing
+  exactly those. A clone or a hold blocks both a destroy and a rollback and cannot be
+  overridden here at all. What blocks is asked for with `zfs get clones` and `zfs holds`,
+  rather than read out of the error the destroy would have raised.
+
+  Snapshots carry `create_txg`, ZFS's transaction group, and are ordered by it. `created` has
+  second granularity and ties; the transaction group never does, and it is the ordering a
+  rollback actually asks about.
+
 - **A jail's datasets and tags can be written.** `PUT /api/jails/{name}/datasets/{child}`
   creates a child dataset or converges an existing one — `201` created, `200` already
   there, `409` it exists somewhere else. `PATCH /api/jails/{name}/properties` and

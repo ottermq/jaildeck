@@ -39,6 +39,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Access Control** (v0.5.0): mandatory single-operator authentication, `jaildeck passwd`, named API tokens (JD-003)
 - **Web UI** (v0.6.0): embedded Svelte SPA with login, jails and operations views; API moved under `/api` (JD-015); audit log cursor paging
 - **Host Setup** (v0.7.0): host readiness report per capability, through the API and a Host page; ZFS pool discovery with `JAILDECK_ZFS_POOL`; `jaildeck init` and `PUT /api/host/layout` ensure the jails dataset layout, never clobbering one (JD-021)
+- **Storage Visibility** and **Storage Writes** (v0.8.0): a jail's datasets, ZFS user properties and snapshots, read and written through the API and the interface — create a child dataset with a quota, tag it, snapshot it, roll back, destroy, move a dataset out of a jail and back, and re-clone a jail's root from a newer template without losing its children (JD-022 … JD-026, JD-028, JD-029). Templates derive, list and remove in the same release (JD-027); preparing a release template is still ahead
 
 ---
 
@@ -146,6 +147,8 @@ A host with ZFS but no jail layout can be brought to a ready state by Jail Deck 
 
 ## Milestone: Storage Visibility
 
+**Status:** done in v0.8.0. Kept for the record of what it set out to do. The API side landed first; the milestone finished when the interface showed it (JD-028), because "visible through the API and the UI" is what it asked for.
+
 **Depends on:** Web UI (to display it).
 
 Goal: build the `storage` domain's read side — the primitives both template preparation and jail creation depend on.
@@ -170,6 +173,8 @@ Dataset and snapshot state is visible through the API and the UI. Read-only; cre
 ---
 
 ## Milestone: Storage Writes
+
+**Status:** done in v0.8.0. Kept for the record of what it set out to do. Every capability below is reachable from the API and from the interface, each destructive one behind the `confirm=<exact name>` the API already required (JD-029).
 
 **Depends on:** Storage Visibility. **★ Otter:** per-instance data datasets with quotas, on-demand snapshots, and keeping data when a jail is destroyed or its root replaced.
 
@@ -198,6 +203,8 @@ A child dataset can be created with a quota, snapshotted, moved out of a jail an
 ---
 
 ## Milestone: Templates
+
+**Status:** partly done in v0.8.0 — **not finished**. Listing with lineage and readiness, deriving one from another with packages, cloning a configured jail as a template, and removing one (refusing while anything is cloned from it) all landed, through the API and the interface (JD-027, JD-028, JD-029). **Preparing a release template end to end has not**: fetching `base.txz`, extracting it and running `freebsd-update` is minutes of work behind one request, which is JD-008's problem and the completion criterion below still names it.
 
 **Depends on:** Host Setup, Storage Visibility. **★ Otter:** the release template every service template derives from.
 

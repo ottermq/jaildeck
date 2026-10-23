@@ -1,0 +1,254 @@
+/* The documentation site uses the application's own design tokens, copied from
+   web/src/app.css so the two read as one thing. Copied rather than imported:
+   the interface ships inside the binary and this is a static site built by
+   GitHub Pages, and there is no build step here that could share a file.
+
+   If the application's palette changes, this is the file that has to follow. */
+:root {
+  color-scheme: light dark;
+
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-sunken: #f0f2f5;
+  --text: #333841;
+  --text-muted: #6a7280;
+  --text-strong: #14181e;
+
+  --border: #dde1e7;
+  --border-strong: #c3cad3;
+
+  --rail-bg: #191d24;
+  --rail-text: #aeb6c2;
+  --rail-text-strong: #ffffff;
+  --rail-border: #2b313a;
+  --rail-active-bg: rgba(255, 255, 255, 0.08);
+
+  --brand: #e11d26;
+  --brand-soft: rgba(225, 29, 38, 0.09);
+
+  --ok: #157f4a;
+  --warn: #8a5a06;
+  --danger: #be2630;
+
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius-sm: 4px;
+  --radius: 6px;
+
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  font: 15px/1.6 var(--sans);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c;
+    --surface: #1b1f25;
+    --surface-sunken: #111418;
+    --text: #c2c9d3;
+    --text-muted: #8a93a0;
+    --text-strong: #f1f3f6;
+
+    --border: #2a3038;
+    --border-strong: #3a424d;
+
+    --brand: #ff4b53;
+    --brand-soft: rgba(255, 75, 83, 0.14);
+
+    --ok: #4cc182;
+    --warn: #e0a33c;
+    --danger: #ff6b72;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- the rail ---------------------------------------------------------- */
+
+.rail {
+  background: var(--rail-bg);
+  border-bottom: 1px solid var(--rail-border);
+}
+
+.rail__inner {
+  max-width: 54rem;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-5);
+}
+
+.brand {
+  color: var(--rail-text-strong);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.brand__accent { color: var(--brand); }
+
+.rail__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.rail__nav a {
+  color: var(--rail-text);
+  text-decoration: none;
+  font-size: 0.85rem;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+}
+
+.rail__nav a:hover {
+  color: var(--rail-text-strong);
+  background: var(--rail-active-bg);
+}
+
+.rail__out { color: var(--text-muted); }
+
+/* --- the page ---------------------------------------------------------- */
+
+.page {
+  flex: 1;
+  width: 100%;
+  max-width: 54rem;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5) var(--space-6);
+}
+
+h1, h2, h3, h4 {
+  color: var(--text-strong);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: var(--space-6) 0 var(--space-3);
+}
+
+h1 { font-size: 1.75rem; margin-top: 0; }
+h2 {
+  font-size: 1.25rem;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+h3 { font-size: 1.05rem; }
+h4 { font-size: 0.95rem; color: var(--text-muted); }
+
+p, ul, ol { margin: 0 0 var(--space-4); }
+li { margin-bottom: var(--space-2); }
+
+a { color: var(--brand); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { background: var(--brand-soft); }
+
+strong { color: var(--text-strong); }
+
+/* --- code -------------------------------------------------------------- */
+
+code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.35em;
+}
+
+pre {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  overflow-x: auto;
+  line-height: 1.45;
+}
+
+pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.825rem;
+}
+
+/* --- tables, which carry most of the reference material ----------------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 var(--space-5);
+  font-size: 0.9rem;
+}
+
+th, td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+th {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom-color: var(--border-strong);
+}
+
+tbody tr:hover { background: var(--surface); }
+
+blockquote {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border-left: 3px solid var(--brand);
+  background: var(--brand-soft);
+  color: var(--text-muted);
+}
+
+blockquote p:last-child { margin-bottom: 0; }
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: var(--space-6) 0;
+}
+
+/* --- footer ------------------------------------------------------------ */
+
+.foot {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.825rem;
+}
+
+.foot p {
+  max-width: 54rem;
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-5);
+}
+
+@media (max-width: 40rem) {
+  .rail__inner { gap: var(--space-3); }
+  .rail__nav { margin-left: 0; }
+  .page { padding: var(--space-5) var(--space-4); }
+}

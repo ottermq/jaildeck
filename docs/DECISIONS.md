@@ -3,8 +3,6 @@ title: "Decisions"
 description: "Every architectural decision that has been locked, with the reasoning and the costs accepted."
 ---
 
-[&larr; Documentation index](./)
-
 # Jail Deck — Architecture Decisions
 
 This document records architectural decisions that have been intentionally locked for the project.

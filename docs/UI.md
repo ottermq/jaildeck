@@ -3,8 +3,6 @@ title: "Interface"
 description: "The web interface: what it shows and the conventions it follows."
 ---
 
-[&larr; Documentation index](./)
-
 # Jail Deck — UI Specification
 
 ## UI goal

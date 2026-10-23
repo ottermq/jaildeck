@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {%- seo -%}
+    <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+  </head>
+  <body>
+    <!-- The rail is the application's brand chrome and stays dark in both
+         themes, as it does in the interface itself. -->
+    <header class="rail">
+      <div class="rail__inner">
+        <a class="brand" href="{{ '/' | relative_url }}">
+          <span class="brand__accent">J</span>ail<span class="brand__accent">D</span>eck
+        </a>
+        <nav class="rail__nav" aria-label="Documentation">
+          <a href="{{ '/api/' | relative_url }}">API</a>
+          <a href="{{ '/SPEC/' | relative_url }}">Spec</a>
+          <a href="{{ '/ARCHITECTURE/' | relative_url }}">Architecture</a>
+          <a href="{{ '/DECISIONS/' | relative_url }}">Decisions</a>
+          <a href="{{ '/ROADMAP/' | relative_url }}">Roadmap</a>
+          <a href="{{ '/UI/' | relative_url }}">Interface</a>
+          <a class="rail__out" href="https://github.com/{{ site.repository }}">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="page">
+      {{ content }}
+    </main>
+
+    <footer class="foot">
+      <p>
+        <a href="https://github.com/{{ site.repository }}">{{ site.repository }}</a>
+        &middot; a FreeBSD jails dashboard and host agent, written to learn Go and FreeBSD properly
+      </p>
+    </footer>
+  </body>
+</html>

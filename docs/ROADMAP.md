@@ -3,8 +3,6 @@ title: "Roadmap"
 description: "The milestones, what each one has to deliver, and what it depends on."
 ---
 
-[&larr; Documentation index](./)
-
 # Jail Deck — Roadmap
 
 Capability-based rather than date-based.

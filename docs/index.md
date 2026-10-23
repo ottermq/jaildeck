@@ -22,7 +22,7 @@ container.
 
 ## Documentation
 
-| | |
+| Page | What it covers |
 | --- | --- |
 | [API guide](./api/) | Authenticating, the ZFS property allowlist, snapshots, and keeping data past the jail that held it |
 | [`swagger.json`](./api/swagger.json) | The machine-readable API description, generated from the handlers |
@@ -34,7 +34,7 @@ container.
 
 ## Where the project is
 
-| Milestone | |
+| Milestone | Where it stands |
 | --- | --- |
 | Host Setup | done |
 | Storage Visibility | done |

@@ -3,8 +3,6 @@ title: "Architecture"
 description: "How the code is laid out, and why it is laid out that way."
 ---
 
-[&larr; Documentation index](./)
-
 # Jail Deck — Architecture
 
 ## Architectural summary

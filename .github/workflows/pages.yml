@@ -1,0 +1,55 @@
+# Publishes docs/ to GitHub Pages from dev.
+#
+# Branch deployment can only publish from one branch, and that branch was main
+# — so the site tracked releases while the documentation being written lived on
+# dev. Early on that is the wrong way round: the docs worth reading are the ones
+# describing what was just built.
+#
+# Switching to Actions means Settings -> Pages -> Source must be "GitHub
+# Actions". With it on "Deploy from a branch" this workflow builds and then
+# fails at the deploy step.
+name: Pages
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - docs/**
+      - .github/workflows/pages.yml
+  # So the site can be republished without an empty commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and let a newer one win: a queued build of older
+# documentation has nothing to offer.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      # The same Jekyll build GitHub Pages runs for branch deployment, so the
+      # site is byte-for-byte what it was, from a different branch.
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./docs
+          destination: ./_site
+      - uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

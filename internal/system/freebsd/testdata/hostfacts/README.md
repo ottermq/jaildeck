@@ -75,7 +75,7 @@ The laptop's throwaway VM (`freebsd-jails`, ssh alias `fbsd`). One pool, one jai
 
 It is a KVM guest, so its `VT-x` line describes nested virtualisation.
 
-### `isengard/` — 15.1-RELEASE-p5, bare metal, captured 2026-10-22
+### `isengard/` — 15.1-RELEASE-p5, bare metal, captured 2026-10-23
 
 The target host: a Xeon E5620, three pools, three running jails, reached over Tailscale.
 A laboratory like the VM — nothing on it is precious and it can be rebuilt. This is the authority for anything the VM cannot answer honestly — the `VT-x`
@@ -254,6 +254,32 @@ and `_depth0`, `zfs_list_space_mixed`, `zfs_get_all` and `zfs_get_local`, `zfs_g
   `backup/isengard` and `backup/isengard/tank`, and the reverse-DNS `com.sun:auto-snapshot`
   on `rohan`'s `zroot/srv/builds`. So #2's feature has captured examples of a property that
   **is** set, not only of one that is not.
+- **`tank`'s jails are tagged, deliberately and by hand.** The 2026-10-23 capture was taken
+  after setting, on isengard:
+
+  ```
+  zfs set otter:instance=mq-01 tank/jails/containers/ottermq
+  zfs set otter:tier=broker    tank/jails/containers/ottermq
+  zfs set otter:instance=db-01 tank/jails/containers/postgres
+  zfs set atime=off            tank/jails/containers/ottermq
+  ```
+
+  This is the only time anything in `hostfacts/` was captured from a state arranged on
+  purpose on a real host rather than found on one, and the arrangement is three-sided:
+  `ottermq` carries two tags, `postgres` one, and `goodiesdb` **none**, so the absent case
+  comes from the same host as the present one. Before this, every container on every host
+  had no local properties at all, which left the headline feature of #2 — find your jails
+  by `otter:instance` — with no evidence.
+
+  The `atime=off` is the subtle half and it is not decoration. `tank` already sets
+  `atime=off`, so the container inherited it and the value does not change; what changes is
+  the **source**, from `inherited from tank` to `local`, which puts a *native* locally-set
+  property on a jail's own dataset. Without one, deleting the colon filter that separates
+  user properties from native ones changes nothing any jail ever sees, and the test that
+  claims to check it passes either way. It was found exactly that way: by deleting the
+  filter and watching the suite stay green.
+
+  Reverting is `zfs inherit <property> <dataset>` for each of the four.
 - **Snapshot captures are depth-limited on purpose.** Recursive over a pool, isengard
   returns 276 lines of which 256 are hourly `zrepl` snapshots — a fixture that teaches a
   parser nothing more and rewrites itself every hour. `vm-15.1` and `rohan` supply the

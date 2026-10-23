@@ -3,6 +3,7 @@ package freebsd
 import (
 	"context"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -23,6 +24,10 @@ func withStorageRoots(roots ...string) map[string]string {
 	return captures
 }
 
+// The byte figures below are a live host's, so a re-capture moves them and this
+// test fails loudly with the new value in the message. That is the intended
+// cost: asserting the whole struct is what proves all five columns land in the
+// right fields, which a weaker check would not.
 func TestDatasetsUnderFixtures(t *testing.T) {
 	tests := []struct {
 		set, root string
@@ -34,16 +39,16 @@ func TestDatasetsUnderFixtures(t *testing.T) {
 		// child dataset and not on a jail's root. These are those bytes.
 		{"isengard", "tank", 9, storage.Dataset{
 			Name: "tank/jails/containers/postgres", Mountpoint: "/usr/local/jails/containers/postgres",
-			Used: 1514057728, Available: 963201556480, Referenced: 1891282944}},
+			Used: 1519112192, Available: 963192627200, Referenced: 1891311616}},
 		// A pool root mounted nowhere, which must never be matched to a jail.
 		{"isengard", "tank", 9, storage.Dataset{
 			Name: "tank", Mountpoint: "none",
-			Used: 2360819712, Available: 963201556480, Referenced: 98304}},
+			Used: 2369748992, Available: 963192627200, Referenced: 98304}},
 		// The replication target: 23 datasets, every one of them mounted
 		// nowhere (JD-021).
 		{"isengard", "backup", 23, storage.Dataset{
 			Name: "backup/isengard/tank/jails", Mountpoint: "none",
-			Used: 3494150144, Available: 476462092288, Referenced: 164872192}},
+			Used: 3499880448, Available: 476441370624, Referenced: 164872192}},
 		{"rohan", "media", 7, storage.Dataset{
 			Name: "media/.incoming", Mountpoint: "/srv/media/.incoming",
 			Used: 1517826048, Available: 783248302080, Referenced: 1517826048}},
@@ -107,7 +112,15 @@ func TestLocalPropertiesFixtures(t *testing.T) {
 	}{
 		// Native properties come back too: filtering to user properties is the
 		// service's rule, not the adapter's (JD-010).
-		{"isengard", "tank", 4, storage.Property{Dataset: "tank/jails", Name: "mountpoint", Value: "/usr/local/jails"}},
+		{"isengard", "tank", 8, storage.Property{Dataset: "tank/jails", Name: "mountpoint", Value: "/usr/local/jails"}},
+		// A native property set locally ON A JAIL'S OWN DATASET, which is the
+		// only arrangement that makes the colon filter load-bearing: without
+		// one, dropping the filter changes nothing a jail ever sees.
+		{"isengard", "tank", 8, storage.Property{Dataset: "tank/jails/containers/ottermq", Name: "atime", Value: "off"}},
+		// The tags an Otter Labs client sets, captured from the host after a
+		// zfs set rather than invented: this is the evidence #2 exists for.
+		{"isengard", "tank", 8, storage.Property{Dataset: "tank/jails/containers/ottermq", Name: "otter:instance", Value: "mq-01"}},
+		{"isengard", "tank", 8, storage.Property{Dataset: "tank/jails/containers/postgres", Name: "otter:instance", Value: "db-01"}},
 		// The only real user properties on any of these hosts.
 		{"isengard", "backup", 29, storage.Property{Dataset: "backup/isengard", Name: "zrepl:placeholder", Value: "on"}},
 		{"rohan", "zroot", 32, storage.Property{Dataset: "zroot/srv/builds", Name: "com.sun:auto-snapshot", Value: "false"}},
@@ -226,5 +239,68 @@ func TestEveryStorageCaptureParses(t *testing.T) {
 	// would mean the walk stopped finding captures rather than that they pass.
 	if parsed < 10 {
 		t.Errorf("parsed %d storage captures, want at least 10", parsed)
+	}
+}
+
+// The whole chain on one host's real bytes: the adapter parses, the service
+// drops the native properties, and the jail source matches each dataset to the
+// jail mounted on it. The three paths are the ones isengard's jls capture
+// reports, and the otter:* tags were set on that host with zfs set so that the
+// headline feature of #2 -- find your jails by their tags -- has evidence
+// rather than a constructed example.
+func TestIsengardJailsCarryTheirRealStorage(t *testing.T) {
+	runner := &replayRunner{t: t, set: "isengard", captures: withStorageRoots("tank")}
+	source := storage.NewJailSource(storage.NewService(NewAdapter(runner), "tank"))
+
+	got, err := source.StorageForPaths(context.Background(), []string{
+		"/usr/local/jails/containers/postgres",
+		"/usr/local/jails/containers/goodiesdb",
+		"/usr/local/jails/containers/ottermq",
+	})
+	if err != nil {
+		t.Fatalf("StorageForPaths() error = %v", err)
+	}
+
+	// Two commands for three jails, which is the batching #2 asks for.
+	if len(runner.ran) != 2 {
+		t.Errorf("ran %d commands for three jails, want 2: %v", len(runner.ran), runner.ran)
+	}
+
+	want := map[string]map[string]string{
+		"/usr/local/jails/containers/ottermq":   {"otter:instance": "mq-01", "otter:tier": "broker"},
+		"/usr/local/jails/containers/postgres":  {"otter:instance": "db-01"},
+		"/usr/local/jails/containers/goodiesdb": nil, // deliberately untagged on the host
+	}
+	for path, wantProps := range want {
+		entry, ok := got[path]
+		if !ok {
+			t.Errorf("%s was matched to no dataset", path)
+			continue
+		}
+		if len(entry.Datasets) != 1 {
+			t.Errorf("%s has %d datasets, want 1: %+v", path, len(entry.Datasets), entry.Datasets)
+		}
+		if !reflect.DeepEqual(entry.Properties, wantProps) {
+			t.Errorf("%s properties = %v, want %v", path, entry.Properties, wantProps)
+		}
+	}
+
+	// tank/jails carries a locally-set mountpoint, compression and atime. None
+	// is a user property, and none of them reaches a jail.
+	for path, entry := range got {
+		for name := range entry.Properties {
+			if !strings.Contains(name, ":") {
+				t.Errorf("%s was given the native property %q", path, name)
+			}
+		}
+	}
+
+	// A jail cloned from a template refers to more than it uses, because the
+	// template's blocks are still shared. Checked as a relation rather than as
+	// byte counts, so it survives a re-capture (JD-007).
+	postgres := got["/usr/local/jails/containers/postgres"].Datasets[0]
+	if postgres.Referenced <= postgres.Used {
+		t.Errorf("postgres refers to %d and uses %d; want a clone to refer to more than it uses",
+			postgres.Referenced, postgres.Used)
 	}
 }

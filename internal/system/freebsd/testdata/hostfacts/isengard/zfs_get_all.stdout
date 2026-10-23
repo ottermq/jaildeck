@@ -1,6 +1,6 @@
 tank/jails	type	filesystem	-
 tank/jails	creation	Wed Aug 12 23:16 2026	-
-tank/jails	used	2.17G	-
+tank/jails	used	2.18G	-
 tank/jails	available	897G	-
 tank/jails	referenced	157M	-
 tank/jails	compressratio	1.88x	-
@@ -49,7 +49,7 @@ tank/jails	sync	standard	default
 tank/jails	dnodesize	legacy	default
 tank/jails	refcompressratio	1.00x	-
 tank/jails	written	0	-
-tank/jails	logicalused	3.94G	-
+tank/jails	logicalused	3.96G	-
 tank/jails	logicalreferenced	157M	-
 tank/jails	volmode	default	default
 tank/jails	filesystem_limit	none	default
@@ -70,7 +70,7 @@ tank/jails	keylocation	none	default
 tank/jails	keyformat	none	default
 tank/jails	pbkdf2iters	0	default
 tank/jails	special_small_blocks	0	default
-tank/jails	snapshots_changed	Thu Oct 22 21:16:33 2026	-
+tank/jails	snapshots_changed	Fri Oct 23  9:15:45 2026	-
 tank/jails	prefetch	all	default
 tank/jails	direct	standard	default
 tank/jails	longname	off	default

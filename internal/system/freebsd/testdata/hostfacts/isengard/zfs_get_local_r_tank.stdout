@@ -2,3 +2,7 @@ tank	mountpoint	none	local
 tank	compression	on	local
 tank	atime	off	local
 tank/jails	mountpoint	/usr/local/jails	local
+tank/jails/containers/ottermq	atime	off	local
+tank/jails/containers/ottermq	otter:instance	mq-01	local
+tank/jails/containers/ottermq	otter:tier	broker	local
+tank/jails/containers/postgres	otter:instance	db-01	local

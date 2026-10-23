@@ -210,7 +210,7 @@ Goal: automate the template-preparation workflow described in `docs/SPEC.md`. **
 - prepare a release template end to end: create dataset, fetch `base.txz`, extract, patch in host `resolv.conf`/`localtime`, bring to patch level with `freebsd-update`, snapshot as `@base`
 - list templates and their readiness
 - remove a template
-- a **derived template**: a release template plus packages installed with `pkg -c` (e.g. a PostgreSQL template), re-snapshotted. Whether this is a template-domain feature or just exec + snapshot from the caller's side is an open question below
+- a **derived template**: a release template plus packages installed with `pkg -c` (e.g. a PostgreSQL template), re-snapshotted. **Settled (JD-027):** a template-domain feature. The alternative — exec plus snapshot from the caller's side — cannot work, because the exec endpoint is `jexec`-based and a template is not a running jail; it would have meant exposing arbitrary command execution against a template root instead
 
 ### Technical tasks
 

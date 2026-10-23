@@ -24,6 +24,24 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### API
 
+- **Derived templates.** `GET /api/templates` lists templates with their readiness and
+  lineage; `PUT /api/templates/{name}` builds one from another plus packages — clone the
+  parent's `@base`, `pkg -c <root> install -y`, snapshot as `@base`. (#7, JD-027)
+
+  #7 asked whether this belonged to Jail Deck or to the caller. It belongs here, and the
+  deciding fact is that the alternative does not work: the exec endpoint is `jexec`-based
+  and a template is not a running jail, so "exec plus snapshot from the caller's side" would
+  have meant exposing **arbitrary command execution against a template root** — strictly
+  more powerful than installing a named package list.
+
+  Nothing is stored. `ready` is whether `@base` exists; `parent` is read back from
+  `zfs get origin`. A failed install leaves the clone without its `@base`, which the listing
+  reports as not ready — no cleanup is needed for that state to be truthful — and a second
+  attempt on it is refused rather than resumed.
+
+  This also settles the **storage domain granularity** question `docs/SPEC.md` had open:
+  templates get their own bounded context, `internal/templates`.
+
 - **A jail's root can be re-cloned from a newer template, keeping its children.**
   `POST /api/jails/{name}/reclone?confirm={name}` stops the jail, moves every child dataset
   aside, parks the old root, clones the new one, moves the children back and starts it

@@ -222,6 +222,52 @@ it first.
 part of the layout readiness check: a host that has never retained anything is not missing
 something (JD-021).
 
+## Templates
+
+A jail's root is a clone of a template's `@base` snapshot, so a **derived template** — a
+release template plus packages, re-snapshotted — means every jail cloned from it starts with
+those packages installed (JD-027):
+
+```sh
+curl -X PUT .../api/templates/postgres-16 \
+  -d '{"from":"15.1-RELEASE","packages":["postgresql16-server"]}'
+```
+
+```
+zfs clone    templates/15.1-RELEASE@base templates/postgres-16
+pkg -c       /usr/local/jails/templates/postgres-16 install -y postgresql16-server
+zfs snapshot templates/postgres-16@base
+```
+
+**This is not the exec endpoint, and could not be.** Exec runs `jexec` against a running jail,
+and a template is not a jail:
+
+```
+jexec 15.1-RELEASE ls /                              jail "15.1-RELEASE" not found
+pkg -c /usr/local/jails/templates/15.1-RELEASE info  exit 0
+```
+
+`GET /api/templates` lists them with `ready` and `parent`. Neither is stored: `ready` is
+whether `@base` exists, which is what makes a template usable, and `parent` is read back from
+`zfs get origin`. A derived template therefore cannot disagree about where it came from.
+
+### A failed install needs no cleanup
+
+If `pkg` fails, the clone stays **without** its `@base`. It is a template that exists and is
+not ready, which is exactly what it is and exactly what the listing says. Nothing has to be
+tidied up for that state to be truthful.
+
+A second attempt on it is refused rather than resumed: finishing it would install packages on
+top of whatever the failed attempt left behind, and a clean clone is indistinguishable from a
+clone with half of postgres in it once you are outside looking in. Destroy it and start again.
+
+### Package names
+
+Only one rule: an argument beginning with a dash is refused, because `pkg` would read it as an
+option and `install -y -f` is not the command that was asked for. No shell is involved either
+way. Versions, origins and flavours pass through untouched — `pkg` knows what a package name
+is and says so precisely when it is wrong, and that sentence comes back as a `400`.
+
 ## Upgrading a jail
 
 A jail's root is a clone of a template snapshot, so upgrading one is replacing that root with

@@ -786,6 +786,51 @@ The child survived. What had been written into the jail's **root** did not — i
 
 ---
 
+## JD-027 — Derived Templates
+
+**Status:** Locked — 2026-10-23
+
+A **derived template** is a release template plus packages, re-snapshotted: a PostgreSQL template, so every postgres jail starts with it installed rather than installing it per jail. Jail Deck builds them, and the packages are part of the request:
+
+```
+PUT /api/templates/postgres-16  {"from": "15.1-RELEASE", "packages": ["postgresql16-server"]}
+
+  zfs clone    templates/15.1-RELEASE@base templates/postgres-16
+  pkg -c       /usr/local/jails/templates/postgres-16 install -y postgresql16-server
+  zfs snapshot templates/postgres-16@base
+```
+
+**The alternative did not survive contact with the tooling.** #7 framed this as "a template-domain feature, or just exec + snapshot from the caller's side?" — but the exec endpoint is `jexec`-based (JD-016), and a template is not a running jail. Measured on the deployment target:
+
+```
+jexec 15.1-RELEASE ls /                                    jail "15.1-RELEASE" not found   [1]
+pkg -c /usr/local/jails/templates/15.1-RELEASE info                                        [0]
+```
+
+So "let the caller do it" would have required Jail Deck to expose **arbitrary command execution against a template root** — strictly more powerful, and less explainable, than installing a named list of packages. The option that looked smaller was bigger.
+
+It is also the consistent line. JD-007 already has Jail Deck running `freebsd-update` on a template; refusing to run `pkg` afterwards is a boundary with no principle behind it. The scope test in `docs/SPEC.md` — would a single operator on their own box want this — answers itself.
+
+**Nothing is stored.** A template's whole state is read from ZFS (JD-011): the dataset exists or it does not, `@base` exists or it does not, and `zfs get origin` says what it was derived from. `parent` in the listing is that origin, resolved, which is why a derived template cannot disagree with where it came from.
+
+**A failed install needs no cleanup to be truthful.** The clone stays without its `@base`, so it is a template that exists and is not ready — exactly what it is, and exactly what the listing reports. JD-007's rule that a template is usable only once `@base` exists does the whole job.
+
+**A second attempt on an unready template is refused**, by name. Finishing it would install packages on top of whatever the failed attempt left behind, and the difference between "a clean clone" and "a clone with half of postgres in it" is not visible from outside. Destroying it is one call; guessing is not recoverable.
+
+**Package names are validated for one thing only:** an argument beginning with a dash. No shell is involved — `CommandRunner` takes an argument array — so this is not about quoting. It is that `pkg` would read `-f` as an option, and `install -y -f` is not the command that was asked for. Versions, origins and flavours are passed through untouched; `pkg` knows what a package name is and says so precisely when it is wrong.
+
+**`pkg` running and refusing is a `400`**, carrying pkg's own sentence, for the reason JD-023 gives: a client told `500` retries a package that will never exist.
+
+### Consequence for the code's shape
+
+Templates get their own bounded context, `internal/templates`, which resolves the "Storage domain granularity" question `docs/SPEC.md` had open. A template is a dataset, but a template is not *a dataset*: it has a readiness state and a lineage, and those are rules about templates rather than about storage. `internal/storage` implements the port `internal/templates` defines, the same way it implements the ones `internal/jails` defines (JD-010).
+
+### Rationale
+
+The deciding argument is not that derived templates are useful, though they are. It is that the smaller-looking option required a bigger and more dangerous primitive. Given a choice between "Jail Deck installs the packages you name" and "Jail Deck runs whatever command you send against a filesystem that will become the root of every jail cloned from it", the first is the narrow one.
+
+---
+
 ## Decision Policy
 
 Once a decision is marked as **Locked**, it should not be revisited without a clear technical or product justification. Architectural evolution is expected, but changes should be deliberate and documented rather than occurring through incremental drift.

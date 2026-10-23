@@ -1556,6 +1556,116 @@
                     }
                 }
             }
+        },
+        "/templates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Every template under \u003cpool\u003e/jails/templates, with whether it is usable and\nwhat it was derived from.\n\nNothing here is stored (JD-011). `ready` is whether the `@base` snapshot\nexists, which is what makes a template usable (JD-007), and `parent` is read\nback from `zfs get origin` rather than recorded — so a derived template\ncannot disagree with where it actually came from.\n\nA template that exists and is **not** ready is a derive that failed part\nway through. It needs no cleanup to be truthful: it is simply unusable, and\nsays so.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "List templates",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/templates.Template"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/templates/{name}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "A release template plus packages, re-snapshotted — a PostgreSQL template,\nsay, so every postgres jail starts with it installed (#7, JD-027).\n\nThree steps: clone the parent's `@base`, `pkg -c \u003croot\u003e install -y` the\npackages, snapshot the result as `@base`.\n\n**This is not the exec endpoint and could not be.** Exec runs `jexec`\nagainst a running jail, and a template is not a jail — `jexec 15.1-RELEASE`\nanswers \"jail not found\". `pkg -c` chroots instead.\n\n**201** built · **200** it was already there and ready, so a client that\ntimed out can repeat the call (JD-016).\n\n**409 if it exists but is not ready.** That is what a previous failed\nderive leaves behind, and finishing it silently would install packages on\ntop of whatever that attempt left. Destroy it or inspect it first.\n\nA package name beginning with a dash is refused: `pkg` would read it as an\noption rather than a package, and `install -y -f` is not the command that\nwas asked for. No shell is involved either way.\n\nIf `pkg` fails, the clone stays **without** its `@base` and the listing\nreports it as not ready. pkg's own message comes back, as a `400` when pkg\nran and refused — a package that does not exist is the request's fault.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Derive a template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The new template's name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The parent and the packages",
+                        "name": "derive",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/templates.deriveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Already there and ready",
+                        "schema": {
+                            "$ref": "#/definitions/templates.Template"
+                        }
+                    },
+                    "201": {
+                        "description": "Built",
+                        "schema": {
+                            "$ref": "#/definitions/templates.Template"
+                        }
+                    },
+                    "400": {
+                        "description": "A bad name, or a package pkg refused",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such parent template",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "It exists but is not ready, or the parent is not",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -2162,6 +2272,57 @@
                 },
                 "used": {
                     "type": "integer"
+                }
+            }
+        },
+        "templates.Template": {
+            "type": "object",
+            "properties": {
+                "dataset": {
+                    "type": "string"
+                },
+                "mountpoint": {
+                    "description": "Mountpoint is where pkg -c operates and where a jail's clone comes from.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is the last component of the dataset, which is what a client uses:\n\"15.1-RELEASE\", \"postgres-16\".",
+                    "type": "string"
+                },
+                "parent": {
+                    "description": "Parent is the template this one was derived from, empty for a release\ntemplate built from base.txz. Read from the clone's origin rather than\nrecorded: a derived template cannot outlive or disagree with its parent.",
+                    "type": "string"
+                },
+                "ready": {
+                    "description": "Ready is whether the @base snapshot exists. A template is usable only\nthen (JD-007), and a derive that failed part way through is a template\nthat exists and is not ready.",
+                    "type": "boolean"
+                },
+                "referenced": {
+                    "description": "Referenced is the whole userland; for a derived template most of it is\nstill shared with its parent, so Used is what the packages cost.",
+                    "type": "integer"
+                },
+                "snapshot": {
+                    "description": "Snapshot is the full dataset@base once it exists, which is what a jail\nis cloned from.",
+                    "type": "string"
+                },
+                "used": {
+                    "type": "integer"
+                }
+            }
+        },
+        "templates.deriveRequest": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "description": "From is the template this one is derived from, by name.",
+                    "type": "string"
+                },
+                "packages": {
+                    "description": "Packages are installed with pkg -c into the clone. Empty is allowed and\nmeans a plain copy, which is a reasonable thing to want.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         }

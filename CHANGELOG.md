@@ -239,6 +239,24 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### Added
 
+- **Snapshots can be taken, rolled back to and destroyed from the interface.** (JD-029)
+
+  **Taking one** covers the whole jail by default — one `zfs snapshot -r`, so every dataset
+  is caught at the same instant (JD-024) — or one dataset alone. Taking one that already
+  exists changes nothing and says so, which is what makes repeating a timed-out call safe.
+
+  **Destroying one** asks for `confirm=<dataset>@<snapshot>` typed in full, because that is
+  what the API asks for: `nightly` names a snapshot on every dataset that has one. At the
+  jail's own dataset the destroy is recursive, and the confirmation **names every snapshot
+  it would take** before anything runs.
+
+  **A refusal is an answer, not a failure.** Nothing ran, so it is rendered under the row
+  in the warning colour, naming the newer snapshots, the clones or the holds that stood in
+  the way. A rollback refused over newer snapshots offers them back once — *destroy them
+  and roll back* — because `destroy_newer=true` is the one refusal this API lets a client
+  accept. Clones and holds get no such button: a hold exists to say "not this one", and
+  taking a clone with its origin needs `zfs destroy -R`, which Jail Deck never passes.
+
 - **A jail's tags and datasets can be changed from the interface.** The first of the write
   actions: add, edit and remove a ZFS tag; create a child dataset with its native
   properties; retain one past the jail. (JD-029)

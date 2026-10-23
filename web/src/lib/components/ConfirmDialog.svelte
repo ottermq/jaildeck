@@ -123,6 +123,12 @@ form {
     font-family: var(--mono);
 }
 
+/* The app's labels are uppercased, which would print the string to type in
+   capitals it does not have. What has to be typed is shown exactly. */
+.field label code {
+    text-transform: none;
+}
+
 .actions {
     display: flex;
     gap: var(--space-2);

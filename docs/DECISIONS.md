@@ -965,9 +965,29 @@ The forms carry the rules as *hints* — "the name has to contain a colon", "one
 
 A 409 from these endpoints is not a sentence: the body carries the structure that explains it, which is the whole reason the API answers that way. The client keeps the decoded body on its error type and renders the explanation. Showing "Conflict" would throw away the part the API went out of its way to provide.
 
+### A refusal is an answer, and it is shown where the row is
+
+The snapshot endpoints refuse with `409` and a body that names what stood in the way — the newer snapshots, the clones, the holds (JD-024). Nothing ran, so it is not a failure; the client returns it as a result rather than throwing, and renders it in the warning colour under the row it is about, not the danger colour. Red is reserved for what did go wrong.
+
+### A refused rollback is offered back, once
+
+`destroy_newer=true` is the one refusal this API lets a client accept. The ladder is:
+
+1. **Roll back** — the dialog explains what a rollback discards and asks for the typed name.
+2. The server refuses, **naming the newer snapshots**. That list is the reason the first attempt is worth making: a client that computed the set itself would be second-guessing the transaction-group ordering that decides it.
+3. **Destroy them and roll back** — a second dialog, carrying the list, with no typing. The name was already typed for this operation and nothing about the target changed; what is new is the list, and that is what the dialog shows.
+
+Clones and holds get no such button, because nothing in the API accepts them. A hold exists to say "not this one", and taking a clone with its origin needs `zfs destroy -R`, which Jail Deck never passes.
+
+### A recursive destroy names what it takes, first
+
+Destroying a snapshot of the jail's **own** dataset is recursive: every snapshot of that name under the jail goes with it. The confirmation lists them before anything runs, computed from the snapshot list already on screen — the same set the server computes with `namesWithShort`.
+
+A snapshot on a **child** dataset is destroyed through the child's own route and takes only itself. Which route a row uses is therefore decided by which dataset the row names, and the confirmation says what that means.
+
 ### What is not here
 
-Setting a native property on a dataset that already exists — growing a `refquota`, say — is possible in the API but absent from the page, because the jail endpoint does not report native properties and a form that edits a value it cannot show would be guessing. That is an API gap, not a UI decision.
+Setting a native property on a dataset that already exists — growing a `refquota`, say — is possible in the API but absent from the page, because the jail endpoint does not report native properties and a form that edits a value it cannot show would be guessing. That is an API gap, filed as [#55](https://github.com/ottermq/jaildeck/issues/55), not a UI decision.
 
 ---
 

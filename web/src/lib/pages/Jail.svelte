@@ -1,7 +1,10 @@
 <script lang="ts">
 import { onMount } from 'svelte'
-import { getJail, listSnapshots, setTags, ensureDataset, retainDataset } from '../stores/jails.svelte'
-import type { JailData, Snapshot, Dataset, PropertyConflict } from '../stores/jails.svelte'
+import {
+    getJail, listSnapshots, setTags, ensureDataset, retainDataset,
+    createSnapshot, destroySnapshot, rollbackSnapshot,
+} from '../stores/jails.svelte'
+import type { JailData, Snapshot, Dataset, PropertyConflict, SnapshotBlock } from '../stores/jails.svelte'
 import { ApiError } from '../services/api'
 import { onNavClick } from '../router.svelte'
 import { ask } from '../stores/confirm.svelte'
@@ -199,6 +202,125 @@ function conflictMessage(err: unknown): string | null {
 
 let retaining = $state('')
 let retainAs = $state('')
+
+// ---- snapshots --------------------------------------------------------
+
+// Where a snapshot lives, in the terms the API takes: an empty child is the
+// jail's own dataset.
+function childFor(snapshot: Snapshot): string {
+    if (!root || snapshot.dataset === root.name) return ''
+    return snapshot.dataset.slice(root.name.length + 1)
+}
+
+// What a destroy would actually take. At the jail's own dataset it is
+// recursive and removes every snapshot of that name under the jail -- the same
+// set the server computes, read off the list already on screen so the
+// confirmation can name them before anything runs.
+function alsoDestroyed(snapshot: Snapshot): string[] {
+    if (childFor(snapshot) !== '') return [snapshot.name]
+    return (snapshots ?? []).filter(s => s.short === snapshot.short).map(s => s.name)
+}
+
+let takingSnapshot = $state(false)
+let newSnapshotName = $state('')
+let snapshotTarget = $state('')
+let snapshotNote = $state('')
+// Refusals, keyed by the snapshot they are about, so one blocked rollback does
+// not put its explanation under another row.
+let blocked = $state<Record<string, SnapshotBlock>>({})
+
+function startTakeSnapshot() {
+    takingSnapshot = true
+    newSnapshotName = ''
+    snapshotTarget = ''
+    snapshotNote = ''
+    delete actionError['snapshot-take']
+}
+
+async function takeSnapshot(event: Event) {
+    event.preventDefault()
+    snapshotNote = ''
+    const short = newSnapshotName.trim()
+    const ok = await run('snapshot-take', async () => {
+        const result = await createSnapshot(name, snapshotTarget, short)
+        snapshotNote = result.existed
+            ? `${result.snapshot} was already there, so nothing was taken.`
+            : `Took ${result.created.length === 1 ? 'one snapshot' : `${result.created.length} snapshots`}.`
+    })
+    if (ok) takingSnapshot = false
+}
+
+async function destroy(snapshot: Snapshot) {
+    const targets = alsoDestroyed(snapshot)
+    const recursive = childFor(snapshot) === ''
+    const confirmed = await ask({
+        title: `Destroy ${snapshot.name}?`,
+        lines: [
+            'A snapshot is the only way back to the point it was taken. Destroying it cannot be undone.',
+            ...(recursive && targets.length > 1
+                ? ['This one is on the jail\u2019s own dataset, so the destroy is recursive: every snapshot of that name under the jail goes with it.']
+                : []),
+        ],
+        items: targets.length > 1 ? targets : undefined,
+        verb: 'Destroy',
+        typed: snapshot.name,
+    })
+    if (!confirmed) return
+
+    await run(`snapshot-${snapshot.name}`, async () => {
+        const result = await destroySnapshot(name, childFor(snapshot), snapshot.short, snapshot.name)
+        if (result.blocked) {
+            blocked[snapshot.name] = result.blocked
+            return
+        }
+        delete blocked[snapshot.name]
+        snapshotNote = `Destroyed ${result.destroyed.length === 1 ? 'one snapshot' : `${result.destroyed.length} snapshots`}.`
+    })
+}
+
+async function startRollback(snapshot: Snapshot) {
+    const confirmed = await ask({
+        title: `Roll ${snapshot.dataset} back to @${snapshot.short}?`,
+        lines: [
+            'Everything written to that dataset since the snapshot was taken is discarded.',
+            'Not recursive \u2014 zfs rollback cannot descend into children at all, so a child dataset keeps whatever is in it.',
+        ],
+        verb: 'Roll back',
+        typed: snapshot.name,
+    })
+    if (!confirmed) return
+    await rollback(snapshot, false)
+}
+
+// The second step of a refused rollback. The first attempt is what produced
+// the list of newer snapshots; accepting it is a different decision from
+// rolling back, so it is asked separately -- and the name has already been
+// typed for this operation, so what the dialog adds here is the list.
+async function acceptNewer(snapshot: Snapshot, newer: string[]) {
+    const confirmed = await ask({
+        title: `Destroy ${newer.length === 1 ? 'one newer snapshot' : `${newer.length} newer snapshots`} and roll back?`,
+        lines: ['These were taken after the one being rolled back to. A rollback cannot keep them.'],
+        items: newer,
+        verb: 'Destroy and roll back',
+    })
+    if (!confirmed) return
+    await rollback(snapshot, true)
+}
+
+async function rollback(snapshot: Snapshot, destroyNewer: boolean) {
+    await run(`snapshot-${snapshot.name}`, async () => {
+        const result = await rollbackSnapshot(
+            name, childFor(snapshot), snapshot.short, snapshot.name, destroyNewer)
+        if (result.blocked) {
+            blocked[snapshot.name] = result.blocked
+            return
+        }
+        delete blocked[snapshot.name]
+        snapshotNote = result.destroyed.length > 0
+            ? `Rolled back to ${result.snapshot}, destroying ${result.destroyed.length} newer.`
+            : `Rolled back to ${result.snapshot}.`
+    })
+}
 
 function startRetain(dataset: Dataset) {
     retaining = dataset.name
@@ -492,7 +614,54 @@ async function retain(event: Event, dataset: Dataset) {
     </section>
 
     <section class="panel">
-        <h2>Snapshots {#if snapshots}<span class="count">{snapshots.length}</span>{/if}</h2>
+        <div class="panel__head">
+            <h2>Snapshots {#if snapshots}<span class="count">{snapshots.length}</span>{/if}</h2>
+            {#if jail.path}
+                <button type="button" class="btn btn--small" onclick={startTakeSnapshot} disabled={takingSnapshot}>
+                    Take a snapshot
+                </button>
+            {/if}
+        </div>
+
+        {#if takingSnapshot}
+            <form class="form" onsubmit={takeSnapshot}>
+                <div class="form__row">
+                    <div class="field">
+                        <label for="snapshot-name">Name</label>
+                        <input id="snapshot-name" bind:value={newSnapshotName} placeholder="before-upgrade"
+                               autocomplete="off" spellcheck="false" required />
+                    </div>
+                    <div class="field field--grow">
+                        <label for="snapshot-target">Of</label>
+                        <select id="snapshot-target" bind:value={snapshotTarget}>
+                            <option value="">The whole jail — every dataset at one point in time</option>
+                            {#each children as child (child.name)}
+                                <option value={childOf(child)}>{child.name} — that dataset alone</option>
+                            {/each}
+                        </select>
+                    </div>
+                </div>
+                <p class="hint">
+                    A snapshot of the whole jail is one <code>zfs snapshot -r</code>, so every dataset
+                    is caught at the same instant. Taking one that already exists changes nothing and
+                    says so, which is what makes repeating a timed-out call safe.
+                </p>
+                {#if actionError['snapshot-take']}
+                    <p class="notice notice--error" role="alert">{actionError['snapshot-take']}</p>
+                {/if}
+                <div class="form__actions">
+                    <button type="button" class="btn btn--small" onclick={() => (takingSnapshot = false)}>Cancel</button>
+                    <button type="submit" class="btn btn--small btn--primary" disabled={busy === 'snapshot-take'}>
+                        {busy === 'snapshot-take' ? 'Taking…' : 'Take'}
+                    </button>
+                </div>
+            </form>
+        {/if}
+
+        {#if snapshotNote}
+            <p class="notice" aria-live="polite">{snapshotNote}</p>
+        {/if}
+
         {#if snapshotError}
             <p class="notice notice--error" role="alert">{snapshotError}</p>
         {:else if snapshots === null}
@@ -508,6 +677,7 @@ async function retain(event: Event, dataset: Dataset) {
                             <th>Dataset</th>
                             <th>Taken</th>
                             <th class="num">Used</th>
+                            <th class="actions-col">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -517,7 +687,58 @@ async function retain(event: Event, dataset: Dataset) {
                                 <td><code>{snapshot.dataset}</code></td>
                                 <td class="nowrap">{when(snapshot.created)}</td>
                                 <td class="num">{formatBytes(snapshot.used)}</td>
+                                <td class="actions-col">
+                                    <div class="actions">
+                                        <button
+                                            type="button"
+                                            class="btn btn--small"
+                                            disabled={!!busy}
+                                            onclick={() => startRollback(snapshot)}
+                                        >Roll back</button>
+                                        <button
+                                            type="button"
+                                            class="btn btn--small btn--danger"
+                                            disabled={!!busy}
+                                            onclick={() => destroy(snapshot)}
+                                        >Destroy</button>
+                                    </div>
+                                </td>
                             </tr>
+                            {#if actionError[`snapshot-${snapshot.name}`]}
+                                <tr class="row-form">
+                                    <td colspan="5">
+                                        <p class="notice notice--error" role="alert">
+                                            {actionError[`snapshot-${snapshot.name}`]}
+                                        </p>
+                                    </td>
+                                </tr>
+                            {:else if blocked[snapshot.name]}
+                                {@const block = blocked[snapshot.name]}
+                                <tr class="row-form">
+                                    <td colspan="5">
+                                        <div class="refusal" role="alert">
+                                            <p class="refusal__reason">{block.reason}</p>
+                                            <ul class="items">
+                                                {#each [...(block.newer ?? []), ...(block.clones ?? []), ...(block.holds ?? [])] as item (item)}
+                                                    <li><code>{item}</code></li>
+                                                {/each}
+                                            </ul>
+                                            <div class="form__actions">
+                                                <button type="button" class="btn btn--small"
+                                                        onclick={() => delete blocked[snapshot.name]}>Dismiss</button>
+                                                {#if block.newer && block.newer.length > 0}
+                                                    <button
+                                                        type="button"
+                                                        class="btn btn--small btn--danger"
+                                                        disabled={!!busy}
+                                                        onclick={() => acceptNewer(snapshot, block.newer ?? [])}
+                                                    >Destroy them and roll back</button>
+                                                {/if}
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {/if}
                         {/each}
                     </tbody>
                 </table>
@@ -525,6 +746,8 @@ async function retain(event: Event, dataset: Dataset) {
             <p class="hint">
                 Newest first. The server orders them by transaction group rather than by
                 time, because two snapshots taken in the same second share a timestamp.
+                Destroying one on the jail's own dataset is recursive and takes every
+                snapshot of that name with it; the confirmation names them first.
             </p>
         {/if}
     </section>
@@ -654,5 +877,32 @@ async function retain(event: Event, dataset: Dataset) {
 
 .form .hint {
     margin-top: 0;
+}
+
+/* A refusal is not an error: nothing ran, and what it names is the answer.
+   Carried in the warning colour rather than the danger one for that reason. */
+.refusal {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+    border-radius: var(--radius);
+    background: var(--warn-soft);
+}
+
+.refusal__reason {
+    color: var(--warn);
+    font-size: 0.9rem;
+}
+
+.items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    font-size: 0.85rem;
 }
 </style>

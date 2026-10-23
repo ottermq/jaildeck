@@ -90,9 +90,11 @@ At `/jails/{name}`, reached from the jail's name on the list (JD-028). Built:
 - **Tags** — the jail's `user:property` ZFS tags, its own and never a child's
 - **Snapshots** — newest first, ordered by transaction group rather than by time (JD-024); fetched separately and allowed to fail on its own
 
-Acting on it (JD-029): a tag can be added, edited and removed; a child dataset can be created with its native properties; a child dataset can be retained past the jail. Each opens a form where the thing is, and each refetches the jail when it is done.
+Acting on it (JD-029): a tag can be added, edited and removed; a child dataset can be created with its native properties, or retained past the jail; a snapshot can be taken, rolled back to, or destroyed. Each opens a form where the thing is, or a confirmation when it cannot be undone, and each refetches the jail when it is done.
 
-Still to come: snapshots taken, rolled back and destroyed; re-cloning the root; cloning the jail as a template; services, recent logs, recent operations, and which template the jail was cloned from.
+A refused snapshot operation is shown under its row, in the warning colour, naming what stood in the way. A rollback refused over newer snapshots offers them back once — "destroy them and roll back" — because that is the one refusal the API lets a client accept.
+
+Still to come: re-cloning the root; cloning the jail as a template; services, recent logs, recent operations, and which template the jail was cloned from.
 
 ### Storage page
 

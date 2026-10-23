@@ -93,3 +93,68 @@ func ownerOf(mountpoint string, paths []string) (owner string, isRoot bool, ok b
 }
 
 var _ jails.DatasetSource = (*JailSource)(nil)
+
+// EnsureDataset creates <the jail's dataset>/<child>, or brings an existing one
+// to the properties given.
+func (s *JailSource) EnsureDataset(ctx context.Context, jailPath, child string, properties map[string]string) (jails.DatasetChange, error) {
+	target, err := s.datasetFor(ctx, jailPath, child)
+	if err != nil {
+		return jails.DatasetChange{}, err
+	}
+	change, err := s.service.EnsureDataset(ctx, target, properties)
+	if err != nil {
+		return jails.DatasetChange{}, err
+	}
+	out := jails.DatasetChange{Dataset: change.Dataset, Created: change.Created, Applied: change.Applied}
+	if change.Conflict != nil {
+		out.Conflict = &jails.PropertyConflict{
+			Property: change.Conflict.Property,
+			Want:     change.Conflict.Want,
+			Have:     change.Conflict.Have,
+		}
+	}
+	return out, nil
+}
+
+// SetUserProperties tags the jail's own dataset, or one beneath it.
+func (s *JailSource) SetUserProperties(ctx context.Context, jailPath, child string, properties map[string]*string) (map[string]string, error) {
+	target, err := s.datasetFor(ctx, jailPath, child)
+	if err != nil {
+		return nil, err
+	}
+	return s.service.SetUserProperties(ctx, target, properties)
+}
+
+// datasetFor resolves a jail path, and optionally a child name, to a full ZFS
+// dataset name. An empty child is the jail's own dataset.
+//
+// The jail's own dataset must already exist -- it is the thing the jail runs
+// from. The child need not: creating it is the point.
+func (s *JailSource) datasetFor(ctx context.Context, jailPath, child string) (string, error) {
+	if jailPath == "" {
+		return "", jails.ErrJailNotOnZFS
+	}
+	inventory, err := s.service.Inventory(ctx)
+	if err != nil {
+		return "", err
+	}
+	root := ""
+	for _, dataset := range inventory.Datasets {
+		if dataset.Mountpoint == jailPath {
+			root = dataset.Name
+			break
+		}
+	}
+	if root == "" {
+		return "", jails.ErrJailNotOnZFS
+	}
+	if child == "" {
+		return root, nil
+	}
+	if err := checkChildName(child); err != nil {
+		return "", err
+	}
+	return root + "/" + child, nil
+}
+
+var _ jails.DatasetWriter = (*JailSource)(nil)

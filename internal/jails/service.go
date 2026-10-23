@@ -48,13 +48,17 @@ type JailService struct {
 	// listing reports jails without their datasets. Only tests that are not
 	// about storage pass nil; the application always wires one.
 	datasets DatasetSource
+	// datasetWriter may be nil on the same terms as datasets, and every write
+	// checks it rather than assuming the application wired one.
+	datasetWriter DatasetWriter
 }
 
-func NewJailService(system JailSystem, operationLogger audit.Logger, datasets DatasetSource) *JailService {
+func NewJailService(system JailSystem, operationLogger audit.Logger, datasets DatasetSource, datasetWriter DatasetWriter) *JailService {
 	return &JailService{
 		system:          system,
 		operationLogger: operationLogger,
 		datasets:        datasets,
+		datasetWriter:   datasetWriter,
 	}
 }
 

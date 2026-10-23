@@ -30,4 +30,21 @@ type StorageSystem interface {
 	// LocalProperties returns every property set locally on those datasets,
 	// native ones included. The colon filter belongs to the service.
 	LocalProperties(ctx context.Context, roots []string) ([]Property, error)
+
+	// CreateDataset runs zfs create with properties as -o options.
+	CreateDataset(ctx context.Context, name string, properties map[string]string) (Result, error)
+	// SetProperties runs one zfs set for all of them, native or user: which
+	// names are allowed is the service's rule, not the adapter's.
+	SetProperties(ctx context.Context, name string, properties map[string]string) (Result, error)
+	// InheritProperty runs zfs inherit, which unsets one property so the
+	// dataset takes its parent's value again -- the only way to remove a user
+	// property, and one property per call, because that is zfs's own shape.
+	InheritProperty(ctx context.Context, name, property string) (Result, error)
+}
+
+// Result is what a write actually ran, so the service can audit the command
+// rather than a reconstruction of it, as host.DatasetResult does.
+type Result struct {
+	Dataset string
+	Command string
 }

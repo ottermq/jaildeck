@@ -186,6 +186,9 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/auth/me` | the current principal and when the session expires |
 | `GET /api/jails` | every jail, running or merely configured, with its ZFS datasets |
 | `GET /api/jails/{name}` | one of them, same shape |
+| `PUT /api/jails/{name}/datasets/{child}` | create a child dataset, or converge an existing one |
+| `PATCH /api/jails/{name}/properties` | tag the jail's own dataset |
+| `PATCH /api/jails/{name}/datasets/{child}/properties` | tag one of its children |
 | `POST /api/jails/{name}/start` | |
 | `POST /api/jails/{name}/stop` | |
 | `POST /api/jails/{name}/restart` | |
@@ -210,6 +213,39 @@ clone still refers to the template's blocks. Both keys are **absent** for a jail
 dataset of its own — and also when the pool could not be read, which is logged at `WARN`
 rather than failing the request, so that an unreadable pool never costs you the list of
 jails you were about to start (JD-022).
+
+### Writing storage
+
+```sh
+curl -X PUT .../api/jails/ottermq/datasets/data \
+  -d '{"properties":{"refquota":"2G","recordsize":"16K","compression":"lz4"}}'
+# 201 created, 200 it was already there, 409 it exists somewhere else
+```
+
+Five native properties may be set — `mountpoint`, `refquota`, `recordsize`, `compression`,
+`atime` — and `mountpoint` only when creating. Anything else is `400` naming the list, because
+`sharenfs` would export the jail's data and `canmount` would stop it mounting, and both are
+editable as far as `zfs` is concerned. `quota` is not offered: JD-007 puts the limit on
+`refquota` because a clone's `referenced` space includes the template it was cloned from.
+
+The quota lands where it belongs. On a jail with a 2G `refquota` on its `data` dataset, `df`
+**inside the jail** reports 2.0G, not the pool's free space.
+
+Values are not validated here. `zfs` answers `recordsize=7K` with "must be power of 2 from
+512B to 16M", and that sentence is what comes back — as a `400`, not a `500`, so a client does
+not retry a value that can never work.
+
+Tagging is separate, because tags merge where a dataset spec converges:
+
+```sh
+curl -X PATCH .../api/jails/ottermq/properties \
+  -d '{"otter:instance":"mq-01","otter:retired":null}'
+```
+
+`null` removes a property (`zfs inherit`), which is not the same as setting it empty. Only user
+properties — the name must contain a colon — and the value is passed through untouched (JD-011).
+`PATCH` rather than `PUT` so that a replacing write cannot strip a tag another tool set; on a
+real host `zrepl:placeholder` and `com.sun:auto-snapshot` both live in this namespace.
 
 Authenticate with a token, as a script would:
 

@@ -3,12 +3,17 @@ package storage
 import (
 	"context"
 	"strings"
+
+	"github.com/ottermq/jaildeck/internal/audit"
 )
 
 // Service reads the host's storage. It holds no state: everything it returns
 // is derived from zfs on the call, because ZFS is already the record (JD-011).
 type Service struct {
 	system StorageSystem
+	// operationLogger records every mutation. Reads are not logged: the audit
+	// trail is what Jail Deck did, not what it was asked (JD-011).
+	operationLogger audit.Logger
 	// pool is JAILDECK_ZFS_POOL. Empty is not an error here and no pool is
 	// adopted by guesswork: the read simply widens to every imported pool.
 	// Judging whether the operator's pool is usable is host readiness' job
@@ -16,8 +21,8 @@ type Service struct {
 	pool string
 }
 
-func NewService(system StorageSystem, pool string) *Service {
-	return &Service{system: system, pool: pool}
+func NewService(system StorageSystem, operationLogger audit.Logger, pool string) *Service {
+	return &Service{system: system, operationLogger: operationLogger, pool: pool}
 }
 
 // Inventory reads the datasets and their user properties in two commands, both

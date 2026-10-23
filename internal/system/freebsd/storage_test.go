@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/storage"
 )
 
@@ -250,7 +251,7 @@ func TestEveryStorageCaptureParses(t *testing.T) {
 // rather than a constructed example.
 func TestIsengardJailsCarryTheirRealStorage(t *testing.T) {
 	runner := &replayRunner{t: t, set: "isengard", captures: withStorageRoots("tank")}
-	source := storage.NewJailSource(storage.NewService(NewAdapter(runner), "tank"))
+	source := storage.NewJailSource(storage.NewService(NewStorageAdapter(runner), &nullAuditLogger{}, "tank"))
 
 	got, err := source.StorageForPaths(context.Background(), []string{
 		"/usr/local/jails/containers/postgres",
@@ -304,3 +305,10 @@ func TestIsengardJailsCarryTheirRealStorage(t *testing.T) {
 			postgres.Referenced, postgres.Used)
 	}
 }
+
+// nullAuditLogger satisfies audit.Logger for the read-only tests here, which
+// write nothing and so log nothing. A write test would want to assert on the
+// entries; those live in internal/storage, where the rules are.
+type nullAuditLogger struct{}
+
+func (nullAuditLogger) Log(context.Context, audit.Entry) error { return nil }

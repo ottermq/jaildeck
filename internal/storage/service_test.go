@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/ottermq/jaildeck/internal/audit"
 )
 
 // stubSystem answers from memory. The datasets and properties it carries are
@@ -20,6 +22,10 @@ type stubSystem struct {
 	properties []Property
 	propErr    error
 	roots      [][]string
+	// The write half: every command the stub was asked to run, and an error to
+	// make the next one fail.
+	ran      []string
+	writeErr error
 }
 
 func (s *stubSystem) Pools(context.Context) ([]string, error) { return s.pools, s.poolsErr }
@@ -32,6 +38,68 @@ func (s *stubSystem) DatasetsUnder(_ context.Context, roots []string) ([]Dataset
 func (s *stubSystem) LocalProperties(_ context.Context, roots []string) ([]Property, error) {
 	s.roots = append(s.roots, roots)
 	return s.properties, s.propErr
+}
+
+// The write half. Each records the command it would have run, in the same shape
+// the freebsd adapter builds, so a test can assert on the argument array
+// without a FreeBSD host.
+func (s *stubSystem) CreateDataset(_ context.Context, name string, properties map[string]string) (Result, error) {
+	s.ran = append(s.ran, stubCommand("create", name, properties))
+	if s.writeErr != nil {
+		return Result{Dataset: name, Command: stubCommand("create", name, properties)}, s.writeErr
+	}
+	s.datasets = append(s.datasets, Dataset{Name: name, Mountpoint: properties["mountpoint"]})
+	for property, value := range properties {
+		s.properties = append(s.properties, Property{Dataset: name, Name: property, Value: value})
+	}
+	return Result{Dataset: name, Command: stubCommand("create", name, properties)}, nil
+}
+
+func (s *stubSystem) SetProperties(_ context.Context, name string, properties map[string]string) (Result, error) {
+	s.ran = append(s.ran, stubCommand("set", name, properties))
+	if s.writeErr != nil {
+		return Result{Dataset: name, Command: stubCommand("set", name, properties)}, s.writeErr
+	}
+	for property, value := range properties {
+		replaced := false
+		for i, p := range s.properties {
+			if p.Dataset == name && p.Name == property {
+				s.properties[i].Value, replaced = value, true
+			}
+		}
+		if !replaced {
+			s.properties = append(s.properties, Property{Dataset: name, Name: property, Value: value})
+		}
+	}
+	return Result{Dataset: name, Command: stubCommand("set", name, properties)}, nil
+}
+
+func (s *stubSystem) InheritProperty(_ context.Context, name, property string) (Result, error) {
+	command := "zfs inherit " + property + " " + name
+	s.ran = append(s.ran, command)
+	if s.writeErr != nil {
+		return Result{Dataset: name, Command: command}, s.writeErr
+	}
+	s.properties = slices.DeleteFunc(s.properties, func(p Property) bool {
+		return p.Dataset == name && p.Name == property
+	})
+	return Result{Dataset: name, Command: command}, nil
+}
+
+func stubCommand(verb, name string, properties map[string]string) string {
+	names := make([]string, 0, len(properties))
+	for property := range properties {
+		names = append(names, property)
+	}
+	slices.Sort(names)
+	command := "zfs " + verb
+	for _, property := range names {
+		if verb == "create" {
+			command += " -o"
+		}
+		command += " " + property + "=" + properties[property]
+	}
+	return command + " " + name
 }
 
 func isengardTank() *stubSystem {
@@ -56,7 +124,7 @@ func isengardTank() *stubSystem {
 // by hand, none of which say whose jail it is.
 func TestInventoryKeepsOnlyUserProperties(t *testing.T) {
 	system := isengardTank()
-	inventory, err := NewService(system, "tank").Inventory(context.Background())
+	inventory, err := NewService(system, &fakeLogger{}, "tank").Inventory(context.Background())
 	if err != nil {
 		t.Fatalf("Inventory() error = %v", err)
 	}
@@ -89,7 +157,7 @@ func TestInventoryScopesToTheConfiguredPool(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			system := isengardTank()
-			if _, err := NewService(system, tt.pool).Inventory(context.Background()); err != nil {
+			if _, err := NewService(system, &fakeLogger{}, tt.pool).Inventory(context.Background()); err != nil {
 				t.Fatalf("Inventory() error = %v", err)
 			}
 			// Two reads, the datasets and the properties, and both must be
@@ -111,7 +179,7 @@ func TestInventoryScopesToTheConfiguredPool(t *testing.T) {
 func TestInventoryWithNoPoolsIsEmptyNotAnError(t *testing.T) {
 	system := isengardTank()
 	system.pools = nil
-	inventory, err := NewService(system, "").Inventory(context.Background())
+	inventory, err := NewService(system, &fakeLogger{}, "").Inventory(context.Background())
 	if err != nil {
 		t.Fatalf("Inventory() error = %v", err)
 	}
@@ -146,9 +214,18 @@ func TestInventoryReportsEachFailure(t *testing.T) {
 			if tt.name != "zpool failed" {
 				pool = "tank"
 			}
-			if _, err := NewService(system, pool).Inventory(context.Background()); !errors.Is(err, boom) {
+			if _, err := NewService(system, &fakeLogger{}, pool).Inventory(context.Background()); !errors.Is(err, boom) {
 				t.Errorf("Inventory() error = %v, want %v", err, boom)
 			}
 		})
 	}
+}
+
+// fakeLogger collects audit entries. Local rather than from internal/audit's
+// own test helpers: those are in that package's _test files and not importable.
+type fakeLogger struct{ entries []audit.Entry }
+
+func (f *fakeLogger) Log(_ context.Context, e audit.Entry) error {
+	f.entries = append(f.entries, e)
+	return nil
 }

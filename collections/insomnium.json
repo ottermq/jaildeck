@@ -1067,6 +1067,150 @@
       "settingRebuildPath": true,
       "settingSendCookies": true,
       "settingStoreCookies": true
+    },
+    {
+      "_id": "req_10a98e620f08bea0fda498d36e331424",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Ensure a child dataset",
+      "description": "Creates `<the jail's dataset>/data`, or brings an existing one to these properties (#3).\n\n**201** created · **200** it was already there · **409** it exists somewhere else.\n\nIdempotent on purpose: an automation client that times out repeats the call and the answer tells it where it stands (JD-016). The second call returns 200 with `created: false`.\n\nOnly five native properties may be set, and only `zfs create` may set `mountpoint`:\n\n| property | create | update |\n| --- | --- | --- |\n| `mountpoint` | yes | **no** |\n| `refquota` | yes | yes |\n| `recordsize` | yes | yes |\n| `compression` | yes | yes |\n| `atime` | yes | yes |\n\nAnything else is 400 with the list — `sharenfs` would export the jail's data, `canmount` would stop it mounting, `quota` is not `refquota` (JD-007 puts the quota on the child precisely because a clone's `referenced` space includes the template).\n\n`mountpoint` on an existing dataset is **409 with both values**, not a silent move: the caller is describing a different dataset than the one that is there. Matching is fine and changes nothing.\n\nValues are not validated here. `zfs` says exactly why `recordsize=7K` is wrong, and that message is what comes back.",
+      "method": "PUT",
+      "url": "{{baseUrl}}/jails/{{jail}}/datasets/data",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"properties\": {\n    \"refquota\": \"10G\",\n    \"recordsize\": \"16K\",\n    \"compression\": \"lz4\"\n  }\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2500,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_58c5b6283b9ccb5a53d1444070e04a65",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Tag the jail",
+      "description": "Sets ZFS **user properties** on the jail's own dataset — the tags `GET /jails` reads back (#2, JD-004). Returns what the dataset carries afterwards, read from ZFS rather than assumed.\n\nPATCH, not PUT: these merge. A PUT that replaced the whole set would strip a tag another tool had set — `zrepl:placeholder` and `com.sun:auto-snapshot` both live in this namespace on real hosts.\n\n**A null value removes the property** (`zfs inherit`), which is not the same as setting it empty: `\"otter:tier\": null` means the jail has no tier, `\"otter:tier\": \"\"` means its tier is the empty string.\n\nOnly user properties: the name must contain a colon. `compression` is 400, because a native property has to go through the allowlist above. An equals sign or whitespace in the name is also 400 — `zfs set` takes `property=value` as one argument.\n\nValues are passed through and never interpreted (JD-011). Anything is allowed, including `role=db,env=prod`.",
+      "method": "PATCH",
+      "url": "{{baseUrl}}/jails/{{jail}}/properties",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"otter:instance\": \"mq-01\",\n  \"otter:tier\": \"broker\",\n  \"otter:retired\": null\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2450,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_3e13e00f9b61b2837e0b707fe69adbc4",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Tag a child dataset",
+      "description": "The same, on a dataset beneath the jail's own.\n\nWorth keeping separate from the request above: a jail's listing reports **its own** dataset's properties, never a child's. Tag `data` with `otter:instance` and it will not appear on the jail — by design, or one jail with three children would look like four instances to a client searching by tag (JD-022).",
+      "method": "PATCH",
+      "url": "{{baseUrl}}/jails/{{jail}}/datasets/data/properties",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"otter:retention\": \"30d\"\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2400,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_76cb2f909c0975bee2068864fc88f42e",
+      "_type": "request",
+      "parentId": "fld_94d4fcd0d6ad851777e19c71c1151c84",
+      "name": "Property outside the allowlist",
+      "description": "400, naming every property that is allowed. `sharenfs` is editable as far as `zfs` is concerned — it would publish the jail's filesystem over NFS. The allowlist is five of the sixty-odd properties this ZFS reports as editable.\n\nNothing runs: a refused property in a batch does not leave the rest applied.",
+      "method": "PUT",
+      "url": "{{baseUrl}}/jails/{{jail}}/datasets/data",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"properties\": {\n    \"sharenfs\": \"on\"\n  }\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -400,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
     }
   ]
 }

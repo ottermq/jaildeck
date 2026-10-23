@@ -651,6 +651,34 @@ Both halves of this are the same choice twice: prefer what the system actually r
 
 ---
 
+## JD-023 — ZFS Property Writes
+
+**Status:** Locked — 2026-10-23
+
+Jail Deck writes two kinds of ZFS property, and the difference decides everything else.
+
+**Native properties are allowlisted, and the list is five long:** `mountpoint`, `refquota`, `recordsize`, `compression`, `atime`. This ZFS reports **108 properties, over sixty of them editable**, and the editable set includes `sharenfs` (which would publish a jail's filesystem over NFS), `canmount` (which would stop it mounting), `exec`, `setuid` and `devices` (mount-time security semantics), `jailed` (ZFS delegation) and `keylocation` (encryption). An allowlist exists so that widening it is a deliberate, reviewed act rather than whatever `zfs` happens to permit, which is why it starts at the five the consumer actually needs.
+
+`quota` is deliberately **not** among them. JD-007 puts the limit on `refquota` because a clone's `referenced` space includes the template's blocks; offering both invites the mistake that decision exists to prevent.
+
+**`mountpoint` is settable exactly once, at creation.** Changing it on a running jail's dataset remounts it elsewhere and leaves the jail looking at a directory no longer backed by what it was. So there are two lists: everything may be set by `zfs create`, and everything but `mountpoint` may be changed afterwards — growing a quota being the ordinary operational need with no other path through this API. Asking for a mountpoint an existing dataset does not have is **409 with both values**, not a silent move: the caller is describing a different dataset than the one that is there.
+
+**User properties are passed through and never interpreted** (JD-011). The only rule is ZFS's own — the name contains a colon — plus one of this code's: no equals sign or whitespace in the name, because `zfs set` takes `property=value` as a single argument. The value is not inspected at all.
+
+**Native property *values* are not validated either.** `zfs` answers `recordsize=7K` with "must be power of 2 from 512B to 16M", and nothing written here would say it better (JD-012). Re-implementing those rules would only add a second opinion that can be wrong on its own.
+
+**A command that ran and exited non-zero is reported as 400, not 500.** A client told 500 will retry a value that can never work, which defeats JD-016's retry contract. The distinction available is only "ran and exited non-zero" against "never ran or timed out" — both of the latter report exit code `-1` — so a genuinely server-side refusal such as permission denied also reports 400. `zfs`'s own sentence is in the body either way, which is what the operator reads.
+
+**Writes are idempotent and audited.** `PUT` creates or converges; a repeat is `200` with `created: false`. Updatable properties are applied rather than compared first: deciding "10G is already 10G" would mean parsing a size this package has no business interpreting, and setting a property to the value it already holds is a no-op in ZFS. Every command writes one audit line with the command itself, so `zfs inherit`'s one-property-per-call shape really does produce one entry per removal.
+
+### Rationale
+
+The two kinds of property are not two flavours of the same thing. A native property changes how the filesystem behaves and is Jail Deck's responsibility; a user property is a string the consumer owns and Jail Deck is merely a courier for. Treating them alike would mean either validating tags nobody has the right to validate, or letting `sharenfs` through because it arrived in the same map.
+
+**Verified on isengard, not only in tests.** Creating `tank/jails/containers/ottermq/data` with `refquota=2G` through the API put the quota where JD-007 says it belongs: `df` **inside the running jail** reports 2.0G rather than the pool's 897G, with the mount point shown as `[restricted]` by `enforce_statfs`. That is the behaviour the whole arrangement exists for.
+
+---
+
 ## Decision Policy
 
 Once a decision is marked as **Locked**, it should not be revisited without a clear technical or product justification. Architectural evolution is expected, but changes should be deliberate and documented rather than occurring through incremental drift.

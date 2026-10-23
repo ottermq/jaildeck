@@ -28,7 +28,7 @@ func TestStorageForPathsMatchesByMountpoint(t *testing.T) {
 			{Dataset: "tank/jails/containers/ottermq/data", Name: "otter:instance", Value: "mq-01-data"},
 		},
 	}
-	source := NewJailSource(NewService(system, "tank"))
+	source := NewJailSource(NewService(system, &fakeLogger{}, "tank"))
 
 	got, err := source.StorageForPaths(context.Background(), []string{
 		"/usr/local/jails/containers/ottermq",
@@ -114,7 +114,7 @@ func TestStorageForPathsIgnoresAnEmptyPath(t *testing.T) {
 		pools:    []string{"tank"},
 		datasets: []Dataset{{Name: "tank/jails", Mountpoint: "/usr/local/jails"}},
 	}
-	got, err := NewJailSource(NewService(system, "tank")).StorageForPaths(context.Background(), []string{""})
+	got, err := NewJailSource(NewService(system, &fakeLogger{}, "tank")).StorageForPaths(context.Background(), []string{""})
 	if err != nil {
 		t.Fatalf("StorageForPaths() error = %v", err)
 	}
@@ -126,7 +126,7 @@ func TestStorageForPathsIgnoresAnEmptyPath(t *testing.T) {
 func TestStorageForPathsPropagatesAFailedRead(t *testing.T) {
 	boom := errors.New("zfs: pool is suspended")
 	system := &stubSystem{pools: []string{"tank"}, datasetErr: boom}
-	got, err := NewJailSource(NewService(system, "tank")).StorageForPaths(context.Background(), []string{"/usr/local/jails"})
+	got, err := NewJailSource(NewService(system, &fakeLogger{}, "tank")).StorageForPaths(context.Background(), []string{"/usr/local/jails"})
 	if !errors.Is(err, boom) {
 		t.Errorf("StorageForPaths() = %+v, %v; want %v", got, err, boom)
 	}

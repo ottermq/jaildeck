@@ -154,7 +154,7 @@ A jail present in configuration but not in `jls` is shown as stopped; a jail pre
 
 An operator needs to see a stopped jail in order to start it, so configuration parsing is a read path even before config editing exists.
 
-**Amended 2026-10-21.** A jail listing also returns the jail's child datasets and its ZFS user properties (`zfs get -H -o property,value -s local all`, filtered to names containing `:`). An automation client tags its jails with properties such as `otter:instance` and finds them again from the listing alone, with nothing stored in Jail Deck (JD-011).
+**Amended 2026-10-21.** A jail listing also returns the jail's child datasets and its ZFS user properties (`zfs get -H -r -o name,property,value,source -s local all <pool>`, filtered to names containing `:`). An automation client tags its jails with properties such as `otter:instance` and finds them again from the listing alone, with nothing stored in Jail Deck (JD-011).
 
 ---
 
@@ -624,6 +624,30 @@ Both rules come from the deployment host's own topology, not from caution in the
 `zpool list` prints `backup`, `tank`, `zroot` on isengard, and the first of those holds a `zrepl` replica of the jails layout with **every mountpoint `none`**. Adopting the first pool printed, or matching the layout on dataset names, reports a fully provisioned host whose datasets are mounted nowhere. Hence an explicit pool, and a layout check that compares mountpoints against **full dataset paths** — another host has a pool called `media`, which is also one of the layout's names.
 
 The mount-over refusal is the same host read the other way round. That replica lives at `backup/isengard/tank/jails`, not `backup/jails`, so with `JAILDECK_ZFS_POOL=backup` the layout is simply *missing* — and creating `backup/jails` with `mountpoint=/usr/local/jails` would have mounted it over the live `tank/jails`, where the jails actually run. The readiness remedy would have been `jaildeck init`: the report would have told the operator to do it.
+
+---
+
+## JD-022 — Matching a Jail to Its Datasets
+
+**Status:** Locked — 2026-10-23
+
+A dataset belongs to a jail when it is **mounted at the jail's `path` or under it**. The jail's own dataset is the one mounted exactly there; everything deeper is a child. Where two jail paths both match, the longest wins, so a jail nested inside another's directory keeps its own datasets.
+
+The alternative was the naming convention — `<pool>/jails/containers/<name>`, which JD-021 fixes and host readiness already enforces. Mountpoint matching was chosen because it is **truthful rather than conventional**: it works for a jail placed outside that layout, and a jail not on ZFS at all reports nothing instead of reporting the datasets of whatever happens to carry its name. A jail whose stanza sets no `path` matches nothing rather than everything.
+
+**Sizes cross the API as exact bytes.** `zfs list` prints `1.41G` and `897G` unless given `-p`; those cannot be compared or totalled, and the API is read by automation first (JD-016). Formatting a byte count for a human is the web interface's job. `referenced` routinely exceeds `used` on a jail cloned from a template, because a clone still refers to the template's blocks — the reason JD-007 puts quotas on a child dataset.
+
+**The read is batched per host, never per jail**: one `zfs list` and one `zfs get`, scoped to `JAILDECK_ZFS_POOL` when the operator set one and to every imported pool when they did not. Widening rather than adopting a pool by guesswork is deliberate: judging whether a pool is usable belongs to host readiness (JD-021), and a second opinion here is how the two would come to disagree.
+
+**A failed storage read degrades the listing instead of failing it.** The jails come back without their datasets and the reason is logged at `WARN`. Seeing a stopped jail is how an operator starts it (JD-004), and an unreadable or suspended pool must not take that away.
+
+**The consequence, accepted deliberately:** absent storage in a response means either "this jail has none" or "ZFS could not be read", and nothing in the response tells the two apart. The log does. Should a client ever need to distinguish them, the cheap fix is a field added with `omitempty`, as every other addition here has been.
+
+### Rationale
+
+Both halves of this are the same choice twice: prefer what the system actually reports over what it is supposed to look like. A convention-based match is a second source of truth about where a jail's data lives, and JD-011 rejects those for the same reason — the moment it disagrees with the mount table, the dashboard has to pick, and either answer is sometimes wrong.
+
+**Known duplication, recorded rather than fixed:** `host.HostSystem` reads `zfs list -H -o name,mountpoint -r <pool>` for the layout check while `storage.StorageSystem` reads the same datasets with their sizes. Two commands where one would do. Readiness predates the storage domain and its fixtures are tested against the narrower command; folding one into the other is worth doing when something else makes that code move.
 
 ---
 

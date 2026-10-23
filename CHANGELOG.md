@@ -24,6 +24,35 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### API
 
+- **A jail listing carries its ZFS storage.** `GET /api/jails` and the new
+  `GET /api/jails/{name}` include `datasets` — the dataset mounted at the jail's
+  `path` and everything mounted under it, each with `name`, `mountpoint`, `used`,
+  `referenced` and `available` — and `properties`, the ZFS *user* properties of the
+  jail's own dataset. An automation client tags its jails with `otter:instance` and
+  finds them again from the listing alone, with nothing stored in Jail Deck
+  (JD-004, JD-011). Additive: both keys are absent for a jail that has neither.
+
+  **The sizes are bytes**, not the `1.41G` that `zfs list` prints by default, so a
+  client can compare and total them; the web interface formats them for display.
+  `referenced` can exceed `used` on a jail cloned from a template, because a clone
+  still refers to the template's blocks — the reason a quota belongs on a child
+  dataset (JD-007).
+
+  A jail is matched to its datasets **by mountpoint**, not by the dataset naming
+  convention: a dataset is the jail's when it is mounted at the jail's path or
+  under it. That holds for a jail placed outside `<pool>/jails/containers/<name>`,
+  and reports nothing for a jail not on ZFS. A jail whose stanza sets no path
+  matches nothing rather than everything.
+
+  One batched `zfs list` and one batched `zfs get` answer every jail, never one
+  call per jail, scoped to `JAILDECK_ZFS_POOL` when it is set and to every imported
+  pool when it is not.
+
+  **An unreadable pool does not fail the request.** The jails come back without
+  their datasets and the reason is logged at `WARN`, because seeing a stopped jail
+  is how an operator starts it (JD-004). The cost, accepted deliberately: absent
+  storage can mean either "this jail has none" or "ZFS could not be read". (#2)
+
 - **`X-Request-Id` is recorded in every audit entry a request produces**, and
   `GET /api/audit?request_id=<id>` filters on it, so an automation client can line
   its own job up against Jail Deck's audit trail (JD-016). Additive: an entry omits

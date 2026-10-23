@@ -15,6 +15,23 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+### Added
+
+- **An `rc.d` service script and `make install`.** `make install` puts the binary
+  in `$PREFIX/sbin` and the script in `$PREFIX/etc/rc.d` (`PREFIX` defaults to
+  `/usr/local`, `DESTDIR` stages the layout elsewhere), after which
+  `sysrc jaildeck_enable=YES && service jaildeck start` runs Jail Deck as a
+  service that survives a reboot.
+
+  Every environment variable has an `rc.conf` knob of the same name lower-cased.
+  Jail Deck runs in the foreground, so the script runs it under `daemon(8)` with
+  `-S`: its output goes to syslog under the tag `jaildeck`, which is what the log
+  handler's missing timestamps were always for. `-r` is deliberately not passed,
+  so `service jaildeck stop` stops it and nothing puts it back; `jaildeck_daemon_args`
+  can add it.
+
 ## v0.7.0 — 2026-10-22
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.7.0)

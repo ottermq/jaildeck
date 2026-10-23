@@ -1,9 +1,10 @@
 title: Jail Deck
 description: A FreeBSD jails operations dashboard and host agent, written in Go
 
-# A built-in GitHub Pages theme, so the site builds from the branch without an
-# Actions workflow. Matches ottermq's.
-theme: jekyll-theme-cayman
+# No theme. The layout and stylesheet in this directory use the application's
+# own design tokens -- the dark rail, the red J and D, the same type scale --
+# so the documentation and the interface read as one thing. A stock theme
+# cannot do that, and skinning one means fighting its CSS for every rule.
 
 # Project pages under the organisation's custom domain: the site is served at
 # <url><baseurl>/. Only jekyll-seo-tag's canonical links use these; every link
@@ -18,6 +19,21 @@ plugins:
 
 # Kramdown is the default on GitHub Pages; naming it keeps local builds honest.
 markdown: kramdown
+
+# Pretty permalinks render SPEC.md as SPEC/index.html rather than SPEC.html,
+# so /SPEC/ is a real directory on any static server. Without it the links
+# depend on the server resolving an extension-less path to a .html file, which
+# GitHub Pages does and a plain file server does not -- a difference worth not
+# having in the one thing that is only ever checked by looking at it.
+permalink: pretty
+
+# Every page uses the layout without having to say so in its front matter,
+# which keeps the front matter to what a page is rather than how it is built.
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
 
 # The generated API spec is served as a file, not rendered as a page. Jekyll
 # copies anything without front matter verbatim, so this is already true --

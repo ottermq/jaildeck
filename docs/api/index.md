@@ -3,8 +3,6 @@ title: "API guide"
 description: "Authenticating, the ZFS property allowlist, snapshots, and keeping data past the jail that held it."
 ---
 
-[&larr; Documentation index](../)
-
 # The Jail Deck API
 
 Every endpoint lives under `/api`. The machine-readable description is

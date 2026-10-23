@@ -11,6 +11,7 @@ backup/isengard/tank/jails	canmount	off	local
 backup/isengard/tank/jails/containers	canmount	off	local
 backup/isengard/tank/jails/containers/goodiesdb	canmount	off	local
 backup/isengard/tank/jails/containers/ottermq	canmount	off	local
+backup/isengard/tank/jails/containers/ottermq/data	canmount	off	local
 backup/isengard/tank/jails/containers/postgres	canmount	off	local
 backup/isengard/tank/jails/media	canmount	off	local
 backup/isengard/tank/jails/templates	canmount	off	local

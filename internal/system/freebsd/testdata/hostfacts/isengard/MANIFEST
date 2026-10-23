@@ -75,3 +75,6 @@ zfs_list_snapshots	zfs list -H -d 1 -t snapshot -o name,used,refer,creation tank
 zfs_list_snapshots_p	zfs list -H -p -d 1 -t snapshot -o name,used,refer,creation tank/jails	exit=0
 zfs_list_type_all	zfs list -H -d 1 -t all -o name,type,used,refer,mountpoint tank/jails	exit=0
 zfs_list_snapshots_absent	zfs list -H -d 1 -t snapshot -o name,used,refer,creation tank/jails/definitely-not-here	exit=1
+zfs_get_clones_none	zfs get -H -o value clones tank/jails@pre-reinstall	exit=0
+zfs_holds_none	zfs holds -H tank/jails@pre-reinstall	exit=0
+zfs_list_snapshots_txg	zfs list -H -p -t snapshot -o name,used,refer,creation,createtxg -r tank/jails/containers/ottermq	exit=0

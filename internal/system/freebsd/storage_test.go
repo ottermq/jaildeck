@@ -25,35 +25,54 @@ func withStorageRoots(roots ...string) map[string]string {
 	return captures
 }
 
+// countsLines is how many rows a parse of this capture must produce. Derived
+// from the file rather than written down, because a hard-coded count is a
+// third thing a re-capture breaks -- and it still catches a parser that drops
+// or merges lines, which is what the number was ever for.
+func capturedLines(t *testing.T, set, name string) int {
+	t.Helper()
+	raw, err := os.ReadFile(fixture(set, name, "stdout"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.TrimSpace(line) != "" {
+			count++
+		}
+	}
+	return count
+}
+
 // The byte figures below are a live host's, so a re-capture moves them and this
-// test fails loudly with the new value in the message. That is the intended
-// cost: asserting the whole struct is what proves all five columns land in the
-// right fields, which a weaker check would not.
+// test fails with the new value in the message. That is the intended cost of
+// asserting the whole struct: it is what proves all five columns land in the
+// right fields, which a weaker check would not. One row per host is enough for
+// that, and the row count is taken from the capture so it never churns.
 func TestDatasetsUnderFixtures(t *testing.T) {
 	tests := []struct {
 		set, root string
-		count     int
 		want      storage.Dataset // one line the parse must have produced
 	}{
 		// A clone's referenced space exceeds its used space, because it still
 		// shares the template's blocks -- the reason JD-007 puts a quota on a
 		// child dataset and not on a jail's root. These are those bytes.
-		{"isengard", "tank", 9, storage.Dataset{
+		{"isengard", "tank", storage.Dataset{
 			Name: "tank/jails/containers/postgres", Mountpoint: "/usr/local/jails/containers/postgres",
-			Used: 1519112192, Available: 963192627200, Referenced: 1891311616}},
+			Used: 1519087616, Available: 963195006976, Referenced: 1891311616}},
 		// A pool root mounted nowhere, which must never be matched to a jail.
-		{"isengard", "tank", 9, storage.Dataset{
+		{"isengard", "tank", storage.Dataset{
 			Name: "tank", Mountpoint: "none",
-			Used: 2369748992, Available: 963192627200, Referenced: 98304}},
+			Used: 2367369216, Available: 963195006976, Referenced: 98304}},
 		// The replication target: 23 datasets, every one of them mounted
 		// nowhere (JD-021).
-		{"isengard", "backup", 23, storage.Dataset{
+		{"isengard", "backup", storage.Dataset{
 			Name: "backup/isengard/tank/jails", Mountpoint: "none",
-			Used: 3499880448, Available: 476441370624, Referenced: 164872192}},
-		{"rohan", "media", 7, storage.Dataset{
+			Used: 3499945984, Available: 476439961600, Referenced: 164872192}},
+		{"rohan", "media", storage.Dataset{
 			Name: "media/.incoming", Mountpoint: "/srv/media/.incoming",
 			Used: 1517826048, Available: 783248302080, Referenced: 1517826048}},
-		{"vm-15.1", "zroot", 21, storage.Dataset{
+		{"vm-15.1", "zroot", storage.Dataset{
 			Name: "zroot/jails", Mountpoint: "/usr/local/jails",
 			Used: 994848768, Available: 33793187840, Referenced: 114688}},
 	}
@@ -64,8 +83,8 @@ func TestDatasetsUnderFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("DatasetsUnder() error = %v", err)
 			}
-			if len(got) != tt.count {
-				t.Errorf("DatasetsUnder() = %d datasets, want %d", len(got), tt.count)
+			if want := capturedLines(t, tt.set, "zfs_list_space_rp_"+tt.root); len(got) != want {
+				t.Errorf("DatasetsUnder() = %d datasets, want one per captured line (%d)", len(got), want)
 			}
 			if !slices.Contains(got, tt.want) {
 				t.Errorf("DatasetsUnder() did not produce %+v", tt.want)
@@ -108,24 +127,23 @@ func TestDatasetsUnderRejectsHumanReadableSizes(t *testing.T) {
 func TestLocalPropertiesFixtures(t *testing.T) {
 	tests := []struct {
 		set, root string
-		count     int
 		want      storage.Property
 	}{
 		// Native properties come back too: filtering to user properties is the
 		// service's rule, not the adapter's (JD-010).
-		{"isengard", "tank", 8, storage.Property{Dataset: "tank/jails", Name: "mountpoint", Value: "/usr/local/jails"}},
+		{"isengard", "tank", storage.Property{Dataset: "tank/jails", Name: "mountpoint", Value: "/usr/local/jails"}},
 		// A native property set locally ON A JAIL'S OWN DATASET, which is the
 		// only arrangement that makes the colon filter load-bearing: without
 		// one, dropping the filter changes nothing a jail ever sees.
-		{"isengard", "tank", 8, storage.Property{Dataset: "tank/jails/containers/ottermq", Name: "atime", Value: "off"}},
+		{"isengard", "tank", storage.Property{Dataset: "tank/jails/containers/ottermq", Name: "atime", Value: "off"}},
 		// The tags an Otter Labs client sets, captured from the host after a
 		// zfs set rather than invented: this is the evidence #2 exists for.
-		{"isengard", "tank", 8, storage.Property{Dataset: "tank/jails/containers/ottermq", Name: "otter:instance", Value: "mq-01"}},
-		{"isengard", "tank", 8, storage.Property{Dataset: "tank/jails/containers/postgres", Name: "otter:instance", Value: "db-01"}},
+		{"isengard", "tank", storage.Property{Dataset: "tank/jails/containers/ottermq", Name: "otter:instance", Value: "mq-01"}},
+		{"isengard", "tank", storage.Property{Dataset: "tank/jails/containers/postgres", Name: "otter:instance", Value: "db-01"}},
 		// The only real user properties on any of these hosts.
-		{"isengard", "backup", 29, storage.Property{Dataset: "backup/isengard", Name: "zrepl:placeholder", Value: "on"}},
-		{"rohan", "zroot", 32, storage.Property{Dataset: "zroot/srv/builds", Name: "com.sun:auto-snapshot", Value: "false"}},
-		{"rohan", "media", 3, storage.Property{Dataset: "media", Name: "compression", Value: "lz4"}},
+		{"isengard", "backup", storage.Property{Dataset: "backup/isengard", Name: "zrepl:placeholder", Value: "on"}},
+		{"rohan", "zroot", storage.Property{Dataset: "zroot/srv/builds", Name: "com.sun:auto-snapshot", Value: "false"}},
+		{"rohan", "media", storage.Property{Dataset: "media", Name: "compression", Value: "lz4"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.set+"/"+tt.root, func(t *testing.T) {
@@ -134,8 +152,8 @@ func TestLocalPropertiesFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LocalProperties() error = %v", err)
 			}
-			if len(got) != tt.count {
-				t.Errorf("LocalProperties() = %d properties, want %d", len(got), tt.count)
+			if want := capturedLines(t, tt.set, "zfs_get_local_r_"+tt.root); len(got) != want {
+				t.Errorf("LocalProperties() = %d properties, want one per captured line (%d)", len(got), want)
 			}
 			if !slices.Contains(got, tt.want) {
 				t.Errorf("LocalProperties() did not produce %+v", tt.want)
@@ -267,6 +285,14 @@ func TestIsengardJailsCarryTheirRealStorage(t *testing.T) {
 		t.Errorf("ran %d commands for three jails, want 2: %v", len(runner.ran), runner.ran)
 	}
 
+	// ottermq is the one jail on these hosts with a child dataset: #3 created
+	// tank/jails/containers/ottermq/data with a 2G refquota through the API,
+	// and this capture is the first one that has it.
+	wantDatasets := map[string]int{
+		"/usr/local/jails/containers/ottermq":   2,
+		"/usr/local/jails/containers/postgres":  1,
+		"/usr/local/jails/containers/goodiesdb": 1,
+	}
 	want := map[string]map[string]string{
 		"/usr/local/jails/containers/ottermq":   {"otter:instance": "mq-01", "otter:tier": "broker"},
 		"/usr/local/jails/containers/postgres":  {"otter:instance": "db-01"},
@@ -278,8 +304,8 @@ func TestIsengardJailsCarryTheirRealStorage(t *testing.T) {
 			t.Errorf("%s was matched to no dataset", path)
 			continue
 		}
-		if len(entry.Datasets) != 1 {
-			t.Errorf("%s has %d datasets, want 1: %+v", path, len(entry.Datasets), entry.Datasets)
+		if len(entry.Datasets) != wantDatasets[path] {
+			t.Errorf("%s has %d datasets, want %d: %+v", path, len(entry.Datasets), wantDatasets[path], entry.Datasets)
 		}
 		if !reflect.DeepEqual(entry.Properties, wantProps) {
 			t.Errorf("%s properties = %v, want %v", path, entry.Properties, wantProps)
@@ -299,6 +325,14 @@ func TestIsengardJailsCarryTheirRealStorage(t *testing.T) {
 	// A jail cloned from a template refers to more than it uses, because the
 	// template's blocks are still shared. Checked as a relation rather than as
 	// byte counts, so it survives a re-capture (JD-007).
+	// The child's own refquota narrows its Available below the pool's free
+	// space, which is the whole reason JD-007 puts a quota on a child.
+	for _, dataset := range got["/usr/local/jails/containers/ottermq"].Datasets {
+		if dataset.Name == "tank/jails/containers/ottermq/data" && dataset.Available > 3<<30 {
+			t.Errorf("the quota'd child reports %d available, want it capped near its 2G refquota", dataset.Available)
+		}
+	}
+
 	postgres := got["/usr/local/jails/containers/postgres"].Datasets[0]
 	if postgres.Referenced <= postgres.Used {
 		t.Errorf("postgres refers to %d and uses %d; want a clone to refer to more than it uses",

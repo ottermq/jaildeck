@@ -40,6 +40,28 @@ type StorageSystem interface {
 	// dataset takes its parent's value again -- the only way to remove a user
 	// property, and one property per call, because that is zfs's own shape.
 	InheritProperty(ctx context.Context, name, property string) (Result, error)
+
+	// Snapshots lists the snapshots of each root and its descendants.
+	// Snapshots are a separate type that zfs list omits unless asked for.
+	Snapshots(ctx context.Context, roots []string) ([]Snapshot, error)
+	// CreateSnapshot runs zfs snapshot; recursive adds -r, which takes the
+	// dataset and every descendant at one point in time.
+	CreateSnapshot(ctx context.Context, dataset, snapshot string, recursive bool) (Result, error)
+	// DestroySnapshot runs zfs destroy; recursive adds -r, which is the same
+	// snapshot name on every descendant and not the -R that would take clones.
+	DestroySnapshot(ctx context.Context, dataset, snapshot string, recursive bool) (Result, error)
+	// Rollback runs zfs rollback. destroyNewer adds -r, which here means
+	// "destroy the snapshots taken after this one" -- not "recurse into
+	// children", which zfs rollback cannot do at all.
+	Rollback(ctx context.Context, dataset, snapshot string, destroyNewer bool) (Result, error)
+
+	// Clones names the datasets cloned from a snapshot, empty when there are
+	// none. Asked before a destroy rather than read out of its error, so the
+	// refusal happens before anything destructive runs.
+	Clones(ctx context.Context, snapshot string) ([]string, error)
+	// Holds names the holds on a snapshot, for the same reason: zfs destroy
+	// reports that one exists without saying whose it is.
+	Holds(ctx context.Context, snapshot string) ([]Hold, error)
 }
 
 // Result is what a write actually ran, so the service can audit the command

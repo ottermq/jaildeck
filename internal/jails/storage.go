@@ -51,3 +51,53 @@ func (s *JailService) SetUserProperties(ctx context.Context, name JailName, chil
 	}
 	return s.datasetWriter.SetUserProperties(context.WithoutCancel(ctx), jail.Path, child, properties)
 }
+
+// onZFS resolves the preconditions every storage call shares: the jail exists,
+// a writer is wired, and the jail is actually on ZFS.
+func (s *JailService) onZFS(ctx context.Context, name JailName, writer any) (Jail, error) {
+	jail, err := s.Get(ctx, name)
+	if err != nil {
+		return Jail{}, err
+	}
+	if writer == nil {
+		return Jail{}, ErrNoStorageWriter
+	}
+	if jail.Path == "" {
+		return Jail{}, ErrJailNotOnZFS
+	}
+	return jail, nil
+}
+
+// Snapshots lists every snapshot of the jail's datasets, its children's
+// included.
+func (s *JailService) Snapshots(ctx context.Context, name JailName) ([]Snapshot, error) {
+	jail, err := s.onZFS(ctx, name, s.snapshots)
+	if err != nil {
+		return nil, err
+	}
+	return s.snapshots.Snapshots(ctx, jail.Path)
+}
+
+func (s *JailService) CreateSnapshot(ctx context.Context, name JailName, child, short string, recursive bool) (SnapshotResult, error) {
+	jail, err := s.onZFS(ctx, name, s.snapshots)
+	if err != nil {
+		return SnapshotResult{}, err
+	}
+	return s.snapshots.CreateSnapshot(context.WithoutCancel(ctx), jail.Path, child, short, recursive)
+}
+
+func (s *JailService) DestroySnapshot(ctx context.Context, name JailName, child, short, confirm string, recursive bool) (SnapshotResult, error) {
+	jail, err := s.onZFS(ctx, name, s.snapshots)
+	if err != nil {
+		return SnapshotResult{}, err
+	}
+	return s.snapshots.DestroySnapshot(context.WithoutCancel(ctx), jail.Path, child, short, confirm, recursive)
+}
+
+func (s *JailService) Rollback(ctx context.Context, name JailName, child, short, confirm string, destroyNewer bool) (SnapshotResult, error) {
+	jail, err := s.onZFS(ctx, name, s.snapshots)
+	if err != nil {
+		return SnapshotResult{}, err
+	}
+	return s.snapshots.Rollback(context.WithoutCancel(ctx), jail.Path, child, short, confirm, destroyNewer)
+}

@@ -54,7 +54,7 @@ func New(cfg *config.Config) (*App, error) {
 	storageService := storage.NewService(storageSystem, auditLogger, cfg.ZFSPool)
 
 	jailStorage := storage.NewJailSource(storageService)
-	jailService := jails.NewJailService(jailSystem, auditLogger, jailStorage, jailStorage)
+	jailService := jails.NewJailService(jailSystem, auditLogger, jailStorage, jailStorage, jailStorage)
 	jailHandler := jails.NewJailHandler(jailService)
 
 	hostSystem, err := newHostSystem(cfg.Adapter)

@@ -1211,6 +1211,297 @@
       "settingRebuildPath": true,
       "settingSendCookies": true,
       "settingStoreCookies": true
+    },
+    {
+      "_id": "req_56912ec2507f693128c3e84e35648831",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "List snapshots",
+      "description": "Every snapshot of the jail's own dataset and its children's, oldest first (#4).\n\nOrdered by **`create_txg`**, ZFS's transaction group, not by `created`. A timestamp has second granularity, so two snapshots taken in the same second tie on it — and \"which of these is newer\" is exactly what a rollback has to answer before deciding what to destroy. The transaction group never ties.\n\n`name` is the full `dataset@snapshot`, which is what `confirm=` must equal below. `short` is the part after the `@`, which is what goes in a URL.\n\nNote this is unfiltered. On a host running `zrepl` it is long — one jail on the deployment target has 39 snapshots, 35 of them hourly.",
+      "method": "GET",
+      "url": "{{baseUrl}}/jails/{{jail}}/snapshots",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2350,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_c98a567deee1630a16ec0c4dc74fe1d8",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Snapshot a jail",
+      "description": "`zfs snapshot -r` on the jail's dataset: the jail **and every child dataset at one point in time** (#4, JD-024).\n\n**201** taken · **200** `existed: true`, nothing ran.\n\nThe atomicity is the reason the jail-level route is recursive. Verified on the deployment target: one call produced `ottermq@before-upgrade` and `ottermq/data@before-upgrade` sharing `createtxg 186346` — the same transaction, not two calls a second apart. That is what makes a jail's root re-clonable while its data dataset stays consistent with it (JD-007).\n\nIdempotent: the retry after a timeout returns 200 rather than the \"dataset already exists\" that `zfs snapshot` would raise.",
+      "method": "PUT",
+      "url": "{{baseUrl}}/jails/{{jail}}/snapshots/before-upgrade",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2340,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_c7a7c502fc3d7e1968a341baff4c4c98",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Snapshot one dataset",
+      "description": "The same, on one dataset only — no `-r`, no children.\n\nUse this when the thing worth snapshotting is the data and not the userland: a jail's root is a clone of a template and can be made again, which is the whole premise of JD-007.",
+      "method": "PUT",
+      "url": "{{baseUrl}}/jails/{{jail}}/datasets/data/snapshots/nightly",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2330,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_3b983d239ad68823252cfe6c40a42a1d",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Roll back",
+      "description": "Returns the dataset to this snapshot.\n\n**Never recursive.** `zfs rollback` has no way to descend into child datasets, and its own `-r` means something else entirely — \"destroy the snapshots newer than this one\". So this rolls back the jail's own dataset and leaves its children where they are. A child is rolled back through its own route, as a separate decision.\n\n**409 when newer snapshots exist**, naming every one it would destroy. Add `&destroy_newer=true` to accept losing exactly those. The refusal comes first so the second call is informed rather than a retry with more force.\n\nStill 409, even with `destroy_newer=true`, when one of those newer snapshots is **held** or **has a clone**. Getting past a clone needs `zfs destroy -R`, which takes the clone with it and is not something this API does; a hold exists precisely to say \"not this one\".\n\n`confirm=` must be the snapshot's full name, `pool/.../jail@snapshot`.",
+      "method": "POST",
+      "url": "{{baseUrl}}/jails/{{jail}}/snapshots/before-upgrade/rollback",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "confirm",
+          "value": "{{pool}}/jails/containers/{{jail}}@before-upgrade",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2320,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_1e8df355cea0290364bc3343c76e6e4a",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Roll back one dataset",
+      "description": "The same for a child dataset. This is the route that actually matters for a jail whose state lives in a child: rolling the data back without touching the userland.",
+      "method": "POST",
+      "url": "{{baseUrl}}/jails/{{jail}}/datasets/data/snapshots/nightly/rollback",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "confirm",
+          "value": "{{pool}}/jails/containers/{{jail}}/data@nightly",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2310,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_65bb52cb2e6feaba0b06d9b34561eafe",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Destroy a snapshot",
+      "description": "Destroys this snapshot on the jail's dataset **and the one of the same name on every child**, matching what the recursive create made.\n\n**409 with a clone or a hold**, naming them. Both are checked by asking ZFS first — `zfs get clones` and `zfs holds` — rather than by running the destroy and reading its complaint, so the refusal happens before anything destructive does.\n\n`confirm=` is the full `dataset@snapshot`.",
+      "method": "DELETE",
+      "url": "{{baseUrl}}/jails/{{jail}}/snapshots/before-upgrade",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "confirm",
+          "value": "{{pool}}/jails/containers/{{jail}}@before-upgrade",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2300,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_56c95766d40c4f3dc8c2f4891c7cab6a",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Destroy one dataset's snapshot",
+      "description": "The same, on one dataset only.",
+      "method": "DELETE",
+      "url": "{{baseUrl}}/jails/{{jail}}/datasets/data/snapshots/nightly",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "confirm",
+          "value": "{{pool}}/jails/containers/{{jail}}/data@nightly",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2290,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_cd087a2220f48bc00fea4e0907c027de",
+      "_type": "request",
+      "parentId": "fld_94d4fcd0d6ad851777e19c71c1151c84",
+      "name": "Rollback without permission",
+      "description": "409 listing every snapshot the rollback would destroy, under `blocked.newer`.\n\nRun **List snapshots** first and this is already obvious; run it blind and this is how you find out. Either way nothing has happened yet — the check is made before `zfs rollback` is called, not after it fails.",
+      "method": "POST",
+      "url": "{{baseUrl}}/jails/{{jail}}/snapshots/before-upgrade/rollback",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "confirm",
+          "value": "{{pool}}/jails/containers/{{jail}}@before-upgrade",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -300,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_18f9ef49a853d27279ce773579d5c9dc",
+      "_type": "request",
+      "parentId": "fld_94d4fcd0d6ad851777e19c71c1151c84",
+      "name": "Destroy without confirm",
+      "description": "400 naming the value `confirm=` has to be. It is the snapshot's **full** name, not the word in the path, so a script looping over jails with one snapshot name in a variable cannot confirm every one of them by accident (JD-016, JD-024).",
+      "method": "DELETE",
+      "url": "{{baseUrl}}/jails/{{jail}}/snapshots/before-upgrade",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -290,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
     }
   ]
 }

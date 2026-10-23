@@ -280,6 +280,18 @@ and `_depth0`, `zfs_list_space_mixed`, `zfs_get_all` and `zfs_get_local`, `zfs_g
   filter and watching the suite stay green.
 
   Reverting is `zfs inherit <property> <dataset>` for each of the four.
+- **`zfs_list_snapshots_txg` is the one capture that churns.** It is scoped to a single jail
+  (`PROBE_JAIL`, which prefers one that has a child dataset) rather than depth-limited, because
+  the parent/child pair is the format it exists to show: one `zfs snapshot -r` gives both the
+  same `createtxg`, and that is the evidence that a recursive snapshot really is one point in
+  time (JD-024). One jail on isengard is 39 lines, 35 of them hourly `zrepl` snapshots, so a
+  re-capture moves it. That is the price of keeping the pair; recursive over the whole layout
+  would be 276 lines.
+- **`zfs_get_clones_none` and `zfs_holds_none`** are what "nothing depends on this snapshot"
+  looks like: a dash and an empty stdout, both at exit 0. Neither is an error, which is the
+  point — the no-blockers path has to recognise them as answers rather than failures. The
+  blocked shapes have no capture: arranging a hold and a clone on a real host to photograph
+  them was not worth leaving behind, and the service tests construct them and say so.
 - **Snapshot captures are depth-limited on purpose.** Recursive over a pool, isengard
   returns 276 lines of which 256 are hourly `zrepl` snapshots — a fixture that teaches a
   parser nothing more and rewrites itself every hour. `vm-15.1` and `rohan` supply the

@@ -679,6 +679,31 @@ The two kinds of property are not two flavours of the same thing. A native prope
 
 ---
 
+## JD-024 — Snapshots: Recursion, Ordering and Refusal
+
+**Status:** Locked — 2026-10-23
+
+**A jail-level snapshot is recursive; a rollback cannot be.** `PUT /api/jails/{name}/snapshots/{s}` runs `zfs snapshot -r`, taking the jail's dataset and every child **at one point in time** — verified on the deployment target, where one call produced `ottermq@before-upgrade` and `ottermq/data@before-upgrade` sharing `createtxg 186346`. That atomicity is what JD-007's re-clone path needs: a jail's root replaced from a newer template while its data dataset stays consistent with the moment the root was captured.
+
+Rollback gets no such treatment, because ZFS offers none. `zfs rollback` has no flag that descends into children, and its own `-r` means something else entirely — "destroy the snapshots newer than this one". So a jail-level rollback returns the jail's own dataset and **leaves its children where they are**. This is visible in practice: a recursive snapshot followed by a jail-level rollback leaves the child's snapshot of the destroyed name still present. Rolling a child back is its own call, which is the honest shape — for a jail whose state lives in a child, rolling the data back without touching the userland is usually what was wanted anyway.
+
+**Ordering is by transaction group, never by timestamp.** `creation` has second granularity, so two snapshots taken in the same second tie on it, and "which of these is newer" is exactly the question that decides what a rollback destroys. `createtxg` is ZFS's own total order and never ties. It is in the API as `create_txg` for the same reason: a client deciding what is newer needs it too.
+
+**Refusals are decided before anything destructive runs.** What blocks a destroy is asked structurally — `zfs get clones` and `zfs holds` — rather than read out of the error `zfs destroy` would raise. Two reasons: parsing a refusal means depending on its wording, and more importantly a check that happens first is a refusal, while one that happens after is a report of something already attempted. The commands' own failures are still mapped, as defence in depth.
+
+- **Newer snapshots** block a rollback, which names every one it would destroy. `destroy_newer=true` accepts losing exactly those. Two parameters rather than one, because `confirm=` and "yes, lose those" are different questions.
+- **Clones and holds** block both a destroy and a rollback, and **cannot be overridden through this API at any level of insistence**. Getting past a clone needs `zfs destroy -R`, which takes the clone with it; a hold exists precisely to say "not this one". Releasing a hold or destroying a clone is a separate, deliberate act with its own blast radius.
+
+**`confirm=` is the snapshot's full `dataset@snapshot`**, not the word already in the path. A script looping over jails with one snapshot name in a variable would otherwise confirm every one of them by accident, which is the failure the confirmation exists to prevent (JD-016). The expected value is in the error message: this guards against a mistake, not against a client that can already list the snapshots.
+
+### Rationale
+
+Every part of this is the same preference stated four times: let the system answer, and ask it before acting rather than after. `createtxg` over a timestamp, a structured dependency check over a parsed error message, a refusal that names what is in the way over one that just says no, and a confirmation specific enough that it cannot be satisfied by accident.
+
+The one place that preference yields is recursion, and it yields to the tool: `zfs snapshot` can take a jail atomically and `zfs rollback` cannot put one back the same way. Pretending otherwise — looping over the children and calling it a recursive rollback — would offer an atomicity that does not exist.
+
+---
+
 ## Decision Policy
 
 Once a decision is marked as **Locked**, it should not be revisited without a clear technical or product justification. Architectural evolution is expected, but changes should be deliberate and documented rather than occurring through incremental drift.

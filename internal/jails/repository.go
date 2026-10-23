@@ -2,6 +2,7 @@ package jails
 
 import (
 	"context"
+	"time"
 )
 
 type OperationResult struct {
@@ -96,4 +97,53 @@ type DatasetWriter interface {
 	// returns what the dataset carries afterwards, read back rather than
 	// assumed.
 	SetUserProperties(ctx context.Context, jailPath, child string, properties map[string]*string) (map[string]string, error)
+}
+
+// Snapshot is one snapshot of one of a jail's datasets.
+type Snapshot struct {
+	// Name is "dataset@snapshot" as zfs prints it, and is what confirm= must
+	// equal on a destroy or a rollback (JD-024).
+	Name    string `json:"name"`
+	Dataset string `json:"dataset"`
+	// Short is the part after the @, which is what the URL carries.
+	Short      string    `json:"short"`
+	Used       int64     `json:"used"`
+	Referenced int64     `json:"referenced"`
+	Created    time.Time `json:"created"`
+	// CreateTXG is ZFS's transaction group: the only exact ordering. Two
+	// snapshots taken in the same second share a Created, so a client deciding
+	// which is newer has to compare this instead.
+	CreateTXG uint64 `json:"create_txg"`
+}
+
+// SnapshotResult is what a snapshot call did.
+type SnapshotResult struct {
+	Snapshot  string         `json:"snapshot"`
+	Created   []string       `json:"created"`
+	Destroyed []string       `json:"destroyed"`
+	Existed   bool           `json:"existed,omitempty"`
+	Blocked   *SnapshotBlock `json:"blocked,omitempty"`
+}
+
+// SnapshotBlock names what stopped the operation. Nothing ran.
+type SnapshotBlock struct {
+	Reason string   `json:"reason"`
+	Newer  []string `json:"newer,omitempty"`
+	Clones []string `json:"clones,omitempty"`
+	Holds  []string `json:"holds,omitempty"`
+}
+
+// SnapshotWriter is the snapshot half of a jail's storage. child names a
+// dataset beneath the jail's own; empty means the jail's own dataset.
+//
+// recursive is the caller's, not the port's, because the two routes mean
+// different things: snapshotting a jail takes it and its children at one point
+// in time, and snapshotting a child takes that child alone.
+type SnapshotWriter interface {
+	Snapshots(ctx context.Context, jailPath string) ([]Snapshot, error)
+	CreateSnapshot(ctx context.Context, jailPath, child, short string, recursive bool) (SnapshotResult, error)
+	DestroySnapshot(ctx context.Context, jailPath, child, short, confirm string, recursive bool) (SnapshotResult, error)
+	// Rollback is never recursive: zfs rollback cannot descend into children,
+	// and its own -r means "destroy the snapshots newer than this one".
+	Rollback(ctx context.Context, jailPath, child, short, confirm string, destroyNewer bool) (SnapshotResult, error)
 }

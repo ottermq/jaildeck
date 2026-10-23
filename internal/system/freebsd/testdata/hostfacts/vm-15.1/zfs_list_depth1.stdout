@@ -1,0 +1,4 @@
+zroot/jails	949M	31.5G	112K	/usr/local/jails
+zroot/jails/containers	47.6M	31.5G	96K	/usr/local/jails/containers
+zroot/jails/media	157M	31.5G	157M	/usr/local/jails/media
+zroot/jails/templates	744M	31.5G	96K	/usr/local/jails/templates

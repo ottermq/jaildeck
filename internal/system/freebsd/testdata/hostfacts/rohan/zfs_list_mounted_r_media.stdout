@@ -1,0 +1,7 @@
+media	yes	on	/srv/media
+media/.incoming	yes	on	/srv/media/.incoming
+media/Downloads	yes	on	/srv/media/Downloads
+media/Movies	yes	on	/srv/media/Movies
+media/Music	yes	on	/srv/media/Music
+media/Photos	yes	on	/srv/media/Photos
+media/TV	yes	on	/srv/media/TV

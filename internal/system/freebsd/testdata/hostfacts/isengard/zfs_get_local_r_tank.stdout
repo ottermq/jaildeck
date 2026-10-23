@@ -1,0 +1,4 @@
+tank	mountpoint	none	local
+tank	compression	on	local
+tank	atime	off	local
+tank/jails	mountpoint	/usr/local/jails	local

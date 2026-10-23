@@ -208,6 +208,57 @@ The write path is a different matter: still unwritten rather than unavailable, e
 loaded is still missing. (`pfctl -s rules` with PF enabled
 and no `pf.conf` is **exit 0 and empty stdout** — the no-rules case, not an error.)
 
+## Storage visibility (#2, #3)
+
+The Storage Visibility milestone fixes the batched read as
+`zfs list -H -o name,used,avail,refer,mountpoint <paths…>`, and #2 wants a jail's child
+datasets and its **user properties** — the ones whose name contains a colon — from one
+call rather than one per jail. These captures are what that gets parsed against.
+
+Per pool, in the same loop as the layout captures:
+
+| | |
+| --- | --- |
+| `zfs_list_space_r_<pool>` | the milestone's columns, **human-readable** |
+| `zfs_list_space_rp_<pool>` | the identical query with `-p` |
+| `zfs_list_mounted_r_<pool>` | `mounted`, `canmount` and `mountpoint` — three different questions |
+| `zfs_get_local_r_<pool>` | every locally-set property on every dataset, one call (`-s local`) |
+
+Per dataset, on whichever pool has the jails layout — `PROBE_DATASET` records which, and it
+is deliberately **not** the first pool printed, for the reason JD-021 gives: `zfs_list_depth1`
+and `_depth0`, `zfs_list_space_mixed`, `zfs_get_all` and `zfs_get_local`, `zfs_get_used` and
+`_used_p`, `zfs_get_unset_userprop`, `zfs_get_bad_property`, `zfs_get_absent_dataset`,
+`zfs_list_snapshots` and `_p`, `zfs_list_snapshots_absent`, and `zfs_list_type_all`.
+
+**What these corrected, before a parser existed:**
+
+- **The size columns are human-readable.** `zfs_list_space_r_tank` says `2.20G`, `897G`,
+  `96K`; `zfs_list_space_rp_tank` says `2360832000`, `963201544192`, `98304`. Same query.
+  A parser wanting numbers needs `-p`, and one wanting what an operator sees must not.
+- **`zfs list -d 0 -t snapshot <dataset>` returns nothing, at exit 0.** A dataset's
+  snapshots are its depth-**1** children, so depth 0 filters out the filesystem itself and
+  leaves an empty list that reads exactly like "no snapshots". The captures use `-d 1`.
+- **`creation` is a locale-formatted date**, and `Wed Oct 21  0:44 2026` carries a *double*
+  space before a single-digit hour. The fields are tab-separated, so splitting the line on
+  whitespace loses. `-p` gives a Unix timestamp instead.
+- **Three different failure shapes, three different exit codes.** An unset *user* property
+  is not an error: `zfs_get_unset_userprop` is exit 0 and one row,
+  `tank/jails  otter:instance  -  -`. An invalid *native* property is exit **2**. A dataset
+  that does not exist is exit 1. An adapter that treats "no such property" as one condition
+  gets two of the three wrong.
+- **`zfs_get_bad_property.stderr` is 7 KB** because `zfs get` answers an invalid property
+  with its entire usage text. Kept deliberately: it is also the complete native-property
+  vocabulary of this ZFS version, which is what #3's property allowlist has to be built
+  from.
+- **Real user properties exist here, in both conventions.** `zrepl:placeholder` on
+  `backup/isengard` and `backup/isengard/tank`, and the reverse-DNS `com.sun:auto-snapshot`
+  on `rohan`'s `zroot/srv/builds`. So #2's feature has captured examples of a property that
+  **is** set, not only of one that is not.
+- **Snapshot captures are depth-limited on purpose.** Recursive over a pool, isengard
+  returns 276 lines of which 256 are hourly `zrepl` snapshots — a fixture that teaches a
+  parser nothing more and rewrites itself every hour. `vm-15.1` and `rohan` supply the
+  empty-list shape (exit 0, no output) that isengard cannot.
+
 ## What the real output corrected
 
 Every one of these was wrong in a hand-written fixture, or in the specification written

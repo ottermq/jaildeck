@@ -1,11 +1,15 @@
 <script lang="ts">
 import { onMount } from 'svelte'
-import { route, navigate, onNavClick } from '../router.svelte'
+import { route, navigate, onNavClick, match } from '../router.svelte'
 import { auth, logout } from '../stores/auth.svelte'
 import Jails from './Jails.svelte'
+import Jail from './Jail.svelte'
+import Templates from './Templates.svelte'
+import Template from './Template.svelte'
 import Operations from './Operations.svelte'
 import Host from './Host.svelte'
 import NotFound from './NotFound.svelte'
+import ConfirmDialog from '../components/ConfirmDialog.svelte'
 
 let sessionExpiry = $derived(
     auth.principal?.expires_at === undefined
@@ -15,9 +19,21 @@ let sessionExpiry = $derived(
 
 const menu = [
     { label: 'Jails', href: '/jails' },
+    { label: 'Templates', href: '/templates' },
     { label: 'Operations', href: '/operations' },
     { label: 'Host', href: '/host' },
 ]
+
+// A detail page keeps its section highlighted: /jails/ottermq is still Jails.
+function isActive(href: string): boolean {
+    return route.path === href || route.path.startsWith(href + '/')
+}
+
+// Matched once per render rather than inside the markup, so the name is
+// available to key the component on — without the key, navigating from one
+// jail to another would reuse the mounted component and never re-fetch.
+let jail = $derived(match('/jails/:name'))
+let template = $derived(match('/templates/:name'))
 
 // The landing path is replaced rather than pushed: a push would make Back
 // return to '/', which redirects forward again and traps the user.
@@ -39,8 +55,8 @@ onMount(() => {
                 <a
                     {href}
                     class="rail__link"
-                    class:is-active={route.path === href}
-                    aria-current={route.path === href ? 'page' : undefined}
+                    class:is-active={isActive(href)}
+                    aria-current={isActive(href) ? 'page' : undefined}
                     onclick={(e) => onNavClick(e, href)}
                 >{label}</a>
             {/each}
@@ -57,9 +73,17 @@ onMount(() => {
         </div>
     </aside>
 
+    <ConfirmDialog />
+
     <main class="main">
         {#if route.path === '/jails'}
             <Jails />
+        {:else if jail}
+            {#key jail.name}<Jail name={jail.name} />{/key}
+        {:else if route.path === '/templates'}
+            <Templates />
+        {:else if template}
+            {#key template.name}<Template name={template.name} />{/key}
         {:else if route.path === '/operations'}
             <Operations />
         {:else if route.path === '/host'}

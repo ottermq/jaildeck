@@ -1,0 +1,4 @@
+zroot/jails	filesystem	949M	112K	/usr/local/jails
+zroot/jails/containers	filesystem	47.6M	96K	/usr/local/jails/containers
+zroot/jails/media	filesystem	157M	157M	/usr/local/jails/media
+zroot/jails/templates	filesystem	744M	96K	/usr/local/jails/templates

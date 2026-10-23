@@ -28,6 +28,11 @@ type logEntryEnricher interface {
 	AddAttrs(args ...any)
 }
 
+// LoginRequest is the body of POST /api/auth/login.
+type LoginRequest struct {
+	Password string `json:"password"`
+}
+
 type LoginResponse struct {
 	Authenticated bool `json:"authenticated"`
 }
@@ -58,12 +63,24 @@ func NewAuthHandler(service *AuthService) *AuthHandler {
 	}
 }
 
+// Login exchanges the operator password for a session cookie.
+//
+// @Summary      Sign in
+// @Description  Sets an HttpOnly, Secure, SameSite=Strict session cookie. Secure means a
+// @Description  browser discards it over plain HTTP on a non-loopback origin, so reach a
+// @Description  remote host through an SSH forward rather than binding it to 0.0.0.0 (JD-002).
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        credentials  body      LoginRequest  true  "The operator password"
+// @Success      200          {object}  LoginResponse
+// @Failure      400          {object}  common.ErrorResponse  "Malformed or oversized body"
+// @Failure      401          {object}  common.ErrorResponse  "Wrong password"
+// @Router       /auth/login [post]
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxLoginBytes)
 
-	var req struct {
-		Password string `json:"password"`
-	}
+	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
@@ -84,6 +101,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// Logout ends the session the cookie names.
+//
+// @Summary      Sign out
+// @Description  Clears the cookie and forgets the session server-side. Harmless without
+// @Description  one, so a client that has already lost its cookie can still call it.
+// @Tags         auth
+// @Success      204  "No content"
+// @Router       /auth/logout [post]
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookieName); err == nil {
 		h.service.Logout(r.Context(), c.Value)
@@ -94,6 +119,18 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Me reports who the request is authenticated as.
+//
+// @Summary      The current principal
+// @Description  Says whether this request arrived as a session or a token, and when a
+// @Description  session expires. Sessions live in memory, so restarting the service signs
+// @Description  every browser out; tokens are stored and survive.
+// @Tags         auth
+// @Produce      json
+// @Success      200  {object}  MeResponse
+// @Failure      401  {object}  common.ErrorResponse  "Neither a session nor a token"
+// @Security     BearerAuth
+// @Router       /auth/me [get]
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	session, ok := SessionFromContext(r.Context())
 	if ok {

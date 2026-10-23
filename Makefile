@@ -5,7 +5,19 @@ COVER_PROFILE=$(BUILD_DIR)/coverage.out
 
 GO?=go
 
-.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check all
+# Where the API annotations live. swag is pinned in go.mod as a tool
+# dependency, so `go tool swag` needs no global install and every machine runs
+# the same version. Its --version flag reports a stale constant; go.mod is the
+# truth.
+SWAG_DIRS=cmd/jaildeck,internal/app,internal/jails,internal/host,internal/audit,internal/auth,internal/storage,internal/templates,internal/common
+SPEC=docs/api/swagger.json
+
+# Installation paths. PREFIX is where FreeBSD puts local software; DESTDIR
+# stages the same layout somewhere else, which is what a package build wants.
+PREFIX?=/usr/local
+DESTDIR?=
+
+.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check all install doc doc-check
 
 ## build: compile the binary into bin/
 build:
@@ -66,8 +78,21 @@ tidy-check:
 	@rm -f $(BUILD_DIR)/go.mod.bak $(BUILD_DIR)/go.sum.bak
 
 ## check: the full verification gate — formatting, vet, build, tests
-check: fmt-check vet build test
+check: fmt-check vet build doc-check test
 	@echo "check: OK"
+
+## install: install the binary, rc.d script and sample env under PREFIX (run on the FreeBSD host, or stage with DESTDIR)
+install: build
+	@install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/etc/rc.d $(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)
+	@install -m 0555 ./$(BUILD_DIR)/$(BINARY_NAME) $(DESTDIR)$(PREFIX)/bin/$(BINARY_NAME)
+	@install -m 0555 ./rc.d/$(BINARY_NAME) $(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)
+	@# The sample only. A live jaildeck.env is the operator's and is never overwritten.
+	@install -m 0644 ./.env.sample $(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)/$(BINARY_NAME).env.sample
+	@echo "installed:"
+	@echo "  $(DESTDIR)$(PREFIX)/bin/$(BINARY_NAME)"
+	@echo "  $(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)"
+	@echo "  $(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)/$(BINARY_NAME).env.sample"
+	@echo "copy the sample to $(PREFIX)/etc/$(BINARY_NAME)/$(BINARY_NAME).env and edit it"
 
 ## clean: remove build artifacts
 clean:
@@ -92,3 +117,30 @@ web-check:
 
 ## all: build the backend and frontend
 all: web build
+## doc: regenerate the OpenAPI spec from the handler annotations
+doc:
+	@mkdir -p $(dir $(SPEC))
+	@$(GO) tool swag init -g main.go -d $(SWAG_DIRS) -o $(dir $(SPEC)) --ot json 2>&1 | grep -E "^.*(warning|error)" || true
+	@echo "wrote $(SPEC)"
+
+## doc-check: fail if the spec on disk is not what the annotations produce
+# Generated into a temporary directory and compared with the file, rather than
+# regenerated in place and compared with git. Comparing with git would fail
+# whenever the annotations themselves are uncommitted -- which is most of the
+# time while writing them -- and regenerating in place would make a check that
+# modifies the working tree.
+#
+# The tracked guard is separate: git diff ignores files it has never seen, so a
+# generated file absent from the commit would otherwise pass silently.
+doc-check:
+	@git ls-files --error-unmatch $(SPEC) >/dev/null 2>&1 || { \
+		echo "$(SPEC) is not tracked by git. Run: make doc && git add $(SPEC)"; \
+		exit 1; \
+	}
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+		$(GO) tool swag init -g main.go -d $(SWAG_DIRS) -o "$$tmp" --ot json >/dev/null 2>&1 && \
+		if ! diff -q "$$tmp/swagger.json" $(SPEC) >/dev/null 2>&1; then \
+			echo "$(SPEC) is out of date. Run: make doc"; \
+			diff -u $(SPEC) "$$tmp/swagger.json" | head -20; \
+			exit 1; \
+		fi

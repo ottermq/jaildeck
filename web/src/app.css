@@ -120,6 +120,25 @@ p {
   margin: 0;
 }
 
+/*
+ * Links carry the colour of whatever they sit in, with a faint underline, so a
+ * name in a table reads as that name and not as a separate blue thing. The
+ * brand colour is kept for the hover: it marks the one link being pointed at,
+ * which is useful, rather than every link on the page, which is noise.
+ */
+a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 30%, transparent);
+  text-underline-offset: 0.18em;
+}
+
+a:hover,
+a:focus-visible {
+  color: var(--brand);
+  text-decoration-color: currentColor;
+}
+
 code {
   font: 0.85em var(--mono);
   background: var(--surface-sunken);
@@ -162,6 +181,7 @@ code {
   font: inherit;
   font-weight: 500;
   line-height: 1;
+  text-decoration: none;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);

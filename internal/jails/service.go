@@ -44,12 +44,30 @@ func (n JailName) String() string {
 type JailService struct {
 	system          JailSystem
 	operationLogger audit.Logger
+	// datasets may be nil, which means no storage source is wired and every
+	// listing reports jails without their datasets. Only tests that are not
+	// about storage pass nil; the application always wires one.
+	datasets DatasetSource
+	// datasetWriter may be nil on the same terms as datasets, and every write
+	// checks it rather than assuming the application wired one.
+	datasetWriter DatasetWriter
+	// snapshots and datasetMover may be nil on the same terms as the others.
+	snapshots     SnapshotWriter
+	datasetMover  DatasetMover
+	recloner      Recloner
+	templateMaker TemplateMaker
 }
 
-func NewJailService(system JailSystem, operationLogger audit.Logger) *JailService {
+func NewJailService(system JailSystem, operationLogger audit.Logger, datasets DatasetSource, datasetWriter DatasetWriter, snapshots SnapshotWriter, datasetMover DatasetMover, recloner Recloner, templateMaker TemplateMaker) *JailService {
 	return &JailService{
 		system:          system,
 		operationLogger: operationLogger,
+		datasets:        datasets,
+		datasetWriter:   datasetWriter,
+		snapshots:       snapshots,
+		datasetMover:    datasetMover,
+		recloner:        recloner,
+		templateMaker:   templateMaker,
 	}
 }
 
@@ -58,7 +76,83 @@ func (s *JailService) List(ctx context.Context) ([]Jail, error) {
 	if err != nil {
 		return nil, err
 	}
-	return jails, nil
+	return s.withStorage(ctx, jails), nil
+}
+
+// Get returns one jail by name, with its storage, or ErrJailNotFound. It reads
+// the same merged listing rather than asking the system for a single jail:
+// JD-004 discovers a stopped jail from configuration and a running one from
+// jls, and a jail present in only one of them must still be found here.
+func (s *JailService) Get(ctx context.Context, name JailName) (Jail, error) {
+	if _, err := NewJailName(name.String()); err != nil {
+		return Jail{}, err
+	}
+	jails, err := s.system.List(ctx)
+	if err != nil {
+		return Jail{}, toListError(err)
+	}
+	for _, jail := range jails {
+		if jail.Name == name.String() {
+			// One jail, so the storage read is scoped to its path alone.
+			return s.withStorage(ctx, []Jail{jail})[0], nil
+		}
+	}
+	return Jail{}, ErrJailNotFound
+}
+
+// withStorage fills in each jail's datasets and user properties from one read
+// of the host, and hands the jails back unchanged if that read fails.
+func (s *JailService) withStorage(ctx context.Context, jails []Jail) []Jail {
+	if s.datasets == nil {
+		return jails
+	}
+	paths := make([]string, 0, len(jails))
+	for _, jail := range jails {
+		// A jail with no path -- a stopped jail whose stanza sets none -- is
+		// not on ZFS as far as this can tell, and an empty path would
+		// otherwise prefix-match every dataset on the host.
+		if jail.Path != "" {
+			paths = append(paths, jail.Path)
+		}
+	}
+	if len(paths) == 0 {
+		return jails
+	}
+
+	storage, err := s.datasets.StorageForPaths(ctx, paths)
+	if err != nil {
+		// Degraded deliberately rather than failed. The jail listing is how an
+		// operator sees a stopped jail in order to start it (JD-004), and an
+		// unreadable pool must not take that away. The cost is that a jail
+		// then looks like one with no datasets, which is why the reason is
+		// logged rather than swallowed.
+		common.Logger(ctx, "jail").Warn("listing jails without their datasets",
+			slog.Int("jails", len(jails)),
+			slog.Any("err", err))
+		return jails
+	}
+	for i, jail := range jails {
+		if found, ok := storage[jail.Path]; ok {
+			jails[i].Datasets = found.Datasets
+			jails[i].Properties = found.Properties
+		}
+	}
+	return jails
+}
+
+// toListError keeps a failed listing from reaching the client as a bare Go
+// error, the way toAppError does for an operation.
+func toListError(err error) error {
+	var appErr *common.AppError
+	if errors.As(err, &appErr) {
+		return appErr
+	}
+	msg := err.Error()
+	var cmdErr *system.CommandError
+	if errors.As(err, &cmdErr) {
+		msg = cmdErr.Summary()
+	}
+	return common.NewAppError(http.StatusInternalServerError, fmt.Sprintf("failed to list jails: %s", msg))
 }
 
 func (s *JailService) do(ctx context.Context, name JailName, op Operation, call func(context.Context, string) (OperationResult, error)) (OperationResult, error) {

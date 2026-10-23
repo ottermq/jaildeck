@@ -1,3 +1,8 @@
+---
+title: "Decisions"
+description: "Every architectural decision that has been locked, with the reasoning and the costs accepted."
+---
+
 # Jail Deck — Architecture Decisions
 
 This document records architectural decisions that have been intentionally locked for the project.
@@ -154,7 +159,7 @@ A jail present in configuration but not in `jls` is shown as stopped; a jail pre
 
 An operator needs to see a stopped jail in order to start it, so configuration parsing is a read path even before config editing exists.
 
-**Amended 2026-10-21.** A jail listing also returns the jail's child datasets and its ZFS user properties (`zfs get -H -o property,value -s local all`, filtered to names containing `:`). An automation client tags its jails with properties such as `otter:instance` and finds them again from the listing alone, with nothing stored in Jail Deck (JD-011).
+**Amended 2026-10-21.** A jail listing also returns the jail's child datasets and its ZFS user properties (`zfs get -H -r -o name,property,value,source -s local all <pool>`, filtered to names containing `:`). An automation client tags its jails with properties such as `otter:instance` and finds them again from the listing alone, with nothing stored in Jail Deck (JD-011).
 
 ---
 
@@ -247,7 +252,7 @@ Production still ships as a single Go binary: the Svelte build output is embedde
 
 ### Rationale
 
-The growing feature set (templates, ZFS operations, jail creation flows) benefits from richer client-side interaction than server-rendered HTML fragment-swapping comfortably provides. Svelte was chosen over Vue after direct comparison. The migration happens early — while `jails` and the audit log are the only existing domains, there is a small, well-understood surface to convert. Every domain added afterward (storage, templates) is built API-first from the start, avoiding a larger migration later — see `docs/ROADMAP.md`. The JSON API landed first (Phase 1a); the Svelte UI itself is Phase 1b and not yet built.
+The growing feature set (templates, ZFS operations, jail creation flows) benefits from richer client-side interaction than server-rendered HTML fragment-swapping comfortably provides. Svelte was chosen over Vue after direct comparison. The migration happens early — while `jails` and the audit log are the only existing domains, there is a small, well-understood surface to convert. Every domain added afterward (storage, templates) is built API-first from the start, avoiding a larger migration later — see `docs/ROADMAP.md`. The JSON API landed first (Phase 1a); the Svelte UI was left to Phase 1b and shipped in v0.6.0, on the architecture JD-015 settles.
 
 ---
 
@@ -624,6 +629,381 @@ Both rules come from the deployment host's own topology, not from caution in the
 `zpool list` prints `backup`, `tank`, `zroot` on isengard, and the first of those holds a `zrepl` replica of the jails layout with **every mountpoint `none`**. Adopting the first pool printed, or matching the layout on dataset names, reports a fully provisioned host whose datasets are mounted nowhere. Hence an explicit pool, and a layout check that compares mountpoints against **full dataset paths** — another host has a pool called `media`, which is also one of the layout's names.
 
 The mount-over refusal is the same host read the other way round. That replica lives at `backup/isengard/tank/jails`, not `backup/jails`, so with `JAILDECK_ZFS_POOL=backup` the layout is simply *missing* — and creating `backup/jails` with `mountpoint=/usr/local/jails` would have mounted it over the live `tank/jails`, where the jails actually run. The readiness remedy would have been `jaildeck init`: the report would have told the operator to do it.
+
+---
+
+## JD-022 — Matching a Jail to Its Datasets
+
+**Status:** Locked — 2026-10-23
+
+A dataset belongs to a jail when it is **mounted at the jail's `path` or under it**. The jail's own dataset is the one mounted exactly there; everything deeper is a child. Where two jail paths both match, the longest wins, so a jail nested inside another's directory keeps its own datasets.
+
+The alternative was the naming convention — `<pool>/jails/containers/<name>`, which JD-021 fixes and host readiness already enforces. Mountpoint matching was chosen because it is **truthful rather than conventional**: it works for a jail placed outside that layout, and a jail not on ZFS at all reports nothing instead of reporting the datasets of whatever happens to carry its name. A jail whose stanza sets no `path` matches nothing rather than everything.
+
+**Sizes cross the API as exact bytes.** `zfs list` prints `1.41G` and `897G` unless given `-p`; those cannot be compared or totalled, and the API is read by automation first (JD-016). Formatting a byte count for a human is the web interface's job. `referenced` routinely exceeds `used` on a jail cloned from a template, because a clone still refers to the template's blocks — the reason JD-007 puts quotas on a child dataset.
+
+**The read is batched per host, never per jail**: one `zfs list` and one `zfs get`, scoped to `JAILDECK_ZFS_POOL` when the operator set one and to every imported pool when they did not. Widening rather than adopting a pool by guesswork is deliberate: judging whether a pool is usable belongs to host readiness (JD-021), and a second opinion here is how the two would come to disagree.
+
+**A failed storage read degrades the listing instead of failing it.** The jails come back without their datasets and the reason is logged at `WARN`. Seeing a stopped jail is how an operator starts it (JD-004), and an unreadable or suspended pool must not take that away.
+
+**The consequence, accepted deliberately:** absent storage in a response means either "this jail has none" or "ZFS could not be read", and nothing in the response tells the two apart. The log does. Should a client ever need to distinguish them, the cheap fix is a field added with `omitempty`, as every other addition here has been.
+
+### Rationale
+
+Both halves of this are the same choice twice: prefer what the system actually reports over what it is supposed to look like. A convention-based match is a second source of truth about where a jail's data lives, and JD-011 rejects those for the same reason — the moment it disagrees with the mount table, the dashboard has to pick, and either answer is sometimes wrong.
+
+**Known duplication, recorded rather than fixed:** `host.HostSystem` reads `zfs list -H -o name,mountpoint -r <pool>` for the layout check while `storage.StorageSystem` reads the same datasets with their sizes. Two commands where one would do. Readiness predates the storage domain and its fixtures are tested against the narrower command; folding one into the other is worth doing when something else makes that code move.
+
+---
+
+## JD-023 — ZFS Property Writes
+
+**Status:** Locked — 2026-10-23
+
+Jail Deck writes two kinds of ZFS property, and the difference decides everything else.
+
+**Native properties are allowlisted, and the list is five long:** `mountpoint`, `refquota`, `recordsize`, `compression`, `atime`. This ZFS reports **108 properties, over sixty of them editable**, and the editable set includes `sharenfs` (which would publish a jail's filesystem over NFS), `canmount` (which would stop it mounting), `exec`, `setuid` and `devices` (mount-time security semantics), `jailed` (ZFS delegation) and `keylocation` (encryption). An allowlist exists so that widening it is a deliberate, reviewed act rather than whatever `zfs` happens to permit, which is why it starts at the five the consumer actually needs.
+
+`quota` is deliberately **not** among them. JD-007 puts the limit on `refquota` because a clone's `referenced` space includes the template's blocks; offering both invites the mistake that decision exists to prevent.
+
+**`mountpoint` is settable exactly once, at creation.** Changing it on a running jail's dataset remounts it elsewhere and leaves the jail looking at a directory no longer backed by what it was. So there are two lists: everything may be set by `zfs create`, and everything but `mountpoint` may be changed afterwards — growing a quota being the ordinary operational need with no other path through this API. Asking for a mountpoint an existing dataset does not have is **409 with both values**, not a silent move: the caller is describing a different dataset than the one that is there.
+
+**User properties are passed through and never interpreted** (JD-011). The only rule is ZFS's own — the name contains a colon — plus one of this code's: no equals sign or whitespace in the name, because `zfs set` takes `property=value` as a single argument. The value is not inspected at all.
+
+**Native property *values* are not validated either.** `zfs` answers `recordsize=7K` with "must be power of 2 from 512B to 16M", and nothing written here would say it better (JD-012). Re-implementing those rules would only add a second opinion that can be wrong on its own.
+
+**A command that ran and exited non-zero is reported as 400, not 500.** A client told 500 will retry a value that can never work, which defeats JD-016's retry contract. The distinction available is only "ran and exited non-zero" against "never ran or timed out" — both of the latter report exit code `-1` — so a genuinely server-side refusal such as permission denied also reports 400. `zfs`'s own sentence is in the body either way, which is what the operator reads.
+
+**Writes are idempotent and audited.** `PUT` creates or converges; a repeat is `200` with `created: false`. Updatable properties are applied rather than compared first: deciding "10G is already 10G" would mean parsing a size this package has no business interpreting, and setting a property to the value it already holds is a no-op in ZFS. Every command writes one audit line with the command itself, so `zfs inherit`'s one-property-per-call shape really does produce one entry per removal.
+
+### Rationale
+
+The two kinds of property are not two flavours of the same thing. A native property changes how the filesystem behaves and is Jail Deck's responsibility; a user property is a string the consumer owns and Jail Deck is merely a courier for. Treating them alike would mean either validating tags nobody has the right to validate, or letting `sharenfs` through because it arrived in the same map.
+
+**Verified on isengard, not only in tests.** Creating `tank/jails/containers/ottermq/data` with `refquota=2G` through the API put the quota where JD-007 says it belongs: `df` **inside the running jail** reports 2.0G rather than the pool's 897G, with the mount point shown as `[restricted]` by `enforce_statfs`. That is the behaviour the whole arrangement exists for.
+
+---
+
+## JD-024 — Snapshots: Recursion, Ordering and Refusal
+
+**Status:** Locked — 2026-10-23
+
+**A jail-level snapshot is recursive; a rollback cannot be.** `PUT /api/jails/{name}/snapshots/{s}` runs `zfs snapshot -r`, taking the jail's dataset and every child **at one point in time** — verified on the deployment target, where one call produced `ottermq@before-upgrade` and `ottermq/data@before-upgrade` sharing `createtxg 186346`. That atomicity is what JD-007's re-clone path needs: a jail's root replaced from a newer template while its data dataset stays consistent with the moment the root was captured.
+
+Rollback gets no such treatment, because ZFS offers none. `zfs rollback` has no flag that descends into children, and its own `-r` means something else entirely — "destroy the snapshots newer than this one". So a jail-level rollback returns the jail's own dataset and **leaves its children where they are**. This is visible in practice: a recursive snapshot followed by a jail-level rollback leaves the child's snapshot of the destroyed name still present. Rolling a child back is its own call, which is the honest shape — for a jail whose state lives in a child, rolling the data back without touching the userland is usually what was wanted anyway.
+
+**Ordering is by transaction group, never by timestamp.** `creation` has second granularity, so two snapshots taken in the same second tie on it, and "which of these is newer" is exactly the question that decides what a rollback destroys. `createtxg` is ZFS's own total order and never ties. It is in the API as `create_txg` for the same reason: a client deciding what is newer needs it too.
+
+**Refusals are decided before anything destructive runs.** What blocks a destroy is asked structurally — `zfs get clones` and `zfs holds` — rather than read out of the error `zfs destroy` would raise. Two reasons: parsing a refusal means depending on its wording, and more importantly a check that happens first is a refusal, while one that happens after is a report of something already attempted. The commands' own failures are still mapped, as defence in depth.
+
+- **Newer snapshots** block a rollback, which names every one it would destroy. `destroy_newer=true` accepts losing exactly those. Two parameters rather than one, because `confirm=` and "yes, lose those" are different questions.
+- **Clones and holds** block both a destroy and a rollback, and **cannot be overridden through this API at any level of insistence**. Getting past a clone needs `zfs destroy -R`, which takes the clone with it; a hold exists precisely to say "not this one". Releasing a hold or destroying a clone is a separate, deliberate act with its own blast radius.
+
+**`confirm=` is the snapshot's full `dataset@snapshot`**, not the word already in the path. A script looping over jails with one snapshot name in a variable would otherwise confirm every one of them by accident, which is the failure the confirmation exists to prevent (JD-016). The expected value is in the error message: this guards against a mistake, not against a client that can already list the snapshots.
+
+### Rationale
+
+Every part of this is the same preference stated four times: let the system answer, and ask it before acting rather than after. `createtxg` over a timestamp, a structured dependency check over a parsed error message, a refusal that names what is in the way over one that just says no, and a confirmation specific enough that it cannot be satisfied by accident.
+
+The one place that preference yields is recursion, and it yields to the tool: `zfs snapshot` can take a jail atomically and `zfs rollback` cannot put one back the same way. Pretending otherwise — looping over the children and calling it a recursive rollback — would offer an atomicity that does not exist.
+
+---
+
+## JD-025 — Moving a Dataset Out of a Jail
+
+**Status:** Locked — 2026-10-23
+
+Destroying a jail takes its children and their snapshots with it (JD-007), so a dataset worth keeping has to **stop being a child** before the jail goes. Moving it is three commands, in this order, each audited on its own:
+
+```
+zfs rename -u  <jail>/data  <pool>/jails/retained/<name>
+zfs unmount                 <pool>/jails/retained/<name>
+zfs mount                   <pool>/jails/retained/<name>
+```
+
+**`-u` is the whole design, and it is not optional.** A plain `zfs rename` unmounts the dataset and remounts it at its new mountpoint inside the same command. On a running jail that is the filesystem disappearing from under a live process, decided by `zfs` rather than by anyone. Measured on the deployment target: after a plain rename of a running jail's data dataset, `ls /data` inside that jail answered `No such file or directory`. With `-u` the rename is invisible — the mount stays exactly where it was and the jail keeps reading and writing — and moving it becomes a separate step that happens when this code says so.
+
+**But the move is still completed, in the same call.** `-u` alone leaves the dataset named in one place and mounted in another, and a jail with a foreign filesystem mounted inside it **cannot be destroyed**: `zfs destroy` answers `pool or dataset is busy`. A half-moved dataset therefore blocks the one thing this feature exists to enable. Both shapes were measured; the difference is the reason the unmount and the mount are not left to the caller.
+
+The cost, accepted: a running jail loses that path at the unmount. The workflow this serves starts by stopping the jail, and the response says `remounted: true` so a caller knows the filesystem moved rather than only the name.
+
+**The destination is `<pool>/jails/retained/<name>`, created on demand.** It sits beside `media`, `templates` and `containers` so that one destroy of `<pool>/jails` is still the whole story, and the pool is taken from the dataset being moved rather than from configuration — a dataset is already on exactly one pool, and that is the one its retained sibling belongs on. It is deliberately **not** added to the layout host readiness checks (JD-021): a host that has never retained anything is not missing something.
+
+The name is given by the caller, not derived from the jail. Retained names share one namespace per pool, so two jails whose data datasets are both called `data` would collide under any derivation; being asked for a name makes that collision the caller's to resolve, and a `409` when it is already taken.
+
+**A dataset that was not mounted is renamed and left alone.** Mounting it would be a change nobody asked for, and `zfs mount` on something already mounted is an error rather than a no-op — as is `zfs unmount` on something that is not. The mount state is therefore read before the rename, as its own question.
+
+### Rationale
+
+The whole decision is about who chooses the moment a filesystem disappears. `zfs rename` will choose it for you, inside a command whose name says nothing about mounting. `-u` takes that choice back, and completing the move in the same call means the caller still gets one operation with one outcome rather than a state they can forget to finish.
+
+**Verified end to end on isengard**, with a jail configured for the purpose and never started: retain the data, `zfs destroy -r` the jail (which succeeded, where the half-moved form had failed `busy`), recreate the jail's dataset, restore the data — marker file and `refquota` both intact, mounted back where they belonged.
+
+---
+
+## JD-026 — Re-cloning a Jail's Root
+
+**Status:** Locked — 2026-10-23
+
+A jail's root is a clone of a template snapshot (JD-007), so upgrading one means replacing that root with a clone of a newer snapshot. Everything the jail is supposed to keep lives in a child dataset, and the child has to survive the replacement.
+
+The sequence, in this order, and the order is the design:
+
+```
+stop the jail                     only if it was running
+move every child out              retained/<jail>-<child>
+park the old root                 retained/<jail>-root-<its origin snapshot>
+clone the new root                zfs clone <template>@<snapshot> <jail dataset>
+move every child back
+start the jail                    only if it was running
+```
+
+**Nothing is destroyed.** The old root is renamed beside the children rather than destroyed, so a re-clone onto a wrong template costs one call to undo instead of a restore from backup. It is a clone, so it occupies only what the jail wrote since it was made — 352 KB on the host this was verified on, against a 372 MB template.
+
+**Every child leaves before the root is touched.** Not an ordering preference: `zfs rename` carries a dataset's descendants with it, so parking the root first would move the children inside the parked copy, where nothing would look for them. Reversing the two steps was tried, and the next operation failed with `no dataset named .../probe6/data` — the children were simply gone from where everything expected them.
+
+**Refusals happen before the jail is stopped.** A mistyped template name should cost an error message, not an outage. The template snapshot is checked, the jail's own dataset resolved, and the name validated, all before `service jail stop` runs.
+
+**A failure stops, and reports.** No step is retried and nothing is undone. The response names the step that failed and lists every dataset that is no longer under the jail with where it now sits, so it can be restored with the call JD-025 already provides. Automatic recovery was rejected: an undo that fails leaves two interleaved failures in the audit log and a host in a state neither of them describes. The acceptance criterion — children in a known, reported place and never destroyed — is met by reporting, not by repair.
+
+**The template snapshot is named in full, with no default.** Every jail on a real host is already a clone of `templates/<release>@base`, so defaulting to `@base` would re-clone a jail onto the snapshot it is already on: a no-op dressed as an upgrade.
+
+**`confirm=` is the jail's name**, because this stops a running jail and replaces the filesystem its processes run on (JD-016).
+
+### Rationale
+
+The whole arrangement only pays off if a jail's state is in a child dataset, which is what JD-007 asks for and what the quota in JD-023 enforces. The measurement that makes it concrete, from the verification run:
+
+```
+jexec probe6 cat /data/marker          state-that-must-survive-the-upgrade
+cat .../retained/probe6-root-base/root/marker   i-was-written-into-the-root
+cat .../containers/probe6/root/marker   No such file or directory
+```
+
+The child survived. What had been written into the jail's **root** did not — it is a fresh template now, which is the point. That file is still readable in the parked copy, which is why the parked copy exists.
+
+---
+
+## JD-027 — Two Ways to Get a Jail, and What Builds the Templates Behind Them
+
+**Status:** Locked — 2026-10-23
+
+A jail is always a clone of a template (JD-007). There is one mechanism, and **two paths an operator takes through it**:
+
+| | clone from | after it starts |
+| --- | --- | --- |
+| **a prepared jail** | a template with the packages already in it | it works |
+| **a custom jail** | a release template — a bare FreeBSD userland | you fill it |
+
+The second is the ordinary case today: `ottermq` and `goodiesdb` on the deployment target have no packages at all. They are empty jails that were configured after the fact, which is JD-007 stage 2 — "start the jail, and hand off to in-jail provisioning (`jexec` + `pkg`) for service-specific setup" — done by hand, and made callable by JD-016's exec endpoint.
+
+The first is an optimisation of the second: do the provisioning **once**, snapshot it, and every jail cloned from that snapshot skips it.
+
+### Two ways to build a prepared template
+
+**The general one: clone a jail you configured** — the Handbook's own "Cloning a Jail as a Template" (17.4.3), made callable. Configure a jail however you like, by hand or through exec, stop it, and promote it:
+
+```
+POST /api/jails/ottermq/template  {"name": "ottermq-base"}
+
+  zfs snapshot <jail>@base
+  zfs clone    <jail>@base  templates/ottermq-base
+  zfs promote  templates/ottermq-base
+```
+
+This captures whatever is in the jail, not only packages — `sysrc`, an edited configuration, an `initdb`, anything. It is how the deployment target's jails were actually built, and it is why the other path below is a shortcut rather than the answer.
+
+**The `zfs promote` is the step that is easy to omit and expensive to omit.** Without it the template is a clone *of* the jail, so that jail can never be destroyed. Measured, before and after:
+
+```
+before promote:  containers/ottermq       <- templates/15.1-RELEASE@base
+                 templates/ottermq-base   <- containers/ottermq@base
+                 zfs destroy containers/ottermq
+                   cannot destroy: filesystem has dependent clones -> templates/ottermq-base
+
+after promote:   containers/ottermq       <- templates/ottermq-base@base
+                 templates/ottermq-base   <- templates/15.1-RELEASE@base
+                 zfs destroy containers/ottermq                     [exit 0]
+```
+
+After it the jail is a clone of the template instead, which is also the right way round: a template should outlive the jail it came from. The lineage then reads release template → this one → the jail, which is exactly JD-007's model, so the new template lists like any other with no special case anywhere.
+
+**The jail must be stopped**, and Jail Deck refuses rather than stopping it. "Stop the jail before snapshotting so the image is consistent" is the Handbook's instruction; unlike a re-clone, nothing here *requires* the jail to be down — a snapshot of a running jail succeeds, it is just an image of a system caught mid-stride. Taking a service down is the operator's call, and it is one call they already have.
+
+**A jail already carrying `@base` is refused.** `CreateSnapshot` is idempotent by design (JD-024), so an existing one would be silently reused — and the template would then capture whenever *that* was taken rather than the jail as it is now. The name is a template's convention; a jail wearing it is worth stopping for.
+
+### The shortcut: packages without a jail
+
+Jail Deck also derives one template from another, with packages, without booting anything:
+
+```
+PUT /api/templates/postgres-16  {"from": "15.1-RELEASE", "packages": ["postgresql16-server"]}
+
+  zfs clone    templates/15.1-RELEASE@base templates/postgres-16
+  pkg -c       /usr/local/jails/templates/postgres-16 install -y postgresql16-server
+  zfs snapshot templates/postgres-16@base
+```
+
+**The precedent is JD-007's own stage 1**, which already has Jail Deck running `freebsd-update -b <root>` against a template that has never been started. `pkg -c` is the same shape of operation on the same kind of directory. This is not a new category of thing for Jail Deck to do.
+
+**What it buys:** no jail, no `jail.conf.d` stanza, no networking for a temporary jail, nothing to clean up afterwards. For "a template with postgres in it", that is the whole job.
+
+**What it cannot do, and this is the limit:** `pkg -c` installs packages. It cannot run `sysrc`, edit a configuration file, or run an `initdb`. Anything beyond installing packages belongs to the jail-based path — clone a template, create a jail on it, `exec` into it, stop it, snapshot the dataset. That path is strictly more capable, needs no new primitives beyond Jail Provisioning and exec, and is the general answer.
+
+**An earlier draft of this record claimed the jail-based path could not work**, on the grounds that `jexec` cannot reach a template. It cannot — `jexec 15.1-RELEASE` answers `jail not found` — but that is irrelevant: the path starts a jail first, or clones one that already exists. The same draft argued the alternative would require exposing arbitrary command execution against a template root; JD-016 had already accepted exec into a running jail and called it "no more than the API already implies". Both arguments were wrong. `pkg -c` is kept as a shortcut on its own merits, not because anything else was impossible.
+
+### What is stored: nothing
+
+A template's whole state comes from ZFS (JD-011). `ready` is whether `@base` exists, which is what makes a template usable (JD-007). `parent` is read back from `zfs get origin`, so a derived template cannot disagree about where it came from.
+
+**A failed install therefore needs no cleanup to be truthful.** The clone stays without its `@base` — a template that exists and is not ready, which is exactly what it is and exactly what the listing reports. A second attempt on it is refused rather than resumed: finishing it would install on top of whatever the failed attempt left, and from outside, a clean clone and a clone with half of postgres in it are indistinguishable.
+
+### Package names
+
+One rule: an argument beginning with a dash is refused, because `pkg` would read `-f` as an option and `install -y -f` is not the command that was asked for. No shell is involved either way — `CommandRunner` takes an argument array. Versions, origins and flavours pass through untouched. `pkg` running and refusing is a `400` carrying its own sentence, for the reason JD-023 gives.
+
+### Consequence for the code's shape
+
+Templates get their own bounded context, `internal/templates`, which resolves the "storage domain granularity" question `docs/SPEC.md` had open. A template is a dataset, but it is not *a dataset*: it has a readiness state and a lineage, and those are rules about templates. `internal/storage` implements the port `internal/templates` defines, as it does for `internal/jails` (JD-010).
+
+### Rationale
+
+The two paths are not competing mechanisms to choose between — they are the same mechanism at different times. Provision at jail creation, or provision once into a template and clone it. Jail Deck should make both reachable and should not pretend either is the only one.
+
+`pkg -c` earns its place by being the part of that which needs nothing else to exist. Everything beyond packages waits for Jail Provisioning and exec, and when they land, the jail-based path covers what this cannot — including the case the deployment target actually has, which is jails with no packages and a configuration done by hand.
+
+### Removing one
+
+`DELETE /api/templates/{name}?confirm={name}` destroys the template and its snapshots, and **refuses while anything is cloned from it**, naming every one.
+
+ZFS would refuse too — but only after being asked, and its message says "dependent clones" rather than which jails are running on them. Asking `zfs get clones` first turns a refusal into an answer. Never `zfs destroy -R`: that takes the dependent clones with it, which would make the check decorative.
+
+A jail that should outlive its template is not stuck, and the refusal says so: `zfs promote` on the jail moves the dependency the other way, which is cloning a jail as a template run in reverse.
+
+`confirm` is the template's name. Unlike a snapshot's, it is unambiguous on its own — a template name is unique within the pool, where `nightly` names a snapshot on every dataset that has one (JD-024).
+
+This is also what cleans up the half-built template a failed derive leaves behind. Without it, refusing to resume one and offering no way to remove it would have left the operator reaching for `zfs destroy` by hand.
+
+**Still to settle, in the Jail Provisioning milestone:** how a custom jail is filled through the API rather than by hand — exec (JD-016) is the mechanism, the orchestration is not designed — and how the paths are presented in the interface.
+
+
+---
+
+## JD-028 — Showing the Storage Model in the Web Interface
+
+**Status:** Locked — 2026-10-23
+
+Six releases' worth of storage endpoints — datasets, tags, snapshots, moves, re-clones, templates — had nothing in the interface. This is the reading half: every one of those things becomes visible before any of them becomes clickable.
+
+### A page per jail, not an expanded row
+
+`/jails/{name}` is a page of its own, reached by clicking the jail's name on the list. The alternatives were an expanding row and a side panel; both keep you on a list whose job is comparison, and a jail's datasets, tags and snapshots are three tables. They need the width.
+
+A page also has an address. "Look at `/jails/ottermq`" is a thing one person can say to another, which an expanded row is not.
+
+### One Templates page, templates and retained datasets together
+
+`/templates` carries both. A retained dataset is not a template — it is a dataset that outlived its jail (JD-025) — but the two are the same kind of question: *what is on this host that is not a running jail?* Two pages, each with one small table, would be two clicks to answer it.
+
+### The lineage is an indented table, not a tree widget
+
+A template's parentage is a tree, and the obvious move is a tree control. It was not taken.
+
+A host has a handful of templates, two or three deep. Indentation carries that. A tree widget brings expand state, collapse state, selection state and keyboard semantics, all of which would have to be right, and none of which answer a question the indentation does not. Sylve, which solves the same problems for the same kind of host, has tree views — for navigating *between nodes* and for exploring a whole pool. Jail Deck is single-host by decision (JD-003) and shows the jails' datasets only. Neither case applies here.
+
+The row order is the lineage: parent before child, siblings by name. A template whose parent is not itself a template — cloned from somewhere outside `<pool>/jails/templates` — is appended at depth 0 rather than dropped, because a template that exists and does not appear in the list is worse than one that appears in the wrong place.
+
+### What a clone is, is read from the host
+
+A template's dependents arrive as dataset names. Sorting them into jails, derived templates and everything else by *reading those names* — looking for `/containers/` or `/templates/` — is the obvious implementation, and it was wrong the first time it ran: this project's own fake lays its jails out as `<pool>/jails/<name>`, with no `containers` level, and every jail landed under "other clones".
+
+`<pool>/jails/containers` is the layout Jail Deck *creates* (JD-006, JD-021). It is not where the jails it *lists* have to be: those come from the host's own configuration, and a host that adopts Jail Deck arrives with jails already somewhere. Jail Deck stores no layout of its own (JD-011) and matches a jail to its datasets by mountpoint rather than by name precisely because of that (JD-022).
+
+So a clone is a jail when a jail reports that dataset as its own, a template when a template does, and otherwise it is shown as the bare dataset it is. JD-021 already refused to identify the layout by dataset name — on the deployment host that would have reported a replica mounted nowhere as a provisioned system. This is the same mistake one layer up, and it reached the screen before it was caught: of everything on these pages, a name read out of a path was the only part that could be confidently wrong rather than merely unhelpful.
+
+### Each panel fails on its own
+
+A jail's page reads the jail and then its snapshots; a template's page reads the template and then the jails and templates it is matched against. The secondary reads are allowed to fail without taking the page down: a snapshot listing that errors costs the snapshot table, and a jail listing that errors costs the names and the links, not the page. The pages report what they could read, which is the same stance the API takes when a pool is unreadable (JD-022).
+
+### Read before write
+
+No destructive action is on these pages yet — no tag, no snapshot, no rollback, no retain, no destroy. Those arrive next, each with the confirmation its refusal already defines. Shipping the reading first means the confirmations can be built against pages that already show what is about to be changed.
+
+---
+
+## JD-029 — Acting on the Storage Model from the Interface
+
+**Status:** Locked — 2026-10-23
+
+JD-028 made the storage model visible. This is how it is changed: what gets a form, what gets a confirmation, and what the interface is allowed to decide on its own.
+
+### A form where the thing is, a dialog only for what cannot be undone
+
+Setting a tag, creating a child dataset and retaining one all open a form **in place** — under the section header, or in a row beneath the dataset. None of them destroys anything: a tag is a property, a new dataset is new, and a retain is `zfs rename -u` plus a remount with nothing removed (JD-025). A modal for each would be ceremony, and ceremony everywhere is ceremony nowhere.
+
+The modal is kept for what a second call cannot take back. It replaces the browser's `confirm()`, which `docs/UI.md` had left open as a question and which could not have carried the rest of this section.
+
+### A typed confirmation is the API's requirement, shown
+
+`DELETE` and `rollback` will not act without `confirm=<dataset>@<snapshot>` spelled out in full (JD-024), and a template will not be removed without `confirm=<name>` (JD-027). The dialog asks for exactly that string and its button stays disabled until it matches.
+
+This is deliberately **not** an invention of the interface. The same ceremony exists for anyone using `curl`, for the same reason — `nightly` names a snapshot on every dataset that has one, so a short name is not an answer to "which one". A client that made the typing optional would be offering a shortcut the API does not have.
+
+### Every write is followed by a read
+
+Each action refetches the jail when it finishes, whichever way it finished. The server reads ZFS rather than remembering what it was told (JD-011), so a refetch is the only answer that cannot disagree with the host — and a command that failed can still have changed something, which is exactly when a stale screen is dangerous.
+
+That costs a request per action. The alternative is patching local state from the response and being wrong the first time two things change at once.
+
+### The interface validates nothing the server validates
+
+A property name without a colon, a dataset name with a slash, a `recordsize` of 7K: all of them go to the server and the server's own sentence comes back. `zfs` answers `recordsize=7K` with "must be power of 2 from 512B to 16M", which is better than anything this side would have written, and JD-012 already decided that sentence reaches the client.
+
+The forms carry the rules as *hints* — "the name has to contain a colon", "one level only" — because an operator should know before typing. A hint is not a check, and when the two could disagree only one of them is talking to ZFS.
+
+### What a refusal looks like
+
+A 409 from these endpoints is not a sentence: the body carries the structure that explains it, which is the whole reason the API answers that way. The client keeps the decoded body on its error type and renders the explanation. Showing "Conflict" would throw away the part the API went out of its way to provide.
+
+### A refusal is an answer, and it is shown where the row is
+
+The snapshot endpoints refuse with `409` and a body that names what stood in the way — the newer snapshots, the clones, the holds (JD-024). Nothing ran, so it is not a failure; the client returns it as a result rather than throwing, and renders it in the warning colour under the row it is about, not the danger colour. Red is reserved for what did go wrong.
+
+### A refused rollback is offered back, once
+
+`destroy_newer=true` is the one refusal this API lets a client accept. The ladder is:
+
+1. **Roll back** — the dialog explains what a rollback discards and asks for the typed name.
+2. The server refuses, **naming the newer snapshots**. That list is the reason the first attempt is worth making: a client that computed the set itself would be second-guessing the transaction-group ordering that decides it.
+3. **Destroy them and roll back** — a second dialog, carrying the list, with no typing. The name was already typed for this operation and nothing about the target changed; what is new is the list, and that is what the dialog shows.
+
+Clones and holds get no such button, because nothing in the API accepts them. A hold exists to say "not this one", and taking a clone with its origin needs `zfs destroy -R`, which Jail Deck never passes.
+
+### A recursive destroy names what it takes, first
+
+Destroying a snapshot of the jail's **own** dataset is recursive: every snapshot of that name under the jail goes with it. The confirmation lists them before anything runs, computed from the snapshot list already on screen — the same set the server computes with `namesWithShort`.
+
+A snapshot on a **child** dataset is destroyed through the child's own route and takes only itself. Which route a row uses is therefore decided by which dataset the row names, and the confirmation says what that means.
+
+### A template snapshot is chosen, not typed
+
+Re-cloning a jail's root takes the full `dataset@snapshot`, with no default — every jail is already a clone of some template's `@base`, so defaulting to one would be a no-op dressed as an upgrade (JD-026). But a string nobody can remember is not a choice either, so the form offers the **ready** templates and sends the snapshot each one names.
+
+Only the ready ones: without its `@base` snapshot there is nothing to clone (JD-007). When none is ready the button is disabled and says why, which is the one place a hint becomes a check — there is no request that could succeed.
+
+### A re-clone reports where it came from, not what it replaced
+
+`Reclone` carries both: `to` is the template snapshot the new root was cloned from, `from` is what the root was a clone of before. An early version of this page printed `from` as "re-cloned from", which described the upgrade as the thing it replaced — on a jail whose template had just changed, it read as though nothing had happened.
+
+A failure is rendered differently from every other error on these pages, because it is the only record of where the jail's datasets went: it names the step that stopped, lists each dataset and where it now sits, and says that a restore brings it back. Nothing is retried and nothing is undone (JD-026), so this message is the recovery procedure.
+
+### Removing a template from its own page leaves no page
+
+A successful removal on `/templates/{name}` navigates back to the list, because the thing the page was about is gone. A refusal stays, rendered against the dependents the page already lists — and if the two ever disagree, the server is the one that just read ZFS.
+
+### What is not here
+
+Setting a native property on a dataset that already exists — growing a `refquota`, say — is possible in the API but absent from the page, because the jail endpoint does not report native properties and a form that edits a value it cannot show would be guessing. That is an API gap, filed as [#55](https://github.com/ottermq/jaildeck/issues/55), not a UI decision.
 
 ---
 

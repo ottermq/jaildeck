@@ -1,3 +1,8 @@
+---
+title: "Interface"
+description: "The web interface: what it shows and the conventions it follows."
+---
+
 # Jail Deck — UI Specification
 
 ## UI goal
@@ -43,9 +48,9 @@ Keep the sidebar simple — avoid too many sections before the features justify 
 
 ## Navigation
 
-Initial: Dashboard, Jails, Storage, Templates, Logs, Settings.
+Built: **Jails**, **Templates**, **Operations**, **Host**. A section stays highlighted on its detail pages, so `/jails/ottermq` keeps Jails lit.
 
-Possible later: Snapshots (if it earns a page separate from Storage), Tasks (once long-running operations exist), Services, Packages, System.
+Still on the sketch above: Dashboard, Storage, Logs, Settings. Possible later: Snapshots (if it earns a page separate from a jail's), Tasks (once long-running operations exist), Services, Packages, System.
 
 ## Page specifications
 
@@ -78,7 +83,20 @@ Exact interaction shape (single form vs. wizard steps, how failures mid-flow are
 
 ### Jail detail page
 
-Sections: summary card, status, network info, root path, services, storage/dataset info, recent logs, recent operations, actions, and which template/release the jail was created from, if known.
+At `/jails/{name}`, reached from the jail's name on the list (JD-028). Built:
+
+- header — name, status badge, JID, hostname, IP
+- **Datasets** — every dataset of the jail, the one mounted at the jail's own path marked as such, with mountpoint and used/referenced/available (JD-022)
+- **Tags** — the jail's `user:property` ZFS tags, its own and never a child's
+- **Snapshots** — newest first, ordered by transaction group rather than by time (JD-024); fetched separately and allowed to fail on its own
+
+Acting on it (JD-029): a tag can be added, edited and removed; a child dataset can be created with its native properties, or retained past the jail; a snapshot can be taken, rolled back to, or destroyed. Each opens a form where the thing is, or a confirmation when it cannot be undone, and each refetches the jail when it is done.
+
+A refused snapshot operation is shown under its row, in the warning colour, naming what stood in the way. A rollback refused over newer snapshots offers them back once — "destroy them and roll back" — because that is the one refusal the API lets a client accept.
+
+The jail as a whole: it can be **cloned as a template**, and its **root re-cloned** from a ready template's snapshot. A re-clone that fails part way through is rendered as the recovery procedure it is — which step stopped, where each dataset now sits, and that a restore brings it back.
+
+Still to come: services, recent logs, recent operations, and which template the jail was cloned from.
 
 ### Storage page
 
@@ -86,13 +104,15 @@ Purpose: inspect ZFS storage relevant to jails. Since ZFS is required (JD-006), 
 
 ### Templates page
 
-Purpose: manage FreeBSD release templates — the thing jail creation depends on.
+Purpose: the userlands a jail is cloned from — the thing jail creation depends on. Built, at `/templates`:
 
-Likely content:
+- the templates as an **indented lineage**, parent before child, each one ready or not ready, with what it was derived from and what it costs (JD-028)
+- **Retained datasets** below: the datasets that outlived their jail (JD-025), on the same page because they answer the same question
+- a page per template at `/templates/{name}`: where it lives, and **what depends on it** — the jails cloned from it, the templates derived from it, anything else, and holds — which is what a removal would have to refuse over
 
-- list of prepared templates (release version, patch level, state: fetching/extracting/patching/updating/ready, snapshot name)
-- action to prepare a new template for a release
-- a release picker sourced from `download.freebsd.org`, or manual version entry, depending on how the "which releases are supported" question resolves (`docs/SPEC.md`)
+Acting on it (JD-029): a template can be **derived** from a ready one with packages, and **removed** — from the list or from its own page, which navigates back when the template is gone. A removal refused over clones or holds is shown where the template is, with the `zfs promote` way out. A **retained dataset can be restored** under any jail, under any name.
+
+Still to come: preparing a release template (its own long-running-operation problem, JD-008), and a release picker sourced from `download.freebsd.org` or manual version entry, depending on how "which releases are supported" resolves (`docs/SPEC.md`).
 
 ### Logs page
 
@@ -139,6 +159,10 @@ Should show what operation failed, a short explanation, relevant command output 
 
 Potentially destructive or disruptive operations require confirmation: stop jail, restart jail, rollback snapshot, delete snapshot, remove dataset.
 
+One modal dialog, mounted once in the shell and driven from anywhere (JD-029). It replaces the browser's `confirm()`, which could not carry the typed confirmation several of these operations need — the API asks for the full `dataset@snapshot` before it will destroy or roll one back (JD-024), and the dialog asks for exactly that.
+
+Operations that destroy nothing — setting a tag, creating a dataset, retaining one — get a form in place instead. A modal for every change would make the dialog mean nothing.
+
 ## Accessibility and usability
 
 Real buttons, real links, visible focus states, readable contrast, form labels, meaningful table headers, status text in addition to color.
@@ -149,8 +173,8 @@ Use FreeBSD-native terminology, explain risky operations in plain language. Good
 
 ## Open UI questions
 
-1. Table-first or card-first for the Jails page?
-2. Browser `confirm()` dialogs or custom confirmation components?
+1. ~~Table-first or card-first for the Jails page?~~ **Table-first**, with a page per jail behind the name (JD-028).
+2. ~~Browser `confirm()` dialogs or custom confirmation components?~~ **One custom dialog**, because `confirm()` cannot ask for a typed confirmation (JD-029).
 3. Should logs appear inline on jail detail or only on a dedicated logs page?
 4. Should the dashboard be meaningful from the start, or should `/` redirect to `/jails`?
 5. How much explanatory text for FreeBSD learners?
@@ -158,4 +182,4 @@ Use FreeBSD-native terminology, explain risky operations in plain language. Good
 7. Collapsible or fixed sidebar?
 8. Wizard-style or single-form jail creation?
 9. How is template preparation progress shown, given it can take real time?
-10. Does the Templates page need its own space, or does it live as a section of Storage?
+10. ~~Does the Templates page need its own space, or does it live as a section of Storage?~~ **Its own page**, which also carries the retained datasets (JD-028). Whether a Storage page is still wanted once a jail's own page shows its datasets is now the open question.

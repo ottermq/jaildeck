@@ -12,18 +12,22 @@ import (
 	"github.com/ottermq/jaildeck/internal/host"
 	"github.com/ottermq/jaildeck/internal/jails"
 	"github.com/ottermq/jaildeck/internal/state"
+	"github.com/ottermq/jaildeck/internal/storage"
 	"github.com/ottermq/jaildeck/internal/system"
 	"github.com/ottermq/jaildeck/internal/system/fake"
 	"github.com/ottermq/jaildeck/internal/system/freebsd"
+	"github.com/ottermq/jaildeck/internal/templates"
 )
 
 var ErrNoCredential = errors.New("no operator credential configured")
 
 type App struct {
-	authHandler  *auth.AuthHandler
-	jailHandler  *jails.JailHandler
-	hostHandler  *host.HostHandler
-	auditHandler *audit.AuditHandler
+	authHandler     *auth.AuthHandler
+	jailHandler     *jails.JailHandler
+	hostHandler     *host.HostHandler
+	auditHandler    *audit.AuditHandler
+	storageHandler  *storage.StorageHandler
+	templateHandler *templates.TemplateHandler
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -46,7 +50,23 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	jailService := jails.NewJailService(jailSystem, auditLogger)
+	storageSystem, err := newStorageSystem(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	storageService := storage.NewService(storageSystem, auditLogger, cfg.ZFSPool)
+
+	storageHandler := storage.NewStorageHandler(storageService)
+
+	packageSystem, err := newPackageSystem(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	templateService := templates.NewService(storage.NewTemplateSource(storageService), packageSystem, auditLogger)
+	templateHandler := templates.NewTemplateHandler(templateService)
+
+	jailStorage := storage.NewJailSource(storageService)
+	jailService := jails.NewJailService(jailSystem, auditLogger, jailStorage, jailStorage, jailStorage, jailStorage, jailStorage, jailStorage)
 	jailHandler := jails.NewJailHandler(jailService)
 
 	hostSystem, err := newHostSystem(cfg.Adapter)
@@ -61,10 +81,12 @@ func New(cfg *config.Config) (*App, error) {
 	auditHandler := audit.NewAuditHandler(auditService)
 
 	return &App{
-		authHandler:  authHandler,
-		jailHandler:  jailHandler,
-		hostHandler:  hostHandler,
-		auditHandler: auditHandler,
+		authHandler:     authHandler,
+		jailHandler:     jailHandler,
+		hostHandler:     hostHandler,
+		auditHandler:    auditHandler,
+		storageHandler:  storageHandler,
+		templateHandler: templateHandler,
 	}, nil
 }
 
@@ -108,6 +130,34 @@ func newJailSystem(adapter string) (jails.JailSystem, error) {
 		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
 	case config.AdapterFake:
 		return fake.NewJailSystem(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
+}
+
+// newStorageSystem selects the storage.StorageSystem implementation named by
+// adapter, with the same refusal to guess as newJailSystem.
+func newStorageSystem(adapter string) (storage.StorageSystem, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewStorageAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewStorageSystem(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
+}
+
+// newPackageSystem selects the templates.PackageSystem implementation named by
+// adapter, with the same refusal to guess as newJailSystem.
+func newPackageSystem(adapter string) (templates.PackageSystem, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewPackageSystem(), nil
 	default:
 		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

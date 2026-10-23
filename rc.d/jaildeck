@@ -1,0 +1,64 @@
+#!/bin/sh
+#
+# PROVIDE: jaildeck
+# REQUIRE: NETWORKING FILESYSTEMS
+# KEYWORD: shutdown
+#
+# Jail Deck — FreeBSD jails dashboard and host agent.
+#
+#   sysrc jaildeck_enable=YES
+#   service jaildeck start
+#
+# Everything else is configured in the env file, not in this script and not in
+# rc.conf:
+#
+#   /usr/local/etc/jaildeck/jaildeck.env
+#
+# It is the KEY=value format of the repository's .env.sample, which `make
+# install` puts beside it as jaildeck.env.sample. Jail Deck runs as root
+# (JD-001) and will not start without an operator credential, so run
+# `jaildeck passwd` once before enabling the service.
+
+. /etc/rc.subr
+
+name="jaildeck"
+rcvar="jaildeck_enable"
+desc="FreeBSD jails dashboard and host agent"
+
+load_rc_config "$name"
+
+: ${jaildeck_enable:="NO"}
+: ${jaildeck_env_file:="/usr/local/etc/jaildeck/jaildeck.env"}
+: ${jaildeck_pidfile:="/var/run/jaildeck.pid"}
+# daemon(8) flags. -S sends Jail Deck's output to syslog under the tag below,
+# which is why its own log lines carry no timestamp; replacing this with
+# "-o /var/log/jaildeck.log" would leave them with no timestamp at all. -f
+# detaches stdin, stdout and stderr, which still reaches syslog and keeps
+# `service jaildeck start` from hanging a remote shell that it would otherwise
+# inherit descriptors from.
+: ${jaildeck_daemon_args:="-f -S -T ${name}"}
+
+pidfile="${jaildeck_pidfile}"
+command="/usr/sbin/daemon"
+command_args="-P ${pidfile} ${jaildeck_daemon_args} /usr/local/bin/${name}"
+
+start_precmd="jaildeck_prestart"
+
+jaildeck_prestart()
+{
+	if [ -f "${jaildeck_env_file}" ]; then
+		set -a
+		. "${jaildeck_env_file}"
+		set +a
+	fi
+	# The state dir holds the credential hash and the API tokens; the audit log
+	# holds every command Jail Deck ran. Hence 0700, which is what
+	# `jaildeck passwd` and `jaildeck init` create them as. The defaults
+	# repeated here are internal/config's, for the case where the env file
+	# leaves them unset.
+	install -d -m 0700 -o root -g wheel "${JAILDECK_STATE_DIR:-/var/db/jaildeck}" || return 1
+	install -d -m 0700 -o root -g wheel \
+		"$(dirname "${JAILDECK_AUDIT_LOG:-/var/log/jaildeck/audit.log}")" || return 1
+}
+
+run_rc_command "$1"

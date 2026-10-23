@@ -14,6 +14,9 @@ type Entry struct {
 	Success   bool      `json:"success"`
 	TimedOut  bool      `json:"timed_out,omitempty"`
 	Error     string    `json:"error,omitempty"`
+	// RequestID is the caller's X-Request-Id, omitted when it sent none
+	// (JD-011: nothing is stored that the request did not supply).
+	RequestID string `json:"request_id,omitempty"`
 }
 
 type Logger interface {

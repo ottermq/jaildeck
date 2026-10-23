@@ -9,11 +9,360 @@ alone.
 Dates are the tag date. Issue numbers link to
 [the tracker](https://github.com/ottermq/jaildeck/issues).
 
+Anything that changes the JSON API's surface is recorded under an **API** heading,
+whether or not it breaks a client, so that a client pinning a version can see in
+one place what a contract test would notice (JD-016). Breaking changes are called
+out as such; before 1.0 they are allowed, but never silent.
+
 The repository moved from Codeberg to GitHub on 2026-10-21. Issue and pull
 request numbers in v0.6.0 and earlier, including the audit cursor entry in
 v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
+
+## v0.8.0 — 2026-10-23
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.8.0)
+
+### API
+
+- **Templates.** `GET /api/templates` lists them with their readiness and lineage, both
+  read from ZFS. Two ways to build one. (#7, JD-027)
+
+  **`POST /api/jails/{name}/template`** clones a jail you configured — the FreeBSD
+  Handbook's "Cloning a Jail as a Template" (17.4.3). It captures whatever is in the jail,
+  not only packages, and is the general path. Snapshot the jail as `@base`, clone it into
+  `templates/<name>`, then **`zfs promote`** the clone.
+
+  The promote is the step that is easy to omit and expensive to omit: without it the
+  template is a clone *of* the jail, and `zfs destroy` on that jail answers `filesystem has
+  dependent clones`. After it the jail is a clone of the template, which is also the right
+  way round — a template should outlive the jail it came from.
+
+  The jail must be **stopped**, and this refuses rather than stopping it: a snapshot of a
+  running jail is an image caught mid-stride, and taking a service down is the operator's
+  call. A jail already carrying `@base` is refused too, since reusing it would capture
+  whenever that snapshot was taken rather than the jail now.
+
+  **`PUT /api/templates/{name}`** is the shortcut for the package-only case: clone a
+  parent's `@base`, `pkg -c <root> install -y`, snapshot as `@base`.
+
+  **`GET /api/templates/{name}`** is one template with its `dependents` — every clone and
+  every hold — which is what a removal would refuse over, answerable before asking for one.
+  Both lists are present and empty rather than absent.
+
+  **`DELETE /api/templates/{name}?confirm={name}`** destroys one, and **refuses while
+  anything is cloned from it**, naming every jail and derived template in the way. ZFS
+  would refuse too, but only after being asked and without saying which; this asks
+  `zfs get clones` first. Never `zfs destroy -R`, which would take them with it. It is also
+  what cleans up the half-built template a failed derive leaves behind.
+
+  `pkg -c` chroots, so nothing is started: no jail, no stanza, no networking for a
+  temporary jail. It is the same shape as the `freebsd-update -b <root>` JD-007 already runs
+  against an unbooted template.
+
+  **It installs packages and nothing else.** Anything further belongs to the other path —
+  clone a template, create a jail on it, exec into it, snapshot the dataset — which is more
+  capable and is the general answer. The two are the same mechanism at different times:
+  provision at jail creation, or provision once into a template and clone it.
+
+  Nothing is stored. `ready` is whether `@base` exists; `parent` is read back from
+  `zfs get origin`. A failed install leaves the clone without its `@base`, which the listing
+  reports as not ready — no cleanup is needed for that state to be truthful — and a second
+  attempt on it is refused rather than resumed.
+
+  This also settles the **storage domain granularity** question `docs/SPEC.md` had open:
+  templates get their own bounded context, `internal/templates`.
+
+- **A jail's root can be re-cloned from a newer template, keeping its children.**
+  `POST /api/jails/{name}/reclone?confirm={name}` stops the jail, moves every child dataset
+  aside, parks the old root, clones the new one, moves the children back and starts it
+  again — the upgrade path for a jail whose state lives in a child (#6, JD-007, JD-026).
+  The jail ends in the state it was found in.
+
+  **Nothing is destroyed.** The old root is renamed to
+  `<pool>/jails/retained/<jail>-root-<snapshot>`, so a re-clone onto the wrong template
+  costs one call to undo. It is a clone and occupies only what the jail wrote since it was
+  made.
+
+  **If a step fails, nothing is retried and nothing is undone.** The response names the step
+  and lists every dataset that is no longer under the jail, with where it now sits, so it
+  can be restored with the call JD-025 provides. An automatic undo that itself fails leaves
+  two interleaved failures and a host in a state neither describes.
+
+  Refusals happen **before** the jail is stopped: a mistyped template name costs an error
+  rather than an outage. The template is the full `dataset@snapshot` with no default,
+  because every jail is already a clone of `templates/<release>@base` and defaulting to it
+  would be a no-op dressed as an upgrade.
+
+### Changed
+
+- **The documentation is published as a site.** `docs/` is now a Jekyll site built by
+  GitHub Pages at [otter-labs.com/jaildeck](https://otter-labs.com/jaildeck/): the
+  specification, architecture, decisions, roadmap, interface notes and the API guide, with
+  the generated spec downloadable at `/jaildeck/api/swagger.json`.
+
+  Nothing moved, so every existing link into `docs/` still works. Each page gained front
+  matter and a link back to the index, because the theme has no navigation of its own.
+
+  The site builds from `main`, and pull requests land on `dev` first, so the published
+  version tracks releases rather than development.
+
+- **The API is described by a generated OpenAPI spec, not a hand-maintained collection.**
+  `collections/insomnium.json` is gone. `make doc` generates
+  [`docs/api/swagger.json`](docs/api/swagger.json) from annotations on the handlers, using
+  `swag` pinned in `go.mod` as a tool dependency — no global install, same version
+  everywhere. Import it into any client that reads Swagger 2.0.
+
+  The collection was 1,648 lines of JSON edited by hand for one tool. The guarantee it
+  carried is kept and strengthened: `make check` now fails if the committed spec is not what
+  the annotations produce, and the suite fails in both directions besides. That matters
+  because `swag` silently skips an un-annotated handler, so an undocumented endpoint would
+  otherwise produce a spec that is merely shorter.
+
+  Jail Deck serves no Swagger UI; the spec is a file. The long-form API guide moved to
+  [`docs/api/index.md`](docs/api/index.md).
+
+  No endpoint changed. `common.ErrorResponse`, `auth.LoginRequest` and
+  `storage.RetainedDataset` are named types now rather than inline literals, so the spec can
+  point at them — the JSON each produces is identical.
+
+### API
+
+- **A dataset can be moved out of a jail and back in.**
+  `POST /api/jails/{name}/datasets/{child}/retain` moves it to
+  `<pool>/jails/retained/<name>`, `GET /api/retained` lists what is being kept, and
+  `.../restore` brings one back under any jail. Destroying a jail takes its children and
+  their snapshots with it (JD-007), so this is what makes "destroy the jail, keep the data"
+  possible. (#5, JD-025)
+
+  Three audited commands: `zfs rename -u`, `zfs unmount`, `zfs mount`. **The `-u` is not
+  optional** — a plain `zfs rename` unmounts and remounts inside the same command, which on a
+  running jail is the filesystem vanishing from under a live process. And the move is still
+  completed in the same call, because a dataset left named in one place and mounted in another
+  makes the jail undestroyable: `zfs destroy` answers `pool or dataset is busy`.
+
+  A running jail loses that path at the unmount; the response says `remounted: true` so a
+  caller knows the filesystem moved and not just the name.
+
+  `<pool>/jails/retained` is created on demand and is **not** added to the layout readiness
+  check: a host that has never retained anything is not missing something (JD-021).
+
+- **Snapshots.** `GET /api/jails/{name}/snapshots` lists every snapshot of a jail's datasets;
+  `PUT`, `DELETE` and `POST .../rollback` under `/snapshots/{snapshot}` take, destroy and roll
+  back, with the same routes under `/datasets/{child}/` for one dataset alone. Every call is
+  audited. (#4, JD-024)
+
+  **A jail-level snapshot is recursive and atomic** — `zfs snapshot -r` takes the jail and
+  every child at one point in time, which is what lets a root be re-cloned while its data
+  dataset stays consistent with it (JD-007). **A rollback is never recursive**, because ZFS
+  offers no way to make it so: `zfs rollback` cannot descend into children, and its own `-r`
+  means "destroy the snapshots newer than this one". A jail-level rollback therefore leaves
+  the children where they are.
+
+  **Destroy and rollback take `confirm=`, and it is the snapshot's full `dataset@snapshot`** —
+  not the word already in the path, so a script looping over jails with one snapshot name in a
+  variable cannot confirm every one of them by accident (JD-016).
+
+  **Refusals come before anything destructive runs.** A rollback that would destroy newer
+  snapshots is `409` naming every one of them, until `destroy_newer=true` accepts losing
+  exactly those. A clone or a hold blocks both a destroy and a rollback and cannot be
+  overridden here at all. What blocks is asked for with `zfs get clones` and `zfs holds`,
+  rather than read out of the error the destroy would have raised.
+
+  Snapshots carry `create_txg`, ZFS's transaction group, and are ordered by it. `created` has
+  second granularity and ties; the transaction group never does, and it is the ordering a
+  rollback actually asks about.
+
+- **A jail's datasets and tags can be written.** `PUT /api/jails/{name}/datasets/{child}`
+  creates a child dataset or converges an existing one — `201` created, `200` already
+  there, `409` it exists somewhere else. `PATCH /api/jails/{name}/properties` and
+  `PATCH /api/jails/{name}/datasets/{child}/properties` set ZFS user properties, with a
+  `null` value removing one via `zfs inherit`. Every write is audited with the command it
+  ran, and carries the request's `X-Request-Id`. (#3, JD-023)
+
+  **Five native properties are allowlisted** — `mountpoint`, `refquota`, `recordsize`,
+  `compression`, `atime` — out of the sixty-odd this ZFS reports as editable. Anything else
+  is `400` naming the list: `sharenfs` would publish a jail's filesystem over NFS and
+  `canmount` would stop it mounting. `quota` is deliberately absent, because JD-007 puts the
+  limit on `refquota`.
+
+  `mountpoint` may be set only when creating. Changing it under a running jail would leave
+  the jail looking at a directory no longer backed by that dataset, so asking for one an
+  existing dataset does not have is `409` with both values rather than a move.
+
+  **A value `zfs` refuses is `400`, not `500`**, carrying zfs's own sentence — a client told
+  `500` would retry a value that can never work. The distinction available is only "ran and
+  exited non-zero" against "never ran", so a server-side refusal such as permission denied
+  also reports `400`; the message says which.
+
+- **A jail listing carries its ZFS storage.** `GET /api/jails` and the new
+  `GET /api/jails/{name}` include `datasets` — the dataset mounted at the jail's
+  `path` and everything mounted under it, each with `name`, `mountpoint`, `used`,
+  `referenced` and `available` — and `properties`, the ZFS *user* properties of the
+  jail's own dataset. An automation client tags its jails with `otter:instance` and
+  finds them again from the listing alone, with nothing stored in Jail Deck
+  (JD-004, JD-011). Additive: both keys are absent for a jail that has neither.
+
+  **The sizes are bytes**, not the `1.41G` that `zfs list` prints by default, so a
+  client can compare and total them; the web interface formats them for display.
+  `referenced` can exceed `used` on a jail cloned from a template, because a clone
+  still refers to the template's blocks — the reason a quota belongs on a child
+  dataset (JD-007).
+
+  A jail is matched to its datasets **by mountpoint**, not by the dataset naming
+  convention: a dataset is the jail's when it is mounted at the jail's path or
+  under it. That holds for a jail placed outside `<pool>/jails/containers/<name>`,
+  and reports nothing for a jail not on ZFS. A jail whose stanza sets no path
+  matches nothing rather than everything.
+
+  One batched `zfs list` and one batched `zfs get` answer every jail, never one
+  call per jail, scoped to `JAILDECK_ZFS_POOL` when it is set and to every imported
+  pool when it is not.
+
+  **An unreadable pool does not fail the request.** The jails come back without
+  their datasets and the reason is logged at `WARN`, because seeing a stopped jail
+  is how an operator starts it (JD-004). The cost, accepted deliberately: absent
+  storage can mean either "this jail has none" or "ZFS could not be read". (#2)
+
+- **`X-Request-Id` is recorded in every audit entry a request produces**, and
+  `GET /api/audit?request_id=<id>` filters on it, so an automation client can line
+  its own job up against Jail Deck's audit trail (JD-016). Additive: an entry omits
+  `request_id` entirely when the request sent no header, so a client that does not
+  use it sees the shape it saw before.
+
+  Up to 64 characters of ASCII letters, digits and `-._:` — a UUID, a ULID or a
+  `trace:span` pair. Anything else is **dropped rather than rejected**, with the
+  reason logged: the operation still succeeds and its entries carry no id. A
+  correlation id is a convenience, and failing an operator's jail restart because
+  their id held a space would be the worse outcome. The filter matches exactly and
+  case-sensitively, since the id is the client's own opaque string and not a name
+  Jail Deck normalises. (#14)
+
+### Added
+
+- **Templates and jail roots can be moved around from the interface.** The last of the
+  write actions, which completes the pass: derive a template, remove one, restore a
+  retained dataset, clone a jail as a template, and re-clone a jail's root. (JD-029)
+
+  **A template snapshot is chosen, not typed.** Re-cloning takes the full
+  `dataset@snapshot` with no default — every jail is already a clone of some template's
+  `@base`, so defaulting to one would be a no-op dressed as an upgrade (JD-026) — but a
+  string nobody can remember is not a choice either. The form offers the ready templates
+  and sends the snapshot each one names.
+
+  **A failed re-clone is rendered as the recovery procedure it is**: which step stopped,
+  every dataset that is no longer under the jail and where it now sits, and that a restore
+  brings it back. Nothing is retried and nothing is undone, so that message is the only
+  record of where the data went.
+
+  **Removing a template from its own page navigates back to the list**, because the thing
+  the page was about is gone. A refusal stays, rendered against the dependents the page
+  already lists.
+
+  A restore puts a retained dataset under any jail under any name, which is what the API
+  has always allowed and what makes "destroy the jail, keep the data" finish (JD-025).
+
+- **Snapshots can be taken, rolled back to and destroyed from the interface.** (JD-029)
+
+  **Taking one** covers the whole jail by default — one `zfs snapshot -r`, so every dataset
+  is caught at the same instant (JD-024) — or one dataset alone. Taking one that already
+  exists changes nothing and says so, which is what makes repeating a timed-out call safe.
+
+  **Destroying one** asks for `confirm=<dataset>@<snapshot>` typed in full, because that is
+  what the API asks for: `nightly` names a snapshot on every dataset that has one. At the
+  jail's own dataset the destroy is recursive, and the confirmation **names every snapshot
+  it would take** before anything runs.
+
+  **A refusal is an answer, not a failure.** Nothing ran, so it is rendered under the row
+  in the warning colour, naming the newer snapshots, the clones or the holds that stood in
+  the way. A rollback refused over newer snapshots offers them back once — *destroy them
+  and roll back* — because `destroy_newer=true` is the one refusal this API lets a client
+  accept. Clones and holds get no such button: a hold exists to say "not this one", and
+  taking a clone with its origin needs `zfs destroy -R`, which Jail Deck never passes.
+
+- **A jail's tags and datasets can be changed from the interface.** The first of the write
+  actions: add, edit and remove a ZFS tag; create a child dataset with its native
+  properties; retain one past the jail. (JD-029)
+
+  **A form opens where the thing is, and the modal is kept for what cannot be undone.**
+  None of these destroys anything, so none of them gets a dialog. The dialog that does
+  exist replaces the browser's `confirm()`, which could not carry the one thing the
+  destructive operations need: the API will not destroy or roll back a snapshot without
+  `confirm=<dataset>@<snapshot>` spelled out in full (JD-024), so the dialog asks for
+  exactly that string and keeps its button disabled until it matches.
+
+  **Nothing is validated twice.** A property name without a colon, a `recordsize` of 7K —
+  both go to the server, and the server's own sentence comes back. The forms carry the
+  rules as hints, because an operator should know before typing, but a hint that could
+  disagree with ZFS is not a check.
+
+  **Every write is followed by a read.** The server reads ZFS rather than remembering what
+  it was told (JD-011), so a refetch is the only answer that cannot disagree with the host
+  — and a command that failed can still have changed something.
+
+  A 409 from the dataset endpoint is rendered from its body rather than as the word
+  "Conflict": it carries the property, the value asked for and the value the dataset has,
+  which is why the API answers that way instead of with a message.
+
+- **The web interface reads the storage model.** Six releases of storage endpoints had
+  nothing on screen; this is the reading half of catching up. (JD-028)
+
+  **A page per jail** at `/jails/{name}`, behind the jail's name on the list: its datasets
+  with the jail's own marked as such, its ZFS tags, and its snapshots newest first.
+
+  **A Templates page** at `/templates` showing the lineage as an indented table — parent
+  before child, ready or not — with the retained datasets below it, and a page per template
+  at `/templates/{name}` listing what depends on it: the jails cloned from it, the templates
+  derived from it, anything else, and holds.
+
+  **What a clone is, is read from the host, not from the dataset's name.** Sorting
+  dependents by looking for `/containers/` or `/templates/` in the path was tried and was
+  wrong the first time it ran — `<pool>/jails/containers` is the layout Jail Deck creates,
+  not where the jails it lists have to be. A clone is a jail when a jail reports that
+  dataset as its own, and otherwise it is shown as the dataset it is.
+
+  Nothing destructive is on these pages yet. The actions come next, each with the
+  confirmation its refusal already defines.
+
+- **A unix socket listener.** `JAILDECK_SOCKET` adds a second listener serving the
+  same router, and `JAILDECK_SOCKET_ONLY=true` drops the TCP one, so a local
+  automation client needs neither a port nor TLS (JD-002). One `http.Server` over
+  both listeners, so they cannot drift apart in handler or timeouts.
+
+  The socket is created mode `0660` by umask rather than chmodded afterwards: a
+  listening socket queues connections from the moment it exists, so a chmod would
+  leave a window in which the default `0755` was world-connectable. Its group is a
+  first access check and not the only one — `RequireAuth` runs here exactly as on
+  TCP, so the token is still required. `JAILDECK_SOCKET_GROUP` names the group;
+  empty leaves it in the process's own, which for a root service on FreeBSD is
+  `wheel`.
+
+  Jail Deck installs no signal handler, so a stopped service leaves the socket file
+  behind. The next start probes it: something answering means another instance, and
+  it refuses rather than stealing its clients; nothing answering means a leftover,
+  which it removes. A path holding a regular file is a configuration error and is
+  never deleted. `JAILDECK_SOCKET_ONLY` needs `JAILDECK_SOCKET` set, and says so
+  rather than starting with nothing to listen on. (#13)
+
+- **An `rc.d` service script, `make install`, and one config file.** `make install`
+  puts the binary in `$PREFIX/bin`, the script in `$PREFIX/etc/rc.d` and a sample
+  config in `$PREFIX/etc/jaildeck` (`PREFIX` defaults to `/usr/local`, `DESTDIR`
+  stages the layout elsewhere). After that,
+  `sysrc jaildeck_enable=YES && service jaildeck start` runs Jail Deck as a
+  service that survives a reboot.
+
+  **Configuration is a file, not rc.conf knobs.** `/usr/local/etc/jaildeck/jaildeck.env`
+  takes the same `KEY=value` lines as `.env.sample` and the same variables as the
+  README's table, so one format configures Jail Deck whether it is started by hand
+  or by `rc.d`. The script sources it with `set -a` and keeps only four knobs of its
+  own, none of which are Jail Deck's configuration.
+
+  Jail Deck runs in the foreground, so the script runs it under `daemon(8)` with
+  `-f -S`: output goes to syslog under the tag `jaildeck`, which is what the log
+  handler's missing timestamps were always for, and `-f` keeps `service jaildeck
+  start` from hanging a remote shell. `-r` is deliberately not passed, so
+  `service jaildeck stop` stops it and nothing puts it back.
 
 ## v0.7.0 — 2026-10-22
 

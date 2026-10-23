@@ -1,0 +1,2629 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "The JSON API a browser and an automation client both drive (JD-016).\n\nEvery endpoint lives under /api. Authenticate either with the session\ncookie POST /api/auth/login sets, or with a bearer token created by\n`jaildeck token add \u003cname\u003e`. The Authorization header takes precedence\nover the cookie, and a bad token returns 401 rather than falling back to\none, so a token client fails cleanly even while a session is active.\n\nSwagger 2.0 cannot describe a cookie as a security scheme, so only the\nbearer token appears below. The cookie works on every endpoint the token\ndoes.\n\nThe version here is the API's and is bumped with the changelog at\nrelease time; it is not read from the binary.",
+        "title": "Jail Deck API",
+        "contact": {},
+        "version": "0.7.0"
+    },
+    "basePath": "/api",
+    "paths": {
+        "/": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Redirects to /api/jails, so a client that guessed the base path lands on\nsomething rather than a 404. It is behind authentication like everything\nelse here, so an unauthenticated caller gets 401 instead of the redirect.",
+                "tags": [
+                    "meta"
+                ],
+                "summary": "API root",
+                "responses": {
+                    "303": {
+                        "description": "See Other: /api/jails"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/audit": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "What Jail Deck did: timestamp, operation, target, the command it ran, exit\ncode and whether it timed out (JD-011). Filters combine, and all of them\nare applied to the whole file rather than to the page.\n\nThe log lives in /var/log and is rotated by newsyslog, so after a rotation\nthis sees only the current file. History appears to truncate with nothing\nin the response to say so: that is the accepted cost of treating a log as\na log.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "audit"
+                ],
+                "summary": "Operation history",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "How many entries, up to 500",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Match one operation, case-insensitively",
+                        "name": "operation",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated targets",
+                        "name": "targets",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Only successes, or only failures",
+                        "name": "success",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Only operations that timed out",
+                        "name": "timed_out",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Exact, case-sensitive X-Request-Id",
+                        "name": "request_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cursor from a previous page",
+                        "name": "before",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/audit.Entry"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "A filter that cannot be parsed",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/login": {
+            "post": {
+                "description": "Sets an HttpOnly, Secure, SameSite=Strict session cookie. Secure means a\nbrowser discards it over plain HTTP on a non-loopback origin, so reach a\nremote host through an SSH forward rather than binding it to 0.0.0.0 (JD-002).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Sign in",
+                "parameters": [
+                    {
+                        "description": "The operator password",
+                        "name": "credentials",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/auth.LoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/auth.LoginResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed or oversized body",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Wrong password",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/logout": {
+            "post": {
+                "description": "Clears the cookie and forgets the session server-side. Harmless without\none, so a client that has already lost its cookie can still call it.",
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Sign out",
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    }
+                }
+            }
+        },
+        "/auth/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Says whether this request arrived as a session or a token, and when a\nsession expires. Sessions live in memory, so restarting the service signs\nevery browser out; tokens are stored and survive.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "The current principal",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/auth.MeResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Neither a session nor a token",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/host/layout": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Whether \u003cpool\u003e/jails and its media, templates and containers children\nexist and where they are mounted (JD-006, JD-021). Read-only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "host"
+                ],
+                "summary": "Jails dataset layout",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/host.Layout"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Idempotent: creates only what is absent and reports what it made. It\nrefuses when a dataset on another pool is already mounted where a missing\none would go, because creating it would mount over that pool and over any\njails inside it (JD-021).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "host"
+                ],
+                "summary": "Create the missing layout datasets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/host.LayoutChange"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Something else is mounted there",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/host/readiness": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Every check this host must pass before it can run jails, each pass, fail\nor unknown with what was observed and the remedy. Nothing here writes: a\ncheck that cannot observe reports unknown rather than failing the request.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "host"
+                ],
+                "summary": "Host readiness report",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/host.Report"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Running jails from jls merged with configured ones from jail.conf and\njail.conf.d, so a stopped jail is listed too — seeing it is how you start\nit (JD-004).\n\nEach jail carries its ZFS storage: datasets mounted at its path or under\nit, and the user properties of its own dataset. Sizes are bytes, not the\n1.41G zfs prints, so they can be compared and totalled.\n\nBoth keys are absent for a jail with no dataset — and also when the pool\ncould not be read, which is logged at WARN rather than failing the\nrequest, so an unreadable pool never costs you the list (JD-022).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jails"
+                ],
+                "summary": "List jails",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/jails.Jail"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The same shape as an element of the listing, storage included. It reads\nthat same merged listing rather than asking for a single jail, because a\njail present only in jls or only in configuration must still be found.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jails"
+                ],
+                "summary": "Show one jail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Jail"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a jail name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/datasets/{child}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "201 when it was created, 200 when it was already there, 409 when it\nexists at a different mountpoint. Idempotent, so a client that timed out\nrepeats the call and the answer says where it stands (JD-016).\n\nFive native properties may be set — mountpoint, refquota, recordsize,\ncompression, atime — out of the sixty-odd ZFS calls editable. Anything\nelse is 400 naming the list: sharenfs would export the jail's data and\ncanmount would stop it mounting. quota is deliberately absent, because\nJD-007 puts the limit on refquota.\n\nmountpoint may be set only at creation; asking for one an existing dataset\ndoes not have is a 409 with both values rather than a move (JD-023).\n\nValues are not validated here. zfs answers recordsize=7K with \"must be\npower of 2 from 512B to 16M\", and that sentence comes back — as a 400, so\na client does not retry a value that can never work.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "storage"
+                ],
+                "summary": "Create or update a child dataset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Dataset name, one level",
+                        "name": "child",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Native ZFS properties",
+                        "name": "properties",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/jails.ensureDatasetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Already there",
+                        "schema": {
+                            "$ref": "#/definitions/jails.DatasetChange"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/jails.DatasetChange"
+                        }
+                    },
+                    "400": {
+                        "description": "A property outside the allowlist, or a value zfs refused",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail, or it is not on ZFS",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "It exists at a different mountpoint",
+                        "schema": {
+                            "$ref": "#/definitions/jails.DatasetChange"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/datasets/{child}/properties": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The same as tagging the jail, on a dataset beneath its own.\n\nWorth keeping separate: a jail's listing reports its own dataset's\nproperties, never a child's. Tag a child with otter:instance and it will\nnot appear on the jail — by design, or one jail with three children would\nlook like four instances to a client searching by tag (JD-022).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "storage"
+                ],
+                "summary": "Tag a child dataset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Dataset name",
+                        "name": "child",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Property names to values; null removes",
+                        "name": "properties",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/datasets/{child}/restore": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The same three commands in the other direction.\n\nIt need not be the jail it left, and it need not keep the name it left\nwith: a dataset retained from ottermq can come back as ottermq-2's data,\nwhich is the point of keeping it. Its properties and snapshots travel with\nit, because they belong to the dataset and not to where it sits.\n\nfrom is the short name from GET /retained, not the full dataset path.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "storage"
+                ],
+                "summary": "Restore a retained dataset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The name it will have in this jail",
+                        "name": "child",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Which retained dataset to bring back",
+                        "name": "source",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/jails.restoreRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.DatasetMove"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Nothing retained under that name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "The jail already has a child of that name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/datasets/{child}/retain": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Moves it to \u003cpool\u003e/jails/retained/\u003cname\u003e. zfs destroy -r on a jail takes\nits children and their snapshots with it (JD-007), so a dataset worth\nkeeping has to stop being a child first.\n\nThree audited commands: zfs rename -u, zfs unmount, zfs mount. The -u is\nnot optional — a plain zfs rename unmounts and remounts inside the same\ncommand, which on a running jail is the filesystem vanishing from under a\nlive process (JD-025).\n\nIt still unmounts: remounted=true means the filesystem moved and a running\njail just lost that path, so stop it first. Leaving the move half done is\nworse — a dataset still mounted inside a jail makes the jail undestroyable.\n\nThe retained parent is created on demand and is deliberately not part of\nthe layout readiness check (JD-021).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "storage"
+                ],
+                "summary": "Retain a dataset past its jail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Dataset name",
+                        "name": "child",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The name it will have under retained",
+                        "name": "target",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/jails.retainRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.DatasetMove"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a dataset name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail or dataset",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "That retained name is taken",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/datasets/{child}/snapshots/{snapshot}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "No -r, no children. Use it when the thing worth snapshotting is the data\nand not the userland: a jail's root is a clone of a template and can be\nmade again, which is the premise of JD-007.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "snapshots"
+                ],
+                "summary": "Snapshot one dataset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Dataset name",
+                        "name": "child",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot name",
+                        "name": "snapshot",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Already there",
+                        "schema": {
+                            "$ref": "#/definitions/jails.SnapshotResult"
+                        }
+                    },
+                    "201": {
+                        "description": "Taken",
+                        "schema": {
+                            "$ref": "#/definitions/jails.SnapshotResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "As above, on one dataset only. Same clone and hold refusals, same\nfull-name confirm.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "snapshots"
+                ],
+                "summary": "Destroy one dataset's snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Dataset name",
+                        "name": "child",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot name",
+                        "name": "snapshot",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The full dataset@snapshot",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.SnapshotResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/jails.SnapshotResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/datasets/{child}/snapshots/{snapshot}/rollback": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The route that matters for a jail whose state lives in a child: rolling\nthe data back without touching the userland.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "snapshots"
+                ],
+                "summary": "Roll back one dataset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Dataset name",
+                        "name": "child",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot name",
+                        "name": "snapshot",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The full dataset@snapshot",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Accept losing the snapshots taken after it",
+                        "name": "destroy_newer",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.SnapshotResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/jails.SnapshotResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/properties": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets ZFS user properties on the jail's own dataset — the tags the listing\nreads back (JD-004). Returns what the dataset carries afterwards, read\nfrom ZFS rather than assumed.\n\nPATCH, not PUT: these merge. A replacing write would strip a tag another\ntool had set, and zrepl:placeholder and com.sun:auto-snapshot both live in\nthis namespace on real hosts.\n\nA null value removes the property via zfs inherit, which is not the same\nas setting it empty. Only user properties — the name must contain a colon\n— and the value is passed through untouched (JD-011).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "storage"
+                ],
+                "summary": "Tag the jail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Property names to values; null removes",
+                        "name": "properties",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The dataset's user properties now",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "A name that is not a user property",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail, or it is not on ZFS",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/reclone": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The upgrade path for a jail whose state lives in a child dataset: stop,\nmove the children aside, park the old root, clone the new one, move the\nchildren back, start (JD-007, JD-026).\n\n**Nothing is destroyed.** The old root is renamed to\n\u003cpool\u003e/jails/retained/\u003cjail\u003e-root-\u003csnapshot\u003e, so a re-clone onto a bad\ntemplate costs one call to undo rather than a restore from backup. It is a\nclone, so it occupies only what the jail wrote since it was made.\n\nThe jail is stopped and started again by this call, and ends in the state\nit was found in. A jail that was already stopped stays stopped.\n\n**If a step fails, nothing is retried and nothing is undone.** The response\nnames the step and lists every dataset that is no longer under the jail,\nwith where it now sits, so it can be restored with the call you already\nhave. Running a recovery automatically while the first failure is still\nunexplained is how a bad situation becomes an unreadable one.\n\nThe template must be the full dataset@snapshot. There is no default:\nevery jail on a real host is already a clone of templates/\u003crelease\u003e@base,\nso defaulting to it would be a no-op dressed as an upgrade.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "storage"
+                ],
+                "summary": "Re-clone a jail's root from a template snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The jail's name again",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "description": "The template snapshot to clone from",
+                        "name": "template",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/jails.recloneRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Reclone"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing confirm, or a malformed snapshot name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail, no such template snapshot, or the jail is not on ZFS",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "A step failed; the body says which and where the datasets are",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Reclone"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/restart": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Runs service jail restart.\nA client disconnecting does not abort the operation: the command is\ndetached from request cancellation and still bounded by its own timeout\n(JD-014). Audited either way.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jails"
+                ],
+                "summary": "Restart a jail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Jail"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a jail name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Timed out and may still be running",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/snapshots": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The jail's own dataset and its children's, oldest first.\n\nOrdered by create_txg, ZFS's transaction group, not by created. A\ntimestamp has second granularity and two snapshots taken in the same\nsecond tie on it — and \"which is newer\" is exactly what decides what a\nrollback destroys. The transaction group never ties.\n\nname is the full dataset@snapshot, which is what confirm must equal\nelsewhere; short is the part after the @, which goes in a URL.\n\nUnfiltered. On a host running zrepl this is long — one jail on the\ndeployment target has 39 snapshots, 35 of them hourly.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "snapshots"
+                ],
+                "summary": "List snapshots",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/jails.Snapshot"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail, or it is not on ZFS",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/snapshots/{snapshot}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "201 when taken, 200 with existed=true when it was already there, so the\nretry after a timeout does not raise zfs's \"dataset already exists\".\n\nThe jail route is recursive: zfs snapshot -r takes the jail's dataset\nand every child at ONE point in time, which is what lets a root be\nre-cloned while its data stays consistent with it (JD-007, JD-024).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "snapshots"
+                ],
+                "summary": "Snapshot a jail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot name, the part after the @",
+                        "name": "snapshot",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Already there",
+                        "schema": {
+                            "$ref": "#/definitions/jails.SnapshotResult"
+                        }
+                    },
+                    "201": {
+                        "description": "Taken",
+                        "schema": {
+                            "$ref": "#/definitions/jails.SnapshotResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a snapshot name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail, or it is not on ZFS",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Recursive, matching what the recursive create made.\n\n409 with a dependent clone or a hold, naming them. Both are checked by\nasking ZFS first — zfs get clones and zfs holds — rather than by running\nthe destroy and reading its complaint, so the refusal happens before\nanything destructive does. Neither can be overridden here: getting past a\nclone needs zfs destroy -R, which takes the clone with it (JD-024).\n\nconfirm must be the snapshot's FULL dataset@snapshot, not the word in the\npath, so a script looping over jails with one snapshot name in a variable\ncannot confirm every one of them by accident (JD-016).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "snapshots"
+                ],
+                "summary": "Destroy a snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot name",
+                        "name": "snapshot",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The full dataset@snapshot",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.SnapshotResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing or mismatched confirm",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail or snapshot",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "A clone or a hold is in the way",
+                        "schema": {
+                            "$ref": "#/definitions/jails.SnapshotResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/snapshots/{snapshot}/rollback": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "NEVER recursive. zfs rollback has no way to descend into children, and its\nown -r means something else entirely — \"destroy the snapshots newer than\nthis one\". So this rolls back the jail's own dataset and leaves its\nchildren where they are; a child is rolled back through its own route, as\na separate decision (JD-024).\n\n409 when newer snapshots exist, naming every one it would destroy. Pass\ndestroy_newer=true to accept losing exactly those — the refusal comes\nfirst so the second call is informed rather than a retry with more force.\n\nStill 409, even with destroy_newer=true, when one of those newer snapshots\nis held or has a clone.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "snapshots"
+                ],
+                "summary": "Roll back",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot name",
+                        "name": "snapshot",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The full dataset@snapshot",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Accept losing the snapshots taken after it",
+                        "name": "destroy_newer",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.SnapshotResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Newer snapshots, a clone or a hold",
+                        "schema": {
+                            "$ref": "#/definitions/jails.SnapshotResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/start": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Runs service jail start.\nA client disconnecting does not abort the operation: the command is\ndetached from request cancellation and still bounded by its own timeout\n(JD-014). Audited either way.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jails"
+                ],
+                "summary": "Start a jail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Jail"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a jail name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Timed out and may still be running",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/stop": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Runs service jail stop. Anything running inside is interrupted.\nA client disconnecting does not abort the operation: the command is\ndetached from request cancellation and still bounded by its own timeout\n(JD-014). Audited either way.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jails"
+                ],
+                "summary": "Stop a jail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Jail"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a jail name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Timed out and may still be running",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jails/{name}/template": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Turns a jail you configured by hand into a template every later jail is\ncloned from — the FreeBSD Handbook's \"Cloning a Jail as a Template\" (17.4.3),\nmade callable (JD-027).\n\nThis is the general way to fill a template: it captures whatever you did to\nthe jail, not only packages. Installing packages into a template without a\njail is `PUT /api/templates/{name}`, which is faster and narrower.\n\nFour commands: snapshot the jail's dataset as `@base`, clone it into\n`\u003cpool\u003e/jails/templates/\u003cname\u003e`, then **promote** the clone.\n\nThe promote matters more than it looks. Without it the template is a clone\n*of* the jail, and that jail can never be destroyed — `zfs destroy` answers\n`filesystem has dependent clones` and names the template. After it the jail\nis a clone of the template instead, which is the right way round: a template\nshould outlive the jail it came from, and the lineage then reads\nrelease template → this one → the jail.\n\n**The jail must be stopped.** A snapshot of a running jail succeeds but is an\nimage of a system caught mid-stride; the Handbook says to stop it first, and\ntaking a service down is your call rather than this endpoint's.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Clone this jail as a template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The jail to clone",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The template's name",
+                        "name": "template",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/jails.makeTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Template"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a template name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail, or it is not on ZFS",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "The jail is running, or that template exists",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/retained": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Everything under \u003cpool\u003e/jails/retained, with the short name a restore\nasks for. Without this a client that retained something has no way to find\nit again, and the whole point of retaining is that the jail it belonged to\nis gone (JD-025).\n\nEmpty on a host that has never retained anything, rather than an error:\nthe retained dataset is created on demand.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "storage"
+                ],
+                "summary": "Retained datasets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/storage.RetainedDataset"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/templates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Every template under \u003cpool\u003e/jails/templates, with whether it is usable and\nwhat it was derived from.\n\nNothing here is stored (JD-011). `ready` is whether the `@base` snapshot\nexists, which is what makes a template usable (JD-007), and `parent` is read\nback from `zfs get origin` rather than recorded — so a derived template\ncannot disagree with where it actually came from.\n\nA template that exists and is **not** ready is a derive that failed part\nway through. It needs no cleanup to be truthful: it is simply unusable, and\nsays so.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "List templates",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/templates.Template"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/templates/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The same fields as the listing, plus **what depends on it**: every jail\ncloned from it and every template derived from it, and any holds on its\nsnapshots.\n\nThose are computed already — `DELETE` refuses on them — but until now a\nclient could only learn them by attempting a destroy and reading the 409.\nThat makes \"can I remove this?\" a question you ask by trying. Here it is a\nquestion you ask by looking.\n\nBoth lists are present and empty rather than null, so a client rendering\nthem does not have to check first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Show one template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/templates.Detail"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such template",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "A release template plus packages, re-snapshotted — a PostgreSQL template,\nsay, so every postgres jail starts with it installed (#7, JD-027).\n\nThree steps: clone the parent's `@base`, `pkg -c \u003croot\u003e install -y` the\npackages, snapshot the result as `@base`.\n\n`pkg -c` chroots, so nothing is started: no jail, no stanza, no networking\nfor a temporary jail. It is the same shape as JD-007's `freebsd-update -b`,\nwhich already runs against an unbooted template root.\n\n**It installs packages and nothing else.** For anything further — `sysrc`, a\nconfiguration file, an `initdb` — configure a jail and clone it with\n`POST /api/jails/{name}/template` instead (JD-027).\n\n**201** built · **200** it was already there and ready, so a client that\ntimed out can repeat the call (JD-016).\n\n**409 if it exists but is not ready.** That is what a previous failed\nderive leaves behind, and finishing it silently would install packages on\ntop of whatever that attempt left. Destroy it or inspect it first.\n\nA package name beginning with a dash is refused: `pkg` would read it as an\noption rather than a package, and `install -y -f` is not the command that\nwas asked for. No shell is involved either way.\n\nIf `pkg` fails, the clone stays **without** its `@base` and the listing\nreports it as not ready. pkg's own message comes back, as a `400` when pkg\nran and refused — a package that does not exist is the request's fault.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Derive a template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The new template's name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The parent and the packages",
+                        "name": "derive",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/templates.deriveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Already there and ready",
+                        "schema": {
+                            "$ref": "#/definitions/templates.Template"
+                        }
+                    },
+                    "201": {
+                        "description": "Built",
+                        "schema": {
+                            "$ref": "#/definitions/templates.Template"
+                        }
+                    },
+                    "400": {
+                        "description": "A bad name, or a package pkg refused",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such parent template",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "It exists but is not ready, or the parent is not",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Destroys the template dataset and its snapshots.\n\n**409 while anything is cloned from it**, naming every one. A template's\nsnapshot is the origin of every jail made from it, so destroying it would\ntake them with it. ZFS would refuse too — but only after being asked, with\na message about dependent clones rather than a list of the jails running on\nthem. This asks first, so the refusal is an answer.\n\nA jail that should outlive its template is not stuck: `zfs promote` on the\njail moves the dependency the other way, exactly as cloning a jail as a\ntemplate does in reverse (JD-027).\n\n`confirm` is the template's name. Unlike a snapshot's, it is unambiguous on\nits own — a template name is unique within the pool, where `nightly` names a\nsnapshot on every dataset that has one.\n\nNever `zfs destroy -R`: that would take the dependent clones this refuses to\ntouch, which would make the check decorative.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Remove a template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The template to destroy",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The template's name again",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/templates.Removal"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing or mismatched confirm",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such template",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Something is cloned from it",
+                        "schema": {
+                            "$ref": "#/definitions/templates.Removal"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "audit.Entry": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "exit_code": {
+                    "type": "integer"
+                },
+                "operation": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "description": "RequestID is the caller's X-Request-Id, omitted when it sent none\n(JD-011: nothing is stored that the request did not supply).",
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "target": {
+                    "type": "string"
+                },
+                "timed_out": {
+                    "type": "boolean"
+                },
+                "timestamp": {
+                    "type": "string"
+                }
+            }
+        },
+        "auth.LoginRequest": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
+        "auth.LoginResponse": {
+            "type": "object",
+            "properties": {
+                "authenticated": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "auth.MeResponse": {
+            "type": "object",
+            "properties": {
+                "principal": {
+                    "$ref": "#/definitions/auth.Principal"
+                }
+            }
+        },
+        "auth.Principal": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/auth.PrincipalKind"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "auth.PrincipalKind": {
+            "type": "string",
+            "enum": [
+                "session",
+                "token"
+            ],
+            "x-enum-varnames": [
+                "kindSession",
+                "kindToken"
+            ]
+        },
+        "common.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "host.Capability": {
+            "type": "object",
+            "properties": {
+                "gated_by": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/host.CheckID"
+                    }
+                },
+                "id": {
+                    "$ref": "#/definitions/host.CapabilityID"
+                },
+                "status": {
+                    "$ref": "#/definitions/host.CapabilityStatus"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "host.CapabilityID": {
+            "type": "string",
+            "enum": [
+                "jails",
+                "limits",
+                "vnet",
+                "provisioning",
+                "vms",
+                "firewall"
+            ],
+            "x-enum-varnames": [
+                "CapabilityJails",
+                "CapabilityLimits",
+                "CapabilityVNET",
+                "CapabilityProvisioning",
+                "CapabilityVMs",
+                "CapabilityFirewall"
+            ]
+        },
+        "host.CapabilityStatus": {
+            "type": "string",
+            "enum": [
+                "ready",
+                "unavailable",
+                "unknown"
+            ],
+            "x-enum-varnames": [
+                "CapabilityReady",
+                "CapabilityUnavailable",
+                "CapabilityUnknown"
+            ]
+        },
+        "host.Check": {
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "type": "string"
+                },
+                "gates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/host.CapabilityID"
+                    }
+                },
+                "id": {
+                    "$ref": "#/definitions/host.CheckID"
+                },
+                "observed": {
+                    "description": "Observed is what the host actually said, empty when nothing could be\nobserved.",
+                    "type": "string"
+                },
+                "remedy": {
+                    "description": "Remedy is set on every failed check and only there: a command for a\nroot shell where one exists, otherwise the file or setting to change.",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/host.CheckStatus"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "host.CheckID": {
+            "type": "string",
+            "enum": [
+                "racct",
+                "exec_timeout",
+                "bridges",
+                "devfs_rulesets",
+                "cpu_virtualization",
+                "pf",
+                "zfs_pool",
+                "zfs_layout"
+            ],
+            "x-enum-varnames": [
+                "CheckRacct",
+                "CheckExecTimeout",
+                "CheckBridges",
+                "CheckDevfsRulesets",
+                "CheckCPUVirtualization",
+                "CheckPF",
+                "CheckZFSPool",
+                "CheckZFSLayout"
+            ]
+        },
+        "host.CheckStatus": {
+            "type": "string",
+            "enum": [
+                "pass",
+                "fail",
+                "unknown"
+            ],
+            "x-enum-varnames": [
+                "CheckPass",
+                "CheckFail",
+                "CheckUnknown"
+            ]
+        },
+        "host.Layout": {
+            "type": "object",
+            "properties": {
+                "datasets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/host.LayoutDataset"
+                    }
+                },
+                "missing": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "pool": {
+                    "type": "string"
+                }
+            }
+        },
+        "host.LayoutChange": {
+            "type": "object",
+            "properties": {
+                "changed": {
+                    "type": "boolean"
+                },
+                "created": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "datasets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/host.LayoutDataset"
+                    }
+                },
+                "missing": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "pool": {
+                    "type": "string"
+                }
+            }
+        },
+        "host.LayoutDataset": {
+            "type": "object",
+            "properties": {
+                "expected_mountpoint": {
+                    "type": "string"
+                },
+                "mountpoint": {
+                    "type": "string"
+                },
+                "mountpoint_taken_by": {
+                    "description": "MountpointTakenBy is set on a missing dataset when another dataset, on\nany pool, already has its expected mountpoint. Ensure refuses then.",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "present": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "host.Report": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/host.Capability"
+                    }
+                },
+                "checks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/host.Check"
+                    }
+                }
+            }
+        },
+        "jails.Dataset": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "integer"
+                },
+                "mountpoint": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "referenced": {
+                    "type": "integer"
+                },
+                "used": {
+                    "description": "Bytes, not the \"1.41G\" zfs list prints by default, so a client can\ncompare and total them.",
+                    "type": "integer"
+                }
+            }
+        },
+        "jails.DatasetChange": {
+            "type": "object",
+            "properties": {
+                "applied": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "conflict": {
+                    "description": "Conflict is set when the dataset exists somewhere other than where the\nrequest said. Mountpoint is settable only at creation (JD-023), so this\nis not a change the API will make -- and reporting both values says more\nthan refusing would.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/jails.PropertyConflict"
+                        }
+                    ]
+                },
+                "created": {
+                    "type": "boolean"
+                },
+                "dataset": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.DatasetMove": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "mountpoint": {
+                    "type": "string"
+                },
+                "remounted": {
+                    "description": "Remounted says whether the filesystem was actually carried to the new\nmountpoint. False when the dataset was not mounted to begin with --\nwhich is not a failure, just nothing to carry.",
+                    "type": "boolean"
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.Jail": {
+            "type": "object",
+            "properties": {
+                "datasets": {
+                    "description": "Datasets and Properties are filled by the listing and by GET\n/api/jails/{name}, and left out everywhere else. omitempty rather than an\nempty collection on purpose: a start or restart response reports what the\noperation knew, and claiming \"datasets: []\" there would say the jail has\nnone when the truth is that nothing looked.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/jails.Dataset"
+                    }
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "jid": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "properties": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "status": {
+                    "$ref": "#/definitions/jails.JailStatus"
+                }
+            }
+        },
+        "jails.JailStatus": {
+            "type": "string",
+            "enum": [
+                "running",
+                "stopped"
+            ],
+            "x-enum-varnames": [
+                "JailStatusRunning",
+                "JailStatusStopped"
+            ]
+        },
+        "jails.Parked": {
+            "type": "object",
+            "properties": {
+                "now": {
+                    "type": "string"
+                },
+                "was": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.PropertyConflict": {
+            "type": "object",
+            "properties": {
+                "have": {
+                    "type": "string"
+                },
+                "property": {
+                    "type": "string"
+                },
+                "want": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.Reclone": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "failed_at": {
+                    "type": "string"
+                },
+                "from": {
+                    "type": "string"
+                },
+                "old_root": {
+                    "description": "OldRoot is where the previous root is parked. A re-clone destroys\nnothing (JD-026).",
+                    "type": "string"
+                },
+                "parked": {
+                    "description": "FailedAt and Parked are the recovery information: which step failed, and\nwhere every dataset that is no longer under the jail currently sits.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/jails.Parked"
+                    }
+                },
+                "root": {
+                    "type": "string"
+                },
+                "running": {
+                    "description": "Running is the jail's state afterwards, which is the state it was found\nin unless a step failed before it could be started again.",
+                    "type": "boolean"
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.Snapshot": {
+            "type": "object",
+            "properties": {
+                "create_txg": {
+                    "description": "CreateTXG is ZFS's transaction group: the only exact ordering. Two\nsnapshots taken in the same second share a Created, so a client deciding\nwhich is newer has to compare this instead.",
+                    "type": "integer"
+                },
+                "created": {
+                    "type": "string"
+                },
+                "dataset": {
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is \"dataset@snapshot\" as zfs prints it, and is what confirm= must\nequal on a destroy or a rollback (JD-024).",
+                    "type": "string"
+                },
+                "referenced": {
+                    "type": "integer"
+                },
+                "short": {
+                    "description": "Short is the part after the @, which is what the URL carries.",
+                    "type": "string"
+                },
+                "used": {
+                    "type": "integer"
+                }
+            }
+        },
+        "jails.SnapshotBlock": {
+            "type": "object",
+            "properties": {
+                "clones": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "holds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "newer": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.SnapshotResult": {
+            "type": "object",
+            "properties": {
+                "blocked": {
+                    "$ref": "#/definitions/jails.SnapshotBlock"
+                },
+                "created": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "destroyed": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "existed": {
+                    "type": "boolean"
+                },
+                "snapshot": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.Template": {
+            "type": "object",
+            "properties": {
+                "dataset": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.ensureDatasetRequest": {
+            "type": "object",
+            "properties": {
+                "properties": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "jails.makeTemplateRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.recloneRequest": {
+            "type": "object",
+            "properties": {
+                "template": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.restoreRequest": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.retainRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.RetainedDataset": {
+            "type": "object",
+            "properties": {
+                "mountpoint": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "referenced": {
+                    "type": "integer"
+                },
+                "short": {
+                    "type": "string"
+                },
+                "used": {
+                    "type": "integer"
+                }
+            }
+        },
+        "templates.Blocked": {
+            "type": "object",
+            "properties": {
+                "clones": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "holds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "templates.Dependents": {
+            "type": "object",
+            "properties": {
+                "clones": {
+                    "description": "Clones are datasets made from one of this template's snapshots -- every\njail cloned from it, and every template derived from it.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "holds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "templates.Detail": {
+            "type": "object",
+            "properties": {
+                "dataset": {
+                    "type": "string"
+                },
+                "dependents": {
+                    "$ref": "#/definitions/templates.Dependents"
+                },
+                "mountpoint": {
+                    "description": "Mountpoint is where pkg -c operates and where a jail's clone comes from.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is the last component of the dataset, which is what a client uses:\n\"15.1-RELEASE\", \"postgres-16\".",
+                    "type": "string"
+                },
+                "parent": {
+                    "description": "Parent is the template this one was derived from, empty for a release\ntemplate built from base.txz. Read from the clone's origin rather than\nrecorded: a derived template cannot outlive or disagree with its parent.",
+                    "type": "string"
+                },
+                "ready": {
+                    "description": "Ready is whether the @base snapshot exists. A template is usable only\nthen (JD-007), and a derive that failed part way through is a template\nthat exists and is not ready.",
+                    "type": "boolean"
+                },
+                "referenced": {
+                    "description": "Referenced is the whole userland; for a derived template most of it is\nstill shared with its parent, so Used is what the packages cost.",
+                    "type": "integer"
+                },
+                "snapshot": {
+                    "description": "Snapshot is the full dataset@base once it exists, which is what a jail\nis cloned from.",
+                    "type": "string"
+                },
+                "used": {
+                    "type": "integer"
+                }
+            }
+        },
+        "templates.Removal": {
+            "type": "object",
+            "properties": {
+                "blocked": {
+                    "description": "Blocked is set when something is cloned from the template. Nothing ran.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/templates.Blocked"
+                        }
+                    ]
+                },
+                "destroyed": {
+                    "type": "boolean"
+                },
+                "template": {
+                    "type": "string"
+                }
+            }
+        },
+        "templates.Template": {
+            "type": "object",
+            "properties": {
+                "dataset": {
+                    "type": "string"
+                },
+                "mountpoint": {
+                    "description": "Mountpoint is where pkg -c operates and where a jail's clone comes from.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is the last component of the dataset, which is what a client uses:\n\"15.1-RELEASE\", \"postgres-16\".",
+                    "type": "string"
+                },
+                "parent": {
+                    "description": "Parent is the template this one was derived from, empty for a release\ntemplate built from base.txz. Read from the clone's origin rather than\nrecorded: a derived template cannot outlive or disagree with its parent.",
+                    "type": "string"
+                },
+                "ready": {
+                    "description": "Ready is whether the @base snapshot exists. A template is usable only\nthen (JD-007), and a derive that failed part way through is a template\nthat exists and is not ready.",
+                    "type": "boolean"
+                },
+                "referenced": {
+                    "description": "Referenced is the whole userland; for a derived template most of it is\nstill shared with its parent, so Used is what the packages cost.",
+                    "type": "integer"
+                },
+                "snapshot": {
+                    "description": "Snapshot is the full dataset@base once it exists, which is what a jail\nis cloned from.",
+                    "type": "string"
+                },
+                "used": {
+                    "type": "integer"
+                }
+            }
+        },
+        "templates.deriveRequest": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "description": "From is the template this one is derived from, by name.",
+                    "type": "string"
+                },
+                "packages": {
+                    "description": "Packages are installed with pkg -c into the clone. Empty is allowed and\nmeans a plain copy, which is a reasonable thing to want.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "Type \"Bearer \" followed by a token from `jaildeck token add`.",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

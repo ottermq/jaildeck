@@ -75,7 +75,7 @@ The laptop's throwaway VM (`freebsd-jails`, ssh alias `fbsd`). One pool, one jai
 
 It is a KVM guest, so its `VT-x` line describes nested virtualisation.
 
-### `isengard/` — 15.1-RELEASE-p5, bare metal, captured 2026-10-22
+### `isengard/` — 15.1-RELEASE-p5, bare metal, captured 2026-10-23
 
 The target host: a Xeon E5620, three pools, three running jails, reached over Tailscale.
 A laboratory like the VM — nothing on it is precious and it can be rebuilt. This is the authority for anything the VM cannot answer honestly — the `VT-x`
@@ -207,6 +207,95 @@ The write path is a different matter: still unwritten rather than unavailable, e
 `zfs create`, which `capture-layout-induced.sh` now covers. PF with an actual ruleset
 loaded is still missing. (`pfctl -s rules` with PF enabled
 and no `pf.conf` is **exit 0 and empty stdout** — the no-rules case, not an error.)
+
+## Storage visibility (#2, #3)
+
+The Storage Visibility milestone fixes the batched read as
+`zfs list -H -o name,used,avail,refer,mountpoint <paths…>`, and #2 wants a jail's child
+datasets and its **user properties** — the ones whose name contains a colon — from one
+call rather than one per jail. These captures are what that gets parsed against.
+
+Per pool, in the same loop as the layout captures:
+
+| | |
+| --- | --- |
+| `zfs_list_space_r_<pool>` | the milestone's columns, **human-readable** |
+| `zfs_list_space_rp_<pool>` | the identical query with `-p` |
+| `zfs_list_mounted_r_<pool>` | `mounted`, `canmount` and `mountpoint` — three different questions |
+| `zfs_get_local_r_<pool>` | every locally-set property on every dataset, one call (`-s local`) |
+
+Per dataset, on whichever pool has the jails layout — `PROBE_DATASET` records which, and it
+is deliberately **not** the first pool printed, for the reason JD-021 gives: `zfs_list_depth1`
+and `_depth0`, `zfs_list_space_mixed`, `zfs_get_all` and `zfs_get_local`, `zfs_get_used` and
+`_used_p`, `zfs_get_unset_userprop`, `zfs_get_bad_property`, `zfs_get_absent_dataset`,
+`zfs_list_snapshots` and `_p`, `zfs_list_snapshots_absent`, and `zfs_list_type_all`.
+
+**What these corrected, before a parser existed:**
+
+- **The size columns are human-readable.** `zfs_list_space_r_tank` says `2.20G`, `897G`,
+  `96K`; `zfs_list_space_rp_tank` says `2360832000`, `963201544192`, `98304`. Same query.
+  A parser wanting numbers needs `-p`, and one wanting what an operator sees must not.
+- **`zfs list -d 0 -t snapshot <dataset>` returns nothing, at exit 0.** A dataset's
+  snapshots are its depth-**1** children, so depth 0 filters out the filesystem itself and
+  leaves an empty list that reads exactly like "no snapshots". The captures use `-d 1`.
+- **`creation` is a locale-formatted date**, and `Wed Oct 21  0:44 2026` carries a *double*
+  space before a single-digit hour. The fields are tab-separated, so splitting the line on
+  whitespace loses. `-p` gives a Unix timestamp instead.
+- **Three different failure shapes, three different exit codes.** An unset *user* property
+  is not an error: `zfs_get_unset_userprop` is exit 0 and one row,
+  `tank/jails  otter:instance  -  -`. An invalid *native* property is exit **2**. A dataset
+  that does not exist is exit 1. An adapter that treats "no such property" as one condition
+  gets two of the three wrong.
+- **`zfs_get_bad_property.stderr` is 7 KB** because `zfs get` answers an invalid property
+  with its entire usage text. Kept deliberately: it is also the complete native-property
+  vocabulary of this ZFS version, which is what #3's property allowlist has to be built
+  from.
+- **Real user properties exist here, in both conventions.** `zrepl:placeholder` on
+  `backup/isengard` and `backup/isengard/tank`, and the reverse-DNS `com.sun:auto-snapshot`
+  on `rohan`'s `zroot/srv/builds`. So #2's feature has captured examples of a property that
+  **is** set, not only of one that is not.
+- **`tank`'s jails are tagged, deliberately and by hand.** The 2026-10-23 capture was taken
+  after setting, on isengard:
+
+  ```
+  zfs set otter:instance=mq-01 tank/jails/containers/ottermq
+  zfs set otter:tier=broker    tank/jails/containers/ottermq
+  zfs set otter:instance=db-01 tank/jails/containers/postgres
+  zfs set atime=off            tank/jails/containers/ottermq
+  ```
+
+  This is the only time anything in `hostfacts/` was captured from a state arranged on
+  purpose on a real host rather than found on one, and the arrangement is three-sided:
+  `ottermq` carries two tags, `postgres` one, and `goodiesdb` **none**, so the absent case
+  comes from the same host as the present one. Before this, every container on every host
+  had no local properties at all, which left the headline feature of #2 — find your jails
+  by `otter:instance` — with no evidence.
+
+  The `atime=off` is the subtle half and it is not decoration. `tank` already sets
+  `atime=off`, so the container inherited it and the value does not change; what changes is
+  the **source**, from `inherited from tank` to `local`, which puts a *native* locally-set
+  property on a jail's own dataset. Without one, deleting the colon filter that separates
+  user properties from native ones changes nothing any jail ever sees, and the test that
+  claims to check it passes either way. It was found exactly that way: by deleting the
+  filter and watching the suite stay green.
+
+  Reverting is `zfs inherit <property> <dataset>` for each of the four.
+- **`zfs_list_snapshots_txg` is the one capture that churns.** It is scoped to a single jail
+  (`PROBE_JAIL`, which prefers one that has a child dataset) rather than depth-limited, because
+  the parent/child pair is the format it exists to show: one `zfs snapshot -r` gives both the
+  same `createtxg`, and that is the evidence that a recursive snapshot really is one point in
+  time (JD-024). One jail on isengard is 39 lines, 35 of them hourly `zrepl` snapshots, so a
+  re-capture moves it. That is the price of keeping the pair; recursive over the whole layout
+  would be 276 lines.
+- **`zfs_get_clones_none` and `zfs_holds_none`** are what "nothing depends on this snapshot"
+  looks like: a dash and an empty stdout, both at exit 0. Neither is an error, which is the
+  point — the no-blockers path has to recognise them as answers rather than failures. The
+  blocked shapes have no capture: arranging a hold and a clone on a real host to photograph
+  them was not worth leaving behind, and the service tests construct them and say so.
+- **Snapshot captures are depth-limited on purpose.** Recursive over a pool, isengard
+  returns 276 lines of which 256 are hourly `zrepl` snapshots — a fixture that teaches a
+  parser nothing more and rewrites itself every hour. `vm-15.1` and `rohan` supply the
+  empty-list shape (exit 0, no output) that isengard cannot.
 
 ## What the real output corrected
 

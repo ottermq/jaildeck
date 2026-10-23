@@ -29,6 +29,20 @@ type Config struct {
 	// ZFSPool names the pool holding the jails layout. Empty means discover,
 	// which adopts a pool only when it is the only one.
 	ZFSPool string
+	// Socket is a unix socket to listen on beside TCP, mode 0660 (JD-002).
+	// Empty means TCP only. SocketOnly drops the TCP listener, which needs a
+	// flag of its own rather than an empty Host: an empty Host already means
+	// "all interfaces" and overloading it would turn a typo into the widest
+	// possible bind.
+	//
+	// SocketGroup is empty by default, which leaves the socket in the process's
+	// own group -- wheel for a root service on FreeBSD, which is the group that
+	// would have been named anyway. Defaulting to "wheel" literally would make
+	// the socket unusable on a Linux development box, where that group does not
+	// exist, for no gain on the hosts that have it.
+	Socket      string
+	SocketGroup string
+	SocketOnly  bool
 }
 
 func LoadConfig() *Config {
@@ -42,6 +56,10 @@ func LoadConfig() *Config {
 		AuditLog: getEnv("JAILDECK_AUDIT_LOG", "/var/log/jaildeck/audit.log"),
 		LogLevel: getEnv("JAILDECK_LOG_LEVEL", "info"),
 		ZFSPool:  getEnv("JAILDECK_ZFS_POOL", ""),
+
+		Socket:      getEnv("JAILDECK_SOCKET", ""),
+		SocketGroup: getEnv("JAILDECK_SOCKET_GROUP", ""),
+		SocketOnly:  getEnv("JAILDECK_SOCKET_ONLY", "") == "true",
 	}
 }
 

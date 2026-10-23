@@ -14,6 +14,8 @@ import (
 	"github.com/ottermq/jaildeck/internal/common"
 	"github.com/ottermq/jaildeck/internal/host"
 	"github.com/ottermq/jaildeck/internal/jails"
+	"github.com/ottermq/jaildeck/internal/storage"
+	"github.com/ottermq/jaildeck/internal/templates"
 )
 
 func (a *App) Routes(assets fs.FS) http.Handler {
@@ -25,12 +27,12 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 		auth.RegisterAuthRoutes(r, a.authHandler)
 		r.Group(func(r chi.Router) {
 			r.Use(a.authHandler.RequireAuth)
-			r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-				http.Redirect(w, r, "/api/jails", http.StatusSeeOther)
-			})
+			r.Get("/", a.apiRoot)
 			jails.RegisterJailRoutes(r, a.jailHandler)
 			host.RegisterHostRoutes(r, a.hostHandler)
-			audit.RegisterAuditHandlers(r, a.auditHandler)
+			audit.RegisterAuditRoutes(r, a.auditHandler)
+			storage.RegisterStorageRoutes(r, a.storageHandler)
+			templates.RegisterTemplateRoutes(r, a.templateHandler)
 		})
 	})
 
@@ -47,13 +49,41 @@ func useObservability(r *chi.Mux) {
 	// context. Reversed, chi falls back to PrintPrettyStack on stdout.
 	r.Use(middleware.RequestLogger(slogFormatter{}))
 	r.Use(middleware.Recoverer)
+	// requestID before requestContextLogger, so the logger carries the id too
+	// and the access log can be lined up against the audit entries.
+	r.Use(requestID)
 	// Every handler below gets a request-scoped logger; RequireAuth enriches it.
 	r.Use(requestContextLogger)
+}
+
+// requestID puts a validated X-Request-Id where the audit logger will find it
+// (JD-016). An invalid one is DROPPED and logged, not rejected: the id is a
+// correlation convenience, and failing an operator's jail restart because their
+// correlation id held a space would be the worse outcome. The audit entry then
+// simply carries none, which is the same shape as a client that sent none.
+func requestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw := r.Header.Get(audit.RequestIDHeader)
+		id, err := audit.ValidateRequestID(raw)
+		if err != nil {
+			// slog's handler quotes a value that needs it, so a header holding
+			// a newline cannot forge a log line here.
+			common.Logger(r.Context(), "http").Warn("ignoring an invalid request id",
+				slog.String("reason", err.Error()), slog.String("value", raw))
+		}
+		if id != "" {
+			r = r.WithContext(audit.ContextWithRequestID(r.Context(), id))
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func requestContextLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		l := slog.Default().With("method", r.Method, "path", r.URL.Path)
+		if id := audit.RequestIDFromContext(r.Context()); id != "" {
+			l = l.With("request_id", id)
+		}
 		next.ServeHTTP(w, r.WithContext(common.ContextWithLogger(r.Context(), l)))
 	})
 }
@@ -108,4 +138,23 @@ func serveIndex(w http.ResponseWriter, content []byte) {
 
 func apiNotFound(w http.ResponseWriter, _ *http.Request) {
 	common.HandlerError(w, common.NewAppError(http.StatusNotFound, "not found"))
+}
+
+// apiRoot sends a caller who guessed at the base path somewhere useful.
+//
+// A named method rather than the closure it used to be, so that the generated
+// spec can describe it: swag parses annotations above functions, and an inline
+// handler has nowhere to put them.
+//
+// @Summary      API root
+// @Description  Redirects to /api/jails, so a client that guessed the base path lands on
+// @Description  something rather than a 404. It is behind authentication like everything
+// @Description  else here, so an unauthenticated caller gets 401 instead of the redirect.
+// @Tags         meta
+// @Success      303  "See Other: /api/jails"
+// @Failure      401  {object}  common.ErrorResponse
+// @Security     BearerAuth
+// @Router       / [get]
+func (a *App) apiRoot(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/api/jails", http.StatusSeeOther)
 }

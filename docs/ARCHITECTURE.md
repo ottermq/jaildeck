@@ -1,3 +1,8 @@
+---
+title: "Architecture"
+description: "How the code is laid out, and why it is laid out that way."
+---
+
 # Jail Deck — Architecture
 
 ## Architectural summary
@@ -133,6 +138,10 @@ internal/
     fake/
       jail.go                          # in-memory JailSystem, for non-FreeBSD dev (JAILDECK_ADAPTER=fake)
       host.go                          # in-memory HostSystem with a mixed readiness report
+
+rc.d/
+  jaildeck                        # rc.d service script; runs the binary under daemon(8) -S,
+                                   # installed to $PREFIX/etc/rc.d by `make install`
 
 web/                             # Svelte frontend, part of the same Go module (JD-015)
   embed.go                        # //go:embed all:dist + Assets() — the only Go file here

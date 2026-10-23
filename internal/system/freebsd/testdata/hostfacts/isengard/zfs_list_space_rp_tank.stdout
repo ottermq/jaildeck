@@ -1,0 +1,11 @@
+tank	2368090112	963194286080	98304	none
+tank/jails	2337271808	963194286080	164872192	/usr/local/jails
+tank/jails/containers	1556455424	963194286080	106496	/usr/local/jails/containers
+tank/jails/containers/goodiesdb	4546560	963194286080	390066176	/usr/local/jails/containers/goodiesdb
+tank/jails/containers/ottermq	32636928	963194286080	416911360	/usr/local/jails/containers/ottermq
+tank/jails/containers/ottermq/data	229376	2147385344	98304	/usr/local/jails/containers/ottermq/data
+tank/jails/containers/postgres	1518903296	963194286080	1891311616	/usr/local/jails/containers/postgres
+tank/jails/media	164847616	963194286080	164847616	/usr/local/jails/media
+tank/jails/retained	98304	963194286080	98304	/usr/local/jails/retained
+tank/jails/templates	450867200	963194286080	106496	/usr/local/jails/templates
+tank/jails/templates/15.1-RELEASE	450760704	963194286080	389931008	/usr/local/jails/templates/15.1-RELEASE

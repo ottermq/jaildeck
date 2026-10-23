@@ -6,7 +6,7 @@ FreeBSD is a registered trademark of The FreeBSD Foundation.
 FreeBSD 15.1-RELEASE-p3 releng/15.1-n283611-88e7371d9dc2 GENERIC amd64
 FreeBSD clang version 19.1.7 (https://github.com/llvm/llvm-project.git llvmorg-19.1.7-0-gcd708029e0b2)
 VT(vga): text 80x25
-CPU: 13th Gen Intel(R) Core(TM) i5-13420H (2611.23-MHz K8-class CPU)
+CPU: 13th Gen Intel(R) Core(TM) i5-13420H (2611.35-MHz K8-class CPU)
   Origin="GenuineIntel"  Id=0xb06a2  Family=0x6  Model=0xba  Stepping=2
   Features=0xf83fbff<FPU,VME,DE,PSE,TSC,MSR,PAE,MCE,CX8,APIC,SEP,MTRR,PGE,MCA,CMOV,PAT,PSE36,MMX,FXSR,SSE,SSE2,SS>
   Features2=0xfffa3223<SSE3,PCLMULQDQ,VMX,SSSE3,FMA,CX16,PCID,SSE4.1,SSE4.2,x2APIC,MOVBE,POPCNT,TSCDLT,AESNI,XSAVE,OSXSAVE,AVX,F16C,RDRAND,HV>
@@ -31,7 +31,7 @@ random: registering fast source Intel Secure Key Seed
 random: fast provider: "Intel Secure Key Seed"
 random: unblocking device.
 ioapic0 <Version 1.1> irqs 0-23
-Launching APs: 3 1 2
+Launching APs: 2 1 3
 random: entropy device external interface
 kbd1 at kbdmux0
 vtvga0: <VT VGA driver>
@@ -114,25 +114,25 @@ ugen1.1: <Intel UHCI root HUB> at usbus1
 ugen3.1: <Intel EHCI root HUB> at usbus3
 ugen0.1: <Intel UHCI root HUB> at usbus0
 uhub0 on usbus2
-uhub0: <Intel UHCI root HUB, class 9/0, rev 1.00/1.00, addr 1> on usbus2
 uhub1 on usbus0
 uhub1: <Intel UHCI root HUB, class 9/0, rev 1.00/1.00, addr 1> on usbus0
-uhub2 on usbus3
-uhub2: <Intel EHCI root HUB, class 9/0, rev 2.00/1.00, addr 1> on usbus3
-uhub3 on usbus1
-uhub3: <Intel UHCI root HUB, class 9/0, rev 1.00/1.00, addr 1> on usbus1
+uhub0: <Intel UHCI root HUB, class 9/0, rev 1.00/1.00, addr 1> on usbus2
+uhub2 on usbus1
+uhub2: <Intel UHCI root HUB, class 9/0, rev 1.00/1.00, addr 1> on usbus1
+uhub3 on usbus3
+uhub3: <Intel EHCI root HUB, class 9/0, rev 2.00/1.00, addr 1> on usbus3
 ZFS filesystem version: 5
 ZFS storage pool version: features support (5000)
 Trying to mount root from zfs:zroot/ROOT/default []...
 uhub1: 2 ports with 2 removable, self powered
 uhub0: 2 ports with 2 removable, self powered
-uhub3: 2 ports with 2 removable, self powered
+uhub2: 2 ports with 2 removable, self powered
 Root mount waiting for: usbus3
 Root mount waiting for: usbus3
-uhub2: 6 ports with 6 removable, self powered
+uhub3: 6 ports with 6 removable, self powered
 Root mount waiting for: usbus3
 ugen3.2: <QEMU QEMU USB Tablet> at usbus3
-usbhid0 on uhub2
+usbhid0 on uhub3
 usbhid0: <QEMU QEMU USB Tablet, class 0/0, rev 2.00/0.00, addr 2> on usbus3
 hidbus0: <HID bus> on usbhid0
 Dual Console: Serial Primary, Video Secondary

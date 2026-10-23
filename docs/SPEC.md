@@ -1,3 +1,8 @@
+---
+title: "Specification"
+description: "What Jail Deck is for, what is in scope, and the test a feature has to pass to belong here."
+---
+
 # Jail Deck — Project Specification
 
 ## One-line description
@@ -156,6 +161,10 @@ Jail Deck should avoid inventing an internal desired-state model that drifts fro
 
 These are genuinely undecided — track resolution in `docs/DECISIONS.md` as they settle.
 
+*Resolved: **storage domain granularity** — templates have their own bounded context,
+`internal/templates`, because a template has a readiness state and a lineage that are rules
+about templates rather than about storage (JD-027).*
+
 ### FreeBSD release support
 
 Should Jail Deck support creating jails on a FreeBSD release other than the host's own version? Cross-version jails (older userland under a newer host kernel) are a normal, supported FreeBSD pattern, so this is expected to work, but is unverified in this project. If supported, should Jail Deck fetch and present the list of available releases from `download.freebsd.org`, or only support the host's current version initially?
@@ -163,10 +172,6 @@ Should Jail Deck support creating jails on a FreeBSD release other than the host
 ### Long-running operations
 
 Template preparation (fetching `base.txz`, `freebsd-update`) can take real time. Synchronous request/response may not be sufficient — see `docs/DECISIONS.md` JD-008.
-
-### Storage domain granularity
-
-Should ZFS datasets/snapshots and release templates live in one `storage` package, or should templates be split into their own bounded context given their distinct multi-step lifecycle?
 
 ### Structured application logging
 

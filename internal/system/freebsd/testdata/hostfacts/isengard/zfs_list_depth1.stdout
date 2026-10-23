@@ -1,0 +1,5 @@
+tank/jails	2.18G	897G	157M	/usr/local/jails
+tank/jails/containers	1.45G	897G	104K	/usr/local/jails/containers
+tank/jails/media	157M	897G	157M	/usr/local/jails/media
+tank/jails/retained	96K	897G	96K	/usr/local/jails/retained
+tank/jails/templates	430M	897G	104K	/usr/local/jails/templates

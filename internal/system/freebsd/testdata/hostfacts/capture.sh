@@ -139,6 +139,129 @@ else
 fi
 cap zfs_list_absent_pool 'zfs list -H -o name,mountpoint -r nosuchpool'
 
+# --- #2, #3: storage visibility -------------------------------------------
+# The Storage Visibility milestone fixes the batched read as
+#   zfs list -H -o name,used,avail,refer,mountpoint <paths...>
+# and that command is the reason this section exists: those three size columns
+# come back HUMAN-READABLE ("96K", "1.2G", "-"), not bytes. A parser that wants
+# numbers needs -p, which is the same query with different output. Both are
+# captured, side by side, so the choice is made against bytes and not from
+# memory of what zfs list looks like.
+for pool in $(cat "$OUT/zpool_list_h.stdout"); do
+	cap "zfs_list_space_r_$pool" "zfs list -H -o name,used,avail,refer,mountpoint -r $pool"
+	cap "zfs_list_space_rp_$pool" "zfs list -H -p -o name,used,avail,refer,mountpoint -r $pool"
+	# mounted vs canmount vs mountpoint are three different questions. JD-021
+	# records the mounted state as deliberately unparsed for want of real
+	# output; this is that output.
+	cap "zfs_list_mounted_r_$pool" "zfs list -H -o name,mounted,canmount,mountpoint -r $pool"
+	# Every locally-set property on every dataset of the pool, in ONE call --
+	# the shape #2 requires ("one batched zfs list/zfs get call, not one per
+	# jail"). -s local is what separates a user property that was set from the
+	# ~50 native ones every dataset reports; a user property is one whose name
+	# contains a colon.
+	cap "zfs_get_local_r_$pool" "zfs get -H -r -o name,property,value,source -s local all $pool"
+done
+
+# A dataset to probe the per-dataset shapes on. Prefer whichever pool actually
+# has the jails layout, and do NOT just take $PROBE: the first pool zpool prints
+# is the wrong one on the deployment target, where it is the backup pool whose
+# datasets are mounted nowhere (JD-021). Fall back to the first pool's root,
+# which always exists, and record the choice either way.
+PROBE_DS=""
+for pool in $(cat "$OUT/zpool_list_h.stdout"); do
+	if zfs list -H -o name "$pool/jails" >/dev/null 2>&1; then
+		PROBE_DS="$pool/jails"
+		break
+	fi
+done
+[ -n "$PROBE_DS" ] || PROBE_DS="$PROBE"
+echo "$PROBE_DS" >"$OUT/PROBE_DATASET"
+
+if [ -n "$PROBE_DS" ]; then
+	# -d 1 is immediate children only, which is what a jail listing wants next
+	# to each jail; -d 0 is the dataset alone. Neither is the default.
+	cap zfs_list_depth1 "zfs list -H -d 1 -o name,used,avail,refer,mountpoint $PROBE_DS"
+	cap zfs_list_depth0 "zfs list -H -d 0 -o name,used,avail,refer,mountpoint $PROBE_DS"
+	# The batched multi-path form the milestone names, including one path that
+	# does not exist -- the partial success zfs_list_mixed found with
+	# name,mountpoint, re-checked with the columns storage actually asks for.
+	cap zfs_list_space_mixed "zfs list -H -o name,used,avail,refer,mountpoint $PROBE_DS $PROBE_DS/definitely-not-here"
+	# All properties of one dataset, so the SOURCE column's whole vocabulary is
+	# on record: local, default, "inherited from <dataset>", temporary, -.
+	cap zfs_get_all "zfs get -H -o name,property,value,source all $PROBE_DS"
+	cap zfs_get_local "zfs get -H -o name,property,value,source -s local all $PROBE_DS"
+	cap zfs_get_used "zfs get -H -o value used $PROBE_DS"
+	cap zfs_get_used_p "zfs get -H -p -o value used $PROBE_DS"
+	# A user property that was never set, and a native property that does not
+	# exist. These are NOT the same shape and the difference decides whether an
+	# adapter treats "no such property" as an error or as absence.
+	cap zfs_get_unset_userprop "zfs get -H -o name,property,value,source otter:instance $PROBE_DS"
+	# The mount state as its own question (#5). Both zfs unmount and zfs mount
+	# fail when it is wrong -- unmounting what is not mounted and mounting what
+	# already is are each an error, not a no-op -- so a move has to ask first.
+	cap zfs_get_mounted "zfs get -H -o value mounted $PROBE_DS"
+	cap zfs_get_bad_property "zfs get -H -o value nosuchproperty $PROBE_DS"
+	cap zfs_get_absent_dataset "zfs get -H -o value used $PROBE_DS/definitely-not-here"
+	# Snapshots are a separate type, absent from a default zfs list, and the
+	# creation column is a locale-formatted date unless -p makes it a Unix
+	# timestamp -- note the DOUBLE space a single-digit hour produces. Both
+	# forms, and -d 1 rather than -d 0: a dataset's snapshots are its depth-1
+	# children, so -d 0 with -t snapshot filters the filesystem itself out and
+	# returns exit 0 with NOTHING, which looks like "no snapshots".
+	# Depth-limited at all on purpose: recursive over a pool these run to
+	# hundreds of lines on a host running zrepl, 93% of them hourly snapshots
+	# that teach a parser nothing and would rewrite the fixture on every
+	# re-capture. One dataset's own snapshots carry the whole format.
+	cap zfs_list_snapshots "zfs list -H -d 1 -t snapshot -o name,used,refer,creation $PROBE_DS"
+	cap zfs_list_snapshots_p "zfs list -H -p -d 1 -t snapshot -o name,used,refer,creation $PROBE_DS"
+	# -t all mixes filesystems and snapshots in one listing, so the type column
+	# is the only thing telling them apart -- and a snapshot's mountpoint is -.
+	cap zfs_list_type_all "zfs list -H -d 1 -t all -o name,type,used,refer,mountpoint $PROBE_DS"
+	# The same query against a dataset that does not exist, which is NOT the
+	# same as a dataset with no snapshots. (A host whose probe dataset simply
+	# has none produces that second shape in zfs_list_snapshots above, as an
+	# exit 0 with empty stdout -- see the README's table for which hosts do.)
+	cap zfs_list_snapshots_absent "zfs list -H -d 1 -t snapshot -o name,used,refer,creation $PROBE_DS/definitely-not-here"
+	# What stops a destroy, asked structurally instead of read out of the
+	# error zfs would raise. A snapshot with neither answers "-" and nothing,
+	# which is the shape the no-blockers path has to recognise.
+	FIRST_SNAP=$(zfs list -H -d 1 -t snapshot -o name "$PROBE_DS" | head -1)
+	if [ -n "$FIRST_SNAP" ]; then
+		cap zfs_get_clones_none "zfs get -H -o value clones $FIRST_SNAP"
+		cap zfs_holds_none "zfs holds -H $FIRST_SNAP"
+	fi
+fi
+
+# --- #4: snapshots of one jail -------------------------------------------
+# Scoped to a single jail's dataset, not to <pool>/jails. The adapter asks
+# recursively so that a jail's child datasets are included, and recursive over
+# the whole layout is 276 lines on this host, 256 of them hourly zrepl
+# snapshots that teach a parser nothing and rewrite the fixture every hour.
+# One jail is the scope the API actually uses and it carries the whole format.
+# Prefer a jail that has a child dataset of its own, the same way PROBE_DS
+# prefers a pool that has the layout: a jail with no children cannot show what
+# a recursive snapshot produces, which is the format this capture exists for.
+PROBE_JAIL=""
+if [ -n "$PROBE_DS" ]; then
+	for jail in $(zfs list -H -o name -d 1 "$PROBE_DS/containers" 2>/dev/null | sed 1d); do
+		[ -z "$PROBE_JAIL" ] && PROBE_JAIL="$jail"
+		if [ "$(zfs list -H -o name -d 1 "$jail" 2>/dev/null | sed 1d | wc -l)" -gt 0 ]; then
+			PROBE_JAIL="$jail"
+			break
+		fi
+	done
+fi
+echo "$PROBE_JAIL" >"$OUT/PROBE_JAIL"
+
+if [ -n "$PROBE_JAIL" ]; then
+	# The exact command the storage adapter runs. createtxg is why this is its
+	# own capture: creation has second granularity, so two snapshots taken in
+	# the same second tie on it, and "which of these is newer" is precisely the
+	# question a rollback asks before deciding what to destroy. The transaction
+	# group is ZFS's own total order and never ties.
+	cap zfs_list_snapshots_txg "zfs list -H -p -t snapshot -o name,used,refer,creation,createtxg -r $PROBE_JAIL"
+fi
+
 # --- redaction ------------------------------------------------------------
 # dmesg names every NIC's MAC address. Nothing any parser reads is affected, and these
 # fixtures live in a public repository, so mask them. This is the only edit the script

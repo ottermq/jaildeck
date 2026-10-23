@@ -6,12 +6,19 @@ type Options = RequestInit & { skipAuthRedirect?: boolean }
 export class ApiError extends Error {
     public readonly statusCode: number;
     public readonly statusText?: string;
+    // The decoded body, when the failure had one. A refusal is not always a
+    // sentence: a 409 from the snapshot and dataset endpoints carries the
+    // structure that explains it -- which snapshots are newer, which clones
+    // stand in the way, what mountpoint the dataset already has. Dropping it
+    // would leave the interface saying "conflict" where the API said why.
+    public readonly body?: unknown;
 
-    constructor(statusCode: number,statusText:string){
+    constructor(statusCode: number, statusText: string, body?: unknown){
         super(statusText)
 
         this.statusCode = statusCode
         this.statusText = statusText;
+        this.body = body;
 
         this.name = 'ApiError';
 
@@ -40,7 +47,8 @@ export async function api<T>(
         
         throw new ApiError(
             res.status, 
-            body.error ?? res.statusText
+            body.error ?? res.statusText,
+            body
         );
     }
 

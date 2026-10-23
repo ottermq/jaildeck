@@ -313,7 +313,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Running jails from jls merged with configured ones from jail.conf and\njail.conf.d, so a stopped jail is listed too — seeing it is how you start\nit (JD-004).\n\nEach jail carries its ZFS storage: datasets mounted at its path or under\nit, and the user properties of its own dataset. Sizes are bytes, not the\n1.41G zfs prints, so they can be compared and totalled.\n\nBoth keys are absent for a jail with no dataset — and also when the pool\ncould not be read, which is logged at WARN rather than failing the\nrequest, so an unreadable pool never costs you the list (JD-022).",
+                "description": "Running jails from jls merged with configured ones from jail.conf and\njail.conf.d, so a stopped jail is listed too — seeing it is how you start\nit (JD-004).\n\nEach jail carries its ZFS storage: datasets mounted at its path or under\nit, and the user properties of its own dataset. Sizes are bytes, not the\n1.41G zfs prints, so they can be compared and totalled.\n\nEach dataset also carries the native properties it sets **locally**, out of\nthe four an existing dataset may be given (JD-023) — as the strings zfs\nprints, so `refquota` reads `2G` rather than a byte count, and a client can\nsend the same value back. One a dataset merely *inherits* is absent: that\nvalue is the parent's, and writing it here would create a local override\ninstead of changing what is in effect.\n\nBoth keys are absent for a jail with no dataset — and also when the pool\ncould not be read, which is logged at WARN rather than failing the\nrequest, so an unreadable pool never costs you the list (JD-022).",
                 "produces": [
                     "application/json"
                 ],
@@ -2153,6 +2153,13 @@
                 },
                 "name": {
                     "type": "string"
+                },
+                "properties": {
+                    "description": "Properties are the native ZFS properties this dataset sets locally, out\nof the four an existing one may be given (JD-023). Absent rather than\nempty when it sets none, and a property it merely inherits is not here:\nthat value belongs to the parent, and setting it here would create a\nlocal override rather than change what is in effect.\n\nThe jail's *user* properties stay at the jail level, where JD-004 put\nthem -- a client tags the jail, not each of its datasets.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "referenced": {
                     "type": "integer"

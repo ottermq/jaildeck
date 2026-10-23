@@ -322,6 +322,39 @@ func TestIsengardJailsCarryTheirRealStorage(t *testing.T) {
 		}
 	}
 
+	// The native properties go per dataset instead, read from the same
+	// `zfs get -s local` listing. These are the real values this host had when
+	// it was captured, which is the point: the quota a client would grow is
+	// reported as `2G`, the string that was set, rather than as a size this
+	// side spelled from a byte count.
+	wantNative := map[string]map[string]string{
+		"tank/jails/containers/ottermq":      {"atime": "off"},
+		"tank/jails/containers/ottermq/data": {"atime": "off", "compression": "lz4", "recordsize": "16K", "refquota": "2G"},
+	}
+	for _, dataset := range got["/usr/local/jails/containers/ottermq"].Datasets {
+		want, expected := wantNative[dataset.Name]
+		if !expected {
+			t.Errorf("unexpected dataset %s under ottermq", dataset.Name)
+			continue
+		}
+		if !reflect.DeepEqual(dataset.Properties, want) {
+			t.Errorf("%s properties = %v, want %v", dataset.Name, dataset.Properties, want)
+		}
+	}
+
+	// otter:retention is set locally on the data child and must not appear
+	// among its native properties: a jail's tags live at the jail level
+	// (JD-004), and a child's are reported nowhere at all.
+	for path, entry := range got {
+		for _, dataset := range entry.Datasets {
+			for name := range dataset.Properties {
+				if strings.Contains(name, ":") {
+					t.Errorf("%s: %s reports the user property %q as native", path, dataset.Name, name)
+				}
+			}
+		}
+	}
+
 	// A jail cloned from a template refers to more than it uses, because the
 	// template's blocks are still shared. Checked as a relation rather than as
 	// byte counts, so it survives a re-capture (JD-007).

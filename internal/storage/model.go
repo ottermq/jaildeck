@@ -41,8 +41,16 @@ type Property struct {
 // every dataset also reports a handful of locally-set native properties
 // (mountpoint, compression, atime) that say nothing about whose jail it is.
 type Inventory struct {
-	Datasets   []Dataset
+	Datasets []Dataset
+	// Properties are the ZFS user properties -- the tags a client sets and
+	// reads back (JD-004), keyed by dataset then by name.
 	Properties map[string]map[string]string
+	// Native are the allowlisted native properties a dataset sets *locally*,
+	// keyed the same way. One that a dataset inherits is absent, because it is
+	// the parent's setting and not this dataset's: that is the same line the
+	// write side draws, where `zfs inherit` removes a local value rather than
+	// setting an empty one (JD-023).
+	Native map[string]map[string]string
 }
 
 // Snapshot is one line of the batched snapshot listing.

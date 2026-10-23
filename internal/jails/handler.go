@@ -31,6 +31,13 @@ func NewJailHandler(jailService *JailService) *JailHandler {
 // @Description  it, and the user properties of its own dataset. Sizes are bytes, not the
 // @Description  1.41G zfs prints, so they can be compared and totalled.
 // @Description
+// @Description  Each dataset also carries the native properties it sets **locally**, out of
+// @Description  the four an existing dataset may be given (JD-023) — as the strings zfs
+// @Description  prints, so `refquota` reads `2G` rather than a byte count, and a client can
+// @Description  send the same value back. One a dataset merely *inherits* is absent: that
+// @Description  value is the parent's, and writing it here would create a local override
+// @Description  instead of changing what is in effect.
+// @Description
 // @Description  Both keys are absent for a jail with no dataset — and also when the pool
 // @Description  could not be read, which is logged at WARN rather than failing the
 // @Description  request, so an unreadable pool never costs you the list (JD-022).

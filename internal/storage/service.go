@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/ottermq/jaildeck/internal/audit"
@@ -32,7 +33,11 @@ func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
 	if err != nil {
 		return Inventory{}, err
 	}
-	inventory := Inventory{Datasets: make([]Dataset, 0), Properties: map[string]map[string]string{}}
+	inventory := Inventory{
+		Datasets:   make([]Dataset, 0),
+		Properties: map[string]map[string]string{},
+		Native:     map[string]map[string]string{},
+	}
 	if len(roots) == 0 {
 		// ZFS is there and no pool is imported. Nothing to read, which is not
 		// a failure: a host with no pool has no jails on ZFS either.
@@ -50,13 +55,21 @@ func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
 		return Inventory{}, err
 	}
 	for _, p := range properties {
-		if !isUserProperty(p.Name) {
-			continue
+		// The same listing answers both: one `zfs get -s local all` already
+		// carries the native properties beside the user ones, and reporting
+		// them costs nothing but no longer dropping them.
+		switch {
+		case isUserProperty(p.Name):
+			if inventory.Properties[p.Dataset] == nil {
+				inventory.Properties[p.Dataset] = map[string]string{}
+			}
+			inventory.Properties[p.Dataset][p.Name] = p.Value
+		case slices.Contains(updateProperties, p.Name):
+			if inventory.Native[p.Dataset] == nil {
+				inventory.Native[p.Dataset] = map[string]string{}
+			}
+			inventory.Native[p.Dataset][p.Name] = p.Value
 		}
-		if inventory.Properties[p.Dataset] == nil {
-			inventory.Properties[p.Dataset] = map[string]string{}
-		}
-		inventory.Properties[p.Dataset][p.Name] = p.Value
 	}
 	return inventory, nil
 }

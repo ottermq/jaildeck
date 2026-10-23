@@ -8,6 +8,11 @@ export interface Dataset {
     used: number
     referenced: number
     available: number
+    // The native ZFS properties this dataset sets *locally*, out of the four
+    // an existing one may be given (JD-023), as the strings zfs prints -- so
+    // `refquota` reads "2G" and can be sent straight back. One the dataset
+    // merely inherits is absent: that value belongs to the parent.
+    properties?: Record<string, string>
 }
 
 export interface JailData {

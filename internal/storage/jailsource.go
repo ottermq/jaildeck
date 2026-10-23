@@ -45,6 +45,7 @@ func (s *JailSource) StorageForPaths(ctx context.Context, paths []string) (map[s
 			Used:       dataset.Used,
 			Referenced: dataset.Referenced,
 			Available:  dataset.Available,
+			Properties: inventory.Native[dataset.Name],
 		})
 		// The jail's properties are its own dataset's, not a child's: a
 		// consumer tags the jail, and a child inheriting the tag would make

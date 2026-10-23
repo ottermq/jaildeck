@@ -682,6 +682,18 @@ The two kinds of property are not two flavours of the same thing. A native prope
 
 **Verified on isengard, not only in tests.** Creating `tank/jails/containers/ottermq/data` with `refquota=2G` through the API put the quota where JD-007 says it belongs: `df` **inside the running jail** reports 2.0G rather than the pool's 897G, with the mount point shown as `[restricted]` by `enforce_statfs`. That is the behaviour the whole arrangement exists for.
 
+### What is reported back — added 2026-10-23 (#55)
+
+The read side is the same allowlist pointed the other way. Each dataset in a jail's listing carries the four native properties **it sets locally**, as the strings `zfs` prints, so a `refquota` reads `2G` and a client can send that same value back.
+
+**Not the value in effect — the value this dataset sets.** A property inherited from the dataset above is absent. ZFS reports it on a `zfs get` without `-s local`, and showing it would be friendlier right up to the moment someone edits it: the write would create a *local override* on the child rather than change the setting they were looking at, and the parent would go on applying its value to every other dataset beneath it. An absent property is an honest "this dataset does not decide that".
+
+It costs nothing to read. `Inventory` already runs one `zfs get -H -r -o name,property,value,source -s local all` for the tags; the native properties were in that output all along and were being discarded.
+
+**Not every native property, the same four.** `canmount` is set locally on real datasets and is outside the list for the reason it is outside the write list: it would stop a jail's dataset mounting. Reporting the set Jail Deck is willing to write keeps one answer to "what can I change here".
+
+`mountpoint` is the exception on both sides — reported as its own column, and never written to an existing dataset.
+
 ---
 
 ## JD-024 — Snapshots: Recursion, Ordering and Refusal
@@ -1003,7 +1015,9 @@ A successful removal on `/templates/{name}` navigates back to the list, because 
 
 ### What is not here
 
-Setting a native property on a dataset that already exists — growing a `refquota`, say — is possible in the API but absent from the page, because the jail endpoint does not report native properties and a form that edits a value it cannot show would be guessing. That is an API gap, filed as [#55](https://github.com/ottermq/jaildeck/issues/55), not a UI decision.
+A jail's **own** dataset can be read but not written. Its native properties show beside it like any other dataset's, and there is no Properties button, because `PUT /api/jails/{name}/datasets/{child}` writes to a child and there is no route to the dataset the jail runs from. Offering the form anyway would be offering a request that cannot be made.
+
+*(Until [#55](https://github.com/ottermq/jaildeck/issues/55) the properties were not reported at all, so no dataset could be edited from the page. That gap is closed; this narrower one is what is left of it.)*
 
 ---
 

@@ -17,7 +17,26 @@ type TemplateStorage interface {
 	// runs, the template exists and is not ready -- which is the state a
 	// failed derive leaves behind, and it needs no cleanup to be truthful.
 	Seal(ctx context.Context, name string) error
+
+	// Dependents names what is holding a template in place: the datasets
+	// cloned from any of its snapshots, and the holds on them. Facts, not a
+	// judgement -- whether they are a reason to refuse is this package's rule.
+	Dependents(ctx context.Context, name string) (Dependents, error)
+	// Destroy removes the template and its snapshots. It does not check
+	// anything: Dependents is asked first, by the service.
+	Destroy(ctx context.Context, name string) error
 }
+
+// Dependents is what would be taken, or broken, by destroying a template.
+type Dependents struct {
+	// Clones are datasets made from one of this template's snapshots -- every
+	// jail cloned from it, and every template derived from it.
+	Clones []string
+	Holds  []string
+}
+
+// Any reports whether anything depends on the template at all.
+func (d Dependents) Any() bool { return len(d.Clones) > 0 || len(d.Holds) > 0 }
 
 // PackageSystem installs packages into a template's root.
 //

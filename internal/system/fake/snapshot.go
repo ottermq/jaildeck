@@ -36,7 +36,10 @@ func (s *StorageSystem) seedSnapshots() {
 		s.snapshot("zroot/jails/redis", "cloned-from"),
 	}
 	s.holds = []storage.Hold{{Snapshot: "zroot/jails/nginx@nightly", Tag: "keep-for-audit"}}
-	s.clones = map[string][]string{"zroot/jails/redis@cloned-from": {"zroot/jails/redis-copy"}}
+	// A dataset cloned from a snapshot of redis, so the destroy refusal has
+	// something real to refuse over. Recorded as an origin like everything
+	// else -- there is nowhere else for it to be recorded now.
+	s.origins["zroot/jails/redis-copy"] = "zroot/jails/redis@cloned-from"
 }
 
 func (s *StorageSystem) snapshot(dataset, short string) storage.Snapshot {
@@ -127,10 +130,23 @@ func (s *StorageSystem) Rollback(_ context.Context, dataset, short string, destr
 	return result, nil
 }
 
+// Clones is computed from the origins rather than kept alongside them.
+//
+// It used to be its own map, and the two disagreed: the seed declared that the
+// jails were clones of the release template without recording it on the other
+// side, so "is anything cloned from this?" answered no for datasets that
+// plainly were. One source of truth cannot do that.
 func (s *StorageSystem) Clones(_ context.Context, snapshot string) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.clones[snapshot], nil
+	clones := make([]string, 0)
+	for dataset, origin := range s.origins {
+		if origin == snapshot {
+			clones = append(clones, dataset)
+		}
+	}
+	slices.Sort(clones)
+	return clones, nil
 }
 
 func (s *StorageSystem) Holds(_ context.Context, snapshot string) ([]storage.Hold, error) {

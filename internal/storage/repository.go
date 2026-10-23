@@ -94,6 +94,11 @@ type StorageSystem interface {
 	// dependent clones" and names the template. Measured on the deployment
 	// target, both before and after (JD-027).
 	PromoteDataset(ctx context.Context, dataset string) (Result, error)
+	// DestroyDataset runs zfs destroy. recursive adds -r, which is needed for
+	// anything that has snapshots -- zfs refuses a bare destroy then and says
+	// so. Never -R: that takes dependent clones with it, which is the thing
+	// every destroy here refuses to do.
+	DestroyDataset(ctx context.Context, dataset string, recursive bool) (Result, error)
 }
 
 // Result is what a write actually ran, so the service can audit the command

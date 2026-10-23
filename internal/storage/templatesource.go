@@ -101,22 +101,12 @@ func (s *TemplateSource) Derive(ctx context.Context, parentSnapshot, name string
 // template has no children, and -r would be an opinion about a shape that does
 // not exist.
 func (s *TemplateSource) Seal(ctx context.Context, name string) error {
-	roots, err := s.service.roots(ctx)
+	dataset, err := s.datasetFor(ctx, name)
 	if err != nil {
 		return err
 	}
-	for _, root := range roots {
-		target := templateParent(root) + "/" + name
-		if dataset, err := s.service.datasetNamed(ctx, target); err == nil && dataset != nil {
-			_, err := s.CreateSeal(ctx, target)
-			return err
-		}
-	}
-	return common.NewAppError(http.StatusNotFound, "no template named "+name)
-}
-
-func (s *TemplateSource) CreateSeal(ctx context.Context, dataset string) (SnapshotResult, error) {
-	return s.service.CreateSnapshot(ctx, dataset, templates.ReadySnapshot, false)
+	_, err = s.service.CreateSnapshot(ctx, dataset, templates.ReadySnapshot, false)
+	return err
 }
 
 func templateParent(pool string) string {
@@ -203,4 +193,73 @@ func (s *TemplateSource) FromJail(ctx context.Context, jailDataset, name string)
 		return "", toWriteError("promote", target, promoteErr)
 	}
 	return target, nil
+}
+
+// Dependents asks ZFS what is holding the template in place, across every one
+// of its snapshots rather than just @base: a template derived from this one
+// hangs off whichever snapshot it was cloned from.
+func (s *TemplateSource) Dependents(ctx context.Context, name string) (templates.Dependents, error) {
+	dataset, err := s.datasetFor(ctx, name)
+	if err != nil {
+		return templates.Dependents{}, err
+	}
+	snapshots, err := s.service.SnapshotsOf(ctx, dataset)
+	if err != nil {
+		return templates.Dependents{}, err
+	}
+
+	found := templates.Dependents{Clones: make([]string, 0), Holds: make([]string, 0)}
+	for _, snapshot := range snapshots {
+		if snapshot.Dataset != dataset {
+			continue
+		}
+		clones, err := s.service.system.Clones(ctx, snapshot.Name)
+		if err != nil {
+			return templates.Dependents{}, toWriteError("read the clones of", snapshot.Name, err)
+		}
+		found.Clones = append(found.Clones, clones...)
+
+		holds, err := s.service.system.Holds(ctx, snapshot.Name)
+		if err != nil {
+			return templates.Dependents{}, toWriteError("read the holds on", snapshot.Name, err)
+		}
+		for _, hold := range holds {
+			found.Holds = append(found.Holds, hold.Snapshot+" ("+hold.Tag+")")
+		}
+	}
+	return found, nil
+}
+
+// Destroy removes the template and its snapshots.
+//
+// -r because a template always has at least @base and zfs refuses a bare
+// destroy then. Never -R, which would take the dependent clones this refuses
+// to touch -- the service has already established there are none, and passing
+// -R would make that check decorative.
+func (s *TemplateSource) Destroy(ctx context.Context, name string) error {
+	dataset, err := s.datasetFor(ctx, name)
+	if err != nil {
+		return err
+	}
+	result, destroyErr := s.service.system.DestroyDataset(ctx, dataset, true)
+	s.service.logWrite(ctx, OperationDestroyDataset, result, destroyErr)
+	if destroyErr != nil {
+		return toWriteError("destroy", dataset, destroyErr)
+	}
+	return nil
+}
+
+// datasetFor finds the template's dataset on whichever pool has it.
+func (s *TemplateSource) datasetFor(ctx context.Context, name string) (string, error) {
+	roots, err := s.service.roots(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, root := range roots {
+		candidate := templateParent(root) + "/" + name
+		if dataset, err := s.service.datasetNamed(ctx, candidate); err == nil && dataset != nil {
+			return candidate, nil
+		}
+	}
+	return "", common.NewAppError(http.StatusNotFound, "no template named "+name)
 }

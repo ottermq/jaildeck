@@ -252,3 +252,52 @@ func writeSnapshotResult(w http.ResponseWriter, result SnapshotResult) {
 	}
 	common.WriteJSON(w, http.StatusOK, result)
 }
+
+// retainRequest names where the dataset will live once it is out of the jail:
+// <pool>/jails/retained/<name>.
+type retainRequest struct {
+	Name string `json:"name"`
+}
+
+// restoreRequest names which retained dataset to bring back.
+type restoreRequest struct {
+	From string `json:"from"`
+}
+
+func (h *JailHandler) Retain(w http.ResponseWriter, r *http.Request) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	var body retainRequest
+	if err := decodeJSON(r, &body); err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	moved, err := h.service.Retain(r.Context(), name, chi.URLParam(r, "child"), body.Name)
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, moved)
+}
+
+func (h *JailHandler) Restore(w http.ResponseWriter, r *http.Request) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	var body restoreRequest
+	if err := decodeJSON(r, &body); err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	moved, err := h.service.Restore(r.Context(), name, body.From, chi.URLParam(r, "child"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, moved)
+}

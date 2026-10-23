@@ -62,6 +62,20 @@ type StorageSystem interface {
 	// Holds names the holds on a snapshot, for the same reason: zfs destroy
 	// reports that one exists without saying whose it is.
 	Holds(ctx context.Context, snapshot string) ([]Hold, error)
+
+	// RenameDataset runs zfs rename -u. The -u is the whole point: a plain
+	// rename unmounts the dataset and remounts it at its new place as part of
+	// the same command, which on a running jail makes /data disappear from
+	// under whatever is using it, mid-operation. With -u the mount is left
+	// exactly where it was and moving it becomes a separate, timed act.
+	RenameDataset(ctx context.Context, from, to string) (Result, error)
+	// Mounted reports whether the dataset is mounted right now. Asked as its
+	// own question because both of the calls below fail when it is wrong:
+	// unmounting what is not mounted and mounting what already is are each an
+	// error, not a no-op.
+	Mounted(ctx context.Context, dataset string) (bool, error)
+	Unmount(ctx context.Context, dataset string) (Result, error)
+	Mount(ctx context.Context, dataset string) (Result, error)
 }
 
 // Result is what a write actually ran, so the service can audit the command

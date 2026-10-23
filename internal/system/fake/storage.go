@@ -199,3 +199,76 @@ func under(name string, roots []string) bool {
 }
 
 var _ storage.StorageSystem = (*StorageSystem)(nil)
+
+// RenameDataset moves the dataset and everything beneath it, and re-derives the
+// mountpoints the way an inherited one follows its parent. The mount itself is
+// left alone, which is what -u means and what the three calls below exist to
+// deal with.
+func (s *StorageSystem) RenameDataset(_ context.Context, from, to string) (storage.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	result := storage.Result{Dataset: to, Command: "zfs rename -u " + from + " " + to}
+	if slices.ContainsFunc(s.datasets, func(d storage.Dataset) bool { return d.Name == to }) {
+		return result, fmt.Errorf("cannot rename '%s': dataset already exists", from)
+	}
+	parent, _, _ := cutLast(to, "/")
+	if !slices.ContainsFunc(s.datasets, func(d storage.Dataset) bool { return d.Name == parent }) {
+		return result, fmt.Errorf("cannot create '%s': parent does not exist", to)
+	}
+	moved := false
+	for i, d := range s.datasets {
+		if d.Name != from && !strings.HasPrefix(d.Name, from+"/") {
+			continue
+		}
+		suffix := strings.TrimPrefix(d.Name, from)
+		s.datasets[i].Name = to + suffix
+		s.datasets[i].Mountpoint = s.mountpointOf(parent) + "/" + lastComponent(to) + suffix
+		moved = true
+	}
+	if !moved {
+		return result, fmt.Errorf("cannot open '%s': dataset does not exist", from)
+	}
+	for i, p := range s.properties {
+		if p.Dataset == from || strings.HasPrefix(p.Dataset, from+"/") {
+			s.properties[i].Dataset = to + strings.TrimPrefix(p.Dataset, from)
+		}
+	}
+	for i, snapshot := range s.snapshots {
+		if snapshot.Dataset == from || strings.HasPrefix(snapshot.Dataset, from+"/") {
+			s.snapshots[i].Dataset = to + strings.TrimPrefix(snapshot.Dataset, from)
+			s.snapshots[i].Name = s.snapshots[i].Dataset + "@" + snapshot.Short
+		}
+	}
+	slices.SortFunc(s.datasets, func(a, b storage.Dataset) int { return strings.Compare(a.Name, b.Name) })
+	return result, nil
+}
+
+// Mounted is true for everything with a real mountpoint, which is as much as
+// this needs to model: nothing here is ever deliberately left unmounted.
+func (s *StorageSystem) Mounted(_ context.Context, dataset string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, d := range s.datasets {
+		if d.Name == dataset {
+			return d.Mountpoint != "none" && d.Mountpoint != "-" && d.Mountpoint != "", nil
+		}
+	}
+	return false, fmt.Errorf("cannot open '%s': dataset does not exist", dataset)
+}
+
+func (s *StorageSystem) Unmount(_ context.Context, dataset string) (storage.Result, error) {
+	return storage.Result{Dataset: dataset, Command: "zfs unmount " + dataset}, nil
+}
+
+func (s *StorageSystem) Mount(_ context.Context, dataset string) (storage.Result, error) {
+	return storage.Result{Dataset: dataset, Command: "zfs mount " + dataset}, nil
+}
+
+func lastComponent(name string) string {
+	_, last, found := cutLast(name, "/")
+	if !found {
+		return name
+	}
+	return last
+}

@@ -24,6 +24,25 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### API
 
+- **A dataset can be moved out of a jail and back in.**
+  `POST /api/jails/{name}/datasets/{child}/retain` moves it to
+  `<pool>/jails/retained/<name>`, `GET /api/retained` lists what is being kept, and
+  `.../restore` brings one back under any jail. Destroying a jail takes its children and
+  their snapshots with it (JD-007), so this is what makes "destroy the jail, keep the data"
+  possible. (#5, JD-025)
+
+  Three audited commands: `zfs rename -u`, `zfs unmount`, `zfs mount`. **The `-u` is not
+  optional** — a plain `zfs rename` unmounts and remounts inside the same command, which on a
+  running jail is the filesystem vanishing from under a live process. And the move is still
+  completed in the same call, because a dataset left named in one place and mounted in another
+  makes the jail undestroyable: `zfs destroy` answers `pool or dataset is busy`.
+
+  A running jail loses that path at the unmount; the response says `remounted: true` so a
+  caller knows the filesystem moved and not just the name.
+
+  `<pool>/jails/retained` is created on demand and is **not** added to the layout readiness
+  check: a host that has never retained anything is not missing something (JD-021).
+
 - **Snapshots.** `GET /api/jails/{name}/snapshots` lists every snapshot of a jail's datasets;
   `PUT`, `DELETE` and `POST .../rollback` under `/snapshots/{snapshot}` take, destroy and roll
   back, with the same routes under `/datasets/{child}/` for one dataset alone. Every call is

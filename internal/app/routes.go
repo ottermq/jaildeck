@@ -14,6 +14,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/common"
 	"github.com/ottermq/jaildeck/internal/host"
 	"github.com/ottermq/jaildeck/internal/jails"
+	"github.com/ottermq/jaildeck/internal/storage"
 )
 
 func (a *App) Routes(assets fs.FS) http.Handler {
@@ -31,6 +32,7 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 			jails.RegisterJailRoutes(r, a.jailHandler)
 			host.RegisterHostRoutes(r, a.hostHandler)
 			audit.RegisterAuditRoutes(r, a.auditHandler)
+			storage.RegisterStorageRoutes(r, a.storageHandler)
 		})
 	})
 

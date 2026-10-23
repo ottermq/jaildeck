@@ -1,10 +1,11 @@
-tank	2.20G	897G	96K	none
+tank	2.21G	897G	96K	none
 tank/jails	2.18G	897G	157M	/usr/local/jails
 tank/jails/containers	1.45G	897G	104K	/usr/local/jails/containers
-tank/jails/containers/goodiesdb	4.35M	897G	372M	/usr/local/jails/containers/goodiesdb
-tank/jails/containers/ottermq	30.9M	897G	398M	/usr/local/jails/containers/ottermq
-tank/jails/containers/ottermq/data	96K	2.00G	96K	/usr/local/jails/containers/ottermq/data
+tank/jails/containers/goodiesdb	4.34M	897G	372M	/usr/local/jails/containers/goodiesdb
+tank/jails/containers/ottermq	31.1M	897G	398M	/usr/local/jails/containers/ottermq
+tank/jails/containers/ottermq/data	224K	2.00G	96K	/usr/local/jails/containers/ottermq/data
 tank/jails/containers/postgres	1.41G	897G	1.76G	/usr/local/jails/containers/postgres
 tank/jails/media	157M	897G	157M	/usr/local/jails/media
+tank/jails/retained	96K	897G	96K	/usr/local/jails/retained
 tank/jails/templates	430M	897G	104K	/usr/local/jails/templates
 tank/jails/templates/15.1-RELEASE	430M	897G	372M	/usr/local/jails/templates/15.1-RELEASE

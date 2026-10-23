@@ -101,3 +101,23 @@ func (s *JailService) Rollback(ctx context.Context, name JailName, child, short,
 	}
 	return s.snapshots.Rollback(context.WithoutCancel(ctx), jail.Path, child, short, confirm, destroyNewer)
 }
+
+// Retain moves a child dataset out of the jail, so the jail can be destroyed
+// without taking it.
+func (s *JailService) Retain(ctx context.Context, name JailName, child, retained string) (DatasetMove, error) {
+	jail, err := s.onZFS(ctx, name, s.datasetMover)
+	if err != nil {
+		return DatasetMove{}, err
+	}
+	return s.datasetMover.Retain(context.WithoutCancel(ctx), jail.Path, child, retained)
+}
+
+// Restore moves one back in under this jail, which may be a different jail
+// from the one it left: that is the point of keeping it.
+func (s *JailService) Restore(ctx context.Context, name JailName, retained, child string) (DatasetMove, error) {
+	jail, err := s.onZFS(ctx, name, s.datasetMover)
+	if err != nil {
+		return DatasetMove{}, err
+	}
+	return s.datasetMover.Restore(context.WithoutCancel(ctx), jail.Path, retained, child)
+}

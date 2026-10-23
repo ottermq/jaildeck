@@ -148,3 +148,83 @@ func TestStorageAdapterStillReads(t *testing.T) {
 		t.Errorf("DatasetsUnder() = %d datasets, %v; want %d", len(datasets), err, want)
 	}
 }
+
+// The move commands. -u on the rename is the one flag that matters here: a
+// plain rename unmounts and remounts inside the same command, which on a
+// running jail is the filesystem disappearing from under a live process.
+func TestMoveCommands(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(*StorageAdapter) error
+		want []string
+	}{
+		{
+			name: "rename always passes -u",
+			call: func(a *StorageAdapter) error {
+				_, err := a.RenameDataset(context.Background(),
+					"tank/jails/containers/ottermq/data", "tank/jails/retained/ottermq-data")
+				return err
+			},
+			want: []string{"rename", "-u", "tank/jails/containers/ottermq/data", "tank/jails/retained/ottermq-data"},
+		},
+		{
+			name: "unmount",
+			call: func(a *StorageAdapter) error {
+				_, err := a.Unmount(context.Background(), "tank/jails/retained/x")
+				return err
+			},
+			want: []string{"unmount", "tank/jails/retained/x"},
+		},
+		{
+			name: "mount",
+			call: func(a *StorageAdapter) error {
+				_, err := a.Mount(context.Background(), "tank/jails/retained/x")
+				return err
+			},
+			want: []string{"mount", "tank/jails/retained/x"},
+		},
+		{
+			name: "mounted reads one property",
+			call: func(a *StorageAdapter) error {
+				_, err := a.Mounted(context.Background(), "tank/jails/retained/x")
+				return err
+			},
+			want: []string{"get", "-H", "-o", "value", "mounted", "tank/jails/retained/x"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &recordingRunner{stdout: "yes\n"}
+			if err := tt.call(&StorageAdapter{Adapter: NewAdapter(runner)}); err != nil {
+				t.Fatalf("call() error = %v", err)
+			}
+			if len(runner.ran) != 1 || !reflect.DeepEqual(runner.ran[0].Args, tt.want) {
+				t.Errorf("args = %q, want %q", runner.ran, tt.want)
+			}
+		})
+	}
+}
+
+func TestMountedReadsYesAndNo(t *testing.T) {
+	for stdout, want := range map[string]bool{"yes\n": true, "no\n": false, "-\n": false} {
+		runner := &recordingRunner{stdout: stdout}
+		got, err := (&StorageAdapter{Adapter: NewAdapter(runner)}).Mounted(context.Background(), "tank/x")
+		if err != nil || got != want {
+			t.Errorf("Mounted() for %q = %v, %v; want %v", stdout, got, err, want)
+		}
+	}
+}
+
+// What the host says for a mounted dataset, captured rather than constructed.
+// The two calls that move a dataset both fail when this is wrong, so it is
+// asked before either of them runs.
+func TestMountedFixture(t *testing.T) {
+	probe := readFixtureLine(t, "isengard", "PROBE_DATASET")
+	runner := &replayRunner{t: t, set: "isengard", captures: map[string]string{
+		"zfs get -H -o value mounted " + probe: "zfs_get_mounted",
+	}}
+	mounted, err := NewStorageAdapter(runner).Mounted(context.Background(), probe)
+	if err != nil || !mounted {
+		t.Errorf("Mounted(%s) = %v, %v; want true", probe, mounted, err)
+	}
+}

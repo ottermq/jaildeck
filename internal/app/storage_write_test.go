@@ -8,11 +8,19 @@ import (
 	"testing"
 )
 
-// send is do() with a body, for the two verbs that carry one.
+// send is do() with a body, for the verbs that carry one.
 func send(t *testing.T, router http.Handler, method, path string, cookies []*http.Cookie, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return sendWithHeaders(t, router, method, path, cookies, body, nil)
+}
+
+func sendWithHeaders(t *testing.T, router http.Handler, method, path string, cookies []*http.Cookie, body string, headers map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	for _, c := range cookies {
 		req.AddCookie(c)
 	}

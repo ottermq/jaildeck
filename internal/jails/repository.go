@@ -147,3 +147,25 @@ type SnapshotWriter interface {
 	// and its own -r means "destroy the snapshots newer than this one".
 	Rollback(ctx context.Context, jailPath, child, short, confirm string, destroyNewer bool) (SnapshotResult, error)
 }
+
+// DatasetMove is what moving a dataset in or out of a jail did.
+type DatasetMove struct {
+	From       string `json:"from"`
+	To         string `json:"to"`
+	Mountpoint string `json:"mountpoint"`
+	// Remounted says whether the filesystem was actually carried to the new
+	// mountpoint. False when the dataset was not mounted to begin with --
+	// which is not a failure, just nothing to carry.
+	Remounted bool `json:"remounted"`
+}
+
+// DatasetMover moves a child dataset out of a jail and back in.
+//
+// Destroying a jail takes its children and their snapshots with it (JD-007),
+// so a dataset worth keeping has to stop being a child before the jail goes.
+type DatasetMover interface {
+	// Retain moves the jail's child dataset to <pool>/jails/retained/<name>.
+	Retain(ctx context.Context, jailPath, child, name string) (DatasetMove, error)
+	// Restore moves a retained dataset back in as the jail's child.
+	Restore(ctx context.Context, jailPath, name, child string) (DatasetMove, error)
+}

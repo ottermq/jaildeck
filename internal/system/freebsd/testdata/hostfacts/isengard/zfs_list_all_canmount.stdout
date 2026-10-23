@@ -8,6 +8,7 @@ backup/isengard/tank/jails/containers/ottermq	none	off
 backup/isengard/tank/jails/containers/ottermq/data	none	off
 backup/isengard/tank/jails/containers/postgres	none	off
 backup/isengard/tank/jails/media	none	off
+backup/isengard/tank/jails/retained	none	off
 backup/isengard/tank/jails/templates	none	off
 backup/isengard/tank/jails/templates/15.1-RELEASE	none	off
 backup/isengard/zroot	none	off
@@ -30,6 +31,7 @@ tank/jails/containers/ottermq	/usr/local/jails/containers/ottermq	on
 tank/jails/containers/ottermq/data	/usr/local/jails/containers/ottermq/data	on
 tank/jails/containers/postgres	/usr/local/jails/containers/postgres	on
 tank/jails/media	/usr/local/jails/media	on
+tank/jails/retained	/usr/local/jails/retained	on
 tank/jails/templates	/usr/local/jails/templates	on
 tank/jails/templates/15.1-RELEASE	/usr/local/jails/templates/15.1-RELEASE	on
 zroot	/zroot	on

@@ -1502,6 +1502,147 @@
       "settingRebuildPath": true,
       "settingSendCookies": true,
       "settingStoreCookies": true
+    },
+    {
+      "_id": "req_e56ce92e39f527f4c7410cde3ad7ae83",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Retain a dataset",
+      "description": "Moves a child dataset **out of the jail**, to `<pool>/jails/retained/<name>` (#5, JD-025).\n\nThis is what makes \"destroy the jail, keep the data\" possible: `zfs destroy -r` on a jail takes its children and their snapshots with it (JD-007), so anything worth keeping has to stop being a child first.\n\nThree commands, each audited separately:\n\n```\nzfs rename -u <jail>/data <pool>/jails/retained/<name>\nzfs unmount               <pool>/jails/retained/<name>\nzfs mount                 <pool>/jails/retained/<name>\n```\n\n**The `-u` is the whole design.** A plain `zfs rename` unmounts and remounts inside the same command — on a running jail that is the filesystem disappearing from under a live process, mid-rename. Measured on the deployment target: after a plain rename, `ls /data` inside the running jail answered `No such file or directory`. With `-u` the rename is invisible and the unmount is a separate, deliberate step.\n\n**It still unmounts.** `remounted: true` means the filesystem was carried to its new place, and a running jail loses that path at that moment. Stop the jail first unless you know what is using it. Leaving it half-moved is worse: a dataset still mounted inside a jail makes the jail undestroyable — `zfs destroy` answers `pool or dataset is busy`.\n\n`retained` is created the first time one is needed, and is deliberately **not** part of the layout host readiness checks: a host that has never retained anything is not missing something (JD-021).",
+      "method": "POST",
+      "url": "{{baseUrl}}/jails/{{jail}}/datasets/data/retain",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"ottermq-data\"\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2280,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_2d5021715152e5f0d84d95ac34634806",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "List retained datasets",
+      "description": "Everything being kept past its jail, with `short` — the name under `<pool>/jails/retained` — which is what a restore asks for.\n\nWithout this a client that retained something has no way to find it again except by having remembered the name, and the whole point of retaining is that the jail it belonged to is gone.\n\nEmpty on a host that has never retained anything, rather than an error: the `retained` dataset does not exist until the first one needs it.",
+      "method": "GET",
+      "url": "{{baseUrl}}/retained",
+      "body": {},
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2270,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_d64507664b40b40fe0607f1af41b5a85",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Restore a dataset",
+      "description": "Moves a retained dataset **back in**, as this jail's child — the same three commands in the other direction.\n\nIt need not be the jail it left, and it need not keep the name it left with: a dataset retained from `ottermq` can come back as `ottermq-2`'s `data`, which is exactly the point of keeping it. Its properties and snapshots travel with it, because they are properties of the dataset and not of where it sits.\n\n`from` is the `short` name from **List retained datasets**, not the full dataset path.\n\n409 if the jail already has a child of that name; 404 if nothing is retained under that name.",
+      "method": "POST",
+      "url": "{{baseUrl}}/jails/{{jail}}/datasets/data/restore",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"from\": \"ottermq-data\"\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2260,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_fe9059fffc3482928d28d4bee006ab0c",
+      "_type": "request",
+      "parentId": "fld_94d4fcd0d6ad851777e19c71c1151c84",
+      "name": "Retain onto a name already taken",
+      "description": "409. Two jails whose data datasets are both called `data` cannot both be retained as `data` — the retained names share one namespace per pool, which is why the name is given rather than derived.\n\nNothing runs: the target is checked before the rename, so a refused retain leaves the dataset exactly where it was.",
+      "method": "POST",
+      "url": "{{baseUrl}}/jails/{{jail}}/datasets/data/retain",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"ottermq-data\"\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -280,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
     }
   ]
 }

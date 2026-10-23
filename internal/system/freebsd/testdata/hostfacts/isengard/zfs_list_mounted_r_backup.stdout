@@ -8,6 +8,7 @@ backup/isengard/tank/jails/containers/ottermq	no	off	none
 backup/isengard/tank/jails/containers/ottermq/data	no	off	none
 backup/isengard/tank/jails/containers/postgres	no	off	none
 backup/isengard/tank/jails/media	no	off	none
+backup/isengard/tank/jails/retained	no	off	none
 backup/isengard/tank/jails/templates	no	off	none
 backup/isengard/tank/jails/templates/15.1-RELEASE	no	off	none
 backup/isengard/zroot	no	off	none

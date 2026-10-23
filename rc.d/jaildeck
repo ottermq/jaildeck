@@ -1,27 +1,23 @@
 #!/bin/sh
 #
 # PROVIDE: jaildeck
-# REQUIRE: LOGIN FILESYSTEMS
+# REQUIRE: NETWORKING FILESYSTEMS
 # KEYWORD: shutdown
 #
 # Jail Deck — FreeBSD jails dashboard and host agent.
 #
-# Add to /etc/rc.conf to enable, and set only what differs from the defaults
-# below; every knob maps to the environment variable of the same name upper-cased
-# (see .env.sample and the README's configuration table):
+#   sysrc jaildeck_enable=YES
+#   service jaildeck start
 #
-#   jaildeck_enable="YES"
-#   jaildeck_zfs_pool="tank"      # required on a host with more than one pool
-#   #jaildeck_host="127.0.0.1"    # non-loopback needs TLS in front (JD-002)
-#   #jaildeck_port="8888"
-#   #jaildeck_state_dir="/var/db/jaildeck"
-#   #jaildeck_audit_log="/var/log/jaildeck/audit.log"
-#   #jaildeck_log_level="info"
-#   #jaildeck_adapter="freebsd"
-#   #jaildeck_binary="/usr/local/sbin/jaildeck"
+# Everything else is configured in the env file, not in this script and not in
+# rc.conf:
 #
-# Jail Deck runs as root (JD-001) and will not start without an operator
-# credential, so run `jaildeck passwd` once before enabling the service.
+#   /usr/local/etc/jaildeck/jaildeck.env
+#
+# It is the KEY=value format of the repository's .env.sample, which `make
+# install` puts beside it as jaildeck.env.sample. Jail Deck runs as root
+# (JD-001) and will not start without an operator credential, so run
+# `jaildeck passwd` once before enabling the service.
 
 . /etc/rc.subr
 
@@ -32,50 +28,37 @@ desc="FreeBSD jails dashboard and host agent"
 load_rc_config "$name"
 
 : ${jaildeck_enable:="NO"}
-: ${jaildeck_binary:="/usr/local/sbin/jaildeck"}
-: ${jaildeck_host:="127.0.0.1"}
-: ${jaildeck_port:="8888"}
-: ${jaildeck_adapter:="freebsd"}
-: ${jaildeck_state_dir:="/var/db/jaildeck"}
-: ${jaildeck_audit_log:="/var/log/jaildeck/audit.log"}
-: ${jaildeck_log_level:="info"}
-: ${jaildeck_zfs_pool:=""}
-# daemon(8) flags. -S sends the process's stdout and stderr to syslog, which is
-# why the log handler drops its own timestamps. Add -r here to have daemon(8)
-# restart Jail Deck if it exits; it is left off so that `service jaildeck stop`
-# signals the process rc.subr is tracking and nothing puts it back.
-: ${jaildeck_daemon_args:="-S -T ${name}"}
+: ${jaildeck_env_file:="/usr/local/etc/jaildeck/jaildeck.env"}
+: ${jaildeck_pidfile:="/var/run/jaildeck.pid"}
+# daemon(8) flags. -S sends Jail Deck's output to syslog under the tag below,
+# which is why its own log lines carry no timestamp; replacing this with
+# "-o /var/log/jaildeck.log" would leave them with no timestamp at all. -f
+# detaches stdin, stdout and stderr, which still reaches syslog and keeps
+# `service jaildeck start` from hanging a remote shell that it would otherwise
+# inherit descriptors from.
+: ${jaildeck_daemon_args:="-f -S -T ${name}"}
 
-# NOT jaildeck_program: rc.subr reserves ${name}_program as the override for
-# ${command}, so naming it that makes rc.subr run Jail Deck with daemon(8)'s
-# flags as its arguments, and Jail Deck exits with `unknown command: "-S"`.
-# ${command} here is daemon(8); Jail Deck is its argument -- the same shape as
-# the zrepl and tailscaled scripts this host already runs.
-pidfile="/var/run/${name}.pid"
-procname="${jaildeck_binary}"
+pidfile="${jaildeck_pidfile}"
 command="/usr/sbin/daemon"
-command_args="${jaildeck_daemon_args} -p ${pidfile} ${procname}"
-
-# Config reaches Jail Deck as environment variables; it reads no config file of
-# its own, and the .env it loads is a development convenience read from the
-# working directory. rc.subr exports these for ${command}.
-jaildeck_env="JAILDECK_HOST=${jaildeck_host} \
-JAILDECK_PORT=${jaildeck_port} \
-JAILDECK_ADAPTER=${jaildeck_adapter} \
-JAILDECK_STATE_DIR=${jaildeck_state_dir} \
-JAILDECK_AUDIT_LOG=${jaildeck_audit_log} \
-JAILDECK_LOG_LEVEL=${jaildeck_log_level} \
-JAILDECK_ZFS_POOL=${jaildeck_zfs_pool}"
+command_args="-P ${pidfile} ${jaildeck_daemon_args} /usr/local/bin/${name}"
 
 start_precmd="jaildeck_prestart"
 
 jaildeck_prestart()
 {
-	# Both hold secrets -- the credential hash and API tokens in the state dir,
-	# and every command Jail Deck ran in the audit log -- so 0700, which is what
-	# `jaildeck passwd` and `jaildeck init` create them as.
-	install -d -m 0700 -o root -g wheel "${jaildeck_state_dir}" || return 1
-	install -d -m 0700 -o root -g wheel "$(dirname "${jaildeck_audit_log}")" || return 1
+	if [ -f "${jaildeck_env_file}" ]; then
+		set -a
+		. "${jaildeck_env_file}"
+		set +a
+	fi
+	# The state dir holds the credential hash and the API tokens; the audit log
+	# holds every command Jail Deck ran. Hence 0700, which is what
+	# `jaildeck passwd` and `jaildeck init` create them as. The defaults
+	# repeated here are internal/config's, for the case where the env file
+	# leaves them unset.
+	install -d -m 0700 -o root -g wheel "${JAILDECK_STATE_DIR:-/var/db/jaildeck}" || return 1
+	install -d -m 0700 -o root -g wheel \
+		"$(dirname "${JAILDECK_AUDIT_LOG:-/var/log/jaildeck/audit.log}")" || return 1
 }
 
 run_rc_command "$1"

@@ -85,6 +85,15 @@ type StorageSystem interface {
 	// Origin is the snapshot a dataset was cloned from, empty when it was not
 	// cloned from anything.
 	Origin(ctx context.Context, dataset string) (string, error)
+	// PromoteDataset runs zfs promote, which reverses a clone relationship:
+	// the clone takes ownership of the snapshot it was made from, and its
+	// former origin becomes a clone of it.
+	//
+	// Without it, a template cloned from a jail's snapshot keeps the jail
+	// alive forever -- zfs destroy on that jail answers "filesystem has
+	// dependent clones" and names the template. Measured on the deployment
+	// target, both before and after (JD-027).
+	PromoteDataset(ctx context.Context, dataset string) (Result, error)
 }
 
 // Result is what a write actually ran, so the service can audit the command

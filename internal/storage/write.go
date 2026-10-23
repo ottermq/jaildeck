@@ -20,6 +20,7 @@ import (
 const (
 	OperationCreateDataset   = "create-dataset"
 	OperationSetProperties   = "set-properties"
+	OperationPromoteDataset  = "promote-dataset"
 	OperationInheritProperty = "inherit-property"
 )
 

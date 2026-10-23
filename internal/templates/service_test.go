@@ -1,0 +1,292 @@
+package templates
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/ottermq/jaildeck/internal/audit"
+	"github.com/ottermq/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/system"
+)
+
+type stubStorage struct {
+	templates []Template
+	listErr   error
+	derived   []string
+	sealed    []string
+	deriveErr error
+	sealErr   error
+}
+
+func (s *stubStorage) Templates(context.Context) ([]Template, error) {
+	return s.templates, s.listErr
+}
+
+func (s *stubStorage) Derive(_ context.Context, parentSnapshot, name string) (string, error) {
+	s.derived = append(s.derived, parentSnapshot+" -> "+name)
+	if s.deriveErr != nil {
+		return "", s.deriveErr
+	}
+	root := "/usr/local/jails/templates/" + name
+	s.templates = append(s.templates, Template{
+		Name: name, Dataset: "tank/jails/templates/" + name, Mountpoint: root,
+		Parent: strings.TrimPrefix(strings.Split(parentSnapshot, "@")[0], "tank/jails/templates/"),
+	})
+	return root, nil
+}
+
+func (s *stubStorage) Seal(_ context.Context, name string) error {
+	s.sealed = append(s.sealed, name)
+	if s.sealErr != nil {
+		return s.sealErr
+	}
+	for i, template := range s.templates {
+		if template.Name == name {
+			s.templates[i].Ready = true
+			s.templates[i].Snapshot = template.Dataset + "@" + ReadySnapshot
+		}
+	}
+	return nil
+}
+
+type stubPackages struct {
+	installed []string
+	err       error
+}
+
+func (s *stubPackages) Install(_ context.Context, root string, packages []string) (Result, error) {
+	command := "pkg -c " + root + " install -y " + strings.Join(packages, " ")
+	s.installed = append(s.installed, command)
+	return Result{Root: root, Command: command}, s.err
+}
+
+type fakeLogger struct{ entries []audit.Entry }
+
+func (f *fakeLogger) Log(_ context.Context, e audit.Entry) error {
+	f.entries = append(f.entries, e)
+	return nil
+}
+
+func release() *stubStorage {
+	return &stubStorage{templates: []Template{{
+		Name: "15.1-RELEASE", Dataset: "tank/jails/templates/15.1-RELEASE",
+		Mountpoint: "/usr/local/jails/templates/15.1-RELEASE",
+		Ready:      true, Snapshot: "tank/jails/templates/15.1-RELEASE@base",
+	}}}
+}
+
+func appErrCode(t *testing.T, err error) int {
+	t.Helper()
+	var appErr *common.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("error %v is not an *common.AppError", err)
+	}
+	return appErr.Code
+}
+
+// Clone the parent's @base, install into the clone, snapshot as @base. In that
+// order: sealing before the packages are in would mark an incomplete template
+// usable, and a jail cloned from it would be missing what it was built for.
+func TestDeriveClonesInstallsAndSeals(t *testing.T) {
+	storage, packages, logger := release(), &stubPackages{}, &fakeLogger{}
+
+	template, built, err := NewService(storage, packages, logger).
+		Derive(context.Background(), "postgres-16", "15.1-RELEASE", []string{"postgresql16-server"})
+	if err != nil {
+		t.Fatalf("Derive() error = %v", err)
+	}
+	if !built {
+		t.Error("built = false for a template that did not exist")
+	}
+	if !template.Ready || template.Parent != "15.1-RELEASE" {
+		t.Errorf("template = %+v, want it ready with its parent named", template)
+	}
+
+	wantDerived := []string{"tank/jails/templates/15.1-RELEASE@base -> postgres-16"}
+	if !reflect.DeepEqual(storage.derived, wantDerived) {
+		t.Errorf("derived %q, want %q", storage.derived, wantDerived)
+	}
+	wantInstalled := []string{"pkg -c /usr/local/jails/templates/postgres-16 install -y postgresql16-server"}
+	if !reflect.DeepEqual(packages.installed, wantInstalled) {
+		t.Errorf("installed %q, want %q", packages.installed, wantInstalled)
+	}
+	if !reflect.DeepEqual(storage.sealed, []string{"postgres-16"}) {
+		t.Errorf("sealed %q, want it sealed once after the install", storage.sealed)
+	}
+	if len(logger.entries) != 1 || logger.entries[0].Operation != OperationInstallPackages {
+		t.Errorf("audit = %+v, want one install-packages entry", logger.entries)
+	}
+}
+
+// The retry a client makes after a timeout.
+func TestDeriveIsIdempotentForAReadyTemplate(t *testing.T) {
+	storage := release()
+	storage.templates = append(storage.templates, Template{
+		Name: "postgres-16", Dataset: "tank/jails/templates/postgres-16", Ready: true,
+		Snapshot: "tank/jails/templates/postgres-16@base", Parent: "15.1-RELEASE",
+	})
+	packages := &stubPackages{}
+
+	template, built, err := NewService(storage, packages, &fakeLogger{}).
+		Derive(context.Background(), "postgres-16", "15.1-RELEASE", []string{"postgresql16-server"})
+	if err != nil {
+		t.Fatalf("Derive() error = %v", err)
+	}
+	if built {
+		t.Error("built = true for a template that was already there")
+	}
+	if template.Name != "postgres-16" {
+		t.Errorf("template = %+v", template)
+	}
+	if len(packages.installed) != 0 || len(storage.derived) != 0 {
+		t.Errorf("ran %q and %q for a template that already existed", storage.derived, packages.installed)
+	}
+}
+
+// A template that exists without its @base is a previous attempt that failed.
+// Building on top of it would install packages over whatever it left behind.
+func TestDeriveRefusesToFinishAnUnreadyTemplate(t *testing.T) {
+	storage := release()
+	storage.templates = append(storage.templates, Template{
+		Name: "postgres-16", Dataset: "tank/jails/templates/postgres-16", Ready: false,
+	})
+	packages := &stubPackages{}
+
+	_, _, err := NewService(storage, packages, &fakeLogger{}).
+		Derive(context.Background(), "postgres-16", "15.1-RELEASE", []string{"postgresql16-server"})
+	if err == nil {
+		t.Fatal("Derive() returned no error for an unready template")
+	}
+	if code := appErrCode(t, err); code != http.StatusConflict {
+		t.Errorf("error code = %d, want 409", code)
+	}
+	if len(packages.installed) != 0 {
+		t.Errorf("installed %q on top of a failed attempt", packages.installed)
+	}
+}
+
+// A failed install leaves the clone without its @base, which the listing
+// reports as not ready. That is the whole recovery story: no cleanup is needed
+// for the state to be truthful (JD-027).
+func TestAFailedInstallLeavesAnUnreadyTemplate(t *testing.T) {
+	storage, logger := release(), &fakeLogger{}
+	packages := &stubPackages{err: errors.New("pkg: No packages available to install matching 'nope'")}
+
+	_, _, err := NewService(storage, packages, logger).
+		Derive(context.Background(), "postgres-16", "15.1-RELEASE", []string{"nope"})
+	if err == nil {
+		t.Fatal("Derive() returned no error")
+	}
+	if !strings.Contains(err.Error(), "not ready") {
+		t.Errorf("error = %q, want it to say the template exists and is not ready", err)
+	}
+	if len(storage.sealed) != 0 {
+		t.Errorf("sealed %q after a failed install; the template must stay unusable", storage.sealed)
+	}
+	// And it is in the listing, unready, for the operator to find.
+	found, _ := NewService(storage, packages, logger).List(context.Background())
+	for _, template := range found {
+		if template.Name == "postgres-16" && template.Ready {
+			t.Error("the half-built template reports itself ready")
+		}
+	}
+	if entry := logger.entries[0]; entry.Success || entry.Error == "" {
+		t.Errorf("audit entry = %+v, want a failure carrying the reason", entry)
+	}
+}
+
+func TestDeriveRefusals(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		parent   string
+		packages []string
+		wantCode int
+	}{
+		{name: "no such parent", template: "x", parent: "14.2-RELEASE", wantCode: http.StatusNotFound},
+		{name: "a name ZFS will not take", template: "-x", parent: "15.1-RELEASE", wantCode: http.StatusBadRequest},
+		{name: "empty name", template: "", parent: "15.1-RELEASE", wantCode: http.StatusBadRequest},
+		{name: "a slash", template: "a/b", parent: "15.1-RELEASE", wantCode: http.StatusBadRequest},
+		// pkg would read these as options rather than packages.
+		{name: "a package beginning with a dash", template: "x", parent: "15.1-RELEASE",
+			packages: []string{"-f"}, wantCode: http.StatusBadRequest},
+		{name: "a package with a space", template: "x", parent: "15.1-RELEASE",
+			packages: []string{"a b"}, wantCode: http.StatusBadRequest},
+		{name: "an empty package name", template: "x", parent: "15.1-RELEASE",
+			packages: []string{""}, wantCode: http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			storage, packages := release(), &stubPackages{}
+			_, _, err := NewService(storage, packages, &fakeLogger{}).
+				Derive(context.Background(), tt.template, tt.parent, tt.packages)
+			if err == nil {
+				t.Fatal("Derive() returned no error")
+			}
+			if code := appErrCode(t, err); code != tt.wantCode {
+				t.Errorf("error code = %d, want %d (%v)", code, tt.wantCode, err)
+			}
+			if len(storage.derived) != 0 || len(packages.installed) != 0 {
+				t.Errorf("a refused derive ran %q and %q", storage.derived, packages.installed)
+			}
+		})
+	}
+}
+
+// A parent without its @base is not usable as a parent (JD-007).
+func TestDeriveRefusesAnUnreadyParent(t *testing.T) {
+	storage := &stubStorage{templates: []Template{{Name: "15.1-RELEASE", Ready: false}}}
+	_, _, err := NewService(storage, &stubPackages{}, &fakeLogger{}).
+		Derive(context.Background(), "postgres-16", "15.1-RELEASE", nil)
+	if err == nil {
+		t.Fatal("Derive() returned no error")
+	}
+	if code := appErrCode(t, err); code != http.StatusConflict {
+		t.Errorf("error code = %d, want 409", code)
+	}
+}
+
+// No packages is a plain copy, which is a reasonable thing to want and must
+// not run pkg at all.
+func TestDeriveWithNoPackages(t *testing.T) {
+	storage, packages := release(), &stubPackages{}
+	template, built, err := NewService(storage, packages, &fakeLogger{}).
+		Derive(context.Background(), "snapshot-of-base", "15.1-RELEASE", nil)
+	if err != nil || !built || !template.Ready {
+		t.Fatalf("Derive() = %+v, %v, %v", template, built, err)
+	}
+	if len(packages.installed) != 0 {
+		t.Errorf("ran pkg %q with no packages to install", packages.installed)
+	}
+}
+
+// pkg ran and refused: a package that does not exist is the request's fault,
+// and a client told 500 would retry it forever (JD-023's rule, same reasoning).
+func TestAPackageThatDoesNotExistIsAClientError(t *testing.T) {
+	storage := release()
+	packages := &stubPackages{err: commandError("exit status 70",
+		"pkg: No packages available to install matching 'nope' have been found", 70)}
+
+	_, _, err := NewService(storage, packages, &fakeLogger{}).
+		Derive(context.Background(), "x", "15.1-RELEASE", []string{"nope"})
+	if code := appErrCode(t, err); code != http.StatusBadRequest {
+		t.Errorf("error code = %d, want 400 for a package pkg refused", code)
+	}
+	if !strings.Contains(err.Error(), "No packages available") {
+		t.Errorf("error = %q, want pkg's own sentence in it", err)
+	}
+}
+
+// commandError is what the real runner returns for a command that ran and
+// failed.
+func commandError(message, stderr string, exitCode int) error {
+	return &system.CommandError{
+		Command: "pkg",
+		Result:  system.CommandResult{Stderr: stderr, ExitCode: exitCode},
+		Err:     errors.New(message + ": " + stderr),
+	}
+}

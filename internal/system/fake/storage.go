@@ -301,3 +301,35 @@ func (s *StorageSystem) Origin(_ context.Context, dataset string) (string, error
 	defer s.mu.Unlock()
 	return s.origins[dataset], nil
 }
+
+// PromoteDataset swaps the clone relationship: the promoted dataset takes the
+// origin it had, and whatever it was cloned from becomes a clone of it.
+func (s *StorageSystem) PromoteDataset(_ context.Context, dataset string) (storage.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	result := storage.Result{Dataset: dataset, Command: "zfs promote " + dataset}
+	origin, cloned := s.origins[dataset]
+	if !cloned {
+		return result, fmt.Errorf("cannot promote '%s': not a cloned filesystem", dataset)
+	}
+	former, snapshot, _ := cutLast(origin, "@")
+
+	// The promoted dataset inherits whatever its former origin was cloned
+	// from, and that former origin now hangs off the promoted one.
+	s.origins[dataset] = s.origins[former]
+	if s.origins[dataset] == "" {
+		delete(s.origins, dataset)
+	}
+	s.origins[former] = dataset + "@" + snapshot
+
+	// The snapshot moves with the ownership, which is what lets the former
+	// origin be destroyed afterwards.
+	for i, x := range s.snapshots {
+		if x.Dataset == former && x.Short == snapshot {
+			s.snapshots[i].Dataset = dataset
+			s.snapshots[i].Name = dataset + "@" + snapshot
+		}
+	}
+	return result, nil
+}

@@ -124,3 +124,7 @@ func (a *StorageAdapter) Origin(ctx context.Context, dataset string) (string, er
 	}
 	return origin, nil
 }
+
+func (a *StorageAdapter) PromoteDataset(ctx context.Context, dataset string) (storage.Result, error) {
+	return a.runWrite(ctx, dataset, system.Command{Name: "zfs", Args: []string{"promote", dataset}})
+}

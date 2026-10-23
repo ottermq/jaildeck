@@ -208,7 +208,7 @@ Goal: automate the template-preparation workflow described in `docs/SPEC.md`. **
 - prepare a release template end to end: create dataset, fetch `base.txz`, extract, patch in host `resolv.conf`/`localtime`, bring to patch level with `freebsd-update`, snapshot as `@base`
 - list templates and their readiness
 - remove a template
-- a **derived template**: a release template plus packages installed with `pkg -c` (e.g. a PostgreSQL template), re-snapshotted. Whether this is a template-domain feature or just exec + snapshot from the caller's side is an open question below
+- a **derived template**: a release template plus packages installed with `pkg -c` (e.g. a PostgreSQL template), re-snapshotted. **Settled (JD-027):** Jail Deck builds these, because `pkg -c` needs no jail and is the same shape as stage 1's `freebsd-update -b`. It is not the only path and not the general one — starting a jail on the clone and provisioning it through exec covers everything beyond packages, and is how a **custom jail** is filled. The two are the same mechanism at different times: provision at creation, or provision once into a template and clone it
 
 ### Technical tasks
 

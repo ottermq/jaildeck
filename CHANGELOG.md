@@ -24,6 +24,44 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### API
 
+- **Templates.** `GET /api/templates` lists them with their readiness and lineage, both
+  read from ZFS. Two ways to build one. (#7, JD-027)
+
+  **`POST /api/jails/{name}/template`** clones a jail you configured — the FreeBSD
+  Handbook's "Cloning a Jail as a Template" (17.4.3). It captures whatever is in the jail,
+  not only packages, and is the general path. Snapshot the jail as `@base`, clone it into
+  `templates/<name>`, then **`zfs promote`** the clone.
+
+  The promote is the step that is easy to omit and expensive to omit: without it the
+  template is a clone *of* the jail, and `zfs destroy` on that jail answers `filesystem has
+  dependent clones`. After it the jail is a clone of the template, which is also the right
+  way round — a template should outlive the jail it came from.
+
+  The jail must be **stopped**, and this refuses rather than stopping it: a snapshot of a
+  running jail is an image caught mid-stride, and taking a service down is the operator's
+  call. A jail already carrying `@base` is refused too, since reusing it would capture
+  whenever that snapshot was taken rather than the jail now.
+
+  **`PUT /api/templates/{name}`** is the shortcut for the package-only case: clone a
+  parent's `@base`, `pkg -c <root> install -y`, snapshot as `@base`.
+
+  `pkg -c` chroots, so nothing is started: no jail, no stanza, no networking for a
+  temporary jail. It is the same shape as the `freebsd-update -b <root>` JD-007 already runs
+  against an unbooted template.
+
+  **It installs packages and nothing else.** Anything further belongs to the other path —
+  clone a template, create a jail on it, exec into it, snapshot the dataset — which is more
+  capable and is the general answer. The two are the same mechanism at different times:
+  provision at jail creation, or provision once into a template and clone it.
+
+  Nothing is stored. `ready` is whether `@base` exists; `parent` is read back from
+  `zfs get origin`. A failed install leaves the clone without its `@base`, which the listing
+  reports as not ready — no cleanup is needed for that state to be truthful — and a second
+  attempt on it is refused rather than resumed.
+
+  This also settles the **storage domain granularity** question `docs/SPEC.md` had open:
+  templates get their own bounded context, `internal/templates`.
+
 - **A jail's root can be re-cloned from a newer template, keeping its children.**
   `POST /api/jails/{name}/reclone?confirm={name}` stops the jail, moves every child dataset
   aside, parks the old root, clones the new one, moves the children back and starts it

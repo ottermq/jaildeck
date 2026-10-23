@@ -220,6 +220,106 @@ it first.
 part of the layout readiness check: a host that has never retained anything is not missing
 something (JD-021).
 
+## Templates
+
+A jail is always a clone of a template, so the only question is **when** you provision it:
+
+| | clone from | after it starts |
+| --- | --- | --- |
+| **a prepared jail** | a template that already has what you need | it works |
+| **a custom jail** | a release template, a bare userland | you fill it |
+
+There are two ways to get a prepared template.
+
+### Clone a jail you configured
+
+The general one, and the FreeBSD Handbook's own (17.4.3). Configure a jail however you like —
+by hand, over ssh, through exec — then stop it and promote it:
+
+```sh
+curl -X POST .../api/jails/ottermq/stop
+curl -X POST .../api/jails/ottermq/template -d '{"name":"ottermq-base"}'
+```
+
+```
+zfs snapshot <jail>@base
+zfs clone    <jail>@base  templates/ottermq-base
+zfs promote  templates/ottermq-base
+```
+
+It captures whatever is in the jail, not only packages: `sysrc`, an edited config, an
+`initdb`.
+
+**The promote is the step that matters most and is easiest to miss.** Without it the template
+is a clone *of* the jail, and that jail can never be destroyed:
+
+```
+zfs destroy containers/ottermq
+  cannot destroy: filesystem has dependent clones  ->  templates/ottermq-base
+```
+
+After it, the jail is a clone of the template instead — the right way round, since a template
+should outlive the jail it came from. The lineage becomes
+`15.1-RELEASE → ottermq-base → ottermq`, so the new template lists like any other.
+
+**The jail must be stopped**, and this refuses rather than stopping it for you. A snapshot of
+a running jail succeeds but is an image caught mid-stride; the Handbook says stop it first,
+and taking a service down is your call. A jail already carrying a `@base` is also refused —
+reusing it would make a template of whenever *that* was taken, not of the jail now.
+
+### Install packages, without a jail
+
+
+A jail's root is a clone of a template's `@base` snapshot, so a **derived template** — a
+release template plus packages, re-snapshotted — means every jail cloned from it starts with
+those packages installed (JD-027):
+
+```sh
+curl -X PUT .../api/templates/postgres-16 \
+  -d '{"from":"15.1-RELEASE","packages":["postgresql16-server"]}'
+```
+
+```
+zfs clone    templates/15.1-RELEASE@base templates/postgres-16
+pkg -c       /usr/local/jails/templates/postgres-16 install -y postgresql16-server
+zfs snapshot templates/postgres-16@base
+```
+
+`pkg -c` chroots, so nothing is started — no jail, no stanza, no networking for a temporary
+jail, nothing to clean up. It is the same shape as the `freebsd-update -b <root>` that JD-007
+already runs against an unbooted template.
+
+**It installs packages and nothing else.** `sysrc`, a configuration file, an `initdb` — those
+belong to the other path, which is also the general one: clone a template, create a jail on
+it, `exec` into it, stop it, and snapshot the dataset. A jail is always a clone of a template,
+so the choice is only ever *when* you provision it:
+
+| | clone from | after it starts |
+| --- | --- | --- |
+| **a prepared jail** | a template with the packages already in it | it works |
+| **a custom jail** | a release template, a bare userland | you fill it |
+
+`GET /api/templates` lists them with `ready` and `parent`. Neither is stored: `ready` is
+whether `@base` exists, which is what makes a template usable, and `parent` is read back from
+`zfs get origin`. A derived template therefore cannot disagree about where it came from.
+
+### A failed install needs no cleanup
+
+If `pkg` fails, the clone stays **without** its `@base`. It is a template that exists and is
+not ready, which is exactly what it is and exactly what the listing says. Nothing has to be
+tidied up for that state to be truthful.
+
+A second attempt on it is refused rather than resumed: finishing it would install packages on
+top of whatever the failed attempt left behind, and a clean clone is indistinguishable from a
+clone with half of postgres in it once you are outside looking in. Destroy it and start again.
+
+### Package names
+
+Only one rule: an argument beginning with a dash is refused, because `pkg` would read it as an
+option and `install -y -f` is not the command that was asked for. No shell is involved either
+way. Versions, origins and flavours pass through untouched — `pkg` knows what a package name
+is and says so precisely when it is wrong, and that sentence comes back as a `400`.
+
 ## Upgrading a jail
 
 A jail's root is a clone of a template snapshot, so upgrading one is replacing that root with

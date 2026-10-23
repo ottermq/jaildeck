@@ -1,0 +1,26 @@
+title: Jail Deck
+description: A FreeBSD jails operations dashboard and host agent, written in Go
+
+# A built-in GitHub Pages theme, so the site builds from the branch without an
+# Actions workflow. Matches ottermq's.
+theme: jekyll-theme-cayman
+
+# Project pages under the organisation's custom domain: the site is served at
+# <url><baseurl>/. Only jekyll-seo-tag's canonical links use these; every link
+# written in these pages is plain and relative, so they resolve wherever the
+# site is served from.
+url: https://otter-labs.com
+baseurl: /jaildeck
+repository: ottermq/jaildeck
+
+plugins:
+  - jekyll-seo-tag
+
+# Kramdown is the default on GitHub Pages; naming it keeps local builds honest.
+markdown: kramdown
+
+# The generated API spec is served as a file, not rendered as a page. Jekyll
+# copies anything without front matter verbatim, so this is already true --
+# recorded here so nobody adds front matter to it by mistake.
+keep_files:
+  - api/swagger.json

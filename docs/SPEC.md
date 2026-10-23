@@ -1,3 +1,10 @@
+---
+title: "Specification"
+description: "What Jail Deck is for, what is in scope, and the test a feature has to pass to belong here."
+---
+
+[&larr; Documentation index](./)
+
 # Jail Deck — Project Specification
 
 ## One-line description

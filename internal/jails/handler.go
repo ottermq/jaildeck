@@ -755,3 +755,71 @@ func statusForReclone(err error) int {
 	}
 	return http.StatusInternalServerError
 }
+
+// makeTemplateRequest names the template the jail becomes.
+type makeTemplateRequest struct {
+	Name string `json:"name"`
+}
+
+// MakeTemplate promotes a configured jail to a template.
+//
+// @Summary      Clone this jail as a template
+// @Description  Turns a jail you configured by hand into a template every later jail is
+// @Description  cloned from — the FreeBSD Handbook's "Cloning a Jail as a Template" (17.4.3),
+// @Description  made callable (JD-027).
+// @Description
+// @Description  This is the general way to fill a template: it captures whatever you did to
+// @Description  the jail, not only packages. Installing packages into a template without a
+// @Description  jail is `PUT /api/templates/{name}`, which is faster and narrower.
+// @Description
+// @Description  Four commands: snapshot the jail's dataset as `@base`, clone it into
+// @Description  `<pool>/jails/templates/<name>`, then **promote** the clone.
+// @Description
+// @Description  The promote matters more than it looks. Without it the template is a clone
+// @Description  *of* the jail, and that jail can never be destroyed — `zfs destroy` answers
+// @Description  `filesystem has dependent clones` and names the template. After it the jail
+// @Description  is a clone of the template instead, which is the right way round: a template
+// @Description  should outlive the jail it came from, and the lineage then reads
+// @Description  release template → this one → the jail.
+// @Description
+// @Description  **The jail must be stopped.** A snapshot of a running jail succeeds but is an
+// @Description  image of a system caught mid-stride; the Handbook says to stop it first, and
+// @Description  taking a service down is your call rather than this endpoint's.
+// @Tags         templates
+// @Accept       json
+// @Produce      json
+// @Param        name      path      string               true  "The jail to clone"
+// @Param        template  body      makeTemplateRequest  true  "The template's name"
+// @Success      201       {object}  Template
+// @Failure      400       {object}  common.ErrorResponse  "Not a template name"
+// @Failure      401       {object}  common.ErrorResponse
+// @Failure      404       {object}  common.ErrorResponse  "No such jail, or it is not on ZFS"
+// @Failure      409       {object}  common.ErrorResponse  "The jail is running, or that template exists"
+// @Security     BearerAuth
+// @Router       /jails/{name}/template [post]
+func (h *JailHandler) MakeTemplate(w http.ResponseWriter, r *http.Request) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	var body makeTemplateRequest
+	if err := decodeJSON(r, &body); err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	dataset, err := h.service.MakeTemplate(r.Context(), name, body.Name)
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusCreated, Template{Name: body.Name, Dataset: dataset})
+}
+
+// Template is what a jail became. Deliberately thin: the full picture --
+// readiness, lineage, sizes -- comes from GET /api/templates, which reads it
+// all from ZFS rather than from anything recorded here.
+type Template struct {
+	Name    string `json:"name"`
+	Dataset string `json:"dataset"`
+}

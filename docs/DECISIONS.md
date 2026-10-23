@@ -786,11 +786,57 @@ The child survived. What had been written into the jail's **root** did not — i
 
 ---
 
-## JD-027 — Derived Templates
+## JD-027 — Two Ways to Get a Jail, and What Builds the Templates Behind Them
 
 **Status:** Locked — 2026-10-23
 
-A **derived template** is a release template plus packages, re-snapshotted: a PostgreSQL template, so every postgres jail starts with it installed rather than installing it per jail. Jail Deck builds them, and the packages are part of the request:
+A jail is always a clone of a template (JD-007). There is one mechanism, and **two paths an operator takes through it**:
+
+| | clone from | after it starts |
+| --- | --- | --- |
+| **a prepared jail** | a template with the packages already in it | it works |
+| **a custom jail** | a release template — a bare FreeBSD userland | you fill it |
+
+The second is the ordinary case today: `ottermq` and `goodiesdb` on the deployment target have no packages at all. They are empty jails that were configured after the fact, which is JD-007 stage 2 — "start the jail, and hand off to in-jail provisioning (`jexec` + `pkg`) for service-specific setup" — done by hand, and made callable by JD-016's exec endpoint.
+
+The first is an optimisation of the second: do the provisioning **once**, snapshot it, and every jail cloned from that snapshot skips it.
+
+### Two ways to build a prepared template
+
+**The general one: clone a jail you configured** — the Handbook's own "Cloning a Jail as a Template" (17.4.3), made callable. Configure a jail however you like, by hand or through exec, stop it, and promote it:
+
+```
+POST /api/jails/ottermq/template  {"name": "ottermq-base"}
+
+  zfs snapshot <jail>@base
+  zfs clone    <jail>@base  templates/ottermq-base
+  zfs promote  templates/ottermq-base
+```
+
+This captures whatever is in the jail, not only packages — `sysrc`, an edited configuration, an `initdb`, anything. It is how the deployment target's jails were actually built, and it is why the other path below is a shortcut rather than the answer.
+
+**The `zfs promote` is the step that is easy to omit and expensive to omit.** Without it the template is a clone *of* the jail, so that jail can never be destroyed. Measured, before and after:
+
+```
+before promote:  containers/ottermq       <- templates/15.1-RELEASE@base
+                 templates/ottermq-base   <- containers/ottermq@base
+                 zfs destroy containers/ottermq
+                   cannot destroy: filesystem has dependent clones -> templates/ottermq-base
+
+after promote:   containers/ottermq       <- templates/ottermq-base@base
+                 templates/ottermq-base   <- templates/15.1-RELEASE@base
+                 zfs destroy containers/ottermq                     [exit 0]
+```
+
+After it the jail is a clone of the template instead, which is also the right way round: a template should outlive the jail it came from. The lineage then reads release template → this one → the jail, which is exactly JD-007's model, so the new template lists like any other with no special case anywhere.
+
+**The jail must be stopped**, and Jail Deck refuses rather than stopping it. "Stop the jail before snapshotting so the image is consistent" is the Handbook's instruction; unlike a re-clone, nothing here *requires* the jail to be down — a snapshot of a running jail succeeds, it is just an image of a system caught mid-stride. Taking a service down is the operator's call, and it is one call they already have.
+
+**A jail already carrying `@base` is refused.** `CreateSnapshot` is idempotent by design (JD-024), so an existing one would be silently reused — and the template would then capture whenever *that* was taken rather than the jail as it is now. The name is a template's convention; a jail wearing it is worth stopping for.
+
+### The shortcut: packages without a jail
+
+Jail Deck also derives one template from another, with packages, without booting anything:
 
 ```
 PUT /api/templates/postgres-16  {"from": "15.1-RELEASE", "packages": ["postgresql16-server"]}
@@ -800,34 +846,36 @@ PUT /api/templates/postgres-16  {"from": "15.1-RELEASE", "packages": ["postgresq
   zfs snapshot templates/postgres-16@base
 ```
 
-**The alternative did not survive contact with the tooling.** #7 framed this as "a template-domain feature, or just exec + snapshot from the caller's side?" — but the exec endpoint is `jexec`-based (JD-016), and a template is not a running jail. Measured on the deployment target:
+**The precedent is JD-007's own stage 1**, which already has Jail Deck running `freebsd-update -b <root>` against a template that has never been started. `pkg -c` is the same shape of operation on the same kind of directory. This is not a new category of thing for Jail Deck to do.
 
-```
-jexec 15.1-RELEASE ls /                                    jail "15.1-RELEASE" not found   [1]
-pkg -c /usr/local/jails/templates/15.1-RELEASE info                                        [0]
-```
+**What it buys:** no jail, no `jail.conf.d` stanza, no networking for a temporary jail, nothing to clean up afterwards. For "a template with postgres in it", that is the whole job.
 
-So "let the caller do it" would have required Jail Deck to expose **arbitrary command execution against a template root** — strictly more powerful, and less explainable, than installing a named list of packages. The option that looked smaller was bigger.
+**What it cannot do, and this is the limit:** `pkg -c` installs packages. It cannot run `sysrc`, edit a configuration file, or run an `initdb`. Anything beyond installing packages belongs to the jail-based path — clone a template, create a jail on it, `exec` into it, stop it, snapshot the dataset. That path is strictly more capable, needs no new primitives beyond Jail Provisioning and exec, and is the general answer.
 
-It is also the consistent line. JD-007 already has Jail Deck running `freebsd-update` on a template; refusing to run `pkg` afterwards is a boundary with no principle behind it. The scope test in `docs/SPEC.md` — would a single operator on their own box want this — answers itself.
+**An earlier draft of this record claimed the jail-based path could not work**, on the grounds that `jexec` cannot reach a template. It cannot — `jexec 15.1-RELEASE` answers `jail not found` — but that is irrelevant: the path starts a jail first, or clones one that already exists. The same draft argued the alternative would require exposing arbitrary command execution against a template root; JD-016 had already accepted exec into a running jail and called it "no more than the API already implies". Both arguments were wrong. `pkg -c` is kept as a shortcut on its own merits, not because anything else was impossible.
 
-**Nothing is stored.** A template's whole state is read from ZFS (JD-011): the dataset exists or it does not, `@base` exists or it does not, and `zfs get origin` says what it was derived from. `parent` in the listing is that origin, resolved, which is why a derived template cannot disagree with where it came from.
+### What is stored: nothing
 
-**A failed install needs no cleanup to be truthful.** The clone stays without its `@base`, so it is a template that exists and is not ready — exactly what it is, and exactly what the listing reports. JD-007's rule that a template is usable only once `@base` exists does the whole job.
+A template's whole state comes from ZFS (JD-011). `ready` is whether `@base` exists, which is what makes a template usable (JD-007). `parent` is read back from `zfs get origin`, so a derived template cannot disagree about where it came from.
 
-**A second attempt on an unready template is refused**, by name. Finishing it would install packages on top of whatever the failed attempt left behind, and the difference between "a clean clone" and "a clone with half of postgres in it" is not visible from outside. Destroying it is one call; guessing is not recoverable.
+**A failed install therefore needs no cleanup to be truthful.** The clone stays without its `@base` — a template that exists and is not ready, which is exactly what it is and exactly what the listing reports. A second attempt on it is refused rather than resumed: finishing it would install on top of whatever the failed attempt left, and from outside, a clean clone and a clone with half of postgres in it are indistinguishable.
 
-**Package names are validated for one thing only:** an argument beginning with a dash. No shell is involved — `CommandRunner` takes an argument array — so this is not about quoting. It is that `pkg` would read `-f` as an option, and `install -y -f` is not the command that was asked for. Versions, origins and flavours are passed through untouched; `pkg` knows what a package name is and says so precisely when it is wrong.
+### Package names
 
-**`pkg` running and refusing is a `400`**, carrying pkg's own sentence, for the reason JD-023 gives: a client told `500` retries a package that will never exist.
+One rule: an argument beginning with a dash is refused, because `pkg` would read `-f` as an option and `install -y -f` is not the command that was asked for. No shell is involved either way — `CommandRunner` takes an argument array. Versions, origins and flavours pass through untouched. `pkg` running and refusing is a `400` carrying its own sentence, for the reason JD-023 gives.
 
 ### Consequence for the code's shape
 
-Templates get their own bounded context, `internal/templates`, which resolves the "Storage domain granularity" question `docs/SPEC.md` had open. A template is a dataset, but a template is not *a dataset*: it has a readiness state and a lineage, and those are rules about templates rather than about storage. `internal/storage` implements the port `internal/templates` defines, the same way it implements the ones `internal/jails` defines (JD-010).
+Templates get their own bounded context, `internal/templates`, which resolves the "storage domain granularity" question `docs/SPEC.md` had open. A template is a dataset, but it is not *a dataset*: it has a readiness state and a lineage, and those are rules about templates. `internal/storage` implements the port `internal/templates` defines, as it does for `internal/jails` (JD-010).
 
 ### Rationale
 
-The deciding argument is not that derived templates are useful, though they are. It is that the smaller-looking option required a bigger and more dangerous primitive. Given a choice between "Jail Deck installs the packages you name" and "Jail Deck runs whatever command you send against a filesystem that will become the root of every jail cloned from it", the first is the narrow one.
+The two paths are not competing mechanisms to choose between — they are the same mechanism at different times. Provision at jail creation, or provision once into a template and clone it. Jail Deck should make both reachable and should not pretend either is the only one.
+
+`pkg -c` earns its place by being the part of that which needs nothing else to exist. Everything beyond packages waits for Jail Provisioning and exec, and when they land, the jail-based path covers what this cannot — including the case the deployment target actually has, which is jails with no packages and a configuration done by hand.
+
+**Still to settle, in the Jail Provisioning milestone:** how a custom jail is filled through the API rather than by hand — exec (JD-016) is the mechanism, the orchestration is not designed — and how the paths are presented in the interface.
+
 
 ---
 

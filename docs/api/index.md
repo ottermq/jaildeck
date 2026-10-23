@@ -224,6 +224,54 @@ something (JD-021).
 
 ## Templates
 
+A jail is always a clone of a template, so the only question is **when** you provision it:
+
+| | clone from | after it starts |
+| --- | --- | --- |
+| **a prepared jail** | a template that already has what you need | it works |
+| **a custom jail** | a release template, a bare userland | you fill it |
+
+There are two ways to get a prepared template.
+
+### Clone a jail you configured
+
+The general one, and the FreeBSD Handbook's own (17.4.3). Configure a jail however you like —
+by hand, over ssh, through exec — then stop it and promote it:
+
+```sh
+curl -X POST .../api/jails/ottermq/stop
+curl -X POST .../api/jails/ottermq/template -d '{"name":"ottermq-base"}'
+```
+
+```
+zfs snapshot <jail>@base
+zfs clone    <jail>@base  templates/ottermq-base
+zfs promote  templates/ottermq-base
+```
+
+It captures whatever is in the jail, not only packages: `sysrc`, an edited config, an
+`initdb`.
+
+**The promote is the step that matters most and is easiest to miss.** Without it the template
+is a clone *of* the jail, and that jail can never be destroyed:
+
+```
+zfs destroy containers/ottermq
+  cannot destroy: filesystem has dependent clones  ->  templates/ottermq-base
+```
+
+After it, the jail is a clone of the template instead — the right way round, since a template
+should outlive the jail it came from. The lineage becomes
+`15.1-RELEASE → ottermq-base → ottermq`, so the new template lists like any other.
+
+**The jail must be stopped**, and this refuses rather than stopping it for you. A snapshot of
+a running jail succeeds but is an image caught mid-stride; the Handbook says stop it first,
+and taking a service down is your call. A jail already carrying a `@base` is also refused —
+reusing it would make a template of whenever *that* was taken, not of the jail now.
+
+### Install packages, without a jail
+
+
 A jail's root is a clone of a template's `@base` snapshot, so a **derived template** — a
 release template plus packages, re-snapshotted — means every jail cloned from it starts with
 those packages installed (JD-027):
@@ -239,13 +287,19 @@ pkg -c       /usr/local/jails/templates/postgres-16 install -y postgresql16-serv
 zfs snapshot templates/postgres-16@base
 ```
 
-**This is not the exec endpoint, and could not be.** Exec runs `jexec` against a running jail,
-and a template is not a jail:
+`pkg -c` chroots, so nothing is started — no jail, no stanza, no networking for a temporary
+jail, nothing to clean up. It is the same shape as the `freebsd-update -b <root>` that JD-007
+already runs against an unbooted template.
 
-```
-jexec 15.1-RELEASE ls /                              jail "15.1-RELEASE" not found
-pkg -c /usr/local/jails/templates/15.1-RELEASE info  exit 0
-```
+**It installs packages and nothing else.** `sysrc`, a configuration file, an `initdb` — those
+belong to the other path, which is also the general one: clone a template, create a jail on
+it, `exec` into it, stop it, and snapshot the dataset. A jail is always a clone of a template,
+so the choice is only ever *when* you provision it:
+
+| | clone from | after it starts |
+| --- | --- | --- |
+| **a prepared jail** | a template with the packages already in it | it works |
+| **a custom jail** | a release template, a bare userland | you fill it |
 
 `GET /api/templates` lists them with `ready` and `parent`. Neither is stored: `ready` is
 whether `@base` exists, which is what makes a template usable, and `parent` is read back from

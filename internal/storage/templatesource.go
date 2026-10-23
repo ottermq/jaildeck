@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -134,3 +135,72 @@ func directChild(dataset, parent string) (string, bool) {
 }
 
 var _ templates.TemplateStorage = (*TemplateSource)(nil)
+
+// FromJail turns a configured jail into a template every later jail can be
+// cloned from -- Handbook 17.4.3, "Cloning a Jail as a Template" (JD-027).
+//
+// Four commands:
+//
+//	zfs snapshot <jail>@base
+//	zfs clone    <jail>@base  templates/<name>
+//	zfs promote  templates/<name>
+//
+// The promote is the one that is easy to leave out and expensive to leave out.
+// Without it the template is a clone OF the jail, so the jail can never be
+// destroyed -- zfs answers "filesystem has dependent clones" and names the
+// template. After it, the jail is a clone of the template instead, which is
+// also the right way round: a template should outlive the jail it came from,
+// and the lineage reads release template -> this one -> the jail, which is
+// exactly JD-007's model.
+//
+// The jail must already be stopped. "Stop the jail before snapshotting so the
+// image is consistent" is the Handbook's own instruction, and whether a jail is
+// running is the jails domain's to know.
+func (s *TemplateSource) FromJail(ctx context.Context, jailDataset, name string) (string, error) {
+	pool, _, _ := strings.Cut(jailDataset, "/")
+	target := templateParent(pool) + "/" + name
+
+	if existing, err := s.service.datasetNamed(ctx, target); err == nil && existing != nil {
+		return "", common.NewAppError(http.StatusConflict, target+" already exists")
+	}
+
+	// Named base from the start, so that after the promote the template owns a
+	// snapshot already called @base and no second one is needed.
+	snapshot := jailDataset + "@" + templates.ReadySnapshot
+
+	// Refused rather than reused if the jail already carries one. CreateSnapshot
+	// is idempotent by design (JD-024), so without this check an existing @base
+	// would be silently accepted -- and the template would then capture whatever
+	// state that older snapshot holds rather than the jail as it is now. The
+	// name is a template's convention; a jail wearing it is worth stopping for.
+	existingSnapshots, err := s.service.SnapshotsOf(ctx, jailDataset)
+	if err != nil {
+		return "", err
+	}
+	for _, found := range existingSnapshots {
+		if found.Name == snapshot {
+			return "", common.NewAppError(http.StatusConflict, fmt.Sprintf(
+				"%s already exists, and reusing it would make a template of whenever it was "+
+					"taken rather than of the jail as it is now; destroy it first", snapshot))
+		}
+	}
+
+	if _, err := s.service.CreateSnapshot(ctx, jailDataset, templates.ReadySnapshot, false); err != nil {
+		return "", err
+	}
+
+	clone, cloneErr := s.service.system.CloneSnapshot(ctx, snapshot, target)
+	s.service.logWrite(ctx, OperationCloneDataset, clone, cloneErr)
+	if cloneErr != nil {
+		return "", toWriteError("clone "+snapshot+" to", target, cloneErr)
+	}
+
+	promote, promoteErr := s.service.system.PromoteDataset(ctx, target)
+	s.service.logWrite(ctx, OperationPromoteDataset, promote, promoteErr)
+	if promoteErr != nil {
+		// The template exists and the jail is pinned by it. Reported rather
+		// than unwound: zfs promote failing is not a state to guess at.
+		return "", toWriteError("promote", target, promoteErr)
+	}
+	return target, nil
+}

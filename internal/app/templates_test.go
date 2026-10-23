@@ -169,3 +169,79 @@ func TestTemplateInstallIsAudited(t *testing.T) {
 		}
 	}
 }
+
+// Cloning a jail as a template, Handbook 17.4.3 (#7, JD-027). The other way to
+// fill a template: whatever you configured in the jail, not only packages.
+func TestCloneAJailAsATemplate(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatalf("create test app: %v", err)
+	}
+	router := a.Routes(testAssets())
+	cookies := login(t, router)
+
+	// A running jail is refused rather than stopped: a snapshot of one is an
+	// image caught mid-stride, and taking a service down is the operator's.
+	rec := send(t, router, http.MethodPost, "/api/jails/nginx/template", cookies, `{"name":"nginx-base"}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("cloning a running jail returned %d, want 409: %s", rec.Code, rec.Body)
+	}
+
+	if rec := do(t, router, http.MethodPost, "/api/jails/nginx/stop", cookies, nil); rec.Code != http.StatusOK {
+		t.Fatalf("stop returned %d: %s", rec.Code, rec.Body)
+	}
+	rec = send(t, router, http.MethodPost, "/api/jails/nginx/template", cookies, `{"name":"nginx-base"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("clone as template returned %d, want 201: %s", rec.Code, rec.Body)
+	}
+
+	// It lists like any other template, read from ZFS: ready, with its parent.
+	found := templateList(t, router, cookies)
+	made, ok := found["nginx-base"]
+	if !ok {
+		t.Fatalf("nginx-base is not in the listing: %+v", found)
+	}
+	if !made.Ready {
+		t.Error("the template is not ready; @base should have moved to it on promote")
+	}
+	if made.Parent != "15.1-RELEASE" {
+		t.Errorf("parent = %q, want the release template the jail came from", made.Parent)
+	}
+
+	// And it can be derived from in turn, which is the whole point of it
+	// being an ordinary template.
+	if rec := send(t, router, http.MethodPut, "/api/templates/nginx-tuned", cookies,
+		`{"from":"nginx-base","packages":[]}`); rec.Code != http.StatusCreated {
+		t.Errorf("deriving from it returned %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestCloneAJailAsATemplateRefusals(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatalf("create test app: %v", err)
+	}
+	router := a.Routes(testAssets())
+	cookies := login(t, router)
+
+	tests := []struct {
+		name string
+		path string
+		body string
+		want int
+	}{
+		{name: "a jail that is not on ZFS", path: "/api/jails/postgres/template",
+			body: `{"name":"x"}`, want: http.StatusNotFound},
+		{name: "an unknown jail", path: "/api/jails/nosuch/template",
+			body: `{"name":"x"}`, want: http.StatusNotFound},
+		{name: "a misspelled field", path: "/api/jails/postgres/template",
+			body: `{"template":"x"}`, want: http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if rec := send(t, router, http.MethodPost, tt.path, cookies, tt.body); rec.Code != tt.want {
+				t.Errorf("POST %s returned %d, want %d: %s", tt.path, rec.Code, tt.want, rec.Body)
+			}
+		})
+	}
+}

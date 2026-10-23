@@ -24,15 +24,35 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### API
 
-- **Derived templates.** `GET /api/templates` lists templates with their readiness and
-  lineage; `PUT /api/templates/{name}` builds one from another plus packages — clone the
-  parent's `@base`, `pkg -c <root> install -y`, snapshot as `@base`. (#7, JD-027)
+- **Templates.** `GET /api/templates` lists them with their readiness and lineage, both
+  read from ZFS. Two ways to build one. (#7, JD-027)
 
-  #7 asked whether this belonged to Jail Deck or to the caller. It belongs here, and the
-  deciding fact is that the alternative does not work: the exec endpoint is `jexec`-based
-  and a template is not a running jail, so "exec plus snapshot from the caller's side" would
-  have meant exposing **arbitrary command execution against a template root** — strictly
-  more powerful than installing a named package list.
+  **`POST /api/jails/{name}/template`** clones a jail you configured — the FreeBSD
+  Handbook's "Cloning a Jail as a Template" (17.4.3). It captures whatever is in the jail,
+  not only packages, and is the general path. Snapshot the jail as `@base`, clone it into
+  `templates/<name>`, then **`zfs promote`** the clone.
+
+  The promote is the step that is easy to omit and expensive to omit: without it the
+  template is a clone *of* the jail, and `zfs destroy` on that jail answers `filesystem has
+  dependent clones`. After it the jail is a clone of the template, which is also the right
+  way round — a template should outlive the jail it came from.
+
+  The jail must be **stopped**, and this refuses rather than stopping it: a snapshot of a
+  running jail is an image caught mid-stride, and taking a service down is the operator's
+  call. A jail already carrying `@base` is refused too, since reusing it would capture
+  whenever that snapshot was taken rather than the jail now.
+
+  **`PUT /api/templates/{name}`** is the shortcut for the package-only case: clone a
+  parent's `@base`, `pkg -c <root> install -y`, snapshot as `@base`.
+
+  `pkg -c` chroots, so nothing is started: no jail, no stanza, no networking for a
+  temporary jail. It is the same shape as the `freebsd-update -b <root>` JD-007 already runs
+  against an unbooted template.
+
+  **It installs packages and nothing else.** Anything further belongs to the other path —
+  clone a template, create a jail on it, exec into it, snapshot the dataset — which is more
+  capable and is the general answer. The two are the same mechanism at different times:
+  provision at jail creation, or provision once into a template and clone it.
 
   Nothing is stored. `ready` is whether `@base` exists; `parent` is read back from
   `zfs get origin`. A failed install leaves the clone without its `@base`, which the listing

@@ -10,11 +10,15 @@ import (
 
 // Install runs pkg against a chroot rather than a jail.
 //
-// -c is the whole reason this is not the exec endpoint: a template is not a
-// running jail, and `jexec 15.1-RELEASE` answers "jail not found". pkg -c
-// chroots into the directory instead, which works on a template that has never
-// been started -- verified on the deployment target, where
-// `pkg -c /usr/local/jails/templates/15.1-RELEASE info` exits 0.
+// -c chroots, so this works on a template that has never been started --
+// verified on the deployment target, where
+// `pkg -c /usr/local/jails/templates/15.1-RELEASE info` exits 0. It is the same
+// shape of operation as JD-007 stage 1's `freebsd-update -b <root>`, which
+// already runs against an unbooted template root.
+//
+// It is not the only way to fill a template, and not the general one: anything
+// beyond installing packages is done by configuring a jail and cloning it,
+// which is Handbook 17.4.3 (JD-027). This is the path that needs no jail.
 //
 // -y because there is no terminal to answer a prompt on, and a package
 // manager waiting for input is a request that never returns.

@@ -287,3 +287,13 @@ func (s *JailSource) Reclone(ctx context.Context, jailPath, templateSnapshot str
 }
 
 var _ jails.Recloner = (*JailSource)(nil)
+
+func (s *JailSource) MakeTemplate(ctx context.Context, jailPath, templateName string) (string, error) {
+	dataset, err := s.datasetFor(ctx, jailPath, "")
+	if err != nil {
+		return "", err
+	}
+	return NewTemplateSource(s.service).FromJail(ctx, dataset, templateName)
+}
+
+var _ jails.TemplateMaker = (*JailSource)(nil)

@@ -21,10 +21,10 @@ type TemplateStorage interface {
 
 // PackageSystem installs packages into a template's root.
 //
-// Deliberately not the exec endpoint (JD-016): that runs jexec against a
-// running jail, and a template is not a jail -- `jexec 15.1-RELEASE` answers
-// "jail not found". pkg -c chroots instead, which is a host command against a
-// directory.
+// A host command against a directory, not the exec endpoint: pkg -c chroots,
+// so no jail has to be started. The other path -- start a jail on the clone and
+// exec into it -- covers everything this cannot, which is anything beyond
+// installing packages (JD-027).
 type PackageSystem interface {
 	Install(ctx context.Context, root string, packages []string) (Result, error)
 }

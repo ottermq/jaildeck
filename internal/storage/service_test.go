@@ -42,6 +42,7 @@ type stubSystem struct {
 	mountErrFor map[string]bool
 	origins     map[string]string
 	cloneErr    error
+	promoteErr  error
 }
 
 func (s *stubSystem) Pools(context.Context) ([]string, error) { return s.pools, s.poolsErr }
@@ -446,4 +447,39 @@ func (s *stubSystem) mountpointFor(name string) string {
 		}
 	}
 	return "/" + name
+}
+
+// PromoteDataset swaps the clone relationship, as zfs does: the promoted
+// dataset takes its former origin's origin, and the former origin becomes a
+// clone of it. Modelled rather than stubbed out, because a test of the
+// jail-to-template sequence that did not move the dependency would prove
+// nothing about the one thing that sequence exists to get right.
+func (s *stubSystem) PromoteDataset(_ context.Context, dataset string) (Result, error) {
+	command := "zfs promote " + dataset
+	s.ran = append(s.ran, command)
+	if s.promoteErr != nil {
+		return Result{Dataset: dataset, Command: command}, s.promoteErr
+	}
+	origin, cloned := s.origins[dataset]
+	if !cloned {
+		return Result{Dataset: dataset, Command: command},
+			errors.New("cannot promote '" + dataset + "': not a cloned filesystem")
+	}
+	former := origin[:strings.Index(origin, "@")]
+	short := origin[strings.Index(origin, "@")+1:]
+
+	if grandparent, ok := s.origins[former]; ok {
+		s.origins[dataset] = grandparent
+	} else {
+		delete(s.origins, dataset)
+	}
+	s.origins[former] = dataset + "@" + short
+
+	for i, snapshot := range s.snapshots {
+		if snapshot.Dataset == former && snapshot.Short == short {
+			s.snapshots[i].Dataset = dataset
+			s.snapshots[i].Name = dataset + "@" + short
+		}
+	}
+	return Result{Dataset: dataset, Command: command}, nil
 }

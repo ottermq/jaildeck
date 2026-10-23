@@ -52,12 +52,13 @@ type JailService struct {
 	// checks it rather than assuming the application wired one.
 	datasetWriter DatasetWriter
 	// snapshots and datasetMover may be nil on the same terms as the others.
-	snapshots    SnapshotWriter
-	datasetMover DatasetMover
-	recloner     Recloner
+	snapshots     SnapshotWriter
+	datasetMover  DatasetMover
+	recloner      Recloner
+	templateMaker TemplateMaker
 }
 
-func NewJailService(system JailSystem, operationLogger audit.Logger, datasets DatasetSource, datasetWriter DatasetWriter, snapshots SnapshotWriter, datasetMover DatasetMover, recloner Recloner) *JailService {
+func NewJailService(system JailSystem, operationLogger audit.Logger, datasets DatasetSource, datasetWriter DatasetWriter, snapshots SnapshotWriter, datasetMover DatasetMover, recloner Recloner, templateMaker TemplateMaker) *JailService {
 	return &JailService{
 		system:          system,
 		operationLogger: operationLogger,
@@ -66,6 +67,7 @@ func NewJailService(system JailSystem, operationLogger audit.Logger, datasets Da
 		snapshots:       snapshots,
 		datasetMover:    datasetMover,
 		recloner:        recloner,
+		templateMaker:   templateMaker,
 	}
 }
 

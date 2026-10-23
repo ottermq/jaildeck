@@ -204,6 +204,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/retained` | datasets being kept past their jails |
 | `GET /api/templates` | templates, their readiness and their lineage |
 | `PUT /api/templates/{name}` | derive one from another, plus packages |
+| `POST /api/jails/{name}/template` | clone a configured jail as a template |
 | `POST /api/jails/{name}/reclone` | replace its root from a newer template, keeping its children |
 | `POST /api/jails/{name}/start` | |
 | `POST /api/jails/{name}/stop` | |

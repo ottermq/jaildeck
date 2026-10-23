@@ -121,3 +121,27 @@ func (s *JailService) Restore(ctx context.Context, name JailName, retained, chil
 	}
 	return s.datasetMover.Restore(context.WithoutCancel(ctx), jail.Path, retained, child)
 }
+
+// ErrJailRunning says why a template cannot be made from a running jail.
+var ErrJailRunning = common.NewAppError(http.StatusConflict,
+	"stop the jail first: a snapshot of a running jail is not a consistent image, "+
+		"and the FreeBSD Handbook's own instruction for cloning a jail as a template is to stop it")
+
+// MakeTemplate promotes a configured jail to a template that later jails are
+// cloned from (JD-027).
+//
+// It refuses while the jail is running rather than stopping it. Unlike
+// re-cloning, nothing here requires the jail to be down -- a snapshot of a
+// running jail succeeds, it is just an image of a system caught mid-stride.
+// Taking a service down is the operator's call to make, and "stop it first" is
+// one call they already have.
+func (s *JailService) MakeTemplate(ctx context.Context, name JailName, templateName string) (string, error) {
+	jail, err := s.onZFS(ctx, name, s.templateMaker)
+	if err != nil {
+		return "", err
+	}
+	if jail.Status == JailStatusRunning {
+		return "", ErrJailRunning
+	}
+	return s.templateMaker.MakeTemplate(context.WithoutCancel(ctx), jail.Path, templateName)
+}

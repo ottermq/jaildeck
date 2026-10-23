@@ -205,3 +205,11 @@ type Recloner interface {
 	CheckReclone(ctx context.Context, jailPath, templateSnapshot string) error
 	Reclone(ctx context.Context, jailPath, templateSnapshot string) (Reclone, error)
 }
+
+// TemplateMaker turns a configured jail into a template (Handbook 17.4.3).
+//
+// The jail must be stopped when this is called; enforcing that is the service's
+// job, because whether a jail is running is this domain's to know.
+type TemplateMaker interface {
+	MakeTemplate(ctx context.Context, jailPath, templateName string) (string, error)
+}

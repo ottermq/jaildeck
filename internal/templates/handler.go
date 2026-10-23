@@ -63,9 +63,13 @@ func (h *TemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Description  Three steps: clone the parent's `@base`, `pkg -c <root> install -y` the
 // @Description  packages, snapshot the result as `@base`.
 // @Description
-// @Description  **This is not the exec endpoint and could not be.** Exec runs `jexec`
-// @Description  against a running jail, and a template is not a jail — `jexec 15.1-RELEASE`
-// @Description  answers "jail not found". `pkg -c` chroots instead.
+// @Description  `pkg -c` chroots, so nothing is started: no jail, no stanza, no networking
+// @Description  for a temporary jail. It is the same shape as JD-007's `freebsd-update -b`,
+// @Description  which already runs against an unbooted template root.
+// @Description
+// @Description  **It installs packages and nothing else.** For anything further — `sysrc`, a
+// @Description  configuration file, an `initdb` — configure a jail and clone it with
+// @Description  `POST /api/jails/{name}/template` instead (JD-027).
 // @Description
 // @Description  **201** built · **200** it was already there and ready, so a client that
 // @Description  timed out can repeat the call (JD-016).

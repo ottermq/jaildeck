@@ -26,6 +26,10 @@ func RegisterJailRoutes(r chi.Router, h *JailHandler) {
 			// Replacing the root is a jail operation, not a dataset one: it
 			// stops and starts the jail around the move.
 			r.Post("/reclone", h.Reclone)
+			// Cloning the jail as a template (Handbook 17.4.3). It lives on
+			// the jail because the jail is the input and because whether it
+			// is running is this domain's to know.
+			r.Post("/template", h.MakeTemplate)
 
 			r.Get("/snapshots", h.ListSnapshots)
 			r.Put("/snapshots/{snapshot}", h.CreateSnapshot)

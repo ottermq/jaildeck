@@ -54,6 +54,13 @@ func (s *stubStorage) Create(_ context.Context, name string) (string, error) {
 	return root, nil
 }
 
+// sealedTemplates is what Seal was asked for, copied under the lock.
+func (s *stubStorage) sealedTemplates() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.sealed...)
+}
+
 // madeDatasets is what Create was asked for, copied under the lock.
 func (s *stubStorage) madeDatasets() []string {
 	s.mu.Lock()
@@ -111,8 +118,10 @@ type stubReleases struct {
 	host       Host
 	fetchErr   error
 	extractErr error
+	updateErr  error
 	attempts   []string
 	unpacked   []string
+	patched    []string
 }
 
 func (s *stubReleases) Host(context.Context) (Host, error) {
@@ -139,6 +148,23 @@ func (s *stubReleases) FetchBase(_ context.Context, release, _ string) (Result, 
 	}
 	s.fetched = append(s.fetched, release)
 	return Result{Root: "/media/" + release + "/base.txz", Command: "fetch " + release}, nil
+}
+
+func (s *stubReleases) Update(_ context.Context, release, root string) (Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.patched = append(s.patched, release)
+	if s.updateErr != nil {
+		return Result{Command: "freebsd-update " + release}, s.updateErr
+	}
+	return Result{Root: root, Command: "freebsd-update -b " + root}, nil
+}
+
+// brought is what Update was asked for, copied under the lock.
+func (s *stubReleases) brought() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.patched...)
 }
 
 func (s *stubReleases) Extract(_ context.Context, release, root string) (Result, error) {

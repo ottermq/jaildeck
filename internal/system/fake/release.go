@@ -23,6 +23,7 @@ type ReleaseSource struct {
 	mu        sync.Mutex
 	fetched   []string
 	extracted []string
+	updated   []string
 	// delay holds FetchBase open, so a test can observe the in-flight state
 	// the real thing spends minutes in.
 	delay time.Duration
@@ -135,6 +136,45 @@ func (s *ReleaseSource) Extract(ctx context.Context, release, root string) (temp
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.extracted = append(s.extracted, release)
+	return result, nil
+}
+
+// Update patches nothing and records that it was asked.
+//
+// "14.1-" always fails, so the third stage has a failure of its own: a
+// template that unpacked cleanly and could not be brought to a patch level is
+// a different thing to look at from one whose archive would not open.
+func (s *ReleaseSource) Update(ctx context.Context, release, root string) (templates.Result, error) {
+	s.mu.Lock()
+	delay := s.delay
+	s.mu.Unlock()
+
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return templates.Result{}, ctx.Err()
+		}
+	}
+
+	result := templates.Result{
+		Root: root,
+		Command: "freebsd-update -b " + root + " -d /fake/jail/media/" + release +
+			"/freebsd-update --currently-running " + release + " --not-running-from-cron fetch install",
+	}
+	if strings.HasPrefix(release, "14.1-") {
+		const stderr = "freebsd-update: Cannot fetch metadata from update.FreeBSD.org"
+		return result, &system.CommandError{
+			Command: "freebsd-update",
+			Args:    []string{"-b", root},
+			Result:  system.CommandResult{Stderr: stderr, ExitCode: 1},
+			Err:     errors.New("exit status 1: " + stderr),
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.updated = append(s.updated, release)
 	return result, nil
 }
 

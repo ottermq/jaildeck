@@ -204,7 +204,13 @@ A child dataset can be created with a quota, snapshotted, moved out of a jail an
 
 ## Milestone: Templates
 
-**Status:** partly done in v0.8.0 — **not finished**. Listing with lineage and readiness, deriving one from another with packages, cloning a configured jail as a template, and removing one (refusing while anything is cloned from it) all landed, through the API and the interface (JD-027, JD-028, JD-029). **Preparing a release template end to end has not.** JD-008 is settled (2026-10-23) and the **fetch** stage is built: `PUT /api/templates/{name}` with a `release` answers `202`, downloads `base.txz` into `media/` verified against the release's MANIFEST, and the template reports a `state` read off the filesystem with the running step beside it. The **extract** stage followed the same day: an empty dataset, `tar -xpf` into it, and the host's `resolv.conf` and `localtime` copied in, carrying a template from `fetched` to `extracted`. Running `freebsd-update` to bring the userland to a patch level and taking the `@base` snapshot that makes it usable are the stages still missing, and the completion criterion below still names them.
+**Status:** done — 2026-10-23. Kept for the record of what it set out to do.
+
+Listing with lineage and readiness, deriving one template from another with packages, cloning a configured jail as a template, and removing one (refusing while anything is cloned from it) landed in v0.8.0 (JD-027, JD-028, JD-029).
+
+**Preparing a release template end to end** followed once JD-008 was settled the same day. `PUT /api/templates/{name}` with a `release` answers `202` and runs four audited stages — fetch `base.txz` verified against the release's own MANIFEST, `tar -xpf` it into a new dataset with the host's `resolv.conf` and `localtime`, `freebsd-update` to the current patch level, then the `@base` snapshot. The template reports a `state` read off the filesystem throughout, with the running step beside it, so the completion criterion's "with progress visible" is satisfied by polling the template rather than by a job object.
+
+What the milestone asked for and did **not** get: a release picker sourced from `download.freebsd.org`. The release is typed, validated against the shape the mirror publishes, and defaults to the host's own — which is also the ceiling. Whether to offer a list is the open "which releases are supported" question in `docs/SPEC.md`, not something this milestone settled.
 
 **Depends on:** Host Setup, Storage Visibility. **★ Otter:** the release template every service template derives from.
 

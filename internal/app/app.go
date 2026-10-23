@@ -51,9 +51,10 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	storageService := storage.NewService(storageSystem, cfg.ZFSPool)
+	storageService := storage.NewService(storageSystem, auditLogger, cfg.ZFSPool)
 
-	jailService := jails.NewJailService(jailSystem, auditLogger, storage.NewJailSource(storageService))
+	jailStorage := storage.NewJailSource(storageService)
+	jailService := jails.NewJailService(jailSystem, auditLogger, jailStorage, jailStorage)
 	jailHandler := jails.NewJailHandler(jailService)
 
 	hostSystem, err := newHostSystem(cfg.Adapter)
@@ -126,7 +127,7 @@ func newJailSystem(adapter string) (jails.JailSystem, error) {
 func newStorageSystem(adapter string) (storage.StorageSystem, error) {
 	switch adapter {
 	case config.AdapterFreeBSD:
-		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+		return freebsd.NewStorageAdapter(system.NewExecCommandRunner()), nil
 	case config.AdapterFake:
 		return fake.NewStorageSystem(), nil
 	default:

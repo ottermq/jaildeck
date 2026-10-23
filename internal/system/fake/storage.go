@@ -2,7 +2,10 @@ package fake
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/ottermq/jaildeck/internal/storage"
 )
@@ -18,6 +21,10 @@ import (
 // does (JD-021) -- it must never be matched to a jail. The fake "postgres"
 // jail has no path at all, and so has no datasets here either.
 type StorageSystem struct {
+	// Writes mutate this in place so the web interface and the collection show
+	// what a create or a tag actually did, and the HTTP server serves requests
+	// concurrently, so it is guarded.
+	mu         sync.Mutex
 	datasets   []storage.Dataset
 	properties []storage.Property
 }
@@ -50,6 +57,106 @@ func NewStorageSystem() *StorageSystem {
 
 func (s *StorageSystem) Pools(ctx context.Context) ([]string, error) {
 	return []string{"zroot"}, nil
+}
+
+// CreateDataset gives the new dataset its parent's mountpoint with its own name
+// appended unless one was asked for, as zfs does, and inherits nothing else:
+// the seeded sizes are made up either way.
+func (s *StorageSystem) CreateDataset(_ context.Context, name string, properties map[string]string) (storage.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	result := storage.Result{Dataset: name, Command: fakeCommand("create", properties, name)}
+	if slices.ContainsFunc(s.datasets, func(d storage.Dataset) bool { return d.Name == name }) {
+		return result, fmt.Errorf("cannot create %q: dataset already exists", name)
+	}
+
+	mountpoint := properties["mountpoint"]
+	if mountpoint == "" {
+		parent, child, _ := cutLast(name, "/")
+		mountpoint = s.mountpointOf(parent) + "/" + child
+	}
+	const gib = 1 << 30
+	s.datasets = append(s.datasets, storage.Dataset{
+		Name: name, Mountpoint: mountpoint, Used: 96 << 10, Referenced: 96 << 10, Available: 400 * gib,
+	})
+	slices.SortFunc(s.datasets, func(a, b storage.Dataset) int { return strings.Compare(a.Name, b.Name) })
+
+	for property, value := range properties {
+		s.setLocked(name, property, value)
+	}
+	return result, nil
+}
+
+func (s *StorageSystem) SetProperties(_ context.Context, name string, properties map[string]string) (storage.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for property, value := range properties {
+		s.setLocked(name, property, value)
+	}
+	return storage.Result{Dataset: name, Command: fakeCommand("set", properties, name)}, nil
+}
+
+// InheritProperty drops the local value. The real zfs would then show the
+// parent's, which this does not model: nothing here inherits anything.
+func (s *StorageSystem) InheritProperty(_ context.Context, name, property string) (storage.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.properties = slices.DeleteFunc(s.properties, func(p storage.Property) bool {
+		return p.Dataset == name && p.Name == property
+	})
+	return storage.Result{Dataset: name, Command: "zfs inherit " + property + " " + name}, nil
+}
+
+func (s *StorageSystem) setLocked(dataset, property, value string) {
+	for i, p := range s.properties {
+		if p.Dataset == dataset && p.Name == property {
+			s.properties[i].Value = value
+			return
+		}
+	}
+	s.properties = append(s.properties, storage.Property{Dataset: dataset, Name: property, Value: value})
+	slices.SortFunc(s.properties, func(a, b storage.Property) int {
+		if c := strings.Compare(a.Dataset, b.Dataset); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+}
+
+func (s *StorageSystem) mountpointOf(name string) string {
+	for _, d := range s.datasets {
+		if d.Name == name {
+			return d.Mountpoint
+		}
+	}
+	return "none"
+}
+
+func cutLast(s, sep string) (before, after string, found bool) {
+	if i := strings.LastIndex(s, sep); i >= 0 {
+		return s[:i], s[i+len(sep):], true
+	}
+	return s, "", false
+}
+
+// fakeCommand renders the zfs command this would have been, in the same name
+// order the real adapter uses, so the audit log reads the same in fake mode.
+func fakeCommand(verb string, properties map[string]string, name string) string {
+	names := make([]string, 0, len(properties))
+	for property := range properties {
+		names = append(names, property)
+	}
+	slices.Sort(names)
+
+	command := "zfs " + verb
+	for _, property := range names {
+		if verb == "create" {
+			command += " -o"
+		}
+		command += " " + property + "=" + properties[property]
+	}
+	return command + " " + name
 }
 
 func (s *StorageSystem) DatasetsUnder(ctx context.Context, roots []string) ([]storage.Dataset, error) {

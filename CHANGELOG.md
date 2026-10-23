@@ -24,6 +24,28 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### API
 
+- **A jail's datasets and tags can be written.** `PUT /api/jails/{name}/datasets/{child}`
+  creates a child dataset or converges an existing one — `201` created, `200` already
+  there, `409` it exists somewhere else. `PATCH /api/jails/{name}/properties` and
+  `PATCH /api/jails/{name}/datasets/{child}/properties` set ZFS user properties, with a
+  `null` value removing one via `zfs inherit`. Every write is audited with the command it
+  ran, and carries the request's `X-Request-Id`. (#3, JD-023)
+
+  **Five native properties are allowlisted** — `mountpoint`, `refquota`, `recordsize`,
+  `compression`, `atime` — out of the sixty-odd this ZFS reports as editable. Anything else
+  is `400` naming the list: `sharenfs` would publish a jail's filesystem over NFS and
+  `canmount` would stop it mounting. `quota` is deliberately absent, because JD-007 puts the
+  limit on `refquota`.
+
+  `mountpoint` may be set only when creating. Changing it under a running jail would leave
+  the jail looking at a directory no longer backed by that dataset, so asking for one an
+  existing dataset does not have is `409` with both values rather than a move.
+
+  **A value `zfs` refuses is `400`, not `500`**, carrying zfs's own sentence — a client told
+  `500` would retry a value that can never work. The distinction available is only "ran and
+  exited non-zero" against "never ran", so a server-side refusal such as permission denied
+  also reports `400`; the message says which.
+
 - **A jail listing carries its ZFS storage.** `GET /api/jails` and the new
   `GET /api/jails/{name}` include `datasets` — the dataset mounted at the jail's
   `path` and everything mounted under it, each with `name`, `mountpoint`, `used`,

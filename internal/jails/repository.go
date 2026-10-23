@@ -60,3 +60,40 @@ type DatasetSource interface {
 	// nothing rather than everything.
 	StorageForPaths(ctx context.Context, paths []string) (map[string]JailStorage, error)
 }
+
+// DatasetChange is what ensuring a dataset did. It decides the status code:
+// created is 201, a conflict is 409, anything else 200.
+type DatasetChange struct {
+	Dataset string            `json:"dataset"`
+	Created bool              `json:"created"`
+	Applied map[string]string `json:"applied"`
+	// Conflict is set when the dataset exists somewhere other than where the
+	// request said. Mountpoint is settable only at creation (JD-023), so this
+	// is not a change the API will make -- and reporting both values says more
+	// than refusing would.
+	Conflict *PropertyConflict `json:"conflict,omitempty"`
+}
+
+type PropertyConflict struct {
+	Property string `json:"property"`
+	Want     string `json:"want"`
+	Have     string `json:"have"`
+}
+
+// DatasetWriter is the write half, kept apart from DatasetSource because a
+// listing must not need write access to a port in order to read one.
+//
+// Both take the jail's path for the same reason StorageForPaths does: the path
+// is what ties a jail to ZFS. child names a dataset directly beneath the
+// jail's own; an empty child means the jail's own dataset, which is where a
+// client's otter:instance tag belongs.
+type DatasetWriter interface {
+	// EnsureDataset creates the child with properties, or brings an existing
+	// one to them. Idempotent: a client that timed out repeats the call and
+	// the result says where it stands (JD-016).
+	EnsureDataset(ctx context.Context, jailPath, child string, properties map[string]string) (DatasetChange, error)
+	// SetUserProperties merges properties in; a nil value removes one. It
+	// returns what the dataset carries afterwards, read back rather than
+	// assumed.
+	SetUserProperties(ctx context.Context, jailPath, child string, properties map[string]*string) (map[string]string, error)
+}

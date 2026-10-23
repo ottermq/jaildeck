@@ -181,7 +181,7 @@ func TestLogJailOperation_MarksTimeouts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := &fakeLogger{}
-			svc := NewJailService(stubSystem{command: tt.command, err: tt.err}, logger, nil)
+			svc := NewJailService(stubSystem{command: tt.command, err: tt.err}, logger, nil, nil)
 
 			if _, err := svc.Stop(context.Background(), JailName("ottermq")); err == nil {
 				t.Fatal("Stop() returned nil error, want a failure")
@@ -210,7 +210,7 @@ func TestLogJailOperation_MarksTimeouts(t *testing.T) {
 
 func TestLogJailOperation_HappyPath(t *testing.T) {
 	logger := &fakeLogger{}
-	svc := NewJailService(stubSystem{command: "service jail stop ottermq"}, logger, nil)
+	svc := NewJailService(stubSystem{command: "service jail stop ottermq"}, logger, nil, nil)
 
 	if _, err := svc.Stop(context.Background(), JailName("ottermq")); err != nil {
 		t.Fatalf("Stop() error = %v", err)
@@ -239,7 +239,7 @@ func TestLogJailOperation_HappyPath(t *testing.T) {
 
 func TestLogJailOperation_AuditFailureIsLoggedAtError(t *testing.T) {
 	ctx, logs := captureRequestLogs(t, "component", "jail", "method", "POST", "path", "/jails/ottermq/start")
-	svc := NewJailService(stubSystem{command: "service jail start ottermq"}, erroringLogger{}, nil)
+	svc := NewJailService(stubSystem{command: "service jail start ottermq"}, erroringLogger{}, nil, nil)
 
 	// An audit write that fails must not fail the operation: the jail has
 	// already started, so reporting an error would be a lie (JD-011, #31).

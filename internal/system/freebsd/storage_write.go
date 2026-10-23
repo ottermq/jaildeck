@@ -103,3 +103,24 @@ func (a *StorageAdapter) Unmount(ctx context.Context, dataset string) (storage.R
 func (a *StorageAdapter) Mount(ctx context.Context, dataset string) (storage.Result, error) {
 	return a.runWrite(ctx, dataset, system.Command{Name: "zfs", Args: []string{"mount", dataset}})
 }
+
+func (a *StorageAdapter) CloneSnapshot(ctx context.Context, snapshot, target string) (storage.Result, error) {
+	return a.runWrite(ctx, target, system.Command{Name: "zfs", Args: []string{"clone", snapshot, target}})
+}
+
+// Origin reads the clone's parent snapshot. zfs prints a dash for a dataset
+// that was not cloned, which is an answer rather than an error: a jail whose
+// root was created directly has no origin and can still be re-cloned.
+func (a *StorageAdapter) Origin(ctx context.Context, dataset string) (string, error) {
+	result, err := a.runHost(ctx, system.Command{
+		Name: "zfs", Args: []string{"get", "-H", "-o", "value", "origin", dataset},
+	})
+	if err != nil {
+		return "", err
+	}
+	origin := strings.TrimSpace(result.Stdout)
+	if origin == "-" {
+		return "", nil
+	}
+	return origin, nil
+}

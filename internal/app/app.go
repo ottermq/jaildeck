@@ -57,7 +57,7 @@ func New(cfg *config.Config) (*App, error) {
 	storageHandler := storage.NewStorageHandler(storageService)
 
 	jailStorage := storage.NewJailSource(storageService)
-	jailService := jails.NewJailService(jailSystem, auditLogger, jailStorage, jailStorage, jailStorage, jailStorage)
+	jailService := jails.NewJailService(jailSystem, auditLogger, jailStorage, jailStorage, jailStorage, jailStorage, jailStorage)
 	jailHandler := jails.NewJailHandler(jailService)
 
 	hostSystem, err := newHostSystem(cfg.Adapter)

@@ -256,3 +256,34 @@ func toJailsMove(moved MoveResult) jails.DatasetMove {
 }
 
 var _ jails.DatasetMover = (*JailSource)(nil)
+
+func (s *JailSource) CheckReclone(ctx context.Context, jailPath, templateSnapshot string) error {
+	root, err := s.datasetFor(ctx, jailPath, "")
+	if err != nil {
+		return err
+	}
+	return s.service.CheckRecloneSource(ctx, root, templateSnapshot)
+}
+
+// Reclone implements jails.Recloner. The jail's root is resolved from its path
+// once, up front: after the root is parked the path has no dataset mounted on
+// it, so nothing downstream can resolve it again.
+func (s *JailSource) Reclone(ctx context.Context, jailPath, templateSnapshot string) (jails.Reclone, error) {
+	root, err := s.datasetFor(ctx, jailPath, "")
+	if err != nil {
+		return jails.Reclone{}, err
+	}
+	result, recloneErr := s.service.RecloneRoot(ctx, root, templateSnapshot)
+
+	out := jails.Reclone{
+		Root: result.Root, From: result.From, To: result.To,
+		OldRoot: result.OldRoot, Children: result.Children, FailedAt: result.FailedAt,
+		Parked: make([]jails.Parked, 0, len(result.Parked)),
+	}
+	for _, parked := range result.Parked {
+		out.Parked = append(out.Parked, jails.Parked{Was: parked.Was, Now: parked.Now})
+	}
+	return out, recloneErr
+}
+
+var _ jails.Recloner = (*JailSource)(nil)

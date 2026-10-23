@@ -59,7 +59,7 @@ func ottermqStorage() *stubDatasets {
 
 func TestListFillsInStorage(t *testing.T) {
 	datasets := ottermqStorage()
-	got, err := NewJailService(threeJails(), &fakeLogger{}, datasets, nil, nil, nil).List(context.Background())
+	got, err := NewJailService(threeJails(), &fakeLogger{}, datasets, nil, nil, nil, nil).List(context.Background())
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -93,7 +93,7 @@ func TestListDegradesWhenStorageFails(t *testing.T) {
 	buf := captureLogs(t)
 	datasets := &stubDatasets{err: errors.New("zfs: pool is suspended")}
 
-	got, err := NewJailService(threeJails(), &fakeLogger{}, datasets, nil, nil, nil).List(context.Background())
+	got, err := NewJailService(threeJails(), &fakeLogger{}, datasets, nil, nil, nil, nil).List(context.Background())
 	if err != nil {
 		t.Fatalf("List() error = %v, want the listing to survive a storage failure", err)
 	}
@@ -121,7 +121,7 @@ func TestListDegradesWhenStorageFails(t *testing.T) {
 // No source wired at all: the listing still works, which is what lets every
 // test that is not about storage pass nil.
 func TestListWithoutADatasetSource(t *testing.T) {
-	got, err := NewJailService(threeJails(), &fakeLogger{}, nil, nil, nil, nil).List(context.Background())
+	got, err := NewJailService(threeJails(), &fakeLogger{}, nil, nil, nil, nil, nil).List(context.Background())
 	if err != nil || len(got) != 3 {
 		t.Fatalf("List() = %d jails, %v; want 3, nil", len(got), err)
 	}
@@ -147,7 +147,7 @@ func TestGet(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewJailService(threeJails(), &fakeLogger{}, ottermqStorage(), nil, nil, nil)
+			svc := NewJailService(threeJails(), &fakeLogger{}, ottermqStorage(), nil, nil, nil, nil)
 			got, err := svc.Get(context.Background(), JailName(tt.ask))
 			if tt.wantCode != 0 {
 				var appErr *common.AppError
@@ -170,7 +170,7 @@ func TestGet(t *testing.T) {
 
 	t.Run("carries its storage", func(t *testing.T) {
 		datasets := ottermqStorage()
-		got, err := NewJailService(threeJails(), &fakeLogger{}, datasets, nil, nil, nil).Get(context.Background(), "ottermq")
+		got, err := NewJailService(threeJails(), &fakeLogger{}, datasets, nil, nil, nil, nil).Get(context.Background(), "ottermq")
 		if err != nil {
 			t.Fatalf("Get() error = %v", err)
 		}
@@ -185,7 +185,7 @@ func TestGet(t *testing.T) {
 	})
 
 	t.Run("a failed listing is not a 404", func(t *testing.T) {
-		svc := NewJailService(listSystem{err: errors.New("jls: Operation not permitted")}, &fakeLogger{}, nil, nil, nil, nil)
+		svc := NewJailService(listSystem{err: errors.New("jls: Operation not permitted")}, &fakeLogger{}, nil, nil, nil, nil, nil)
 		_, err := svc.Get(context.Background(), "ottermq")
 		if err == nil || errors.Is(err, ErrJailNotFound) {
 			t.Errorf("Get() error = %v, want a failure rather than not-found", err)

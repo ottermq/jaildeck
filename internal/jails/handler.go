@@ -3,6 +3,7 @@ package jails
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -672,4 +673,85 @@ func (h *JailHandler) Restore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, moved)
+}
+
+// recloneRequest names the template snapshot the jail's new root is cloned
+// from. The full dataset@snapshot, because @base is not a safe default: on a
+// real host every jail is already a clone of templates/<release>@base, so
+// defaulting to it would re-clone a jail onto the snapshot it is already on.
+type recloneRequest struct {
+	Template string `json:"template"`
+}
+
+// Reclone replaces the jail's root, keeping its child datasets.
+//
+// @Summary      Re-clone a jail's root from a template snapshot
+// @Description  The upgrade path for a jail whose state lives in a child dataset: stop,
+// @Description  move the children aside, park the old root, clone the new one, move the
+// @Description  children back, start (JD-007, JD-026).
+// @Description
+// @Description  **Nothing is destroyed.** The old root is renamed to
+// @Description  <pool>/jails/retained/<jail>-root-<snapshot>, so a re-clone onto a bad
+// @Description  template costs one call to undo rather than a restore from backup. It is a
+// @Description  clone, so it occupies only what the jail wrote since it was made.
+// @Description
+// @Description  The jail is stopped and started again by this call, and ends in the state
+// @Description  it was found in. A jail that was already stopped stays stopped.
+// @Description
+// @Description  **If a step fails, nothing is retried and nothing is undone.** The response
+// @Description  names the step and lists every dataset that is no longer under the jail,
+// @Description  with where it now sits, so it can be restored with the call you already
+// @Description  have. Running a recovery automatically while the first failure is still
+// @Description  unexplained is how a bad situation becomes an unreadable one.
+// @Description
+// @Description  The template must be the full dataset@snapshot. There is no default:
+// @Description  every jail on a real host is already a clone of templates/<release>@base,
+// @Description  so defaulting to it would be a no-op dressed as an upgrade.
+// @Tags         storage
+// @Accept       json
+// @Produce      json
+// @Param        name      path      string          true  "Jail name"
+// @Param        confirm   query     string          true  "The jail's name again"
+// @Param        template  body      recloneRequest  true  "The template snapshot to clone from"
+// @Success      200       {object}  Reclone
+// @Failure      400       {object}  common.ErrorResponse  "Missing confirm, or a malformed snapshot name"
+// @Failure      401       {object}  common.ErrorResponse
+// @Failure      404       {object}  common.ErrorResponse  "No such jail, no such template snapshot, or the jail is not on ZFS"
+// @Failure      500       {object}  Reclone               "A step failed; the body says which and where the datasets are"
+// @Security     BearerAuth
+// @Router       /jails/{name}/reclone [post]
+func (h *JailHandler) Reclone(w http.ResponseWriter, r *http.Request) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	var body recloneRequest
+	if err := decodeJSON(r, &body); err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+
+	result, err := h.service.Reclone(r.Context(), name, body.Template, r.URL.Query().Get("confirm"))
+	if err != nil {
+		// A failure after the datasets started moving carries the recovery
+		// information, and an error message alone would throw it away.
+		if result.FailedAt != "" {
+			common.WriteJSON(w, statusForReclone(err), result)
+			return
+		}
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, result)
+}
+
+// statusForReclone keeps a refusal a refusal. A template that does not exist
+// is a 404 whether or not anything had started.
+func statusForReclone(err error) int {
+	var appErr *common.AppError
+	if errors.As(err, &appErr) {
+		return appErr.Code
+	}
+	return http.StatusInternalServerError
 }

@@ -37,6 +37,11 @@ type stubSystem struct {
 	// The move half.
 	notMounted map[string]bool
 	mountErr   error
+	// mountErrFor fails only the named datasets, so a test can break one step
+	// of a sequence without breaking every step that uses the same call.
+	mountErrFor map[string]bool
+	origins     map[string]string
+	cloneErr    error
 }
 
 func (s *stubSystem) Pools(context.Context) ([]string, error) { return s.pools, s.poolsErr }
@@ -398,10 +403,47 @@ func (s *stubSystem) Mounted(_ context.Context, dataset string) (bool, error) {
 
 func (s *stubSystem) Unmount(_ context.Context, dataset string) (Result, error) {
 	s.ran = append(s.ran, "zfs unmount "+dataset)
-	return Result{Dataset: dataset, Command: "zfs unmount " + dataset}, s.mountErr
+	return Result{Dataset: dataset, Command: "zfs unmount " + dataset}, s.mountErrorFor(dataset)
 }
 
 func (s *stubSystem) Mount(_ context.Context, dataset string) (Result, error) {
 	s.ran = append(s.ran, "zfs mount "+dataset)
-	return Result{Dataset: dataset, Command: "zfs mount " + dataset}, s.mountErr
+	return Result{Dataset: dataset, Command: "zfs mount " + dataset}, s.mountErrorFor(dataset)
+}
+
+func (s *stubSystem) mountErrorFor(dataset string) error {
+	if s.mountErrFor != nil && !s.mountErrFor[dataset] {
+		return nil
+	}
+	return s.mountErr
+}
+
+func (s *stubSystem) CloneSnapshot(_ context.Context, snapshot, target string) (Result, error) {
+	command := "zfs clone " + snapshot + " " + target
+	s.ran = append(s.ran, command)
+	if s.cloneErr != nil {
+		return Result{Dataset: target, Command: command}, s.cloneErr
+	}
+	s.datasets = append(s.datasets, Dataset{Name: target, Mountpoint: s.mountpointFor(target)})
+	if s.origins == nil {
+		s.origins = map[string]string{}
+	}
+	s.origins[target] = snapshot
+	return Result{Dataset: target, Command: command}, nil
+}
+
+func (s *stubSystem) Origin(_ context.Context, dataset string) (string, error) {
+	return s.origins[dataset], s.dependencyErr
+}
+
+// mountpointFor derives a mountpoint the way an inherited one works: the
+// parent's, with the dataset's own name appended.
+func (s *stubSystem) mountpointFor(name string) string {
+	parent := name[:strings.LastIndex(name, "/")]
+	for _, d := range s.datasets {
+		if d.Name == parent {
+			return d.Mountpoint + name[strings.LastIndex(name, "/"):]
+		}
+	}
+	return "/" + name
 }

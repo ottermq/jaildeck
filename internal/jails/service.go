@@ -54,9 +54,10 @@ type JailService struct {
 	// snapshots and datasetMover may be nil on the same terms as the others.
 	snapshots    SnapshotWriter
 	datasetMover DatasetMover
+	recloner     Recloner
 }
 
-func NewJailService(system JailSystem, operationLogger audit.Logger, datasets DatasetSource, datasetWriter DatasetWriter, snapshots SnapshotWriter, datasetMover DatasetMover) *JailService {
+func NewJailService(system JailSystem, operationLogger audit.Logger, datasets DatasetSource, datasetWriter DatasetWriter, snapshots SnapshotWriter, datasetMover DatasetMover, recloner Recloner) *JailService {
 	return &JailService{
 		system:          system,
 		operationLogger: operationLogger,
@@ -64,6 +65,7 @@ func NewJailService(system JailSystem, operationLogger audit.Logger, datasets Da
 		datasetWriter:   datasetWriter,
 		snapshots:       snapshots,
 		datasetMover:    datasetMover,
+		recloner:        recloner,
 	}
 }
 

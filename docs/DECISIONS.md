@@ -743,6 +743,49 @@ The whole decision is about who chooses the moment a filesystem disappears. `zfs
 
 ---
 
+## JD-026 — Re-cloning a Jail's Root
+
+**Status:** Locked — 2026-10-23
+
+A jail's root is a clone of a template snapshot (JD-007), so upgrading one means replacing that root with a clone of a newer snapshot. Everything the jail is supposed to keep lives in a child dataset, and the child has to survive the replacement.
+
+The sequence, in this order, and the order is the design:
+
+```
+stop the jail                     only if it was running
+move every child out              retained/<jail>-<child>
+park the old root                 retained/<jail>-root-<its origin snapshot>
+clone the new root                zfs clone <template>@<snapshot> <jail dataset>
+move every child back
+start the jail                    only if it was running
+```
+
+**Nothing is destroyed.** The old root is renamed beside the children rather than destroyed, so a re-clone onto a wrong template costs one call to undo instead of a restore from backup. It is a clone, so it occupies only what the jail wrote since it was made — 352 KB on the host this was verified on, against a 372 MB template.
+
+**Every child leaves before the root is touched.** Not an ordering preference: `zfs rename` carries a dataset's descendants with it, so parking the root first would move the children inside the parked copy, where nothing would look for them. Reversing the two steps was tried, and the next operation failed with `no dataset named .../probe6/data` — the children were simply gone from where everything expected them.
+
+**Refusals happen before the jail is stopped.** A mistyped template name should cost an error message, not an outage. The template snapshot is checked, the jail's own dataset resolved, and the name validated, all before `service jail stop` runs.
+
+**A failure stops, and reports.** No step is retried and nothing is undone. The response names the step that failed and lists every dataset that is no longer under the jail with where it now sits, so it can be restored with the call JD-025 already provides. Automatic recovery was rejected: an undo that fails leaves two interleaved failures in the audit log and a host in a state neither of them describes. The acceptance criterion — children in a known, reported place and never destroyed — is met by reporting, not by repair.
+
+**The template snapshot is named in full, with no default.** Every jail on a real host is already a clone of `templates/<release>@base`, so defaulting to `@base` would re-clone a jail onto the snapshot it is already on: a no-op dressed as an upgrade.
+
+**`confirm=` is the jail's name**, because this stops a running jail and replaces the filesystem its processes run on (JD-016).
+
+### Rationale
+
+The whole arrangement only pays off if a jail's state is in a child dataset, which is what JD-007 asks for and what the quota in JD-023 enforces. The measurement that makes it concrete, from the verification run:
+
+```
+jexec probe6 cat /data/marker          state-that-must-survive-the-upgrade
+cat .../retained/probe6-root-base/root/marker   i-was-written-into-the-root
+cat .../containers/probe6/root/marker   No such file or directory
+```
+
+The child survived. What had been written into the jail's **root** did not — it is a fresh template now, which is the point. That file is still readable in the parked copy, which is why the parked copy exists.
+
+---
+
 ## Decision Policy
 
 Once a decision is marked as **Locked**, it should not be revisited without a clear technical or product justification. Architectural evolution is expected, but changes should be deliberate and documented rather than occurring through incremental drift.

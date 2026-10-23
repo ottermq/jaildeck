@@ -22,6 +22,29 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
 
+### API
+
+- **A jail's root can be re-cloned from a newer template, keeping its children.**
+  `POST /api/jails/{name}/reclone?confirm={name}` stops the jail, moves every child dataset
+  aside, parks the old root, clones the new one, moves the children back and starts it
+  again — the upgrade path for a jail whose state lives in a child (#6, JD-007, JD-026).
+  The jail ends in the state it was found in.
+
+  **Nothing is destroyed.** The old root is renamed to
+  `<pool>/jails/retained/<jail>-root-<snapshot>`, so a re-clone onto the wrong template
+  costs one call to undo. It is a clone and occupies only what the jail wrote since it was
+  made.
+
+  **If a step fails, nothing is retried and nothing is undone.** The response names the step
+  and lists every dataset that is no longer under the jail, with where it now sits, so it
+  can be restored with the call JD-025 provides. An automatic undo that itself fails leaves
+  two interleaved failures and a host in a state neither describes.
+
+  Refusals happen **before** the jail is stopped: a mistyped template name costs an error
+  rather than an outage. The template is the full `dataset@snapshot` with no default,
+  because every jail is already a clone of `templates/<release>@base` and defaulting to it
+  would be a no-op dressed as an upgrade.
+
 ### Changed
 
 - **The documentation is published as a site.** `docs/` is now a Jekyll site built by

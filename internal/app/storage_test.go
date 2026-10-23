@@ -9,6 +9,7 @@ import (
 
 type apiJail struct {
 	Name     string `json:"name"`
+	Status   string `json:"status"`
 	Path     string `json:"path"`
 	Datasets []struct {
 		Name       string `json:"name"`

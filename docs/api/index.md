@@ -222,6 +222,68 @@ it first.
 part of the layout readiness check: a host that has never retained anything is not missing
 something (JD-021).
 
+## Upgrading a jail
+
+A jail's root is a clone of a template snapshot, so upgrading one is replacing that root with
+a clone of a newer snapshot while its child datasets survive (JD-026):
+
+```sh
+curl -X POST '.../api/jails/ottermq/reclone?confirm=ottermq' \
+  -d '{"template":"tank/jails/templates/15.1-RELEASE@p5"}'
+```
+
+```json
+{"root":"tank/jails/containers/ottermq",
+ "from":"tank/jails/templates/15.1-RELEASE@base",
+ "to":"tank/jails/templates/15.1-RELEASE@p5",
+ "old_root":"tank/jails/retained/ottermq-root-base",
+ "children":["tank/jails/containers/ottermq/data"],
+ "running":true}
+```
+
+The jail is stopped and started again by the call, and ends in the state it was found in.
+**Nothing is destroyed** — the old root is parked beside the children, so an upgrade onto the
+wrong template costs one call to undo.
+
+The template must be the full `dataset@snapshot`. There is no default, because every jail on a
+real host is already a clone of `templates/<release>@base` and defaulting to it would re-clone
+a jail onto the snapshot it is already on.
+
+### What survives, and what does not
+
+Measured on a jail upgraded this way:
+
+```
+inside the jail:   /data/marker          state-that-must-survive-the-upgrade
+in the parked root: root/marker          i-was-written-into-the-root
+in the new root:    root/marker          No such file or directory
+```
+
+The child dataset came back with its contents and its `refquota`. Anything written into the
+jail's **own root** did not — the root is a fresh template now. That is the point of the
+exercise, and it is why state belongs in a child dataset (JD-007).
+
+The old root is still readable at the parked path, which is why it is kept rather than
+destroyed. It is a clone, so it occupies only what the jail wrote since it was made: 352 KB
+against a 372 MB template, in that run.
+
+### If a step fails
+
+Nothing is retried and nothing is undone. The response names the step and lists every dataset
+that is no longer under the jail:
+
+```json
+{"failed_at":"clone",
+ "parked":[{"was":"tank/.../ottermq/data","now":"tank/jails/retained/ottermq-data"},
+           {"was":"tank/.../ottermq",     "now":"tank/jails/retained/ottermq-root-base"}]}
+```
+
+Restore them with the call above. An automatic undo was rejected deliberately: when the undo
+also fails you have two interleaved failures and a host in a state neither describes.
+
+Refusals happen **before** the jail is stopped — a mistyped template name costs an error, not
+an outage.
+
 ## Correlating with your own jobs
 
 Send `X-Request-Id` and every audit entry the request produces carries it, so

@@ -169,3 +169,39 @@ type DatasetMover interface {
 	// Restore moves a retained dataset back in as the jail's child.
 	Restore(ctx context.Context, jailPath, name, child string) (DatasetMove, error)
 }
+
+// Reclone is what replacing a jail's root did, or got as far as doing.
+type Reclone struct {
+	Root string `json:"root"`
+	From string `json:"from"`
+	To   string `json:"to"`
+	// OldRoot is where the previous root is parked. A re-clone destroys
+	// nothing (JD-026).
+	OldRoot  string   `json:"old_root,omitempty"`
+	Children []string `json:"children"`
+	// Running is the jail's state afterwards, which is the state it was found
+	// in unless a step failed before it could be started again.
+	Running bool `json:"running"`
+	// FailedAt and Parked are the recovery information: which step failed, and
+	// where every dataset that is no longer under the jail currently sits.
+	Parked   []Parked `json:"parked,omitempty"`
+	FailedAt string   `json:"failed_at,omitempty"`
+}
+
+// Parked is one dataset moved out of the jail and not yet moved back.
+type Parked struct {
+	Was string `json:"was"`
+	Now string `json:"now"`
+}
+
+// Recloner replaces a jail's root dataset with a fresh clone of a template
+// snapshot, keeping the jail's children. It expects the jail to be stopped
+// already: the jails domain owns starting and stopping (JD-005), and this
+// moves the filesystem the jail's processes run on.
+type Recloner interface {
+	// CheckReclone refuses a re-clone that cannot work, without touching
+	// anything. Asked before the jail is stopped, so a mistyped template name
+	// costs an error rather than an outage.
+	CheckReclone(ctx context.Context, jailPath, templateSnapshot string) error
+	Reclone(ctx context.Context, jailPath, templateSnapshot string) (Reclone, error)
+}

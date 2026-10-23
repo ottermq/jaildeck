@@ -76,6 +76,15 @@ type StorageSystem interface {
 	Mounted(ctx context.Context, dataset string) (bool, error)
 	Unmount(ctx context.Context, dataset string) (Result, error)
 	Mount(ctx context.Context, dataset string) (Result, error)
+
+	// CloneSnapshot runs zfs clone. A jail's root is a clone of a template's
+	// snapshot (JD-007) -- on the deployment target all three jails are clones
+	// of templates/15.1-RELEASE@base -- so re-cloning one onto a newer
+	// snapshot is how a jail is upgraded.
+	CloneSnapshot(ctx context.Context, snapshot, target string) (Result, error)
+	// Origin is the snapshot a dataset was cloned from, empty when it was not
+	// cloned from anything.
+	Origin(ctx context.Context, dataset string) (string, error)
 }
 
 // Result is what a write actually ran, so the service can audit the command

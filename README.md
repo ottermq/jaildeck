@@ -202,6 +202,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/jails/{name}/datasets/{child}/retain` | move a dataset out of the jail |
 | `POST /api/jails/{name}/datasets/{child}/restore` | move a retained one back in |
 | `GET /api/retained` | datasets being kept past their jails |
+| `POST /api/jails/{name}/reclone` | replace its root from a newer template, keeping its children |
 | `POST /api/jails/{name}/start` | |
 | `POST /api/jails/{name}/stop` | |
 | `POST /api/jails/{name}/restart` | |

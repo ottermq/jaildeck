@@ -1010,6 +1010,83 @@
                 }
             }
         },
+        "/jails/{name}/reclone": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The upgrade path for a jail whose state lives in a child dataset: stop,\nmove the children aside, park the old root, clone the new one, move the\nchildren back, start (JD-007, JD-026).\n\n**Nothing is destroyed.** The old root is renamed to\n\u003cpool\u003e/jails/retained/\u003cjail\u003e-root-\u003csnapshot\u003e, so a re-clone onto a bad\ntemplate costs one call to undo rather than a restore from backup. It is a\nclone, so it occupies only what the jail wrote since it was made.\n\nThe jail is stopped and started again by this call, and ends in the state\nit was found in. A jail that was already stopped stays stopped.\n\n**If a step fails, nothing is retried and nothing is undone.** The response\nnames the step and lists every dataset that is no longer under the jail,\nwith where it now sits, so it can be restored with the call you already\nhave. Running a recovery automatically while the first failure is still\nunexplained is how a bad situation becomes an unreadable one.\n\nThe template must be the full dataset@snapshot. There is no default:\nevery jail on a real host is already a clone of templates/\u003crelease\u003e@base,\nso defaulting to it would be a no-op dressed as an upgrade.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "storage"
+                ],
+                "summary": "Re-clone a jail's root from a template snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The jail's name again",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "description": "The template snapshot to clone from",
+                        "name": "template",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/jails.recloneRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Reclone"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing confirm, or a malformed snapshot name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail, no such template snapshot, or the jail is not on ZFS",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "A step failed; the body says which and where the datasets are",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Reclone"
+                        }
+                    }
+                }
+            }
+        },
         "/jails/{name}/restart": {
             "post": {
                 "security": [
@@ -1889,6 +1966,17 @@
                 "JailStatusStopped"
             ]
         },
+        "jails.Parked": {
+            "type": "object",
+            "properties": {
+                "now": {
+                    "type": "string"
+                },
+                "was": {
+                    "type": "string"
+                }
+            }
+        },
         "jails.PropertyConflict": {
             "type": "object",
             "properties": {
@@ -1899,6 +1987,44 @@
                     "type": "string"
                 },
                 "want": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.Reclone": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "failed_at": {
+                    "type": "string"
+                },
+                "from": {
+                    "type": "string"
+                },
+                "old_root": {
+                    "description": "OldRoot is where the previous root is parked. A re-clone destroys\nnothing (JD-026).",
+                    "type": "string"
+                },
+                "parked": {
+                    "description": "FailedAt and Parked are the recovery information: which step failed, and\nwhere every dataset that is no longer under the jail currently sits.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/jails.Parked"
+                    }
+                },
+                "root": {
+                    "type": "string"
+                },
+                "running": {
+                    "description": "Running is the jail's state afterwards, which is the state it was found\nin unless a step failed before it could be started again.",
+                    "type": "boolean"
+                },
+                "to": {
                     "type": "string"
                 }
             }
@@ -1992,6 +2118,14 @@
                     "additionalProperties": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "jails.recloneRequest": {
+            "type": "object",
+            "properties": {
+                "template": {
+                    "type": "string"
                 }
             }
         },

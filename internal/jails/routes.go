@@ -23,6 +23,10 @@ func RegisterJailRoutes(r chi.Router, h *JailHandler) {
 			// in time, which is what an upgrade path needs (JD-007). Rollback
 			// is the exception and is never recursive, because zfs rollback
 			// cannot descend into children at all.
+			// Replacing the root is a jail operation, not a dataset one: it
+			// stops and starts the jail around the move.
+			r.Post("/reclone", h.Reclone)
+
 			r.Get("/snapshots", h.ListSnapshots)
 			r.Put("/snapshots/{snapshot}", h.CreateSnapshot)
 			r.Delete("/snapshots/{snapshot}", h.DestroySnapshot)

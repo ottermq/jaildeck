@@ -15,7 +15,21 @@ import (
 // with a clone. A dashboard that can only ever show the happy path is not much
 // of a dashboard.
 func (s *StorageSystem) seedSnapshots() {
+	// A template with two snapshots, and jails cloned from the older one --
+	// the arrangement on the deployment target, where every jail's origin is
+	// templates/15.1-RELEASE@base and the template has since moved to @p5.
+	// Without it there is nothing to re-clone from (#6).
+	s.datasets = append(s.datasets, storage.Dataset{
+		Name: "zroot/jails/templates/15.1-RELEASE", Mountpoint: "/fake/jail/templates/15.1-RELEASE",
+		Used: 430 << 20, Referenced: 372 << 20, Available: 400 << 30,
+	})
+	s.origins = map[string]string{
+		"zroot/jails/nginx": "zroot/jails/templates/15.1-RELEASE@base",
+		"zroot/jails/redis": "zroot/jails/templates/15.1-RELEASE@base",
+	}
 	s.snapshots = []storage.Snapshot{
+		s.snapshot("zroot/jails/templates/15.1-RELEASE", "base"),
+		s.snapshot("zroot/jails/templates/15.1-RELEASE", "p5"),
 		s.snapshot("zroot/jails/nginx", "before-upgrade"),
 		s.snapshot("zroot/jails/nginx/logs", "before-upgrade"),
 		s.snapshot("zroot/jails/nginx", "nightly"),

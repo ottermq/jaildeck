@@ -30,6 +30,7 @@ type StorageSystem struct {
 	snapshots  []storage.Snapshot
 	holds      []storage.Hold
 	clones     map[string][]string
+	origins    map[string]string
 	// nextTXG stands in for ZFS's transaction group counter, which is what
 	// orders snapshots exactly. Monotonic, as the real one is.
 	nextTXG uint64
@@ -271,4 +272,32 @@ func lastComponent(name string) string {
 		return name
 	}
 	return last
+}
+
+func (s *StorageSystem) CloneSnapshot(_ context.Context, snapshot, target string) (storage.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	result := storage.Result{Dataset: target, Command: "zfs clone " + snapshot + " " + target}
+	if slices.ContainsFunc(s.datasets, func(d storage.Dataset) bool { return d.Name == target }) {
+		return result, fmt.Errorf("cannot create '%s': dataset already exists", target)
+	}
+	if !slices.ContainsFunc(s.snapshots, func(x storage.Snapshot) bool { return x.Name == snapshot }) {
+		return result, fmt.Errorf("cannot open '%s': dataset does not exist", snapshot)
+	}
+	parent, child, _ := cutLast(target, "/")
+	const gib = 1 << 30
+	s.datasets = append(s.datasets, storage.Dataset{
+		Name: target, Mountpoint: s.mountpointOf(parent) + "/" + child,
+		Used: 96 << 10, Referenced: 372 << 20, Available: 400 * gib,
+	})
+	slices.SortFunc(s.datasets, func(a, b storage.Dataset) int { return strings.Compare(a.Name, b.Name) })
+	s.origins[target] = snapshot
+	return result, nil
+}
+
+func (s *StorageSystem) Origin(_ context.Context, dataset string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.origins[dataset], nil
 }

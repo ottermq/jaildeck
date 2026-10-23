@@ -123,18 +123,24 @@ doc:
 	@$(GO) tool swag init -g main.go -d $(SWAG_DIRS) -o $(dir $(SPEC)) --ot json 2>&1 | grep -E "^.*(warning|error)" || true
 	@echo "wrote $(SPEC)"
 
-## doc-check: fail if the committed spec is not what the annotations produce
-# --exit-code rather than --quiet because an untracked spec is a diff of
-# nothing: git diff ignores files it has never seen, so a first-time generated
-# file would pass this check while being absent from the commit.
+## doc-check: fail if the spec on disk is not what the annotations produce
+# Generated into a temporary directory and compared with the file, rather than
+# regenerated in place and compared with git. Comparing with git would fail
+# whenever the annotations themselves are uncommitted -- which is most of the
+# time while writing them -- and regenerating in place would make a check that
+# modifies the working tree.
+#
+# The tracked guard is separate: git diff ignores files it has never seen, so a
+# generated file absent from the commit would otherwise pass silently.
 doc-check:
 	@git ls-files --error-unmatch $(SPEC) >/dev/null 2>&1 || { \
 		echo "$(SPEC) is not tracked by git. Run: make doc && git add $(SPEC)"; \
 		exit 1; \
 	}
-	@$(GO) tool swag init -g main.go -d $(SWAG_DIRS) -o $(dir $(SPEC)) --ot json >/dev/null 2>&1
-	@git diff --exit-code --stat -- $(SPEC) >/dev/null || { \
-		echo "$(SPEC) is out of date. Run: make doc"; \
-		git --no-pager diff --stat -- $(SPEC); \
-		exit 1; \
-	}
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+		$(GO) tool swag init -g main.go -d $(SWAG_DIRS) -o "$$tmp" --ot json >/dev/null 2>&1 && \
+		if ! diff -q "$$tmp/swagger.json" $(SPEC) >/dev/null 2>&1; then \
+			echo "$(SPEC) is out of date. Run: make doc"; \
+			diff -u $(SPEC) "$$tmp/swagger.json" | head -20; \
+			exit 1; \
+		fi

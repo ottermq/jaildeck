@@ -20,6 +20,36 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+### API
+
+- **A dataset reports the native ZFS properties it sets.** `GET /api/jails` and
+  `GET /api/jails/{name}` carry a `properties` map beside each dataset: the four an
+  existing dataset may be given (JD-023), as the strings `zfs` prints — so `refquota`
+  reads `2G` and a client can send the same value back. (#55)
+
+  **The value the dataset sets, not the value in effect.** A property inherited from the
+  dataset above is absent. Showing it would be friendlier right up to the moment someone
+  edited it: the write would create a local override on the child rather than change the
+  setting they were looking at.
+
+  Only the allowlisted four. `canmount` is locally set on real datasets and stays out for
+  the same reason it is out of the write list — it would stop a jail's dataset mounting.
+  `mountpoint` keeps its own column.
+
+  It costs no extra command: the `zfs get -s local all` that reads the tags carried these
+  all along and was discarding them. The jail's user properties stay at the jail level
+  (JD-004); nothing moved.
+
+### Added
+
+- **A jail's datasets show their properties, and a child's can be changed.** The chips
+  under each dataset name are what it sets itself; a child gets a **Properties** form
+  prefilled with them. An empty box leaves the property alone — there is no route that
+  makes a dataset inherit one again. The jail's own dataset shows its properties and has
+  no form, because the API writes to children and not to the dataset the jail runs from.
+
 ## v0.8.0 — 2026-10-23
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.8.0)

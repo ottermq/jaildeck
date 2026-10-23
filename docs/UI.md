@@ -86,7 +86,7 @@ Exact interaction shape (single form vs. wizard steps, how failures mid-flow are
 At `/jails/{name}`, reached from the jail's name on the list (JD-028). Built:
 
 - header — name, status badge, JID, hostname, IP
-- **Datasets** — every dataset of the jail, the one mounted at the jail's own path marked as such, with mountpoint and used/referenced/available (JD-022)
+- **Datasets** — every dataset of the jail, the one mounted at the jail's own path marked as such, with mountpoint, used/referenced/available (JD-022), and the native ZFS properties it sets itself (JD-023)
 - **Tags** — the jail's `user:property` ZFS tags, its own and never a child's
 - **Snapshots** — newest first, ordered by transaction group rather than by time (JD-024); fetched separately and allowed to fail on its own
 

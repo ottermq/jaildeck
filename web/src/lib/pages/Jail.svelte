@@ -214,6 +214,34 @@ function conflictMessage(err: unknown): string | null {
         + `${conflict.want}. Jail Deck will not move a mounted dataset.`
 }
 
+let editingDataset = $state('')
+let editedProperties = $state<Record<string, string>>({})
+
+function startEditDataset(dataset: Dataset) {
+    editingDataset = dataset.name
+    // Prefilled with what the dataset actually sets, so an untouched field
+    // sends the value back unchanged rather than silently dropping it.
+    editedProperties = { ...(dataset.properties ?? {}) }
+    delete actionError[`properties-${dataset.name}`]
+}
+
+async function saveDataset(event: Event, dataset: Dataset) {
+    event.preventDefault()
+    const properties: Record<string, string> = {}
+    for (const [property, value] of Object.entries(editedProperties)) {
+        if (value.trim() !== '') properties[property] = value.trim()
+    }
+    const ok = await run(`properties-${dataset.name}`, () =>
+        ensureDataset(name, childOf(dataset), properties))
+    if (ok) editingDataset = ''
+}
+
+// Sorted so the same dataset always reads the same way, rather than in
+// whatever order the map came back in.
+function propertyEntries(dataset: Dataset): [string, string][] {
+    return Object.entries(dataset.properties ?? {}).sort(([a], [b]) => a.localeCompare(b))
+}
+
 let retaining = $state('')
 let retainAs = $state('')
 
@@ -632,7 +660,16 @@ async function retain(event: Event, dataset: Dataset) {
                     <tbody>
                         {#if root}
                             <tr>
-                                <td class="name"><code>{root.name}</code> <span class="note">the jail's own</span></td>
+                                <td class="name">
+                                    <code>{root.name}</code> <span class="note">the jail's own</span>
+                                    {#if propertyEntries(root).length > 0}
+                                        <div class="props">
+                                            {#each propertyEntries(root) as [property, value] (property)}
+                                                <span class="prop">{property}={value}</span>
+                                            {/each}
+                                        </div>
+                                    {/if}
+                                </td>
                                 <td><code>{root.mountpoint}</code></td>
                                 <td class="num">{formatBytes(root.used)}</td>
                                 <td class="num">{formatBytes(root.referenced)}</td>
@@ -642,20 +679,80 @@ async function retain(event: Event, dataset: Dataset) {
                         {/if}
                         {#each children as child (child.name)}
                             <tr>
-                                <td class="name"><code>{child.name}</code></td>
+                                <td class="name">
+                                    <code>{child.name}</code>
+                                    {#if propertyEntries(child).length > 0}
+                                        <div class="props">
+                                            {#each propertyEntries(child) as [property, value] (property)}
+                                                <span class="prop">{property}={value}</span>
+                                            {/each}
+                                        </div>
+                                    {/if}
+                                </td>
                                 <td><code>{child.mountpoint}</code></td>
                                 <td class="num">{formatBytes(child.used)}</td>
                                 <td class="num">{formatBytes(child.referenced)}</td>
                                 <td class="num">{formatBytes(child.available)}</td>
                                 <td class="actions-col">
-                                    <button
-                                        type="button"
-                                        class="btn btn--small"
-                                        disabled={!!busy || retaining === child.name}
-                                        onclick={() => startRetain(child)}
-                                    >Retain</button>
+                                    <div class="actions">
+                                        <button
+                                            type="button"
+                                            class="btn btn--small"
+                                            disabled={!!busy || editingDataset === child.name}
+                                            onclick={() => startEditDataset(child)}
+                                        >Properties</button>
+                                        <button
+                                            type="button"
+                                            class="btn btn--small"
+                                            disabled={!!busy || retaining === child.name}
+                                            onclick={() => startRetain(child)}
+                                        >Retain</button>
+                                    </div>
                                 </td>
                             </tr>
+                            {#if editingDataset === child.name}
+                                <tr class="row-form">
+                                    <td colspan="6">
+                                        <form class="form" onsubmit={(e) => saveDataset(e, child)}>
+                                            <div class="form__row">
+                                                {#each datasetProperties as property (property.name)}
+                                                    <div class="field">
+                                                        <label for={`edit-${property.name}`}>{property.name}</label>
+                                                        <input
+                                                            id={`edit-${property.name}`}
+                                                            bind:value={editedProperties[property.name]}
+                                                            autocomplete="off"
+                                                            spellcheck="false"
+                                                            placeholder="unset"
+                                                            title={property.hint}
+                                                        />
+                                                    </div>
+                                                {/each}
+                                            </div>
+                                            <p class="hint">
+                                                These are what the dataset sets itself. An empty box leaves the
+                                                property alone rather than removing it — there is no route here
+                                                that makes a dataset inherit one again. Values go to ZFS
+                                                unchecked, so <code>recordsize=7K</code> comes back as zfs's
+                                                own complaint.
+                                            </p>
+                                            {#if actionError[`properties-${child.name}`]}
+                                                <p class="notice notice--error" role="alert">
+                                                    {actionError[`properties-${child.name}`]}
+                                                </p>
+                                            {/if}
+                                            <div class="form__actions">
+                                                <button type="button" class="btn btn--small"
+                                                        onclick={() => (editingDataset = '')}>Cancel</button>
+                                                <button type="submit" class="btn btn--small btn--primary"
+                                                        disabled={busy === `properties-${child.name}`}>
+                                                    {busy === `properties-${child.name}` ? 'Saving…' : 'Save'}
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </td>
+                                </tr>
+                            {/if}
                             {#if retaining === child.name}
                                 <tr class="row-form">
                                     <td colspan="6">
@@ -696,6 +793,12 @@ async function retain(event: Event, dataset: Dataset) {
                     dataset rather than here.
                 </p>
             {/if}
+            <p class="hint">
+                A dataset's properties are the ones it sets itself; one it inherits from the
+                dataset above belongs to that one. Only a child's can be changed here — the
+                API writes properties to a jail's children, not to the dataset the jail runs
+                from.
+            </p>
         {/if}
     </section>
 
@@ -1023,6 +1126,24 @@ async function retain(event: Event, dataset: Dataset) {
 .note {
     font-weight: 400;
     font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.props {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
+}
+
+.prop {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    font-weight: 400;
+    padding: 0 0.35em;
+    border-radius: var(--radius-sm);
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
     color: var(--text-muted);
 }
 

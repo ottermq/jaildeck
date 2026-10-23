@@ -31,6 +31,15 @@ type Dataset struct {
 	Used       int64 `json:"used"`
 	Referenced int64 `json:"referenced"`
 	Available  int64 `json:"available"`
+	// Properties are the native ZFS properties this dataset sets locally, out
+	// of the four an existing one may be given (JD-023). Absent rather than
+	// empty when it sets none, and a property it merely inherits is not here:
+	// that value belongs to the parent, and setting it here would create a
+	// local override rather than change what is in effect.
+	//
+	// The jail's *user* properties stay at the jail level, where JD-004 put
+	// them -- a client tags the jail, not each of its datasets.
+	Properties map[string]string `json:"properties,omitempty"`
 }
 
 // JailStorage is the storage half of one jail's listing.

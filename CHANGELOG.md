@@ -22,7 +22,47 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
 
+### Changed
+
+- **The API is described by a generated OpenAPI spec, not a hand-maintained collection.**
+  `collections/insomnium.json` is gone. `make doc` generates
+  [`docs/api/swagger.json`](docs/api/swagger.json) from annotations on the handlers, using
+  `swag` pinned in `go.mod` as a tool dependency — no global install, same version
+  everywhere. Import it into any client that reads Swagger 2.0.
+
+  The collection was 1,648 lines of JSON edited by hand for one tool. The guarantee it
+  carried is kept and strengthened: `make check` now fails if the committed spec is not what
+  the annotations produce, and the suite fails in both directions besides. That matters
+  because `swag` silently skips an un-annotated handler, so an undocumented endpoint would
+  otherwise produce a spec that is merely shorter.
+
+  Jail Deck serves no Swagger UI; the spec is a file. The long-form API guide moved to
+  [`docs/api/index.md`](docs/api/index.md).
+
+  No endpoint changed. `common.ErrorResponse`, `auth.LoginRequest` and
+  `storage.RetainedDataset` are named types now rather than inline literals, so the spec can
+  point at them — the JSON each produces is identical.
+
 ### API
+
+- **A dataset can be moved out of a jail and back in.**
+  `POST /api/jails/{name}/datasets/{child}/retain` moves it to
+  `<pool>/jails/retained/<name>`, `GET /api/retained` lists what is being kept, and
+  `.../restore` brings one back under any jail. Destroying a jail takes its children and
+  their snapshots with it (JD-007), so this is what makes "destroy the jail, keep the data"
+  possible. (#5, JD-025)
+
+  Three audited commands: `zfs rename -u`, `zfs unmount`, `zfs mount`. **The `-u` is not
+  optional** — a plain `zfs rename` unmounts and remounts inside the same command, which on a
+  running jail is the filesystem vanishing from under a live process. And the move is still
+  completed in the same call, because a dataset left named in one place and mounted in another
+  makes the jail undestroyable: `zfs destroy` answers `pool or dataset is busy`.
+
+  A running jail loses that path at the unmount; the response says `remounted: true` so a
+  caller knows the filesystem moved and not just the name.
+
+  `<pool>/jails/retained` is created on demand and is **not** added to the layout readiness
+  check: a host that has never retained anything is not missing something (JD-021).
 
 - **Snapshots.** `GET /api/jails/{name}/snapshots` lists every snapshot of a jail's datasets;
   `PUT`, `DELETE` and `POST .../rollback` under `/snapshots/{snapshot}` take, destroy and roll

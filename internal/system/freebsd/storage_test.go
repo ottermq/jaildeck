@@ -59,16 +59,16 @@ func TestDatasetsUnderFixtures(t *testing.T) {
 		// child dataset and not on a jail's root. These are those bytes.
 		{"isengard", "tank", storage.Dataset{
 			Name: "tank/jails/containers/postgres", Mountpoint: "/usr/local/jails/containers/postgres",
-			Used: 1519087616, Available: 963195006976, Referenced: 1891311616}},
+			Used: 1518903296, Available: 963194286080, Referenced: 1891311616}},
 		// A pool root mounted nowhere, which must never be matched to a jail.
 		{"isengard", "tank", storage.Dataset{
 			Name: "tank", Mountpoint: "none",
-			Used: 2367369216, Available: 963195006976, Referenced: 98304}},
+			Used: 2368090112, Available: 963194286080, Referenced: 98304}},
 		// The replication target: 23 datasets, every one of them mounted
 		// nowhere (JD-021).
 		{"isengard", "backup", storage.Dataset{
 			Name: "backup/isengard/tank/jails", Mountpoint: "none",
-			Used: 3499945984, Available: 476439961600, Referenced: 164872192}},
+			Used: 3500851200, Available: 476438388736, Referenced: 164872192}},
 		{"rohan", "media", storage.Dataset{
 			Name: "media/.incoming", Mountpoint: "/srv/media/.incoming",
 			Used: 1517826048, Available: 783248302080, Referenced: 1517826048}},

@@ -37,7 +37,7 @@ tank/jails	refreservation	none	default
 tank/jails	guid	12861042143225296823	-
 tank/jails	primarycache	all	default
 tank/jails	secondarycache	all	default
-tank/jails	usedbysnapshots	0B	-
+tank/jails	usedbysnapshots	128K	-
 tank/jails	usedbydataset	157M	-
 tank/jails	usedbychildren	2.02G	-
 tank/jails	usedbyrefreservation	0B	-
@@ -70,7 +70,7 @@ tank/jails	keylocation	none	default
 tank/jails	keyformat	none	default
 tank/jails	pbkdf2iters	0	default
 tank/jails	special_small_blocks	0	default
-tank/jails	snapshots_changed	Fri Oct 23 11:01:40 2026	-
+tank/jails	snapshots_changed	Fri Oct 23 11:46:42 2026	-
 tank/jails	prefetch	all	default
 tank/jails	direct	standard	default
 tank/jails	longname	off	default

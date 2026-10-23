@@ -14,6 +14,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/common"
 	"github.com/ottermq/jaildeck/internal/host"
 	"github.com/ottermq/jaildeck/internal/jails"
+	"github.com/ottermq/jaildeck/internal/storage"
 )
 
 func (a *App) Routes(assets fs.FS) http.Handler {
@@ -25,12 +26,11 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 		auth.RegisterAuthRoutes(r, a.authHandler)
 		r.Group(func(r chi.Router) {
 			r.Use(a.authHandler.RequireAuth)
-			r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-				http.Redirect(w, r, "/api/jails", http.StatusSeeOther)
-			})
+			r.Get("/", a.apiRoot)
 			jails.RegisterJailRoutes(r, a.jailHandler)
 			host.RegisterHostRoutes(r, a.hostHandler)
 			audit.RegisterAuditRoutes(r, a.auditHandler)
+			storage.RegisterStorageRoutes(r, a.storageHandler)
 		})
 	})
 
@@ -136,4 +136,23 @@ func serveIndex(w http.ResponseWriter, content []byte) {
 
 func apiNotFound(w http.ResponseWriter, _ *http.Request) {
 	common.HandlerError(w, common.NewAppError(http.StatusNotFound, "not found"))
+}
+
+// apiRoot sends a caller who guessed at the base path somewhere useful.
+//
+// A named method rather than the closure it used to be, so that the generated
+// spec can describe it: swag parses annotations above functions, and an inline
+// handler has nowhere to put them.
+//
+// @Summary      API root
+// @Description  Redirects to /api/jails, so a client that guessed the base path lands on
+// @Description  something rather than a 404. It is behind authentication like everything
+// @Description  else here, so an unauthenticated caller gets 401 instead of the redirect.
+// @Tags         meta
+// @Success      303  "See Other: /api/jails"
+// @Failure      401  {object}  common.ErrorResponse
+// @Security     BearerAuth
+// @Router       / [get]
+func (a *App) apiRoot(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/api/jails", http.StatusSeeOther)
 }

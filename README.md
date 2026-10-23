@@ -196,6 +196,9 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `PUT /api/jails/{name}/datasets/{child}/snapshots/{snapshot}` | one dataset only |
 | `DELETE /api/jails/{name}/datasets/{child}/snapshots/{snapshot}` | |
 | `POST /api/jails/{name}/datasets/{child}/snapshots/{snapshot}/rollback` | |
+| `POST /api/jails/{name}/datasets/{child}/retain` | move a dataset out of the jail |
+| `POST /api/jails/{name}/datasets/{child}/restore` | move a retained one back in |
+| `GET /api/retained` | datasets being kept past their jails |
 | `POST /api/jails/{name}/start` | |
 | `POST /api/jails/{name}/stop` | |
 | `POST /api/jails/{name}/restart` | |
@@ -287,6 +290,32 @@ Snapshots are ordered by `create_txg`, ZFS's transaction group, not by `created`
 second granularity and two snapshots taken in the same second tie on it, which is precisely when
 getting the order wrong destroys something it should not have.
 
+### Keeping data past the jail that held it
+
+`zfs destroy -r` on a jail takes its children and their snapshots with it, so a dataset worth
+keeping has to stop being a child first.
+
+```sh
+curl -X POST .../api/jails/ottermq/datasets/data/retain -d '{"name":"ottermq-data"}'
+# {"to":"tank/jails/retained/ottermq-data","mountpoint":"/usr/local/jails/retained/...","remounted":true}
+# ... destroy and recreate the jail ...
+curl -X POST .../api/jails/ottermq/datasets/data/restore -d '{"from":"ottermq-data"}'
+```
+
+Three commands under the hood — `zfs rename -u`, then `unmount`, then `mount` — and the `-u`
+matters. A plain `zfs rename` unmounts and remounts inside the same command, which on a running
+jail is the filesystem vanishing from under whatever is using it: `ls /data` answers
+`No such file or directory`, mid-rename. With `-u` the rename is invisible and the unmount is a
+separate, deliberate step.
+
+**It still unmounts.** `remounted: true` means the filesystem moved, and a running jail loses
+that path at that moment — stop it first. Leaving the move half done is worse: a dataset still
+mounted inside a jail makes the jail undestroyable, with `zfs destroy` answering
+`pool or dataset is busy`.
+
+`<pool>/jails/retained` is created the first time one is needed and is not part of the layout
+readiness check — a host that has never retained anything is not missing something.
+
 Authenticate with a token, as a script would:
 
 ```sh
@@ -339,9 +368,26 @@ A jail operation can legitimately run to its 150-second backstop, so an API clie
 a generous timeout. A `504` means Jail Deck stopped waiting — not that the jail failed to
 start, and not that it will not finish.
 
-`collections/insomnium.json` is an Insomnium collection covering every endpoint. `make
-check` fails if it stops doing so, in either direction — a route with no request, or a
-request whose route no longer exists — so it cannot quietly fall behind the API.
+### The API reference
+
+[`docs/api/swagger.json`](docs/api/swagger.json) describes every endpoint, generated from
+annotations on the handlers themselves:
+
+```sh
+make doc     # regenerate it
+```
+
+Import it into Insomnia, Bruno, Postman or anything else that reads Swagger 2.0. Jail Deck
+serves no Swagger UI — the spec is a file, and the tool you already use browses it better
+than a page embedded in a jail host would.
+
+`make check` fails if the committed spec is not what the annotations produce, and the test
+suite fails in both directions besides — a route with no annotation, or an annotation whose
+route no longer exists. swag silently skips an un-annotated handler, so without that test an
+undocumented endpoint would produce a spec that is merely shorter, with nothing saying so.
+
+[`docs/api/index.md`](docs/api/index.md) is the guide: the property allowlist, the worked
+flows, and the behaviour that was measured on a real host rather than assumed.
 
 ## Development
 

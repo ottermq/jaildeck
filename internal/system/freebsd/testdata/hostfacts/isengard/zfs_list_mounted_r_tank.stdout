@@ -6,5 +6,6 @@ tank/jails/containers/ottermq	yes	on	/usr/local/jails/containers/ottermq
 tank/jails/containers/ottermq/data	yes	on	/usr/local/jails/containers/ottermq/data
 tank/jails/containers/postgres	yes	on	/usr/local/jails/containers/postgres
 tank/jails/media	yes	on	/usr/local/jails/media
+tank/jails/retained	yes	on	/usr/local/jails/retained
 tank/jails/templates	yes	on	/usr/local/jails/templates
 tank/jails/templates/15.1-RELEASE	yes	on	/usr/local/jails/templates/15.1-RELEASE

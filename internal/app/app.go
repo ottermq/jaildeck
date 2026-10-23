@@ -21,10 +21,11 @@ import (
 var ErrNoCredential = errors.New("no operator credential configured")
 
 type App struct {
-	authHandler  *auth.AuthHandler
-	jailHandler  *jails.JailHandler
-	hostHandler  *host.HostHandler
-	auditHandler *audit.AuditHandler
+	authHandler    *auth.AuthHandler
+	jailHandler    *jails.JailHandler
+	hostHandler    *host.HostHandler
+	auditHandler   *audit.AuditHandler
+	storageHandler *storage.StorageHandler
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -53,8 +54,10 @@ func New(cfg *config.Config) (*App, error) {
 	}
 	storageService := storage.NewService(storageSystem, auditLogger, cfg.ZFSPool)
 
+	storageHandler := storage.NewStorageHandler(storageService)
+
 	jailStorage := storage.NewJailSource(storageService)
-	jailService := jails.NewJailService(jailSystem, auditLogger, jailStorage, jailStorage, jailStorage)
+	jailService := jails.NewJailService(jailSystem, auditLogger, jailStorage, jailStorage, jailStorage, jailStorage)
 	jailHandler := jails.NewJailHandler(jailService)
 
 	hostSystem, err := newHostSystem(cfg.Adapter)
@@ -69,10 +72,11 @@ func New(cfg *config.Config) (*App, error) {
 	auditHandler := audit.NewAuditHandler(auditService)
 
 	return &App{
-		authHandler:  authHandler,
-		jailHandler:  jailHandler,
-		hostHandler:  hostHandler,
-		auditHandler: auditHandler,
+		authHandler:    authHandler,
+		jailHandler:    jailHandler,
+		hostHandler:    hostHandler,
+		auditHandler:   auditHandler,
+		storageHandler: storageHandler,
 	}, nil
 }
 

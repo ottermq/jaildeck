@@ -704,6 +704,38 @@ The one place that preference yields is recursion, and it yields to the tool: `z
 
 ---
 
+## JD-025 — Moving a Dataset Out of a Jail
+
+**Status:** Locked — 2026-10-23
+
+Destroying a jail takes its children and their snapshots with it (JD-007), so a dataset worth keeping has to **stop being a child** before the jail goes. Moving it is three commands, in this order, each audited on its own:
+
+```
+zfs rename -u  <jail>/data  <pool>/jails/retained/<name>
+zfs unmount                 <pool>/jails/retained/<name>
+zfs mount                   <pool>/jails/retained/<name>
+```
+
+**`-u` is the whole design, and it is not optional.** A plain `zfs rename` unmounts the dataset and remounts it at its new mountpoint inside the same command. On a running jail that is the filesystem disappearing from under a live process, decided by `zfs` rather than by anyone. Measured on the deployment target: after a plain rename of a running jail's data dataset, `ls /data` inside that jail answered `No such file or directory`. With `-u` the rename is invisible — the mount stays exactly where it was and the jail keeps reading and writing — and moving it becomes a separate step that happens when this code says so.
+
+**But the move is still completed, in the same call.** `-u` alone leaves the dataset named in one place and mounted in another, and a jail with a foreign filesystem mounted inside it **cannot be destroyed**: `zfs destroy` answers `pool or dataset is busy`. A half-moved dataset therefore blocks the one thing this feature exists to enable. Both shapes were measured; the difference is the reason the unmount and the mount are not left to the caller.
+
+The cost, accepted: a running jail loses that path at the unmount. The workflow this serves starts by stopping the jail, and the response says `remounted: true` so a caller knows the filesystem moved rather than only the name.
+
+**The destination is `<pool>/jails/retained/<name>`, created on demand.** It sits beside `media`, `templates` and `containers` so that one destroy of `<pool>/jails` is still the whole story, and the pool is taken from the dataset being moved rather than from configuration — a dataset is already on exactly one pool, and that is the one its retained sibling belongs on. It is deliberately **not** added to the layout host readiness checks (JD-021): a host that has never retained anything is not missing something.
+
+The name is given by the caller, not derived from the jail. Retained names share one namespace per pool, so two jails whose data datasets are both called `data` would collide under any derivation; being asked for a name makes that collision the caller's to resolve, and a `409` when it is already taken.
+
+**A dataset that was not mounted is renamed and left alone.** Mounting it would be a change nobody asked for, and `zfs mount` on something already mounted is an error rather than a no-op — as is `zfs unmount` on something that is not. The mount state is therefore read before the rename, as its own question.
+
+### Rationale
+
+The whole decision is about who chooses the moment a filesystem disappears. `zfs rename` will choose it for you, inside a command whose name says nothing about mounting. `-u` takes that choice back, and completing the move in the same call means the caller still gets one operation with one outcome rather than a state they can forget to finish.
+
+**Verified end to end on isengard**, with a jail configured for the purpose and never started: retain the data, `zfs destroy -r` the jail (which succeeded, where the half-moved form had failed `busy`), recreate the jail's dataset, restore the data — marker file and `refquota` both intact, mounted back where they belonged.
+
+---
+
 ## Decision Policy
 
 Once a decision is marked as **Locked**, it should not be revisited without a clear technical or product justification. Architectural evolution is expected, but changes should be deliberate and documented rather than occurring through incremental drift.

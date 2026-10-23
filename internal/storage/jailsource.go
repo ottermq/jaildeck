@@ -226,3 +226,33 @@ func (s *JailSource) snapshotCall(ctx context.Context, jailPath, child string, c
 }
 
 var _ jails.SnapshotWriter = (*JailSource)(nil)
+
+func (s *JailSource) Retain(ctx context.Context, jailPath, child, name string) (jails.DatasetMove, error) {
+	source, err := s.datasetFor(ctx, jailPath, child)
+	if err != nil {
+		return jails.DatasetMove{}, err
+	}
+	moved, err := s.service.RetainDataset(ctx, source, name)
+	return toJailsMove(moved), err
+}
+
+func (s *JailSource) Restore(ctx context.Context, jailPath, name, child string) (jails.DatasetMove, error) {
+	target, err := s.datasetFor(ctx, jailPath, child)
+	if err != nil {
+		return jails.DatasetMove{}, err
+	}
+	// The pool is the jail's own: a dataset is restored onto the pool it is
+	// going to live on, which is the one the jail is on.
+	pool, _, _ := strings.Cut(target, "/")
+	moved, err := s.service.RestoreDataset(ctx, pool, name, target)
+	return toJailsMove(moved), err
+}
+
+func toJailsMove(moved MoveResult) jails.DatasetMove {
+	return jails.DatasetMove{
+		From: moved.From, To: moved.To,
+		Mountpoint: moved.Mountpoint, Remounted: moved.Remounted,
+	}
+}
+
+var _ jails.DatasetMover = (*JailSource)(nil)

@@ -196,6 +196,10 @@ if [ -n "$PROBE_DS" ]; then
 	# exist. These are NOT the same shape and the difference decides whether an
 	# adapter treats "no such property" as an error or as absence.
 	cap zfs_get_unset_userprop "zfs get -H -o name,property,value,source otter:instance $PROBE_DS"
+	# The mount state as its own question (#5). Both zfs unmount and zfs mount
+	# fail when it is wrong -- unmounting what is not mounted and mounting what
+	# already is are each an error, not a no-op -- so a move has to ask first.
+	cap zfs_get_mounted "zfs get -H -o value mounted $PROBE_DS"
 	cap zfs_get_bad_property "zfs get -H -o value nosuchproperty $PROBE_DS"
 	cap zfs_get_absent_dataset "zfs get -H -o value used $PROBE_DS/definitely-not-here"
 	# Snapshots are a separate type, absent from a default zfs list, and the

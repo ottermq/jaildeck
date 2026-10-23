@@ -34,13 +34,36 @@ type stubSystem struct {
 	clones        map[string][]string
 	dependencyErr error
 	nextTXG       uint64
+	// The move half.
+	notMounted map[string]bool
+	mountErr   error
 }
 
 func (s *stubSystem) Pools(context.Context) ([]string, error) { return s.pools, s.poolsErr }
 
+// DatasetsUnder scopes to the roots, as zfs list -r does. It used not to, and
+// a test of RetainedDatasets caught the lie: code that depends on the scoping
+// passed against a stub that returned everything.
 func (s *stubSystem) DatasetsUnder(_ context.Context, roots []string) ([]Dataset, error) {
 	s.roots = append(s.roots, roots)
-	return s.datasets, s.datasetErr
+	if s.datasetErr != nil {
+		return nil, s.datasetErr
+	}
+	found := make([]Dataset, 0, len(s.datasets))
+	for _, dataset := range s.datasets {
+		for _, root := range roots {
+			if dataset.Name == root || strings.HasPrefix(dataset.Name, root+"/") {
+				found = append(found, dataset)
+				break
+			}
+		}
+	}
+	if len(found) == 0 {
+		// zfs list exits non-zero for a path that does not exist, and that is
+		// what "nothing is retained here" looks like from the caller's side.
+		return nil, errors.New("cannot open: dataset does not exist")
+	}
+	return found, nil
 }
 
 func (s *stubSystem) LocalProperties(_ context.Context, roots []string) ([]Property, error) {
@@ -342,4 +365,43 @@ func (s *stubSystem) descendants(dataset string, recursive bool) []string {
 		}
 	}
 	return targets
+}
+
+// The move half of the stub. Rename carries descendants, properties and
+// snapshots with the dataset, as zfs does, and leaves the mount alone, which
+// is what -u means.
+func (s *stubSystem) RenameDataset(_ context.Context, from, to string) (Result, error) {
+	command := "zfs rename -u " + from + " " + to
+	s.ran = append(s.ran, command)
+	if s.writeErr != nil {
+		return Result{Dataset: to, Command: command}, s.writeErr
+	}
+	parent := to[:strings.LastIndex(to, "/")]
+	if !slices.ContainsFunc(s.datasets, func(d Dataset) bool { return d.Name == parent }) {
+		return Result{Dataset: to, Command: command}, errors.New("cannot create '" + to + "': parent does not exist")
+	}
+	for i, d := range s.datasets {
+		if d.Name == from || strings.HasPrefix(d.Name, from+"/") {
+			s.datasets[i].Name = to + strings.TrimPrefix(d.Name, from)
+			s.datasets[i].Mountpoint = "/usr/local/jails/retained/" + to[strings.LastIndex(to, "/")+1:]
+		}
+	}
+	return Result{Dataset: to, Command: command}, nil
+}
+
+func (s *stubSystem) Mounted(_ context.Context, dataset string) (bool, error) {
+	if s.notMounted[dataset] {
+		return false, nil
+	}
+	return true, s.dependencyErr
+}
+
+func (s *stubSystem) Unmount(_ context.Context, dataset string) (Result, error) {
+	s.ran = append(s.ran, "zfs unmount "+dataset)
+	return Result{Dataset: dataset, Command: "zfs unmount " + dataset}, s.mountErr
+}
+
+func (s *stubSystem) Mount(_ context.Context, dataset string) (Result, error) {
+	s.ran = append(s.ran, "zfs mount "+dataset)
+	return Result{Dataset: dataset, Command: "zfs mount " + dataset}, s.mountErr
 }

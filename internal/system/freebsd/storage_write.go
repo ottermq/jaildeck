@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/ottermq/jaildeck/internal/storage"
 	"github.com/ottermq/jaildeck/internal/system"
@@ -73,3 +74,32 @@ func propertyArgs(properties map[string]string, flag string) []string {
 }
 
 var _ storage.StorageSystem = (*StorageAdapter)(nil)
+
+// RenameDataset always passes -u. Without it, zfs unmounts the dataset and
+// remounts it at the new mountpoint inside the same command -- which, on a
+// running jail, is the filesystem vanishing from under a live process. Proven
+// on the deployment target: a plain rename of a running jail's data dataset
+// left `ls /data` inside the jail answering "No such file or directory".
+func (a *StorageAdapter) RenameDataset(ctx context.Context, from, to string) (storage.Result, error) {
+	return a.runWrite(ctx, to, system.Command{Name: "zfs", Args: []string{"rename", "-u", from, to}})
+}
+
+// Mounted reads the property rather than parsing mount(8): one value, and the
+// same question the two calls below need answered before they can succeed.
+func (a *StorageAdapter) Mounted(ctx context.Context, dataset string) (bool, error) {
+	result, err := a.runHost(ctx, system.Command{
+		Name: "zfs", Args: []string{"get", "-H", "-o", "value", "mounted", dataset},
+	})
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(result.Stdout) == "yes", nil
+}
+
+func (a *StorageAdapter) Unmount(ctx context.Context, dataset string) (storage.Result, error) {
+	return a.runWrite(ctx, dataset, system.Command{Name: "zfs", Args: []string{"unmount", dataset}})
+}
+
+func (a *StorageAdapter) Mount(ctx context.Context, dataset string) (storage.Result, error) {
+	return a.runWrite(ctx, dataset, system.Command{Name: "zfs", Args: []string{"mount", dataset}})
+}

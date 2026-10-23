@@ -31,6 +31,11 @@ func RegisterJailRoutes(r chi.Router, h *JailHandler) {
 			r.Route("/datasets", func(r chi.Router) {
 				r.Put("/{child}", h.EnsureDataset)
 				r.Patch("/{child}/properties", h.SetDatasetProperties)
+				// Moving a dataset out of the jail, and back in. POST rather
+				// than PUT or DELETE: neither creates nor removes anything,
+				// and a dataset that leaves a jail is the same dataset.
+				r.Post("/{child}/retain", h.Retain)
+				r.Post("/{child}/restore", h.Restore)
 				r.Put("/{child}/snapshots/{snapshot}", h.CreateDatasetSnapshot)
 				r.Delete("/{child}/snapshots/{snapshot}", h.DestroyDatasetSnapshot)
 				r.Post("/{child}/snapshots/{snapshot}/rollback", h.RollbackDataset)

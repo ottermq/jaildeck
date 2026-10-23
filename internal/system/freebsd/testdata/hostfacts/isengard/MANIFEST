@@ -69,6 +69,7 @@ zfs_get_local	zfs get -H -o name,property,value,source -s local all tank/jails	e
 zfs_get_used	zfs get -H -o value used tank/jails	exit=0
 zfs_get_used_p	zfs get -H -p -o value used tank/jails	exit=0
 zfs_get_unset_userprop	zfs get -H -o name,property,value,source otter:instance tank/jails	exit=0
+zfs_get_mounted	zfs get -H -o value mounted tank/jails	exit=0
 zfs_get_bad_property	zfs get -H -o value nosuchproperty tank/jails	exit=2
 zfs_get_absent_dataset	zfs get -H -o value used tank/jails/definitely-not-here	exit=1
 zfs_list_snapshots	zfs list -H -d 1 -t snapshot -o name,used,refer,creation tank/jails	exit=0

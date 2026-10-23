@@ -5,5 +5,6 @@ tank/jails/containers/ottermq	/usr/local/jails/containers/ottermq
 tank/jails/containers/ottermq/data	/usr/local/jails/containers/ottermq/data
 tank/jails/containers/postgres	/usr/local/jails/containers/postgres
 tank/jails/media	/usr/local/jails/media
+tank/jails/retained	/usr/local/jails/retained
 tank/jails/templates	/usr/local/jails/templates
 tank/jails/templates/15.1-RELEASE	/usr/local/jails/templates/15.1-RELEASE

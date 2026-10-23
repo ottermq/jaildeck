@@ -14,6 +14,7 @@ backup/isengard/tank/jails/containers/ottermq	canmount	off	local
 backup/isengard/tank/jails/containers/ottermq/data	canmount	off	local
 backup/isengard/tank/jails/containers/postgres	canmount	off	local
 backup/isengard/tank/jails/media	canmount	off	local
+backup/isengard/tank/jails/retained	canmount	off	local
 backup/isengard/tank/jails/templates	canmount	off	local
 backup/isengard/tank/jails/templates/15.1-RELEASE	canmount	off	local
 backup/isengard/zroot	canmount	off	local

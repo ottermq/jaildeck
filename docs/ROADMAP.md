@@ -217,7 +217,7 @@ Goal: automate the template-preparation workflow described in `docs/SPEC.md`. **
 - **version ceiling:** a jail's userland must be the same as or older than the host kernel, so the host's own release is both the default and the upper bound. Any release picker may offer versions at or below the host only; cross-version support goes downward
 - note that `freebsd-update -b` requires `--currently-running` alongside it
 - resolve JD-008 for this domain — a progress mechanism for a handful of endpoints, not a general async strategy
-- removal must refuse while any jail is still cloned from the template's snapshot
+- ~~removal must refuse while any jail is still cloned from the template's snapshot~~ **done** (JD-027): `DELETE /api/templates/{name}` asks `zfs get clones` first and names what is in the way
 
 ### Completion criteria
 

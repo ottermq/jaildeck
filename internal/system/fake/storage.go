@@ -29,7 +29,6 @@ type StorageSystem struct {
 	properties []storage.Property
 	snapshots  []storage.Snapshot
 	holds      []storage.Hold
-	clones     map[string][]string
 	origins    map[string]string
 	// nextTXG stands in for ZFS's transaction group counter, which is what
 	// orders snapshots exactly. Monotonic, as the real one is.
@@ -324,12 +323,47 @@ func (s *StorageSystem) PromoteDataset(_ context.Context, dataset string) (stora
 	s.origins[former] = dataset + "@" + snapshot
 
 	// The snapshot moves with the ownership, which is what lets the former
-	// origin be destroyed afterwards.
+	// origin be destroyed afterwards. Nothing else has to move: Clones() reads
+	// the origins, and those have already been swapped above.
 	for i, x := range s.snapshots {
 		if x.Dataset == former && x.Short == snapshot {
 			s.snapshots[i].Dataset = dataset
 			s.snapshots[i].Name = dataset + "@" + snapshot
 		}
 	}
+	return result, nil
+}
+
+func (s *StorageSystem) DestroyDataset(_ context.Context, dataset string, recursive bool) (storage.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	command := "zfs destroy"
+	if recursive {
+		command += " -r"
+	}
+	command += " " + dataset
+	result := storage.Result{Dataset: dataset, Command: command}
+
+	if !slices.ContainsFunc(s.datasets, func(d storage.Dataset) bool { return d.Name == dataset }) {
+		return result, fmt.Errorf("cannot open '%s': dataset does not exist", dataset)
+	}
+	// zfs refuses a bare destroy of anything with snapshots or children, and
+	// says to use -r. Modelled, because the code under test is what decides
+	// to pass it.
+	if !recursive {
+		for _, x := range s.snapshots {
+			if x.Dataset == dataset {
+				return result, fmt.Errorf("cannot destroy '%s': filesystem has children", dataset)
+			}
+		}
+	}
+	s.datasets = slices.DeleteFunc(s.datasets, func(d storage.Dataset) bool {
+		return d.Name == dataset || (recursive && strings.HasPrefix(d.Name, dataset+"/"))
+	})
+	s.snapshots = slices.DeleteFunc(s.snapshots, func(x storage.Snapshot) bool {
+		return x.Dataset == dataset || (recursive && strings.HasPrefix(x.Dataset, dataset+"/"))
+	})
+	delete(s.origins, dataset)
 	return result, nil
 }

@@ -213,3 +213,78 @@ func toInstallError(name string, err error) error {
 	return common.NewAppError(http.StatusInternalServerError,
 		"installing packages into "+name+" failed: "+message+"; the template exists and is not ready")
 }
+
+const OperationDestroyTemplate = "destroy-template"
+
+// Removal is what a delete did, or refused to do.
+type Removal struct {
+	Template  string `json:"template"`
+	Destroyed bool   `json:"destroyed"`
+	// Blocked is set when something is cloned from the template. Nothing ran.
+	Blocked *Blocked `json:"blocked,omitempty"`
+}
+
+// Blocked names what is in the way, because "it is in use" without saying by
+// what is a message an operator cannot act on.
+type Blocked struct {
+	Reason string   `json:"reason"`
+	Clones []string `json:"clones,omitempty"`
+	Holds  []string `json:"holds,omitempty"`
+}
+
+// Remove destroys a template, refusing while any jail is still cloned from it
+// (JD-027).
+//
+// The refusal is the point. A template's snapshot is the origin of every jail
+// made from it, and ZFS would refuse the destroy anyway -- but it would refuse
+// after being asked, with a message about dependent clones rather than a list
+// of the jails that are running on them. Asking first turns that into an
+// answer.
+func (s *Service) Remove(ctx context.Context, name, confirm string) (Removal, error) {
+	if confirm != name {
+		return Removal{}, common.NewAppError(http.StatusBadRequest, fmt.Sprintf(
+			"this destroys the template and every snapshot of it; it needs confirm=%s", name))
+	}
+
+	existing, err := s.List(ctx)
+	if err != nil {
+		return Removal{}, err
+	}
+	template, ok := byName(existing, name)
+	if !ok {
+		return Removal{}, common.NewAppError(http.StatusNotFound, "no template named "+name)
+	}
+
+	dependents, err := s.storage.Dependents(ctx, name)
+	if err != nil {
+		return Removal{}, err
+	}
+	if dependents.Any() {
+		return Removal{
+			Template: template.Dataset,
+			Blocked: &Blocked{
+				Reason: blockedReason(dependents),
+				Clones: dependents.Clones,
+				Holds:  dependents.Holds,
+			},
+		}, nil
+	}
+
+	if err := s.storage.Destroy(ctx, name); err != nil {
+		return Removal{}, err
+	}
+	return Removal{Template: template.Dataset, Destroyed: true}, nil
+}
+
+func blockedReason(dependents Dependents) string {
+	parts := make([]string, 0, 2)
+	if n := len(dependents.Clones); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d dataset(s) are cloned from it", n))
+	}
+	if n := len(dependents.Holds); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d hold(s) are on its snapshots", n))
+	}
+	return "refused: " + strings.Join(parts, " and ") +
+		". Destroying it would take them with it, so each has to go first -- or, for a jail " +
+		"that should outlive the template, zfs promote moves the dependency the other way."
+}

@@ -320,6 +320,28 @@ option and `install -y -f` is not the command that was asked for. No shell is in
 way. Versions, origins and flavours pass through untouched — `pkg` knows what a package name
 is and says so precisely when it is wrong, and that sentence comes back as a `400`.
 
+### Removing a template
+
+```sh
+curl -X DELETE '.../api/templates/postgres-16?confirm=postgres-16'
+```
+
+**409 while anything is cloned from it**, naming every one:
+
+```json
+{"template":"tank/jails/templates/15.1-RELEASE",
+ "blocked":{"reason":"refused: 3 dataset(s) are cloned from it. Destroying it would take
+             them with it, so each has to go first -- or, for a jail that should outlive
+             the template, zfs promote moves the dependency the other way.",
+            "clones":["tank/jails/containers/goodiesdb","tank/jails/containers/ottermq",
+                      "tank/jails/containers/postgres"]}}
+```
+
+ZFS would refuse as well, but its message says "dependent clones" and leaves you to work out
+which. This asks `zfs get clones` first, so the refusal is an answer.
+
+It is also how you clean up the half-built template a failed derive leaves behind.
+
 ## Upgrading a jail
 
 A jail's root is a clone of a template snapshot, so upgrading one is replacing that root with

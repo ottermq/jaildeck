@@ -872,6 +872,18 @@ The two paths are not competing mechanisms to choose between — they are the sa
 
 `pkg -c` earns its place by being the part of that which needs nothing else to exist. Everything beyond packages waits for Jail Provisioning and exec, and when they land, the jail-based path covers what this cannot — including the case the deployment target actually has, which is jails with no packages and a configuration done by hand.
 
+### Removing one
+
+`DELETE /api/templates/{name}?confirm={name}` destroys the template and its snapshots, and **refuses while anything is cloned from it**, naming every one.
+
+ZFS would refuse too — but only after being asked, and its message says "dependent clones" rather than which jails are running on them. Asking `zfs get clones` first turns a refusal into an answer. Never `zfs destroy -R`: that takes the dependent clones with it, which would make the check decorative.
+
+A jail that should outlive its template is not stuck, and the refusal says so: `zfs promote` on the jail moves the dependency the other way, which is cloning a jail as a template run in reverse.
+
+`confirm` is the template's name. Unlike a snapshot's, it is unambiguous on its own — a template name is unique within the pool, where `nightly` names a snapshot on every dataset that has one (JD-024).
+
+This is also what cleans up the half-built template a failed derive leaves behind. Without it, refusing to resume one and offering no way to remove it would have left the operator reaching for `zfs destroy` by hand.
+
 **Still to settle, in the Jail Provisioning milestone:** how a custom jail is filled through the API rather than by hand — exec (JD-016) is the mechanism, the orchestration is not designed — and how the paths are presented in the interface.
 
 

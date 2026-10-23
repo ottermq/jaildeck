@@ -128,3 +128,11 @@ func (a *StorageAdapter) Origin(ctx context.Context, dataset string) (string, er
 func (a *StorageAdapter) PromoteDataset(ctx context.Context, dataset string) (storage.Result, error) {
 	return a.runWrite(ctx, dataset, system.Command{Name: "zfs", Args: []string{"promote", dataset}})
 }
+
+func (a *StorageAdapter) DestroyDataset(ctx context.Context, dataset string, recursive bool) (storage.Result, error) {
+	args := []string{"destroy"}
+	if recursive {
+		args = append(args, "-r")
+	}
+	return a.runWrite(ctx, dataset, system.Command{Name: "zfs", Args: append(args, dataset)})
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -20,6 +21,11 @@ type stubStorage struct {
 	sealed    []string
 	deriveErr error
 	sealErr   error
+	// The removal half.
+	dependents    map[string]Dependents
+	dependentsErr error
+	destroyed     []string
+	destroyErr    error
 }
 
 func (s *stubStorage) Templates(context.Context) ([]Template, error) {
@@ -288,5 +294,153 @@ func commandError(message, stderr string, exitCode int) error {
 		Command: "pkg",
 		Result:  system.CommandResult{Stderr: stderr, ExitCode: exitCode},
 		Err:     errors.New(message + ": " + stderr),
+	}
+}
+
+func (s *stubStorage) Dependents(_ context.Context, name string) (Dependents, error) {
+	return s.dependents[name], s.dependentsErr
+}
+
+func (s *stubStorage) Destroy(_ context.Context, name string) error {
+	s.destroyed = append(s.destroyed, name)
+	if s.destroyErr != nil {
+		return s.destroyErr
+	}
+	s.templates = slices.DeleteFunc(s.templates, func(t Template) bool { return t.Name == name })
+	return nil
+}
+
+func removable() *stubStorage {
+	s := release()
+	s.templates = append(s.templates, Template{
+		Name: "postgres-16", Dataset: "tank/jails/templates/postgres-16", Ready: true,
+		Snapshot: "tank/jails/templates/postgres-16@base", Parent: "15.1-RELEASE",
+	})
+	s.dependents = map[string]Dependents{}
+	return s
+}
+
+func TestRemoveDestroysATemplateNothingDependsOn(t *testing.T) {
+	storage := removable()
+	removal, err := NewService(storage, &stubPackages{}, &fakeLogger{}).
+		Remove(context.Background(), "postgres-16", "postgres-16")
+	if err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	if !removal.Destroyed || removal.Blocked != nil {
+		t.Errorf("removal = %+v, want it destroyed", removal)
+	}
+	if !reflect.DeepEqual(storage.destroyed, []string{"postgres-16"}) {
+		t.Errorf("destroyed %q", storage.destroyed)
+	}
+	if _, ok := byName(storage.templates, "postgres-16"); ok {
+		t.Error("the template is still in the listing")
+	}
+}
+
+// The refusal the roadmap asks for, and the reason the check is made before
+// the destroy rather than read out of zfs's complaint afterwards: this names
+// the jails, and zfs's message names only the clones.
+func TestRemoveRefusesWhileSomethingIsClonedFromIt(t *testing.T) {
+	tests := []struct {
+		name       string
+		dependents Dependents
+		wantIn     string
+	}{
+		{
+			name:       "a jail cloned from it",
+			dependents: Dependents{Clones: []string{"tank/jails/containers/pg-1"}},
+			wantIn:     "pg-1",
+		},
+		{
+			name:       "a template derived from it",
+			dependents: Dependents{Clones: []string{"tank/jails/templates/postgres-16-tuned"}},
+			wantIn:     "postgres-16-tuned",
+		},
+		{
+			name:       "a hold on one of its snapshots",
+			dependents: Dependents{Holds: []string{"tank/jails/templates/postgres-16@base (keep)"}},
+			wantIn:     "keep",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			storage := removable()
+			storage.dependents["postgres-16"] = tt.dependents
+
+			removal, err := NewService(storage, &stubPackages{}, &fakeLogger{}).
+				Remove(context.Background(), "postgres-16", "postgres-16")
+			if err != nil {
+				t.Fatalf("Remove() error = %v", err)
+			}
+			if removal.Blocked == nil {
+				t.Fatalf("removal = %+v, want it blocked", removal)
+			}
+			named := strings.Join(append(append([]string{}, removal.Blocked.Clones...),
+				removal.Blocked.Holds...), " ")
+			if !strings.Contains(named, tt.wantIn) {
+				t.Errorf("blocked = %+v, want it to name %q", removal.Blocked, tt.wantIn)
+			}
+			// And nothing was destroyed.
+			if len(storage.destroyed) != 0 {
+				t.Errorf("destroyed %q while refusing", storage.destroyed)
+			}
+		})
+	}
+}
+
+// A jail that should outlive its template is not stuck, and the refusal says
+// so: zfs promote moves the dependency the other way.
+func TestTheRefusalSaysHowToGetPastIt(t *testing.T) {
+	storage := removable()
+	storage.dependents["postgres-16"] = Dependents{Clones: []string{"tank/jails/containers/pg-1"}}
+
+	removal, _ := NewService(storage, &stubPackages{}, &fakeLogger{}).
+		Remove(context.Background(), "postgres-16", "postgres-16")
+	if !strings.Contains(removal.Blocked.Reason, "promote") {
+		t.Errorf("reason = %q, want it to mention zfs promote", removal.Blocked.Reason)
+	}
+}
+
+func TestRemoveRefusals(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		confirm  string
+		wantCode int
+	}{
+		{name: "no confirm", template: "postgres-16", confirm: "", wantCode: http.StatusBadRequest},
+		{name: "confirm names another template", template: "postgres-16", confirm: "15.1-RELEASE", wantCode: http.StatusBadRequest},
+		{name: "no such template", template: "absent", confirm: "absent", wantCode: http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			storage := removable()
+			_, err := NewService(storage, &stubPackages{}, &fakeLogger{}).
+				Remove(context.Background(), tt.template, tt.confirm)
+			if err == nil {
+				t.Fatal("Remove() returned no error")
+			}
+			if code := appErrCode(t, err); code != tt.wantCode {
+				t.Errorf("error code = %d, want %d (%v)", code, tt.wantCode, err)
+			}
+			if len(storage.destroyed) != 0 {
+				t.Errorf("destroyed %q for a refused call", storage.destroyed)
+			}
+		})
+	}
+}
+
+// The half-built template a failed derive leaves behind is exactly what this
+// endpoint exists to clean up, and nothing is cloned from it.
+func TestRemoveAnUnreadyTemplate(t *testing.T) {
+	storage := removable()
+	storage.templates = append(storage.templates, Template{
+		Name: "broken", Dataset: "tank/jails/templates/broken", Ready: false,
+	})
+	removal, err := NewService(storage, &stubPackages{}, &fakeLogger{}).
+		Remove(context.Background(), "broken", "broken")
+	if err != nil || !removal.Destroyed {
+		t.Fatalf("Remove() = %+v, %v; want the half-built template destroyed", removal, err)
 	}
 }

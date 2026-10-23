@@ -245,3 +245,110 @@ func TestCloneAJailAsATemplateRefusals(t *testing.T) {
 		})
 	}
 }
+
+// Removing a template, and the refusal the roadmap asks for (#7, JD-027).
+func TestRemoveATemplate(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatalf("create test app: %v", err)
+	}
+	router := a.Routes(testAssets())
+	cookies := login(t, router)
+
+	if rec := send(t, router, http.MethodPut, "/api/templates/scratch", cookies,
+		`{"from":"15.1-RELEASE","packages":[]}`); rec.Code != http.StatusCreated {
+		t.Fatalf("derive returned %d: %s", rec.Code, rec.Body)
+	}
+
+	t.Run("nothing depends on it", func(t *testing.T) {
+		rec := do(t, router, http.MethodDelete, "/api/templates/scratch?confirm=scratch", cookies, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("DELETE returned %d, want 200: %s", rec.Code, rec.Body)
+		}
+		if _, ok := templateList(t, router, cookies)["scratch"]; ok {
+			t.Error("the template is still listed after being destroyed")
+		}
+	})
+
+	t.Run("the release template has jails on it", func(t *testing.T) {
+		rec := do(t, router, http.MethodDelete,
+			"/api/templates/15.1-RELEASE?confirm=15.1-RELEASE", cookies, nil)
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("DELETE returned %d, want 409: %s", rec.Code, rec.Body)
+		}
+		var removal struct {
+			Destroyed bool `json:"destroyed"`
+			Blocked   *struct {
+				Reason string   `json:"reason"`
+				Clones []string `json:"clones"`
+			} `json:"blocked"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &removal); err != nil {
+			t.Fatalf("decode: %v\n%s", err, rec.Body)
+		}
+		if removal.Destroyed {
+			t.Error("destroyed = true on a refusal")
+		}
+		if removal.Blocked == nil || len(removal.Blocked.Clones) == 0 {
+			t.Fatalf("blocked = %+v, want it to name the jails cloned from it", removal.Blocked)
+		}
+		// Named, not merely counted: zfs's own refusal would say "dependent
+		// clones" and leave the operator to find out which.
+		found := false
+		for _, clone := range removal.Blocked.Clones {
+			if clone == "zroot/jails/nginx" || clone == "zroot/jails/redis" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("clones = %q, want the jails cloned from it", removal.Blocked.Clones)
+		}
+		// And it is still there.
+		if _, ok := templateList(t, router, cookies)["15.1-RELEASE"]; !ok {
+			t.Error("the template was destroyed despite the refusal")
+		}
+	})
+
+	t.Run("statuses", func(t *testing.T) {
+		for path, want := range map[string]int{
+			"/api/templates/15.1-RELEASE":                   http.StatusBadRequest,
+			"/api/templates/15.1-RELEASE?confirm=something": http.StatusBadRequest,
+			"/api/templates/absent?confirm=absent":          http.StatusNotFound,
+		} {
+			if rec := do(t, router, http.MethodDelete, path, cookies, nil); rec.Code != want {
+				t.Errorf("DELETE %s returned %d, want %d: %s", path, rec.Code, want, rec.Body)
+			}
+		}
+	})
+}
+
+// The half-built template a failed derive leaves behind can now be cleaned up
+// through the API, which is what this endpoint was added for.
+func TestRemoveAHalfBuiltTemplate(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatalf("create test app: %v", err)
+	}
+	router := a.Routes(testAssets())
+	cookies := login(t, router)
+
+	if rec := send(t, router, http.MethodPut, "/api/templates/broken", cookies,
+		`{"from":"15.1-RELEASE","packages":["nosuchpackage"]}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("derive returned %d, want 400: %s", rec.Code, rec.Body)
+	}
+	if got := templateList(t, router, cookies)["broken"]; got.Ready {
+		t.Fatal("the half-built template reports itself ready")
+	}
+
+	if rec := do(t, router, http.MethodDelete, "/api/templates/broken?confirm=broken", cookies, nil); rec.Code != http.StatusOK {
+		t.Fatalf("DELETE returned %d: %s", rec.Code, rec.Body)
+	}
+	if _, ok := templateList(t, router, cookies)["broken"]; ok {
+		t.Error("the half-built template is still listed")
+	}
+	// And the derive that failed can now be attempted again.
+	if rec := send(t, router, http.MethodPut, "/api/templates/broken", cookies,
+		`{"from":"15.1-RELEASE","packages":[]}`); rec.Code != http.StatusCreated {
+		t.Errorf("retrying after cleanup returned %d, want 201: %s", rec.Code, rec.Body)
+	}
+}

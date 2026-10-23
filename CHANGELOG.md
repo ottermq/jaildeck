@@ -45,6 +45,12 @@ versions' release notes stay there. GitHub numbering started again at #1.
   **`PUT /api/templates/{name}`** is the shortcut for the package-only case: clone a
   parent's `@base`, `pkg -c <root> install -y`, snapshot as `@base`.
 
+  **`DELETE /api/templates/{name}?confirm={name}`** destroys one, and **refuses while
+  anything is cloned from it**, naming every jail and derived template in the way. ZFS
+  would refuse too, but only after being asked and without saying which; this asks
+  `zfs get clones` first. Never `zfs destroy -R`, which would take them with it. It is also
+  what cleans up the half-built template a failed derive leaves behind.
+
   `pkg -c` chroots, so nothing is started: no jail, no stanza, no networking for a
   temporary jail. It is the same shape as the `freebsd-update -b <root>` JD-007 already runs
   against an unbooted template.

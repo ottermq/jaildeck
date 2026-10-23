@@ -1735,6 +1735,69 @@
                         }
                     }
                 }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Destroys the template dataset and its snapshots.\n\n**409 while anything is cloned from it**, naming every one. A template's\nsnapshot is the origin of every jail made from it, so destroying it would\ntake them with it. ZFS would refuse too — but only after being asked, with\na message about dependent clones rather than a list of the jails running on\nthem. This asks first, so the refusal is an answer.\n\nA jail that should outlive its template is not stuck: `zfs promote` on the\njail moves the dependency the other way, exactly as cloning a jail as a\ntemplate does in reverse (JD-027).\n\n`confirm` is the template's name. Unlike a snapshot's, it is unambiguous on\nits own — a template name is unique within the pool, where `nightly` names a\nsnapshot on every dataset that has one.\n\nNever `zfs destroy -R`: that would take the dependent clones this refuses to\ntouch, which would make the check decorative.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Remove a template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The template to destroy",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The template's name again",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/templates.Removal"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing or mismatched confirm",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such template",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Something is cloned from it",
+                        "schema": {
+                            "$ref": "#/definitions/templates.Removal"
+                        }
+                    }
+                }
             }
         }
     },
@@ -2361,6 +2424,45 @@
                 },
                 "used": {
                     "type": "integer"
+                }
+            }
+        },
+        "templates.Blocked": {
+            "type": "object",
+            "properties": {
+                "clones": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "holds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "templates.Removal": {
+            "type": "object",
+            "properties": {
+                "blocked": {
+                    "description": "Blocked is set when something is cloned from the template. Nothing ran.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/templates.Blocked"
+                        }
+                    ]
+                },
+                "destroyed": {
+                    "type": "boolean"
+                },
+                "template": {
+                    "type": "string"
                 }
             }
         },

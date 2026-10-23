@@ -21,6 +21,7 @@ const (
 	OperationCreateDataset   = "create-dataset"
 	OperationSetProperties   = "set-properties"
 	OperationPromoteDataset  = "promote-dataset"
+	OperationDestroyDataset  = "destroy-dataset"
 	OperationInheritProperty = "inherit-property"
 )
 

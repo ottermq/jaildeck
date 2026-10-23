@@ -124,5 +124,51 @@ func RegisterTemplateRoutes(r chi.Router, h *TemplateHandler) {
 	r.Route("/templates", func(r chi.Router) {
 		r.Get("/", h.List)
 		r.Put("/{name}", h.Derive)
+		r.Delete("/{name}", h.Remove)
 	})
+}
+
+// Remove destroys a template.
+//
+// @Summary      Remove a template
+// @Description  Destroys the template dataset and its snapshots.
+// @Description
+// @Description  **409 while anything is cloned from it**, naming every one. A template's
+// @Description  snapshot is the origin of every jail made from it, so destroying it would
+// @Description  take them with it. ZFS would refuse too — but only after being asked, with
+// @Description  a message about dependent clones rather than a list of the jails running on
+// @Description  them. This asks first, so the refusal is an answer.
+// @Description
+// @Description  A jail that should outlive its template is not stuck: `zfs promote` on the
+// @Description  jail moves the dependency the other way, exactly as cloning a jail as a
+// @Description  template does in reverse (JD-027).
+// @Description
+// @Description  `confirm` is the template's name. Unlike a snapshot's, it is unambiguous on
+// @Description  its own — a template name is unique within the pool, where `nightly` names a
+// @Description  snapshot on every dataset that has one.
+// @Description
+// @Description  Never `zfs destroy -R`: that would take the dependent clones this refuses to
+// @Description  touch, which would make the check decorative.
+// @Tags         templates
+// @Produce      json
+// @Param        name     path      string  true  "The template to destroy"
+// @Param        confirm  query     string  true  "The template's name again"
+// @Success      200      {object}  Removal
+// @Failure      400      {object}  common.ErrorResponse  "Missing or mismatched confirm"
+// @Failure      401      {object}  common.ErrorResponse
+// @Failure      404      {object}  common.ErrorResponse  "No such template"
+// @Failure      409      {object}  Removal               "Something is cloned from it"
+// @Security     BearerAuth
+// @Router       /templates/{name} [delete]
+func (h *TemplateHandler) Remove(w http.ResponseWriter, r *http.Request) {
+	removal, err := h.service.Remove(r.Context(), chi.URLParam(r, "name"), r.URL.Query().Get("confirm"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	if removal.Blocked != nil {
+		common.WriteJSON(w, http.StatusConflict, removal)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, removal)
 }

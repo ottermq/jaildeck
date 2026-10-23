@@ -483,3 +483,29 @@ func (s *stubSystem) PromoteDataset(_ context.Context, dataset string) (Result, 
 	}
 	return Result{Dataset: dataset, Command: command}, nil
 }
+
+func (s *stubSystem) DestroyDataset(_ context.Context, dataset string, recursive bool) (Result, error) {
+	command := "zfs destroy"
+	if recursive {
+		command += " -r"
+	}
+	command += " " + dataset
+	s.ran = append(s.ran, command)
+	if s.writeErr != nil {
+		return Result{Dataset: dataset, Command: command}, s.writeErr
+	}
+	// zfs refuses a bare destroy of anything with snapshots. Modelled,
+	// because whether to pass -r is the code under test's decision.
+	if !recursive {
+		for _, snapshot := range s.snapshots {
+			if snapshot.Dataset == dataset {
+				return Result{Dataset: dataset, Command: command},
+					errors.New("cannot destroy '" + dataset + "': filesystem has children")
+			}
+		}
+	}
+	s.datasets = slices.DeleteFunc(s.datasets, func(d Dataset) bool { return d.Name == dataset })
+	s.snapshots = slices.DeleteFunc(s.snapshots, func(x Snapshot) bool { return x.Dataset == dataset })
+	delete(s.origins, dataset)
+	return Result{Dataset: dataset, Command: command}, nil
+}

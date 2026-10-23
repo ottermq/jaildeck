@@ -204,7 +204,7 @@ A child dataset can be created with a quota, snapshotted, moved out of a jail an
 
 ## Milestone: Templates
 
-**Status:** partly done in v0.8.0 — **not finished**. Listing with lineage and readiness, deriving one from another with packages, cloning a configured jail as a template, and removing one (refusing while anything is cloned from it) all landed, through the API and the interface (JD-027, JD-028, JD-029). **Preparing a release template end to end has not**: fetching `base.txz`, extracting it and running `freebsd-update` is minutes of work behind one request, which is JD-008's problem and the completion criterion below still names it.
+**Status:** partly done in v0.8.0 — **not finished**. Listing with lineage and readiness, deriving one from another with packages, cloning a configured jail as a template, and removing one (refusing while anything is cloned from it) all landed, through the API and the interface (JD-027, JD-028, JD-029). **Preparing a release template end to end has not.** JD-008 is settled (2026-10-23) and the **fetch** stage is built: `PUT /api/templates/{name}` with a `release` answers `202`, downloads `base.txz` into `media/` verified against the release's MANIFEST, and the template reports a `state` read off the filesystem with the running step beside it. Extracting that archive into a dataset, patching in `resolv.conf`/`localtime`, running `freebsd-update` and taking `@base` are the stages still missing, and the completion criterion below still names them.
 
 **Depends on:** Host Setup, Storage Visibility. **★ Otter:** the release template every service template derives from.
 

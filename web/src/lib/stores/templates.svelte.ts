@@ -7,6 +7,14 @@ import type { JailData } from "./jails.svelte";
 // snapshot exists, which is what makes a template usable, and `parent` is read
 // back from `zfs get origin`. A template that exists and is not ready is a
 // derive that failed part way through.
+// Running is the step executing right now. Absent when nothing is, and held in
+// the server's memory rather than written down: a restart kills the work, so a
+// marker that survived it would be claiming something false (JD-008).
+export interface Running {
+    step: string
+    since: string
+}
+
 export interface Template {
     name: string
     dataset: string
@@ -14,8 +22,26 @@ export interface Template {
     ready: boolean
     parent?: string
     snapshot?: string
+    // Where this template has got to. Read off the host's filesystem except
+    // for the -ing forms, which come from what the server is doing. A template
+    // being prepared has a state before it has a dataset.
+    state: string
+    running?: Running
     used: number
     referenced: number
+}
+
+// The states a template reports, in the order it passes through them.
+export const TemplateStates = ['absent', 'fetching', 'fetched', 'extracting', 'extracted', 'updating', 'ready']
+
+// prepareRelease starts a release template from the FreeBSD mirror. It answers
+// at once with the state the work begins in; the template is then polled
+// (JD-008). An empty release means the host's own, which is also the ceiling.
+export async function prepareRelease(name: string, release: string): Promise<Template> {
+    return await api<Template>(`/templates/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ release }),
+    })
 }
 
 // Dependents is what is holding a template in place: every jail cloned from it

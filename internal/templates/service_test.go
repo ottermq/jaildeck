@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ottermq/jaildeck/internal/audit"
@@ -64,6 +65,57 @@ type stubPackages struct {
 	err       error
 }
 
+// stubReleases is the mirror. Most tests here never reach it -- they are about
+// deriving one template from another, which touches no release at all -- and
+// Fetched returning nothing is what makes that true rather than assumed.
+//
+// Guarded, because the real thing is called from the goroutine Prepare
+// detaches while the caller goes on reading the service. A stub that was not
+// safe to share would be lying about the contract it stands in for, and -race
+// says so.
+type stubReleases struct {
+	mu       sync.Mutex
+	fetched  []string
+	host     Host
+	fetchErr error
+	attempts []string
+}
+
+func (s *stubReleases) Host(context.Context) (Host, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.host.Release == "" {
+		return Host{Release: "15.1-RELEASE", Arch: "amd64"}, nil
+	}
+	return s.host, nil
+}
+
+func (s *stubReleases) Fetched(context.Context) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.fetched...), nil
+}
+
+func (s *stubReleases) FetchBase(_ context.Context, release, _ string) (Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.attempts = append(s.attempts, release)
+	if s.fetchErr != nil {
+		return Result{Command: "fetch " + release}, s.fetchErr
+	}
+	s.fetched = append(s.fetched, release)
+	return Result{Root: "/media/" + release + "/base.txz", Command: "fetch " + release}, nil
+}
+
+// tried is what FetchBase was asked for, copied under the lock.
+func (s *stubReleases) tried() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.attempts...)
+}
+
+var _ ReleaseSource = (*stubReleases)(nil)
+
 func (s *stubPackages) Install(_ context.Context, root string, packages []string) (Result, error) {
 	command := "pkg -c " + root + " install -y " + strings.Join(packages, " ")
 	s.installed = append(s.installed, command)
@@ -100,7 +152,7 @@ func appErrCode(t *testing.T, err error) int {
 func TestDeriveClonesInstallsAndSeals(t *testing.T) {
 	storage, packages, logger := release(), &stubPackages{}, &fakeLogger{}
 
-	template, built, err := NewService(storage, packages, logger).
+	template, built, err := NewService(storage, packages, &stubReleases{}, logger).
 		Derive(context.Background(), "postgres-16", "15.1-RELEASE", []string{"postgresql16-server"})
 	if err != nil {
 		t.Fatalf("Derive() error = %v", err)
@@ -137,7 +189,7 @@ func TestDeriveIsIdempotentForAReadyTemplate(t *testing.T) {
 	})
 	packages := &stubPackages{}
 
-	template, built, err := NewService(storage, packages, &fakeLogger{}).
+	template, built, err := NewService(storage, packages, &stubReleases{}, &fakeLogger{}).
 		Derive(context.Background(), "postgres-16", "15.1-RELEASE", []string{"postgresql16-server"})
 	if err != nil {
 		t.Fatalf("Derive() error = %v", err)
@@ -162,7 +214,7 @@ func TestDeriveRefusesToFinishAnUnreadyTemplate(t *testing.T) {
 	})
 	packages := &stubPackages{}
 
-	_, _, err := NewService(storage, packages, &fakeLogger{}).
+	_, _, err := NewService(storage, packages, &stubReleases{}, &fakeLogger{}).
 		Derive(context.Background(), "postgres-16", "15.1-RELEASE", []string{"postgresql16-server"})
 	if err == nil {
 		t.Fatal("Derive() returned no error for an unready template")
@@ -182,7 +234,7 @@ func TestAFailedInstallLeavesAnUnreadyTemplate(t *testing.T) {
 	storage, logger := release(), &fakeLogger{}
 	packages := &stubPackages{err: errors.New("pkg: No packages available to install matching 'nope'")}
 
-	_, _, err := NewService(storage, packages, logger).
+	_, _, err := NewService(storage, packages, &stubReleases{}, logger).
 		Derive(context.Background(), "postgres-16", "15.1-RELEASE", []string{"nope"})
 	if err == nil {
 		t.Fatal("Derive() returned no error")
@@ -194,7 +246,7 @@ func TestAFailedInstallLeavesAnUnreadyTemplate(t *testing.T) {
 		t.Errorf("sealed %q after a failed install; the template must stay unusable", storage.sealed)
 	}
 	// And it is in the listing, unready, for the operator to find.
-	found, _ := NewService(storage, packages, logger).List(context.Background())
+	found, _ := NewService(storage, packages, &stubReleases{}, logger).List(context.Background())
 	for _, template := range found {
 		if template.Name == "postgres-16" && template.Ready {
 			t.Error("the half-built template reports itself ready")
@@ -228,7 +280,7 @@ func TestDeriveRefusals(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			storage, packages := release(), &stubPackages{}
-			_, _, err := NewService(storage, packages, &fakeLogger{}).
+			_, _, err := NewService(storage, packages, &stubReleases{}, &fakeLogger{}).
 				Derive(context.Background(), tt.template, tt.parent, tt.packages)
 			if err == nil {
 				t.Fatal("Derive() returned no error")
@@ -246,7 +298,7 @@ func TestDeriveRefusals(t *testing.T) {
 // A parent without its @base is not usable as a parent (JD-007).
 func TestDeriveRefusesAnUnreadyParent(t *testing.T) {
 	storage := &stubStorage{templates: []Template{{Name: "15.1-RELEASE", Ready: false}}}
-	_, _, err := NewService(storage, &stubPackages{}, &fakeLogger{}).
+	_, _, err := NewService(storage, &stubPackages{}, &stubReleases{}, &fakeLogger{}).
 		Derive(context.Background(), "postgres-16", "15.1-RELEASE", nil)
 	if err == nil {
 		t.Fatal("Derive() returned no error")
@@ -260,7 +312,7 @@ func TestDeriveRefusesAnUnreadyParent(t *testing.T) {
 // not run pkg at all.
 func TestDeriveWithNoPackages(t *testing.T) {
 	storage, packages := release(), &stubPackages{}
-	template, built, err := NewService(storage, packages, &fakeLogger{}).
+	template, built, err := NewService(storage, packages, &stubReleases{}, &fakeLogger{}).
 		Derive(context.Background(), "snapshot-of-base", "15.1-RELEASE", nil)
 	if err != nil || !built || !template.Ready {
 		t.Fatalf("Derive() = %+v, %v, %v", template, built, err)
@@ -277,7 +329,7 @@ func TestAPackageThatDoesNotExistIsAClientError(t *testing.T) {
 	packages := &stubPackages{err: commandError("exit status 70",
 		"pkg: No packages available to install matching 'nope' have been found", 70)}
 
-	_, _, err := NewService(storage, packages, &fakeLogger{}).
+	_, _, err := NewService(storage, packages, &stubReleases{}, &fakeLogger{}).
 		Derive(context.Background(), "x", "15.1-RELEASE", []string{"nope"})
 	if code := appErrCode(t, err); code != http.StatusBadRequest {
 		t.Errorf("error code = %d, want 400 for a package pkg refused", code)
@@ -322,7 +374,7 @@ func removable() *stubStorage {
 
 func TestRemoveDestroysATemplateNothingDependsOn(t *testing.T) {
 	storage := removable()
-	removal, err := NewService(storage, &stubPackages{}, &fakeLogger{}).
+	removal, err := NewService(storage, &stubPackages{}, &stubReleases{}, &fakeLogger{}).
 		Remove(context.Background(), "postgres-16", "postgres-16")
 	if err != nil {
 		t.Fatalf("Remove() error = %v", err)
@@ -368,7 +420,7 @@ func TestRemoveRefusesWhileSomethingIsClonedFromIt(t *testing.T) {
 			storage := removable()
 			storage.dependents["postgres-16"] = tt.dependents
 
-			removal, err := NewService(storage, &stubPackages{}, &fakeLogger{}).
+			removal, err := NewService(storage, &stubPackages{}, &stubReleases{}, &fakeLogger{}).
 				Remove(context.Background(), "postgres-16", "postgres-16")
 			if err != nil {
 				t.Fatalf("Remove() error = %v", err)
@@ -395,7 +447,7 @@ func TestTheRefusalSaysHowToGetPastIt(t *testing.T) {
 	storage := removable()
 	storage.dependents["postgres-16"] = Dependents{Clones: []string{"tank/jails/containers/pg-1"}}
 
-	removal, _ := NewService(storage, &stubPackages{}, &fakeLogger{}).
+	removal, _ := NewService(storage, &stubPackages{}, &stubReleases{}, &fakeLogger{}).
 		Remove(context.Background(), "postgres-16", "postgres-16")
 	if !strings.Contains(removal.Blocked.Reason, "promote") {
 		t.Errorf("reason = %q, want it to mention zfs promote", removal.Blocked.Reason)
@@ -416,7 +468,7 @@ func TestRemoveRefusals(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			storage := removable()
-			_, err := NewService(storage, &stubPackages{}, &fakeLogger{}).
+			_, err := NewService(storage, &stubPackages{}, &stubReleases{}, &fakeLogger{}).
 				Remove(context.Background(), tt.template, tt.confirm)
 			if err == nil {
 				t.Fatal("Remove() returned no error")
@@ -438,7 +490,7 @@ func TestRemoveAnUnreadyTemplate(t *testing.T) {
 	storage.templates = append(storage.templates, Template{
 		Name: "broken", Dataset: "tank/jails/templates/broken", Ready: false,
 	})
-	removal, err := NewService(storage, &stubPackages{}, &fakeLogger{}).
+	removal, err := NewService(storage, &stubPackages{}, &stubReleases{}, &fakeLogger{}).
 		Remove(context.Background(), "broken", "broken")
 	if err != nil || !removal.Destroyed {
 		t.Fatalf("Remove() = %+v, %v; want the half-built template destroyed", removal, err)
@@ -453,7 +505,7 @@ func TestGetReportsWhatDependsOnATemplate(t *testing.T) {
 		Clones: []string{"tank/jails/containers/pg-1", "tank/jails/templates/postgres-16-tuned"},
 	}
 
-	detail, err := NewService(storage, &stubPackages{}, &fakeLogger{}).
+	detail, err := NewService(storage, &stubPackages{}, &stubReleases{}, &fakeLogger{}).
 		Get(context.Background(), "postgres-16")
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
@@ -466,7 +518,7 @@ func TestGetReportsWhatDependsOnATemplate(t *testing.T) {
 	}
 
 	// The same answer Remove would refuse with, asked without trying.
-	removal, _ := NewService(storage, &stubPackages{}, &fakeLogger{}).
+	removal, _ := NewService(storage, &stubPackages{}, &stubReleases{}, &fakeLogger{}).
 		Remove(context.Background(), "postgres-16", "postgres-16")
 	if removal.Blocked == nil || len(removal.Blocked.Clones) != len(detail.Dependents.Clones) {
 		t.Error("the detail and the refusal disagree about what depends on it")
@@ -476,7 +528,7 @@ func TestGetReportsWhatDependsOnATemplate(t *testing.T) {
 // Empty rather than null, so a client rendering the list does not have to
 // check for it first.
 func TestGetNeverReturnsNullDependents(t *testing.T) {
-	detail, err := NewService(removable(), &stubPackages{}, &fakeLogger{}).
+	detail, err := NewService(removable(), &stubPackages{}, &stubReleases{}, &fakeLogger{}).
 		Get(context.Background(), "postgres-16")
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
@@ -487,7 +539,7 @@ func TestGetNeverReturnsNullDependents(t *testing.T) {
 }
 
 func TestGetAnAbsentTemplate(t *testing.T) {
-	_, err := NewService(removable(), &stubPackages{}, &fakeLogger{}).
+	_, err := NewService(removable(), &stubPackages{}, &stubReleases{}, &fakeLogger{}).
 		Get(context.Background(), "nope")
 	if err == nil {
 		t.Fatal("Get() returned no error")

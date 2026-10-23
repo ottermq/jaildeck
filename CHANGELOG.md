@@ -22,6 +22,44 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
 
+### API
+
+- **A release template's archive can be fetched from the FreeBSD mirror.** The first stage
+  of preparing one, and the first operation to use JD-008's answer:
+  `PUT /api/templates/{name}` with `{"release": "15.1-RELEASE"}` **returns 202 and does not
+  wait**. An empty release means the host's own, which is also the ceiling — a jail's
+  userland must be the same as or older than the kernel it runs under.
+
+  It fetches that release's `base.txz` into `<pool>/jails/media/{release}/` and **verifies
+  it against the release's own MANIFEST** before reporting success. That is not politeness:
+  an archive that arrived corrupt would be extracted into a template every later jail is
+  cloned from.
+
+  **The release, never a patch level.** `kern.osrelease` says `15.1-RELEASE-p5` and the
+  mirror publishes no `-pN` directory at all, so the patch level is dropped — it is what
+  `freebsd-update` brings the extracted userland to afterwards, not what is downloaded.
+
+  **Templates now report `state`.** Read off the filesystem — the archive is in `media/` or
+  it is not, the dataset exists or it does not, the `@base` snapshot exists or it does not
+  — so a reload, or a restart of Jail Deck, shows where the work actually got to. A
+  template that has only been fetched has no dataset and still appears, because the
+  resource a client was told to watch has to exist from the moment the work starts.
+
+  **`running`** is beside it when a step is executing, with the step and when it began. In
+  memory only; a second request for a template already in flight is a 409 rather than a
+  queued one.
+
+  Naming both `from` and `release` is a 400: they are two ways to build a template, and
+  picking one for the caller would be guessing.
+
+### Added
+
+- **Preparing a release from the Templates page.** A form for the release, a `State`
+  column in place of the ready badge, and the step with its elapsed time under it while
+  something is running. The page polls only while anything is in flight and stops when
+  nothing is; a template being prepared cannot be removed. What each stage actually ran is
+  on the Operations page, which is where a failure is explained.
+
 ### Changed
 
 - **JD-008 is decided: a long-running operation returns `202` and you watch the

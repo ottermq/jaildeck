@@ -1,5 +1,5 @@
 <script lang="ts">
-import { onMount } from 'svelte'
+import { onDestroy, onMount } from 'svelte'
 import { getTemplate, listTemplates, classifyClones, removeTemplate } from '../stores/templates.svelte'
 import type { Template, TemplateDetail, Blocked } from '../stores/templates.svelte'
 import { listJails } from '../stores/jails.svelte'
@@ -40,6 +40,24 @@ async function load() {
 }
 
 onMount(load)
+
+// While something is working on this template, re-read it. There is no job to
+// subscribe to: the template is the resource, and its state comes back with
+// every read (JD-008).
+let poll: ReturnType<typeof setInterval> | null = null
+
+$effect(() => {
+    if (template?.running && poll === null) {
+        poll = setInterval(load, 2000)
+    } else if (!template?.running && poll !== null) {
+        clearInterval(poll)
+        poll = null
+    }
+})
+
+onDestroy(() => {
+    if (poll !== null) clearInterval(poll)
+})
 
 // What depends on this template, split by what each clone turned out to be --
 // a jail, another template, or something made outside Jail Deck. Worth
@@ -119,10 +137,13 @@ async function remove() {
         <div>
             <h1>{template.name}</h1>
             <p class="page-sub">
-            {#if template.ready}
+            {#if template.running}
+                <span class="badge badge--timed-out">{template.state}</span>
+                <span class="step">{template.running.step}</span>
+            {:else if template.ready}
                 <span class="badge badge--running">ready</span>
             {:else}
-                <span class="badge badge--stopped">not ready</span>
+                <span class="badge badge--stopped">{template.state}</span>
             {/if}
             <span>{formatBytes(template.used)} used</span>
             <span>{formatBytes(template.referenced)} referenced</span>
@@ -157,26 +178,46 @@ async function remove() {
         </div>
     {/if}
 
-    {#if !template.ready}
+    {#if template.running}
+        <p class="notice">
+            Still being prepared. The state is read off the host, so leaving this page or
+            restarting Jail Deck does not lose it — and the operations log says what each
+            stage did.
+        </p>
+    {:else if !template.dataset}
+        <p class="notice">
+            The release archive has been fetched and nothing has been built from it yet.
+            Extracting it into a dataset is the next stage.
+        </p>
+    {:else if !template.ready}
         <p class="notice notice--error">
             No <code>@base</code> snapshot, so nothing can be cloned from this. That is what a
-            derive leaves behind when the package install failed part way through — remove it
-            and try again rather than building on top of it.
+            derive leaves behind when the package install failed part way through, and what a
+            prepare that stopped early leaves too — remove it and try again rather than
+            building on top of it.
         </p>
     {/if}
 
     <section class="panel">
         <h2>Where it lives</h2>
-        <dl class="facts">
-            <dt>Dataset</dt>
-            <dd><code>{template.dataset}</code></dd>
-            <dt>Mounted at</dt>
-            <dd><code>{template.mountpoint}</code></dd>
-            {#if template.snapshot}
-                <dt>Clone source</dt>
-                <dd><code>{template.snapshot}</code></dd>
-            {/if}
-        </dl>
+        {#if template.dataset}
+            <dl class="facts">
+                <dt>Dataset</dt>
+                <dd><code>{template.dataset}</code></dd>
+                <dt>Mounted at</dt>
+                <dd><code>{template.mountpoint}</code></dd>
+                {#if template.snapshot}
+                    <dt>Clone source</dt>
+                    <dd><code>{template.snapshot}</code></dd>
+                {/if}
+            </dl>
+        {:else}
+            <p class="notice">
+                No dataset yet — only the archive under <code>media/</code>. A template with no
+                dataset is one the later stages have not reached, which is why this page can
+                show it at all: the resource exists from the moment the work starts.
+            </p>
+        {/if}
     </section>
 
     <section class="panel">
@@ -272,6 +313,11 @@ async function remove() {
     flex-wrap: wrap;
     gap: var(--space-4);
     align-items: center;
+}
+
+.step {
+    font-size: 0.85rem;
+    color: var(--text-muted);
 }
 
 .page-head--row {

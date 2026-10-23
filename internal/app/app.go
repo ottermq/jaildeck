@@ -62,7 +62,12 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	templateService := templates.NewService(storage.NewTemplateSource(storageService), packageSystem, auditLogger)
+	releaseSource, err := newReleaseSource(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	templateService := templates.NewService(
+		storage.NewTemplateSource(storageService), packageSystem, releaseSource, auditLogger)
 	templateHandler := templates.NewTemplateHandler(templateService)
 
 	jailStorage := storage.NewJailSource(storageService)
@@ -158,6 +163,20 @@ func newPackageSystem(adapter string) (templates.PackageSystem, error) {
 		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
 	case config.AdapterFake:
 		return fake.NewPackageSystem(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
+}
+
+// newReleaseSource selects the templates.ReleaseSource implementation named by
+// adapter, with the same refusal to guess as newJailSystem.
+func newReleaseSource(adapter string) (templates.ReleaseSource, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewReleaseAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewReleaseSource(), nil
 	default:
 		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

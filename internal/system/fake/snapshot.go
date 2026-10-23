@@ -15,6 +15,13 @@ import (
 // with a clone. A dashboard that can only ever show the happy path is not much
 // of a dashboard.
 func (s *StorageSystem) seedSnapshots() {
+	// The dataset templates live under. zfs would require it to exist before
+	// anything could be cloned into it, and every template derived later
+	// inherits its mountpoint -- without it they land nowhere in particular.
+	s.datasets = append(s.datasets, storage.Dataset{
+		Name: "zroot/jails/templates", Mountpoint: "/fake/jail/templates",
+		Used: 430 << 20, Referenced: 96 << 10, Available: 400 << 30,
+	})
 	// A template with two snapshots, and jails cloned from the older one --
 	// the arrangement on the deployment target, where every jail's origin is
 	// templates/15.1-RELEASE@base and the template has since moved to @p5.

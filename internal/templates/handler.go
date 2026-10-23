@@ -123,6 +123,7 @@ func (h *TemplateHandler) Derive(w http.ResponseWriter, r *http.Request) {
 func RegisterTemplateRoutes(r chi.Router, h *TemplateHandler) {
 	r.Route("/templates", func(r chi.Router) {
 		r.Get("/", h.List)
+		r.Get("/{name}", h.Get)
 		r.Put("/{name}", h.Derive)
 		r.Delete("/{name}", h.Remove)
 	})
@@ -171,4 +172,35 @@ func (h *TemplateHandler) Remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, removal)
+}
+
+// Get returns one template with what depends on it.
+//
+// @Summary      Show one template
+// @Description  The same fields as the listing, plus **what depends on it**: every jail
+// @Description  cloned from it and every template derived from it, and any holds on its
+// @Description  snapshots.
+// @Description
+// @Description  Those are computed already — `DELETE` refuses on them — but until now a
+// @Description  client could only learn them by attempting a destroy and reading the 409.
+// @Description  That makes "can I remove this?" a question you ask by trying. Here it is a
+// @Description  question you ask by looking.
+// @Description
+// @Description  Both lists are present and empty rather than null, so a client rendering
+// @Description  them does not have to check first.
+// @Tags         templates
+// @Produce      json
+// @Param        name  path      string  true  "Template name"
+// @Success      200   {object}  Detail
+// @Failure      401   {object}  common.ErrorResponse
+// @Failure      404   {object}  common.ErrorResponse  "No such template"
+// @Security     BearerAuth
+// @Router       /templates/{name} [get]
+func (h *TemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
+	detail, err := h.service.Get(r.Context(), chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, detail)
 }

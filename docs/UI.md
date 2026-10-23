@@ -48,9 +48,9 @@ Keep the sidebar simple — avoid too many sections before the features justify 
 
 ## Navigation
 
-Initial: Dashboard, Jails, Storage, Templates, Logs, Settings.
+Built: **Jails**, **Templates**, **Operations**, **Host**. A section stays highlighted on its detail pages, so `/jails/ottermq` keeps Jails lit.
 
-Possible later: Snapshots (if it earns a page separate from Storage), Tasks (once long-running operations exist), Services, Packages, System.
+Still on the sketch above: Dashboard, Storage, Logs, Settings. Possible later: Snapshots (if it earns a page separate from a jail's), Tasks (once long-running operations exist), Services, Packages, System.
 
 ## Page specifications
 
@@ -83,7 +83,14 @@ Exact interaction shape (single form vs. wizard steps, how failures mid-flow are
 
 ### Jail detail page
 
-Sections: summary card, status, network info, root path, services, storage/dataset info, recent logs, recent operations, actions, and which template/release the jail was created from, if known.
+At `/jails/{name}`, reached from the jail's name on the list (JD-028). Built:
+
+- header — name, status badge, JID, hostname, IP
+- **Datasets** — every dataset of the jail, the one mounted at the jail's own path marked as such, with mountpoint and used/referenced/available (JD-022)
+- **Tags** — the jail's `user:property` ZFS tags, its own and never a child's
+- **Snapshots** — newest first, ordered by transaction group rather than by time (JD-024); fetched separately and allowed to fail on its own
+
+Still to come: services, recent logs, recent operations, the actions, and which template the jail was cloned from.
 
 ### Storage page
 
@@ -91,13 +98,13 @@ Purpose: inspect ZFS storage relevant to jails. Since ZFS is required (JD-006), 
 
 ### Templates page
 
-Purpose: manage FreeBSD release templates — the thing jail creation depends on.
+Purpose: the userlands a jail is cloned from — the thing jail creation depends on. Built, at `/templates`:
 
-Likely content:
+- the templates as an **indented lineage**, parent before child, each one ready or not ready, with what it was derived from and what it costs (JD-028)
+- **Retained datasets** below: the datasets that outlived their jail (JD-025), on the same page because they answer the same question
+- a page per template at `/templates/{name}`: where it lives, and **what depends on it** — the jails cloned from it, the templates derived from it, anything else, and holds — which is what a removal would have to refuse over
 
-- list of prepared templates (release version, patch level, state: fetching/extracting/patching/updating/ready, snapshot name)
-- action to prepare a new template for a release
-- a release picker sourced from `download.freebsd.org`, or manual version entry, depending on how the "which releases are supported" question resolves (`docs/SPEC.md`)
+Still to come: preparing a release template (its own long-running-operation problem, JD-008), deriving one from the interface, removing one, and a release picker sourced from `download.freebsd.org` or manual version entry, depending on how "which releases are supported" resolves (`docs/SPEC.md`).
 
 ### Logs page
 
@@ -154,7 +161,7 @@ Use FreeBSD-native terminology, explain risky operations in plain language. Good
 
 ## Open UI questions
 
-1. Table-first or card-first for the Jails page?
+1. ~~Table-first or card-first for the Jails page?~~ **Table-first**, with a page per jail behind the name (JD-028).
 2. Browser `confirm()` dialogs or custom confirmation components?
 3. Should logs appear inline on jail detail or only on a dedicated logs page?
 4. Should the dashboard be meaningful from the start, or should `/` redirect to `/jails`?
@@ -163,4 +170,4 @@ Use FreeBSD-native terminology, explain risky operations in plain language. Good
 7. Collapsible or fixed sidebar?
 8. Wizard-style or single-form jail creation?
 9. How is template preparation progress shown, given it can take real time?
-10. Does the Templates page need its own space, or does it live as a section of Storage?
+10. ~~Does the Templates page need its own space, or does it live as a section of Storage?~~ **Its own page**, which also carries the retained datasets (JD-028). Whether a Storage page is still wanted once a jail's own page shows its datasets is now the open question.

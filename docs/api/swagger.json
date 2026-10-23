@@ -1662,6 +1662,50 @@
             }
         },
         "/templates/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The same fields as the listing, plus **what depends on it**: every jail\ncloned from it and every template derived from it, and any holds on its\nsnapshots.\n\nThose are computed already — `DELETE` refuses on them — but until now a\nclient could only learn them by attempting a destroy and reading the 409.\nThat makes \"can I remove this?\" a question you ask by trying. Here it is a\nquestion you ask by looking.\n\nBoth lists are present and empty rather than null, so a client rendering\nthem does not have to check first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Show one template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/templates.Detail"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such template",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
             "put": {
                 "security": [
                     {
@@ -2444,6 +2488,62 @@
                 },
                 "reason": {
                     "type": "string"
+                }
+            }
+        },
+        "templates.Dependents": {
+            "type": "object",
+            "properties": {
+                "clones": {
+                    "description": "Clones are datasets made from one of this template's snapshots -- every\njail cloned from it, and every template derived from it.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "holds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "templates.Detail": {
+            "type": "object",
+            "properties": {
+                "dataset": {
+                    "type": "string"
+                },
+                "dependents": {
+                    "$ref": "#/definitions/templates.Dependents"
+                },
+                "mountpoint": {
+                    "description": "Mountpoint is where pkg -c operates and where a jail's clone comes from.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is the last component of the dataset, which is what a client uses:\n\"15.1-RELEASE\", \"postgres-16\".",
+                    "type": "string"
+                },
+                "parent": {
+                    "description": "Parent is the template this one was derived from, empty for a release\ntemplate built from base.txz. Read from the clone's origin rather than\nrecorded: a derived template cannot outlive or disagree with its parent.",
+                    "type": "string"
+                },
+                "ready": {
+                    "description": "Ready is whether the @base snapshot exists. A template is usable only\nthen (JD-007), and a derive that failed part way through is a template\nthat exists and is not ready.",
+                    "type": "boolean"
+                },
+                "referenced": {
+                    "description": "Referenced is the whole userland; for a derived template most of it is\nstill shared with its parent, so Used is what the packages cost.",
+                    "type": "integer"
+                },
+                "snapshot": {
+                    "description": "Snapshot is the full dataset@base once it exists, which is what a jail\nis cloned from.",
+                    "type": "string"
+                },
+                "used": {
+                    "type": "integer"
                 }
             }
         },

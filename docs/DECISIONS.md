@@ -889,6 +889,48 @@ This is also what cleans up the half-built template a failed derive leaves behin
 
 ---
 
+## JD-028 — Showing the Storage Model in the Web Interface
+
+**Status:** Locked — 2026-10-23
+
+Six releases' worth of storage endpoints — datasets, tags, snapshots, moves, re-clones, templates — had nothing in the interface. This is the reading half: every one of those things becomes visible before any of them becomes clickable.
+
+### A page per jail, not an expanded row
+
+`/jails/{name}` is a page of its own, reached by clicking the jail's name on the list. The alternatives were an expanding row and a side panel; both keep you on a list whose job is comparison, and a jail's datasets, tags and snapshots are three tables. They need the width.
+
+A page also has an address. "Look at `/jails/ottermq`" is a thing one person can say to another, which an expanded row is not.
+
+### One Templates page, templates and retained datasets together
+
+`/templates` carries both. A retained dataset is not a template — it is a dataset that outlived its jail (JD-025) — but the two are the same kind of question: *what is on this host that is not a running jail?* Two pages, each with one small table, would be two clicks to answer it.
+
+### The lineage is an indented table, not a tree widget
+
+A template's parentage is a tree, and the obvious move is a tree control. It was not taken.
+
+A host has a handful of templates, two or three deep. Indentation carries that. A tree widget brings expand state, collapse state, selection state and keyboard semantics, all of which would have to be right, and none of which answer a question the indentation does not. Sylve, which solves the same problems for the same kind of host, has tree views — for navigating *between nodes* and for exploring a whole pool. Jail Deck is single-host by decision (JD-003) and shows the jails' datasets only. Neither case applies here.
+
+The row order is the lineage: parent before child, siblings by name. A template whose parent is not itself a template — cloned from somewhere outside `<pool>/jails/templates` — is appended at depth 0 rather than dropped, because a template that exists and does not appear in the list is worse than one that appears in the wrong place.
+
+### What a clone is, is read from the host
+
+A template's dependents arrive as dataset names. Sorting them into jails, derived templates and everything else by *reading those names* — looking for `/containers/` or `/templates/` — is the obvious implementation, and it was wrong the first time it ran: this project's own fake lays its jails out as `<pool>/jails/<name>`, with no `containers` level, and every jail landed under "other clones".
+
+`<pool>/jails/containers` is the layout Jail Deck *creates* (JD-006, JD-021). It is not where the jails it *lists* have to be: those come from the host's own configuration, and a host that adopts Jail Deck arrives with jails already somewhere. Jail Deck stores no layout of its own (JD-011) and matches a jail to its datasets by mountpoint rather than by name precisely because of that (JD-022).
+
+So a clone is a jail when a jail reports that dataset as its own, a template when a template does, and otherwise it is shown as the bare dataset it is. JD-021 already refused to identify the layout by dataset name — on the deployment host that would have reported a replica mounted nowhere as a provisioned system. This is the same mistake one layer up, and it reached the screen before it was caught: of everything on these pages, a name read out of a path was the only part that could be confidently wrong rather than merely unhelpful.
+
+### Each panel fails on its own
+
+A jail's page reads the jail and then its snapshots; a template's page reads the template and then the jails and templates it is matched against. The secondary reads are allowed to fail without taking the page down: a snapshot listing that errors costs the snapshot table, and a jail listing that errors costs the names and the links, not the page. The pages report what they could read, which is the same stance the API takes when a pool is unreadable (JD-022).
+
+### Read before write
+
+No destructive action is on these pages yet — no tag, no snapshot, no rollback, no retain, no destroy. Those arrive next, each with the confirmation its refusal already defines. Shipping the reading first means the confirmations can be built against pages that already show what is about to be changed.
+
+---
+
 ## Decision Policy
 
 Once a decision is marked as **Locked**, it should not be revisited without a clear technical or product justification. Architectural evolution is expected, but changes should be deliberate and documented rather than occurring through incremental drift.

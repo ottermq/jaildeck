@@ -5,12 +5,19 @@ COVER_PROFILE=$(BUILD_DIR)/coverage.out
 
 GO?=go
 
+# Where the API annotations live. swag is pinned in go.mod as a tool
+# dependency, so `go tool swag` needs no global install and every machine runs
+# the same version. Its --version flag reports a stale constant; go.mod is the
+# truth.
+SWAG_DIRS=cmd/jaildeck,internal/app,internal/jails,internal/host,internal/audit,internal/auth,internal/storage,internal/common
+SPEC=docs/api/swagger.json
+
 # Installation paths. PREFIX is where FreeBSD puts local software; DESTDIR
 # stages the same layout somewhere else, which is what a package build wants.
 PREFIX?=/usr/local
 DESTDIR?=
 
-.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check all install
+.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check all install doc doc-check
 
 ## build: compile the binary into bin/
 build:
@@ -71,7 +78,7 @@ tidy-check:
 	@rm -f $(BUILD_DIR)/go.mod.bak $(BUILD_DIR)/go.sum.bak
 
 ## check: the full verification gate — formatting, vet, build, tests
-check: fmt-check vet build test
+check: fmt-check vet build doc-check test
 	@echo "check: OK"
 
 ## install: install the binary, rc.d script and sample env under PREFIX (run on the FreeBSD host, or stage with DESTDIR)
@@ -110,3 +117,24 @@ web-check:
 
 ## all: build the backend and frontend
 all: web build
+## doc: regenerate the OpenAPI spec from the handler annotations
+doc:
+	@mkdir -p $(dir $(SPEC))
+	@$(GO) tool swag init -g main.go -d $(SWAG_DIRS) -o $(dir $(SPEC)) --ot json 2>&1 | grep -E "^.*(warning|error)" || true
+	@echo "wrote $(SPEC)"
+
+## doc-check: fail if the committed spec is not what the annotations produce
+# --exit-code rather than --quiet because an untracked spec is a diff of
+# nothing: git diff ignores files it has never seen, so a first-time generated
+# file would pass this check while being absent from the commit.
+doc-check:
+	@git ls-files --error-unmatch $(SPEC) >/dev/null 2>&1 || { \
+		echo "$(SPEC) is not tracked by git. Run: make doc && git add $(SPEC)"; \
+		exit 1; \
+	}
+	@$(GO) tool swag init -g main.go -d $(SWAG_DIRS) -o $(dir $(SPEC)) --ot json >/dev/null 2>&1
+	@git diff --exit-code --stat -- $(SPEC) >/dev/null || { \
+		echo "$(SPEC) is out of date. Run: make doc"; \
+		git --no-pager diff --stat -- $(SPEC); \
+		exit 1; \
+	}

@@ -27,12 +27,17 @@ func NewAppError(code int, message string) *AppError {
 	return &AppError{Code: code, Message: message}
 }
 
+// ErrorResponse is the body of every failed request. A named type rather than
+// an inline map so the generated API spec can point at it; the JSON is
+// identical either way.
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
+
 func HandlerError(w http.ResponseWriter, err error) {
 	var appErr *AppError
 	if errors.As(err, &appErr) {
-		WriteJSON(w, appErr.Code, map[string]string{
-			"error": appErr.Message,
-		})
+		WriteJSON(w, appErr.Code, ErrorResponse{Error: appErr.Message})
 		return
 	}
 

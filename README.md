@@ -368,9 +368,26 @@ A jail operation can legitimately run to its 150-second backstop, so an API clie
 a generous timeout. A `504` means Jail Deck stopped waiting — not that the jail failed to
 start, and not that it will not finish.
 
-`collections/insomnium.json` is an Insomnium collection covering every endpoint. `make
-check` fails if it stops doing so, in either direction — a route with no request, or a
-request whose route no longer exists — so it cannot quietly fall behind the API.
+### The API reference
+
+[`docs/api/swagger.json`](docs/api/swagger.json) describes every endpoint, generated from
+annotations on the handlers themselves:
+
+```sh
+make doc     # regenerate it
+```
+
+Import it into Insomnia, Bruno, Postman or anything else that reads Swagger 2.0. Jail Deck
+serves no Swagger UI — the spec is a file, and the tool you already use browses it better
+than a page embedded in a jail host would.
+
+`make check` fails if the committed spec is not what the annotations produce, and the test
+suite fails in both directions besides — a route with no annotation, or an annotation whose
+route no longer exists. swag silently skips an un-annotated handler, so without that test an
+undocumented endpoint would produce a spec that is merely shorter, with nothing saying so.
+
+[`docs/api/index.md`](docs/api/index.md) is the guide: the property allowlist, the worked
+flows, and the behaviour that was measured on a real host rather than assumed.
 
 ## Development
 

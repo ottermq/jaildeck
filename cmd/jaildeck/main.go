@@ -16,6 +16,29 @@ import (
 	"github.com/ottermq/jaildeck/web"
 )
 
+// @title Jail Deck API
+// @version 0.7.0
+// @description The JSON API a browser and an automation client both drive (JD-016).
+// @description
+// @description Every endpoint lives under /api. Authenticate either with the session
+// @description cookie POST /api/auth/login sets, or with a bearer token created by
+// @description `jaildeck token add <name>`. The Authorization header takes precedence
+// @description over the cookie, and a bad token returns 401 rather than falling back to
+// @description one, so a token client fails cleanly even while a session is active.
+// @description
+// @description Swagger 2.0 cannot describe a cookie as a security scheme, so only the
+// @description bearer token appears below. The cookie works on every endpoint the token
+// @description does.
+// @description
+// @description The version here is the API's and is bumped with the changelog at
+// @description release time; it is not read from the binary.
+//
+// @BasePath /api
+//
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer " followed by a token from `jaildeck token add`.
 func main() {
 
 	if len(os.Args) > 1 {

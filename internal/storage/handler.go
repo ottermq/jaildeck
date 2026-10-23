@@ -22,15 +22,31 @@ func NewStorageHandler(service *Service) *StorageHandler {
 // that has retained something has no way to find it again except by having
 // remembered the name, and the whole point of retaining is that the jail it
 // belonged to is gone.
+// Retained lists the datasets being kept past their jails.
+//
+// @Summary      Retained datasets
+// @Description  Everything under <pool>/jails/retained, with the short name a restore
+// @Description  asks for. Without this a client that retained something has no way to find
+// @Description  it again, and the whole point of retaining is that the jail it belonged to
+// @Description  is gone (JD-025).
+// @Description
+// @Description  Empty on a host that has never retained anything, rather than an error:
+// @Description  the retained dataset is created on demand.
+// @Tags         storage
+// @Produce      json
+// @Success      200  {array}   RetainedDataset
+// @Failure      401  {object}  common.ErrorResponse
+// @Security     BearerAuth
+// @Router       /retained [get]
 func (h *StorageHandler) Retained(w http.ResponseWriter, r *http.Request) {
 	datasets, err := h.service.RetainedDatasets(r.Context())
 	if err != nil {
 		common.HandlerError(w, err)
 		return
 	}
-	retained := make([]retainedDataset, 0, len(datasets))
+	retained := make([]RetainedDataset, 0, len(datasets))
 	for _, dataset := range datasets {
-		retained = append(retained, retainedDataset{
+		retained = append(retained, RetainedDataset{
 			Name:       dataset.Name,
 			Short:      lastComponent(dataset.Name),
 			Mountpoint: dataset.Mountpoint,
@@ -41,9 +57,10 @@ func (h *StorageHandler) Retained(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, retained)
 }
 
-// retainedDataset carries Short because that is what a restore asks for: the
-// name under <pool>/jails/retained, not the full dataset path.
-type retainedDataset struct {
+// RetainedDataset carries Short because that is what a restore asks for: the
+// name under <pool>/jails/retained, not the full dataset path. Exported so the
+// generated API spec can name it.
+type RetainedDataset struct {
 	Name       string `json:"name"`
 	Short      string `json:"short"`
 	Mountpoint string `json:"mountpoint"`

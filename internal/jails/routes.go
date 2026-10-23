@@ -8,6 +8,7 @@ func RegisterJailRoutes(r chi.Router, h *JailHandler) {
 		r.Get("/", h.List)
 
 		r.Route("/{name}", func(r chi.Router) {
+			r.Get("/", h.Get)
 			r.Post("/start", h.Start)
 			r.Post("/stop", h.Stop)
 			r.Post("/restart", h.Restart)

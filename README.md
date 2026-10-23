@@ -184,11 +184,32 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/auth/login` | password in, session cookie out |
 | `POST /api/auth/logout` | |
 | `GET /api/auth/me` | the current principal and when the session expires |
-| `GET /api/jails` | every jail, running or merely configured |
+| `GET /api/jails` | every jail, running or merely configured, with its ZFS datasets |
+| `GET /api/jails/{name}` | one of them, same shape |
 | `POST /api/jails/{name}/start` | |
 | `POST /api/jails/{name}/stop` | |
 | `POST /api/jails/{name}/restart` | |
 | `GET /api/audit` | operation history, newest first |
+
+A jail carries its storage: `datasets` is the dataset mounted at the jail's `path` plus
+everything under it, and `properties` is the ZFS *user* properties of the jail's own
+dataset — tag a jail with `zfs set otter:instance=web-01 <pool>/jails/containers/<name>`
+and find it again from the listing alone, with nothing stored in Jail Deck.
+
+```json
+{ "name": "ottermq", "path": "/usr/local/jails/containers/ottermq",
+  "datasets": [ { "name": "tank/jails/containers/ottermq",
+                  "mountpoint": "/usr/local/jails/containers/ottermq",
+                  "used": 31850496, "referenced": 416907264, "available": 963201556480 } ],
+  "properties": { "otter:instance": "mq-01" } }
+```
+
+The sizes are **bytes**, not the `1.41G` that `zfs list` prints, so they can be compared
+and totalled. `referenced` can exceed `used` on a jail cloned from a template, because a
+clone still refers to the template's blocks. Both keys are **absent** for a jail with no
+dataset of its own — and also when the pool could not be read, which is logged at `WARN`
+rather than failing the request, so that an unreadable pool never costs you the list of
+jails you were about to start (JD-022).
 
 Authenticate with a token, as a script would:
 

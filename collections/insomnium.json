@@ -261,7 +261,7 @@
       "_type": "request",
       "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
       "name": "List jails",
-      "description": "Merges `jls` (running) with `/etc/jail.conf` + `/etc/jail.conf.d/*.conf` (configured but stopped), so stopped jails appear too (JD-004). A missing jail.conf means zero jails, not an error.\n\nResponse 200: JSON array of jail objects.\n\nNOTE: the Jail struct has no json tags, so keys are Go field names in PascalCase:\n`JID`, `Name`, `Status`, `Hostname`, `IP`, `Path`. `Status` is `running` or `stopped`.\n\nThis is inconsistent with /audit, which uses snake_case. Worth reconciling before a UI depends on it.\n\nOn failure List does NOT go through toAppError, so an adapter error surfaces as 500 `{\"error\": \"internal server error\"}` with the detail only in the server log.\n\nExample response:\n  [{\"JID\":\"4\",\"Name\":\"ottermq\",\"Status\":\"running\",\"Hostname\":\"ottermq\",\"IP\":\"\",\"Path\":\"/usr/local/jails/containers/ottermq\"}]\n\n`IP` is empty because that jail uses `ip4 = inherit`, so it shares the host addresses rather than having one of its own. Do not treat an empty IP as an error.",
+      "description": "Merges `jls` (running) with `/etc/jail.conf` + `/etc/jail.conf.d/*.conf` (configured but stopped), so stopped jails appear too (JD-004). A missing jail.conf means zero jails, not an error.\n\nResponse 200: JSON array of jail objects.\n\nNOTE: the Jail struct has no json tags, so keys are Go field names in PascalCase:\n`JID`, `Name`, `Status`, `Hostname`, `IP`, `Path`. `Status` is `running` or `stopped`.\n\nThis is inconsistent with /audit, which uses snake_case. Worth reconciling before a UI depends on it.\n\nOn failure List does NOT go through toAppError, so an adapter error surfaces as 500 `{\"error\": \"internal server error\"}` with the detail only in the server log.\n\nExample response:\n  [{\"JID\":\"4\",\"Name\":\"ottermq\",\"Status\":\"running\",\"Hostname\":\"ottermq\",\"IP\":\"\",\"Path\":\"/usr/local/jails/containers/ottermq\"}]\n\n`IP` is empty because that jail uses `ip4 = inherit`, so it shares the host addresses rather than having one of its own. Do not treat an empty IP as an error.\n\nEach jail now carries its ZFS storage (#2, JD-004):\n\n- `datasets` — the dataset mounted at the jail's `path` plus everything mounted under it, each with `name`, `mountpoint`, `used`, `referenced` and `available`.\n- `properties` — the ZFS *user* properties of the jail's own dataset, the ones whose name contains a colon (`otter:instance`). Set them with `zfs set otter:instance=web-01 <pool>/jails/containers/<name>` and a client can find its jails from this listing alone, with nothing stored in Jail Deck (JD-011).\n\nThree gotchas:\n\n1. **The sizes are bytes**, not the `1.41G` that `zfs list` prints. `referenced` can exceed `used` on a jail cloned from a template, because a clone still refers to the template's blocks — which is why a quota belongs on a child dataset (JD-007).\n2. **Both keys are absent, not empty**, for a jail with no dataset of its own: a jail whose stanza sets no `path` is not matched to anything, and neither is a dataset mounted `none`.\n3. **An unreadable pool does not fail this request.** The jails come back without their datasets and the reason is logged at WARN, because seeing a stopped jail is how you start it. So absent storage can also mean ZFS could not be read.",
       "method": "GET",
       "url": "{{baseUrl}}/jails",
       "body": {},
@@ -1001,6 +1001,64 @@
       "segmentParams": [],
       "isPrivate": false,
       "metaSortKey": -2550,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_2b3e584ebf5f4c08beadf604aa5cdac8",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Show one jail",
+      "description": "One jail by name, in the same shape as an element of `GET /jails` — `datasets` and `properties` included (#2).\n\n200 with the jail, 404 `jail not found` when this host has no such jail, 400 when the name is not a jail name at all.\n\nIt reads the same merged listing `GET /jails` does rather than asking for a single jail, because JD-004 discovers a running jail from `jls` and a stopped one from `jail.conf`/`jail.conf.d` — a jail present in only one of the two must still be found here.\n\nNote the trailing-slash form: chi serves this as the index route of `/jails/{name}`, so `/jails/{{jail}}` and `/jails/{{jail}}/` are the same request.",
+      "method": "GET",
+      "url": "{{baseUrl}}/jails/{{jail}}",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2950,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_f54c350125263fd0ea7c630a4332423c",
+      "_type": "request",
+      "parentId": "fld_94d4fcd0d6ad851777e19c71c1151c84",
+      "name": "Unknown jail (GET)",
+      "description": "404 `jail not found`. The name is valid, so this is the not-found path and not the 400 that `Invalid jail name` shows.\n\nWorth running against a host whose pool is unreadable too: that case still answers 200 for a jail that does exist, with its `datasets` absent — a failed storage read degrades the response rather than the request.",
+      "method": "GET",
+      "url": "{{baseUrl}}/jails/does-not-exist",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -850,
       "created": 1767225600000,
       "modified": 1767225600000,
       "settingDisableRenderRequestBody": false,

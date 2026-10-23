@@ -1,4 +1,4 @@
-import { api } from "../services/api";
+import { api, ApiError } from "../services/api";
 import type { JailData } from "./jails.svelte";
 
 // Template is a FreeBSD userland a jail is cloned from.
@@ -131,4 +131,46 @@ export function classifyClones(
         out.other.push(dataset)
     }
     return out
+}
+
+// Blocked names what is in a removal's way. Neither a clone nor a hold can be
+// overridden here: taking a clone with its origin needs `zfs destroy -R`,
+// which Jail Deck never passes, and a hold exists to say "not this one".
+export interface Blocked {
+    reason: string
+    clones?: string[]
+    holds?: string[]
+}
+
+// Removal is what destroying a template did. `blocked` means nothing ran.
+export interface Removal {
+    template: string
+    destroyed: boolean
+    blocked?: Blocked
+}
+
+export async function deriveTemplate(name: string, from: string, packages: string[]): Promise<Template> {
+    return await api<Template>(`/templates/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ from, packages }),
+    })
+}
+
+// confirm is the template's name. Unlike a snapshot's it is unambiguous on its
+// own, because a template name is unique within the pool (JD-027).
+//
+// A refusal arrives as 409 with the removal as its body and is returned rather
+// than thrown: nothing ran, and what it names is the answer.
+export async function removeTemplate(name: string): Promise<Removal> {
+    const query = new URLSearchParams({ confirm: name })
+    try {
+        return await api<Removal>(`/templates/${encodeURIComponent(name)}?${query}`, { method: 'DELETE' })
+    } catch (err) {
+        if (err instanceof ApiError && err.statusCode === 409 && isRemoval(err.body)) return err.body
+        throw err
+    }
+}
+
+function isRemoval(body: unknown): body is Removal {
+    return typeof body === 'object' && body !== null && 'template' in body && 'blocked' in body
 }

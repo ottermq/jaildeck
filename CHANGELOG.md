@@ -239,6 +239,28 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### Added
 
+- **Templates and jail roots can be moved around from the interface.** The last of the
+  write actions, which completes the pass: derive a template, remove one, restore a
+  retained dataset, clone a jail as a template, and re-clone a jail's root. (JD-029)
+
+  **A template snapshot is chosen, not typed.** Re-cloning takes the full
+  `dataset@snapshot` with no default — every jail is already a clone of some template's
+  `@base`, so defaulting to one would be a no-op dressed as an upgrade (JD-026) — but a
+  string nobody can remember is not a choice either. The form offers the ready templates
+  and sends the snapshot each one names.
+
+  **A failed re-clone is rendered as the recovery procedure it is**: which step stopped,
+  every dataset that is no longer under the jail and where it now sits, and that a restore
+  brings it back. Nothing is retried and nothing is undone, so that message is the only
+  record of where the data went.
+
+  **Removing a template from its own page navigates back to the list**, because the thing
+  the page was about is gone. A refusal stays, rendered against the dependents the page
+  already lists.
+
+  A restore puts a retained dataset under any jail under any name, which is what the API
+  has always allowed and what makes "destroy the jail, keep the data" finish (JD-025).
+
 - **Snapshots can be taken, rolled back to and destroyed from the interface.** (JD-029)
 
   **Taking one** covers the whole jail by default — one `zfs snapshot -r`, so every dataset

@@ -207,3 +207,60 @@ export async function rollbackSnapshot(
     const path = `${snapshotPath(name, child, short)}/rollback?${query}`
     return await snapshotCall(path, { method: 'POST' })
 }
+
+// Parked is a dataset a failed re-clone left somewhere else, with where it
+// now sits. Reported rather than undone: an automatic undo that itself fails
+// leaves two interleaved failures and a host neither describes (JD-026).
+export interface Parked {
+    was: string
+    now: string
+}
+
+// Reclone is what replacing a jail's root did. `old_root` is where the
+// previous one was parked -- nothing is destroyed -- and `failed_at` names the
+// step that stopped it, when one did.
+export interface Reclone {
+    root: string
+    // What the root was a clone of BEFORE this ran, read from `zfs get origin`.
+    // Not where the new one came from: that is `to`. Easy to mix up, and a
+    // client that does reports the upgrade as a no-op.
+    from: string
+    // The template snapshot the new root was cloned from.
+    to: string
+    old_root?: string
+    children: string[]
+    running: boolean
+    parked?: Parked[]
+    failed_at?: string
+}
+
+// restoreDataset brings a retained dataset back under a jail. It need not be
+// the jail it left, nor the name it left with (JD-025).
+export async function restoreDataset(name: string, child: string, from: string): Promise<DatasetMove> {
+    return await api<DatasetMove>(
+        `/jails/${encodeURIComponent(name)}/datasets/${encodeURIComponent(child)}/restore`,
+        { method: 'POST', body: JSON.stringify({ from }) },
+    )
+}
+
+// makeTemplate turns a jail you configured into a template every later jail is
+// cloned from -- the Handbook's "Cloning a Jail as a Template" (JD-027). The
+// jail must be stopped, and the server refuses rather than stopping it.
+export async function makeTemplate(name: string, template: string): Promise<{ name: string; dataset: string }> {
+    return await api<{ name: string; dataset: string }>(
+        `/jails/${encodeURIComponent(name)}/template`,
+        { method: 'POST', body: JSON.stringify({ name: template }) },
+    )
+}
+
+// recloneJail replaces the jail's root from a template snapshot, keeping its
+// children. It stops and starts the jail, and leaves it in the state it was
+// found in. A failure part way through throws, and its body says which step
+// stopped and where the children are (JD-026).
+export async function recloneJail(name: string, template: string): Promise<Reclone> {
+    const query = new URLSearchParams({ confirm: name })
+    return await api<Reclone>(`/jails/${encodeURIComponent(name)}/reclone?${query}`, {
+        method: 'POST',
+        body: JSON.stringify({ template }),
+    })
+}

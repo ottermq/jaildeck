@@ -100,6 +100,9 @@ loaded if present — see [`.env.sample`](.env.sample).
 | `JAILDECK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `JAILDECK_ADAPTER` | `freebsd` | `fake` runs against an in-memory host, for development |
 | `JAILDECK_ZFS_POOL` | empty | Pool holding `<pool>/jails`. Empty adopts the only pool; with more than one, set it |
+| `JAILDECK_SOCKET` | empty | Unix socket to listen on as well as TCP. Empty means TCP only |
+| `JAILDECK_SOCKET_GROUP` | empty | Group owning the socket. Empty leaves it in the process's own group |
+| `JAILDECK_SOCKET_ONLY` | `false` | `true` drops the TCP listener, leaving only the socket |
 
 `debug` logs every command Jail Deck runs, which is the fastest way to see what it is
 doing to the host. No credential material is logged at any level.
@@ -197,13 +200,43 @@ curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8888/api/jails
 hours, so restarting the service signs every browser out; tokens are stored and survive.
 
 `GET /api/audit` takes `operation`, `targets` (comma-separated), `success`, `timed_out`,
-`limit` (50 by default, 200 at most) and `before` — an RFC 3339 timestamp for paging
-backwards. Pass the timestamp of the oldest entry already received:
+`request_id`, `limit` (50 by default, 200 at most) and `before` — an RFC 3339 timestamp
+for paging backwards. Pass the timestamp of the oldest entry already received:
 
 ```sh
 curl -sS -H "Authorization: Bearer $TOKEN" \
   'http://127.0.0.1:8888/api/audit?operation=start&success=false&limit=50'
 ```
+
+**A unix socket instead of a port.** `JAILDECK_SOCKET=/var/run/jaildeck.sock` adds a
+second listener serving the same router, and `JAILDECK_SOCKET_ONLY=true` drops the TCP one
+so there is no port at all — no bind address to widen and no TLS to terminate (JD-002):
+
+```sh
+curl -sS --unix-socket /var/run/jaildeck.sock \
+  -H "Authorization: Bearer $TOKEN" http://localhost/api/jails
+```
+
+The socket is created mode `0660`, so its group is a first access check — but **not the
+only one**: `RequireAuth` runs on this listener exactly as on TCP, so the token is still
+required. `JAILDECK_SOCKET_GROUP` names the group; left empty the socket stays in the
+process's own group, which for a root service on FreeBSD is `wheel`.
+
+Jail Deck installs no signal handler, so `service jaildeck stop` leaves the socket file
+behind. The next start probes it: if something answers, it refuses to start rather than
+steal another instance's clients; if nothing does, it removes the leftover and binds. A
+path holding something that is not a socket is a configuration error and is never deleted.
+
+**Correlating your own job with the audit trail.** Send `X-Request-Id` on a request and
+every audit entry it produces carries it back as `request_id`, which `GET
+/api/audit?request_id=…` then filters on (JD-016). Nothing is stored that you did not
+send: a request without the header produces entries with no `request_id` field at all.
+
+The id may be up to 64 characters of ASCII letters, digits and `-._:` — enough for a UUID,
+a ULID or a `trace:span` pair. An id outside that is **dropped, not rejected**: the
+operation still succeeds and its entries simply carry none, with the reason logged. A
+correlation id is a convenience, and failing a jail restart over a space in a header would
+be the worse outcome.
 
 A jail operation can legitimately run to its 150-second backstop, so an API client wants
 a generous timeout. A `504` means Jail Deck stopped waiting — not that the jail failed to

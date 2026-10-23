@@ -22,6 +22,13 @@ func NewFileLogger(path string) *FileLogger {
 }
 
 func (l *FileLogger) Log(ctx context.Context, entry Entry) error {
+	// Stamped here rather than at each call site: every caller already passes
+	// ctx, so this is the one place that cannot be forgotten when a new
+	// operation starts writing audit entries.
+	if entry.RequestID == "" {
+		entry.RequestID = RequestIDFromContext(ctx)
+	}
+
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -85,6 +92,9 @@ func applyFilters(entry Entry, filter Filter) bool {
 		return false
 	}
 	if filter.TimedOut != nil && entry.TimedOut != *filter.TimedOut {
+		return false
+	}
+	if filter.RequestID != "" && entry.RequestID != filter.RequestID {
 		return false
 	}
 	// Strictly older, so the entry the cursor names is not repeated. Timestamps

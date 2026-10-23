@@ -10,6 +10,9 @@ import (
 type Filter struct {
 	Operation string
 	Targets   []string
+	// RequestID matches exactly and case-sensitively: it is the client's own
+	// opaque id, not a name Jail Deck normalises.
+	RequestID string
 	Success   *bool
 	TimedOut  *bool
 	// Before pages backwards: entries strictly older than this, newest first.
@@ -23,6 +26,11 @@ func parseFilter(q url.Values) (Filter, error) {
 	var f Filter
 
 	f.Operation = strings.ToLower(q.Get("operation"))
+
+	// An unparseable request id matches nothing rather than erroring: it is a
+	// filter, and "no entry carries that id" is the honest answer to a value no
+	// entry could carry.
+	f.RequestID = q.Get("request_id")
 
 	f.Success = parseBool(q.Get("success"))
 	f.TimedOut = parseBool(q.Get("timed_out"))

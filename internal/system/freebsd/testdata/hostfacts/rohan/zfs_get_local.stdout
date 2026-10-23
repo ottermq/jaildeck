@@ -1,0 +1,3 @@
+media	mountpoint	/srv/media	local
+media	compression	lz4	local
+media	atime	off	local

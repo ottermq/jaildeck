@@ -1,0 +1,7 @@
+media	filesystem	170G	136K	/srv/media
+media/.incoming	filesystem	1.41G	1.41G	/srv/media/.incoming
+media/Downloads	filesystem	96K	96K	/srv/media/Downloads
+media/Movies	filesystem	102G	102G	/srv/media/Movies
+media/Music	filesystem	96K	96K	/srv/media/Music
+media/Photos	filesystem	96K	96K	/srv/media/Photos
+media/TV	filesystem	66.0G	66.0G	/srv/media/TV

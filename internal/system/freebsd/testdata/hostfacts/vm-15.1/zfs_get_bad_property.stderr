@@ -1,0 +1,128 @@
+bad property list: invalid property 'nosuchproperty'
+usage:
+	get [-rHp] [-j [--json-int]] [-d max] [-o "all" | field[,...]]
+	    [-t type[,...]] [-s source[,...]]
+	    <"all" | property[,...]> [filesystem|volume|snapshot|bookmark] ...
+
+The following properties are supported:
+
+	PROPERTY              EDIT  INHERIT   VALUES
+
+	available               NO       NO   <size>
+	clones                  NO       NO   <dataset>[,...]
+	compressratio           NO       NO   <1.00x or higher if compressed>
+	createtxg               NO       NO   <uint64>
+	creation                NO       NO   <date>
+	defer_destroy           NO       NO   yes | no
+	encryptionroot          NO       NO   <filesystem | volume>
+	filesystem_count        NO       NO   <count>
+	guid                    NO       NO   <uint64>
+	keystatus               NO       NO   none | unavailable | available
+	logicalreferenced       NO       NO   <size>
+	logicalused             NO       NO   <size>
+	mounted                 NO       NO   yes | no
+	objsetid                NO       NO   <uint64>
+	origin                  NO       NO   <snapshot>
+	receive_resume_token    NO       NO   <string token>
+	redact_snaps            NO       NO   <snapshot>[,...]
+	refcompressratio        NO       NO   <1.00x or higher if compressed>
+	referenced              NO       NO   <size>
+	snapshot_count          NO       NO   <count>
+	snapshots_changed       NO       NO   <date>
+	type                    NO       NO   filesystem | volume | snapshot | bookmark
+	used                    NO       NO   <size>
+	usedbychildren          NO       NO   <size>
+	usedbydataset           NO       NO   <size>
+	usedbyrefreservation    NO       NO   <size>
+	usedbysnapshots         NO       NO   <size>
+	userrefs                NO       NO   <count>
+	written                 NO       NO   <size>
+	aclinherit             YES      YES   discard | noallow | restricted | passthrough | passthrough-x
+	aclmode                YES      YES   discard | groupmask | passthrough | restricted
+	acltype                YES      YES   off | nfsv4 | posix
+	atime                  YES      YES   on | off
+	canmount               YES       NO   on | off | noauto
+	casesensitivity         NO      YES   sensitive | insensitive | mixed
+	checksum               YES      YES   on | off | fletcher2 | fletcher4 | sha256 | sha512 | skein | edonr | blake3
+	compression            YES      YES   on | off | lzjb | gzip | gzip-[1-9] | zle | lz4 | zstd | zstd-[1-19] | zstd-fast | zstd-fast-[1-10,20,30,40,50,60,70,80,90,100,500,1000]
+	context                YES       NO   <selinux context>
+	copies                 YES      YES   1 | 2 | 3
+	dedup                  YES      YES   on | off | verify | sha256[,verify] | sha512[,verify] | skein[,verify] | edonr,verify | blake3[,verify]
+	defaultgroupobjquota   YES       NO   <size> | none
+	defaultgroupquota      YES       NO   <size> | none
+	defaultprojectobjquota YES       NO   <size> | none
+	defaultprojectquota    YES       NO   <size> | none
+	defaultuserobjquota    YES       NO   <size> | none
+	defaultuserquota       YES       NO   <size> | none
+	defcontext             YES       NO   <selinux defcontext>
+	devices                YES      YES   on | off
+	direct                 YES      YES   disabled | standard | always
+	dnodesize              YES      YES   legacy | auto | 1k | 2k | 4k | 8k | 16k
+	encryption              NO      YES   on | off | aes-128-ccm | aes-192-ccm | aes-256-ccm | aes-128-gcm | aes-192-gcm | aes-256-gcm
+	exec                   YES      YES   on | off
+	filesystem_limit       YES       NO   <count> | none
+	fscontext              YES       NO   <selinux fscontext>
+	jailed                 YES      YES   on | off
+	keyformat               NO       NO   none | raw | hex | passphrase
+	keylocation            YES       NO   prompt | <file URI> | <https URL> | <http URL>
+	logbias                YES      YES   latency | throughput
+	longname               YES      YES   on | off
+	mlslabel               YES      YES   <sensitivity label>
+	mountpoint             YES      YES   <path> | legacy | none
+	nbmand                 YES      YES   on | off
+	normalization           NO      YES   none | formC | formD | formKC | formKD
+	overlay                YES      YES   on | off
+	pbkdf2iters             NO       NO   <iters>
+	prefetch               YES      YES   none | metadata | all
+	primarycache           YES      YES   all | none | metadata
+	quota                  YES       NO   <size> | none
+	readonly               YES      YES   on | off
+	recordsize             YES      YES   512 to 16M, power of 2
+	redundant_metadata     YES      YES   all | most | some | none
+	refquota               YES       NO   <size> | none
+	refreservation         YES       NO   <size> | none
+	relatime               YES      YES   on | off
+	reservation            YES       NO   <size> | none
+	rootcontext            YES       NO   <selinux rootcontext>
+	secondarycache         YES      YES   all | none | metadata
+	setuid                 YES      YES   on | off
+	sharenfs               YES      YES   on | off | NFS share options
+	sharesmb               YES      YES   on | off | SMB share options
+	snapdev                YES      YES   hidden | visible
+	snapdir                YES      YES   disabled | hidden | visible
+	snapshot_limit         YES       NO   <count> | none
+	special_small_blocks   YES      YES   0 to 16M
+	sync                   YES      YES   standard | always | disabled
+	utf8only                NO      YES   on | off
+	version                YES       NO   1 | 2 | 3 | 4 | 5 | current
+	volblocksize            NO      YES   512 to 16M, power of 2
+	volmode                YES      YES   default | full | geom | dev | none
+	volsize                YES       NO   <size>
+	volthreading           YES       NO   on | off
+	vscan                  YES      YES   on | off
+	xattr                  YES      YES   on | off | dir | sa
+	userused@...            NO       NO   <size>
+	groupused@...           NO       NO   <size>
+	projectused@...         NO       NO   <size>
+	userobjused@...         NO       NO   <size>
+	groupobjused@...        NO       NO   <size>
+	projectobjused@...      NO       NO   <size>
+	userquota@...          YES       NO   <size> | none
+	groupquota@...         YES       NO   <size> | none
+	projectquota@...       YES       NO   <size> | none
+	userobjquota@...       YES       NO   <size> | none
+	groupobjquota@...      YES       NO   <size> | none
+	projectobjquota@...    YES       NO   <size> | none
+	written@<snap>          NO       NO   <size>
+	written#<bookmark>      NO       NO   <size>
+
+Sizes are specified in bytes with standard units such as K, M, G, etc.
+
+User-defined properties can be specified by using a name containing a colon (:).
+
+The {user|group|project}[obj]{used|quota}@ properties must be appended with
+a user|group|project specifier of one of these forms:
+    POSIX name      (eg: "matt")
+    POSIX id        (eg: "126829")
+    SMB name@domain (eg: "matt@sun")
+    SMB SID         (eg: "S-1-234-567-89")

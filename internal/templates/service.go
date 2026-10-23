@@ -288,3 +288,40 @@ func blockedReason(dependents Dependents) string {
 		". Destroying it would take them with it, so each has to go first -- or, for a jail " +
 		"that should outlive the template, zfs promote moves the dependency the other way."
 }
+
+// Detail is one template with what depends on it.
+//
+// The dependents are the reason this endpoint exists. They are computed
+// already, for Remove's refusal, but until now a client could only learn them
+// by attempting a destroy and reading the 409 -- which makes an ordinary
+// question ("can I remove this?") something you ask by trying.
+type Detail struct {
+	Template
+	Dependents Dependents `json:"dependents"`
+}
+
+// Get returns one template by name.
+func (s *Service) Get(ctx context.Context, name string) (Detail, error) {
+	existing, err := s.List(ctx)
+	if err != nil {
+		return Detail{}, err
+	}
+	template, ok := byName(existing, name)
+	if !ok {
+		return Detail{}, common.NewAppError(http.StatusNotFound, "no template named "+name)
+	}
+
+	dependents, err := s.storage.Dependents(ctx, name)
+	if err != nil {
+		return Detail{}, err
+	}
+	// Never null: a client rendering a list of what depends on this should not
+	// have to check for it first.
+	if dependents.Clones == nil {
+		dependents.Clones = make([]string, 0)
+	}
+	if dependents.Holds == nil {
+		dependents.Holds = make([]string, 0)
+	}
+	return Detail{Template: template, Dependents: dependents}, nil
+}

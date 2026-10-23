@@ -28,11 +28,15 @@ type TemplateStorage interface {
 }
 
 // Dependents is what would be taken, or broken, by destroying a template.
+//
+// Tagged for JSON because it is no longer only a refusal: the detail endpoint
+// returns it so a client can see what is in the way before it asks, rather
+// than discovering it from a 409.
 type Dependents struct {
 	// Clones are datasets made from one of this template's snapshots -- every
 	// jail cloned from it, and every template derived from it.
-	Clones []string
-	Holds  []string
+	Clones []string `json:"clones"`
+	Holds  []string `json:"holds"`
 }
 
 // Any reports whether anything depends on the template at all.

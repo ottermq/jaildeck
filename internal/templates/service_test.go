@@ -444,3 +444,55 @@ func TestRemoveAnUnreadyTemplate(t *testing.T) {
 		t.Fatalf("Remove() = %+v, %v; want the half-built template destroyed", removal, err)
 	}
 }
+
+// The detail endpoint's reason to exist: what depends on a template, visible
+// before you try to remove it rather than only in the refusal.
+func TestGetReportsWhatDependsOnATemplate(t *testing.T) {
+	storage := removable()
+	storage.dependents["postgres-16"] = Dependents{
+		Clones: []string{"tank/jails/containers/pg-1", "tank/jails/templates/postgres-16-tuned"},
+	}
+
+	detail, err := NewService(storage, &stubPackages{}, &fakeLogger{}).
+		Get(context.Background(), "postgres-16")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if detail.Name != "postgres-16" || !detail.Ready || detail.Parent != "15.1-RELEASE" {
+		t.Errorf("detail = %+v, want the listing's fields", detail.Template)
+	}
+	if len(detail.Dependents.Clones) != 2 {
+		t.Errorf("clones = %q, want both the jail and the derived template", detail.Dependents.Clones)
+	}
+
+	// The same answer Remove would refuse with, asked without trying.
+	removal, _ := NewService(storage, &stubPackages{}, &fakeLogger{}).
+		Remove(context.Background(), "postgres-16", "postgres-16")
+	if removal.Blocked == nil || len(removal.Blocked.Clones) != len(detail.Dependents.Clones) {
+		t.Error("the detail and the refusal disagree about what depends on it")
+	}
+}
+
+// Empty rather than null, so a client rendering the list does not have to
+// check for it first.
+func TestGetNeverReturnsNullDependents(t *testing.T) {
+	detail, err := NewService(removable(), &stubPackages{}, &fakeLogger{}).
+		Get(context.Background(), "postgres-16")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if detail.Dependents.Clones == nil || detail.Dependents.Holds == nil {
+		t.Errorf("dependents = %+v, want empty lists rather than nil", detail.Dependents)
+	}
+}
+
+func TestGetAnAbsentTemplate(t *testing.T) {
+	_, err := NewService(removable(), &stubPackages{}, &fakeLogger{}).
+		Get(context.Background(), "nope")
+	if err == nil {
+		t.Fatal("Get() returned no error")
+	}
+	if code := appErrCode(t, err); code != http.StatusNotFound {
+		t.Errorf("error code = %d, want 404", code)
+	}
+}

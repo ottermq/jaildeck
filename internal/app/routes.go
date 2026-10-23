@@ -47,13 +47,41 @@ func useObservability(r *chi.Mux) {
 	// context. Reversed, chi falls back to PrintPrettyStack on stdout.
 	r.Use(middleware.RequestLogger(slogFormatter{}))
 	r.Use(middleware.Recoverer)
+	// requestID before requestContextLogger, so the logger carries the id too
+	// and the access log can be lined up against the audit entries.
+	r.Use(requestID)
 	// Every handler below gets a request-scoped logger; RequireAuth enriches it.
 	r.Use(requestContextLogger)
+}
+
+// requestID puts a validated X-Request-Id where the audit logger will find it
+// (JD-016). An invalid one is DROPPED and logged, not rejected: the id is a
+// correlation convenience, and failing an operator's jail restart because their
+// correlation id held a space would be the worse outcome. The audit entry then
+// simply carries none, which is the same shape as a client that sent none.
+func requestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw := r.Header.Get(audit.RequestIDHeader)
+		id, err := audit.ValidateRequestID(raw)
+		if err != nil {
+			// slog's handler quotes a value that needs it, so a header holding
+			// a newline cannot forge a log line here.
+			common.Logger(r.Context(), "http").Warn("ignoring an invalid request id",
+				slog.String("reason", err.Error()), slog.String("value", raw))
+		}
+		if id != "" {
+			r = r.WithContext(audit.ContextWithRequestID(r.Context(), id))
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func requestContextLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		l := slog.Default().With("method", r.Method, "path", r.URL.Path)
+		if id := audit.RequestIDFromContext(r.Context()); id != "" {
+			l = l.With("request_id", id)
+		}
 		next.ServeHTTP(w, r.WithContext(common.ContextWithLogger(r.Context(), l)))
 	})
 }

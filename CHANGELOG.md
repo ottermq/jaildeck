@@ -9,6 +9,11 @@ alone.
 Dates are the tag date. Issue numbers link to
 [the tracker](https://github.com/ottermq/jaildeck/issues).
 
+Anything that changes the JSON API's surface is recorded under an **API** heading,
+whether or not it breaks a client, so that a client pinning a version can see in
+one place what a contract test would notice (JD-016). Breaking changes are called
+out as such; before 1.0 they are allowed, but never silent.
+
 The repository moved from Codeberg to GitHub on 2026-10-21. Issue and pull
 request numbers in v0.6.0 and earlier, including the audit cursor entry in
 v0.7.0, refer to the archived
@@ -16,6 +21,22 @@ v0.7.0, refer to the archived
 versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
+
+### API
+
+- **`X-Request-Id` is recorded in every audit entry a request produces**, and
+  `GET /api/audit?request_id=<id>` filters on it, so an automation client can line
+  its own job up against Jail Deck's audit trail (JD-016). Additive: an entry omits
+  `request_id` entirely when the request sent no header, so a client that does not
+  use it sees the shape it saw before.
+
+  Up to 64 characters of ASCII letters, digits and `-._:` — a UUID, a ULID or a
+  `trace:span` pair. Anything else is **dropped rather than rejected**, with the
+  reason logged: the operation still succeeds and its entries carry no id. A
+  correlation id is a convenience, and failing an operator's jail restart because
+  their id held a space would be the worse outcome. The filter matches exactly and
+  case-sensitively, since the id is the client's own opaque string and not a name
+  Jail Deck normalises. (#14)
 
 ### Added
 

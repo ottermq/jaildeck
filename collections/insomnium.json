@@ -406,7 +406,7 @@
       "_type": "request",
       "parentId": "fld_d232fe1732e9dc4a8be23df7f3df5873",
       "name": "Recent operations",
-      "description": "Response 200: JSON array of audit entries, newest first, snake_case keys:\n`timestamp`, `operation`, `target`, `command`, `exit_code`, `success`, plus `timed_out` (omitted when false) and `error` (omitted when empty).\n\nDefault limit 50, maximum 200.\n\nAn empty result is `[]`, not `null` — both when nothing matches and when the audit log does not exist yet (it is created on the first mutating operation).",
+      "description": "Response 200: JSON array of audit entries, newest first, snake_case keys:\n`timestamp`, `operation`, `target`, `command`, `exit_code`, `success`, plus `timed_out` (omitted when false), `error` (omitted when empty) and `request_id` (omitted when the request sent no X-Request-Id).\n\nDefault limit 50, maximum 200.\n\nAn empty result is `[]`, not `null` — both when nothing matches and when the audit log does not exist yet (it is created on the first mutating operation).",
       "method": "GET",
       "url": "{{baseUrl}}/audit",
       "body": {},
@@ -933,6 +933,74 @@
       "segmentParams": [],
       "isPrivate": false,
       "metaSortKey": -500,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_5d81b3fa06c94e27a8f1d035b6e74c92",
+      "_type": "request",
+      "parentId": "fld_d232fe1732e9dc4a8be23df7f3df5873",
+      "name": "Filter by request id",
+      "description": "`request_id` matches the `X-Request-Id` the operation's own request carried (JD-016). Exact and case-sensitive, deliberately: it is the client's opaque id, not a name Jail Deck normalises. Only `operation` is lowercased.\n\nAn entry omits `request_id` entirely when its request sent no header, so this filter finds nothing among operations driven from the web interface.\n\nSee Jails -> \"Start jail with a request id\" for the other half.",
+      "method": "GET",
+      "url": "{{baseUrl}}/audit",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "parameters": [
+        {
+          "name": "request_id",
+          "value": "otter.job.42",
+          "disabled": false
+        }
+      ],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -1300,
+      "created": 1767225600000,
+      "modified": 1767225600000,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingFollowRedirects": "global",
+      "settingRebuildPath": true,
+      "settingSendCookies": true,
+      "settingStoreCookies": true
+    },
+    {
+      "_id": "req_c40e7a195b82df63c0a1e58d4f2b9637",
+      "_type": "request",
+      "parentId": "fld_85a88b6fd8bcd9f4c04a8db34d65d5db",
+      "name": "Start jail with a request id",
+      "description": "Send `X-Request-Id` and every audit entry this request produces carries it back as `request_id`, which `GET /api/audit?request_id=…` then finds (JD-016).\n\nUp to 64 characters of ASCII letters, digits and `-._:` — a UUID, a ULID or a `trace:span` pair. An id outside that is **dropped, not rejected**: the response is the ordinary 200 and the entries simply carry no id, with the reason logged server-side. A correlation id is a convenience, and failing a jail restart over a space in a header would be worse.",
+      "method": "POST",
+      "url": "{{baseUrl}}/jails/{{jail}}/start",
+      "body": {},
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Request-Id",
+          "value": "otter.job.42"
+        }
+      ],
+      "authentication": {},
+      "parameters": [],
+      "segmentParams": [],
+      "isPrivate": false,
+      "metaSortKey": -2550,
       "created": 1767225600000,
       "modified": 1767225600000,
       "settingDisableRenderRequestBody": false,

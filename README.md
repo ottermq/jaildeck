@@ -197,13 +197,24 @@ curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8888/api/jails
 hours, so restarting the service signs every browser out; tokens are stored and survive.
 
 `GET /api/audit` takes `operation`, `targets` (comma-separated), `success`, `timed_out`,
-`limit` (50 by default, 200 at most) and `before` — an RFC 3339 timestamp for paging
-backwards. Pass the timestamp of the oldest entry already received:
+`request_id`, `limit` (50 by default, 200 at most) and `before` — an RFC 3339 timestamp
+for paging backwards. Pass the timestamp of the oldest entry already received:
 
 ```sh
 curl -sS -H "Authorization: Bearer $TOKEN" \
   'http://127.0.0.1:8888/api/audit?operation=start&success=false&limit=50'
 ```
+
+**Correlating your own job with the audit trail.** Send `X-Request-Id` on a request and
+every audit entry it produces carries it back as `request_id`, which `GET
+/api/audit?request_id=…` then filters on (JD-016). Nothing is stored that you did not
+send: a request without the header produces entries with no `request_id` field at all.
+
+The id may be up to 64 characters of ASCII letters, digits and `-._:` — enough for a UUID,
+a ULID or a `trace:span` pair. An id outside that is **dropped, not rejected**: the
+operation still succeeds and its entries simply carry none, with the reason logged. A
+correlation id is a convenience, and failing a jail restart over a space in a header would
+be the worse outcome.
 
 A jail operation can legitimately run to its 150-second backstop, so an API client wants
 a generous timeout. A `504` means Jail Deck stopped waiting — not that the jail failed to

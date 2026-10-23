@@ -239,6 +239,30 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### Added
 
+- **A jail's tags and datasets can be changed from the interface.** The first of the write
+  actions: add, edit and remove a ZFS tag; create a child dataset with its native
+  properties; retain one past the jail. (JD-029)
+
+  **A form opens where the thing is, and the modal is kept for what cannot be undone.**
+  None of these destroys anything, so none of them gets a dialog. The dialog that does
+  exist replaces the browser's `confirm()`, which could not carry the one thing the
+  destructive operations need: the API will not destroy or roll back a snapshot without
+  `confirm=<dataset>@<snapshot>` spelled out in full (JD-024), so the dialog asks for
+  exactly that string and keeps its button disabled until it matches.
+
+  **Nothing is validated twice.** A property name without a colon, a `recordsize` of 7K —
+  both go to the server, and the server's own sentence comes back. The forms carry the
+  rules as hints, because an operator should know before typing, but a hint that could
+  disagree with ZFS is not a check.
+
+  **Every write is followed by a read.** The server reads ZFS rather than remembering what
+  it was told (JD-011), so a refetch is the only answer that cannot disagree with the host
+  — and a command that failed can still have changed something.
+
+  A 409 from the dataset endpoint is rendered from its body rather than as the word
+  "Conflict": it carries the property, the value asked for and the value the dataset has,
+  which is why the API answers that way instead of with a message.
+
 - **The web interface reads the storage model.** Six releases of storage endpoints had
   nothing on screen; this is the reading half of catching up. (JD-028)
 

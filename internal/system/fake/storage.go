@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -179,16 +180,75 @@ func fakeCommand(verb string, properties map[string]string, name string) string 
 }
 
 func (s *StorageSystem) DatasetsUnder(ctx context.Context, roots []string) ([]storage.Dataset, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	datasets := make([]storage.Dataset, 0, len(s.datasets))
 	for _, d := range s.datasets {
 		if under(d.Name, roots) {
+			d.Available = s.availableLocked(d)
 			datasets = append(datasets, d)
 		}
 	}
 	return datasets, nil
 }
 
+// availableLocked is what zfs would report a dataset may still write. A
+// refquota caps it: the pool can have 400G free while a dataset limited to 2G
+// that has referenced 1.5G has 512M left, and the smaller figure is the one a
+// jail sees from inside (JD-007). Computed on read rather than stored, so
+// raising a quota takes effect the way it does on a real host.
+func (s *StorageSystem) availableLocked(d storage.Dataset) int64 {
+	quota, ok := parseSize(s.propertyLocked(d.Name, "refquota"))
+	if !ok {
+		return d.Available
+	}
+	left := quota - d.Referenced
+	switch {
+	case left < 0:
+		return 0
+	case left > d.Available:
+		return d.Available
+	default:
+		return left
+	}
+}
+
+func (s *StorageSystem) propertyLocked(dataset, property string) string {
+	for _, p := range s.properties {
+		if p.Dataset == dataset && p.Name == property {
+			return p.Value
+		}
+	}
+	return ""
+}
+
+// parseSize reads the sizes zfs accepts -- a number, decimal point allowed, with
+// an optional binary unit suffix, so both 2G and 1.5G come out right. Not ok
+// for "none", for an empty value, or for anything it does not recognise: the
+// real zfs would have refused those at the set, so a fake that guessed at them
+// would be inventing a limit nobody asked for.
+func parseSize(value string) (int64, bool) {
+	if value == "" || value == "none" || value == "-" {
+		return 0, false
+	}
+	units := map[byte]float64{'B': 1, 'K': 1 << 10, 'M': 1 << 20, 'G': 1 << 30, 'T': 1 << 40, 'P': 1 << 50}
+	scale := float64(1)
+	digits := value
+	// &^ 0x20 uppercases an ASCII letter and leaves a digit as something no
+	// unit answers to, so an unsuffixed byte count falls through with scale 1.
+	if unit, known := units[value[len(value)-1]&^0x20]; known && len(value) > 1 {
+		scale, digits = unit, value[:len(value)-1]
+	}
+	amount, err := strconv.ParseFloat(digits, 64)
+	if err != nil || amount < 0 {
+		return 0, false
+	}
+	return int64(amount * scale), true
+}
+
 func (s *StorageSystem) LocalProperties(ctx context.Context, roots []string) ([]storage.Property, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	properties := make([]storage.Property, 0, len(s.properties))
 	for _, p := range s.properties {
 		if under(p.Dataset, roots) {

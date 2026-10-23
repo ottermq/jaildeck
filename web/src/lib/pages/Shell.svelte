@@ -9,6 +9,7 @@ import Template from './Template.svelte'
 import Operations from './Operations.svelte'
 import Host from './Host.svelte'
 import NotFound from './NotFound.svelte'
+import ConfirmDialog from '../components/ConfirmDialog.svelte'
 
 let sessionExpiry = $derived(
     auth.principal?.expires_at === undefined
@@ -71,6 +72,8 @@ onMount(() => {
             <button type="button" class="rail__logout" onclick={logout}>Log out</button>
         </div>
     </aside>
+
+    <ConfirmDialog />
 
     <main class="main">
         {#if route.path === '/jails'}

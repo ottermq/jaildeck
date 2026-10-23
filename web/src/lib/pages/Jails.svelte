@@ -4,6 +4,7 @@ import { onNavClick } from '../router.svelte'
 import { listJails, runJailOperation } from '../stores/jails.svelte'
 import type { JailData, Operation } from '../stores/jails.svelte'
 import { ApiError } from '../services/api'
+import { ask } from '../stores/confirm.svelte'
 import { capitalizeFirstLetter, normalizeEmptyValue, formatBytes } from '../utils'
 
 let jails = $state<JailData[] | null>(null)
@@ -30,7 +31,14 @@ onMount(() => {
 async function run(j: JailData, op: Operation) {
     if (pending[j.name]) return
 
-    if (op !== 'start' && !confirm(`${capitalizeFirstLetter(op)} jail "${j.name}"? Anything running inside it will be interrupted.`)) return
+    if (op !== 'start') {
+        const confirmed = await ask({
+            title: `${capitalizeFirstLetter(op)} ${j.name}?`,
+            lines: [`Anything running inside the jail will be interrupted.`],
+            verb: capitalizeFirstLetter(op),
+        })
+        if (!confirmed) return
+    }
 
     pending[j.name] = op
     delete rowError[j.name]

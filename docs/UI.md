@@ -90,7 +90,9 @@ At `/jails/{name}`, reached from the jail's name on the list (JD-028). Built:
 - **Tags** — the jail's `user:property` ZFS tags, its own and never a child's
 - **Snapshots** — newest first, ordered by transaction group rather than by time (JD-024); fetched separately and allowed to fail on its own
 
-Still to come: services, recent logs, recent operations, the actions, and which template the jail was cloned from.
+Acting on it (JD-029): a tag can be added, edited and removed; a child dataset can be created with its native properties; a child dataset can be retained past the jail. Each opens a form where the thing is, and each refetches the jail when it is done.
+
+Still to come: snapshots taken, rolled back and destroyed; re-cloning the root; cloning the jail as a template; services, recent logs, recent operations, and which template the jail was cloned from.
 
 ### Storage page
 
@@ -151,6 +153,10 @@ Should show what operation failed, a short explanation, relevant command output 
 
 Potentially destructive or disruptive operations require confirmation: stop jail, restart jail, rollback snapshot, delete snapshot, remove dataset.
 
+One modal dialog, mounted once in the shell and driven from anywhere (JD-029). It replaces the browser's `confirm()`, which could not carry the typed confirmation several of these operations need — the API asks for the full `dataset@snapshot` before it will destroy or roll one back (JD-024), and the dialog asks for exactly that.
+
+Operations that destroy nothing — setting a tag, creating a dataset, retaining one — get a form in place instead. A modal for every change would make the dialog mean nothing.
+
 ## Accessibility and usability
 
 Real buttons, real links, visible focus states, readable contrast, form labels, meaningful table headers, status text in addition to color.
@@ -162,7 +168,7 @@ Use FreeBSD-native terminology, explain risky operations in plain language. Good
 ## Open UI questions
 
 1. ~~Table-first or card-first for the Jails page?~~ **Table-first**, with a page per jail behind the name (JD-028).
-2. Browser `confirm()` dialogs or custom confirmation components?
+2. ~~Browser `confirm()` dialogs or custom confirmation components?~~ **One custom dialog**, because `confirm()` cannot ask for a typed confirmation (JD-029).
 3. Should logs appear inline on jail detail or only on a dedicated logs page?
 4. Should the dashboard be meaningful from the start, or should `/` redirect to `/jails`?
 5. How much explanatory text for FreeBSD learners?

@@ -931,6 +931,46 @@ No destructive action is on these pages yet — no tag, no snapshot, no rollback
 
 ---
 
+## JD-029 — Acting on the Storage Model from the Interface
+
+**Status:** Locked — 2026-10-23
+
+JD-028 made the storage model visible. This is how it is changed: what gets a form, what gets a confirmation, and what the interface is allowed to decide on its own.
+
+### A form where the thing is, a dialog only for what cannot be undone
+
+Setting a tag, creating a child dataset and retaining one all open a form **in place** — under the section header, or in a row beneath the dataset. None of them destroys anything: a tag is a property, a new dataset is new, and a retain is `zfs rename -u` plus a remount with nothing removed (JD-025). A modal for each would be ceremony, and ceremony everywhere is ceremony nowhere.
+
+The modal is kept for what a second call cannot take back. It replaces the browser's `confirm()`, which `docs/UI.md` had left open as a question and which could not have carried the rest of this section.
+
+### A typed confirmation is the API's requirement, shown
+
+`DELETE` and `rollback` will not act without `confirm=<dataset>@<snapshot>` spelled out in full (JD-024), and a template will not be removed without `confirm=<name>` (JD-027). The dialog asks for exactly that string and its button stays disabled until it matches.
+
+This is deliberately **not** an invention of the interface. The same ceremony exists for anyone using `curl`, for the same reason — `nightly` names a snapshot on every dataset that has one, so a short name is not an answer to "which one". A client that made the typing optional would be offering a shortcut the API does not have.
+
+### Every write is followed by a read
+
+Each action refetches the jail when it finishes, whichever way it finished. The server reads ZFS rather than remembering what it was told (JD-011), so a refetch is the only answer that cannot disagree with the host — and a command that failed can still have changed something, which is exactly when a stale screen is dangerous.
+
+That costs a request per action. The alternative is patching local state from the response and being wrong the first time two things change at once.
+
+### The interface validates nothing the server validates
+
+A property name without a colon, a dataset name with a slash, a `recordsize` of 7K: all of them go to the server and the server's own sentence comes back. `zfs` answers `recordsize=7K` with "must be power of 2 from 512B to 16M", which is better than anything this side would have written, and JD-012 already decided that sentence reaches the client.
+
+The forms carry the rules as *hints* — "the name has to contain a colon", "one level only" — because an operator should know before typing. A hint is not a check, and when the two could disagree only one of them is talking to ZFS.
+
+### What a refusal looks like
+
+A 409 from these endpoints is not a sentence: the body carries the structure that explains it, which is the whole reason the API answers that way. The client keeps the decoded body on its error type and renders the explanation. Showing "Conflict" would throw away the part the API went out of its way to provide.
+
+### What is not here
+
+Setting a native property on a dataset that already exists — growing a `refquota`, say — is possible in the API but absent from the page, because the jail endpoint does not report native properties and a form that edits a value it cannot show would be guessing. That is an API gap, not a UI decision.
+
+---
+
 ## Decision Policy
 
 Once a decision is marked as **Locked**, it should not be revisited without a clear technical or product justification. Architectural evolution is expected, but changes should be deliberate and documented rather than occurring through incremental drift.

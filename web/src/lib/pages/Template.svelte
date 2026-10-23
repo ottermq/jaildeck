@@ -1,11 +1,12 @@
 <script lang="ts">
 import { onMount } from 'svelte'
-import { getTemplate, listTemplates, classifyClones } from '../stores/templates.svelte'
-import type { Template, TemplateDetail } from '../stores/templates.svelte'
+import { getTemplate, listTemplates, classifyClones, removeTemplate } from '../stores/templates.svelte'
+import type { Template, TemplateDetail, Blocked } from '../stores/templates.svelte'
 import { listJails } from '../stores/jails.svelte'
 import type { JailData } from '../stores/jails.svelte'
 import { ApiError } from '../services/api'
-import { onNavClick } from '../router.svelte'
+import { navigate, onNavClick } from '../router.svelte'
+import { ask } from '../stores/confirm.svelte'
 import { formatBytes } from '../utils'
 
 let { name }: { name: string } = $props()
@@ -50,6 +51,54 @@ let clones = $derived(
 let holds = $derived(template?.dependents.holds ?? [])
 let parent = $derived(template?.parent ?? '')
 let removable = $derived(template !== null && (template.dependents.clones.length + holds.length) === 0)
+
+// ---- removing ---------------------------------------------------------
+
+let busy = $state(false)
+let removeError = $state('')
+// A refusal is not a failure: nothing ran, and what it names is the answer.
+// This page already lists the dependents, so a refusal here should agree with
+// what is on screen -- and when it does not, the server is the one that just
+// read ZFS.
+let blocked = $state<Blocked | null>(null)
+
+async function remove() {
+    if (!template || busy) return
+    const confirmed = await ask({
+        title: `Remove the template ${template.name}?`,
+        lines: [
+            'The dataset and its snapshots are destroyed.',
+            removable
+                ? 'Nothing depends on it, so nothing else is affected.'
+                : 'Everything listed below depends on it, and this will refuse rather than take them along.',
+        ],
+        verb: 'Remove',
+        typed: template.name,
+    })
+    if (!confirmed) return
+
+    busy = true
+    removeError = ''
+    blocked = null
+    try {
+        const removal = await removeTemplate(template.name)
+        if (removal.blocked) {
+            blocked = removal.blocked
+            await load()
+            return
+        }
+        // Gone, so there is no page left to show.
+        navigate('/templates')
+        return
+    } catch (err) {
+        removeError = err instanceof ApiError
+            ? err.statusText ?? 'Could not remove the template'
+            : 'Could not reach Jail Deck'
+        await load()
+    } finally {
+        busy = false
+    }
+}
 </script>
 
 <nav class="crumbs" aria-label="Breadcrumb">
@@ -66,9 +115,10 @@ let removable = $derived(template !== null && (template.dependents.clones.length
 {:else if template === null}
     <p class="notice">Loading {name}…</p>
 {:else}
-    <header class="page-head">
-        <h1>{template.name}</h1>
-        <p class="page-sub">
+    <header class="page-head page-head--row">
+        <div>
+            <h1>{template.name}</h1>
+            <p class="page-sub">
             {#if template.ready}
                 <span class="badge badge--running">ready</span>
             {:else}
@@ -84,8 +134,28 @@ let removable = $derived(template !== null && (template.dependents.clones.length
                     </a>
                 </span>
             {/if}
-        </p>
+            </p>
+        </div>
+        <button type="button" class="btn btn--small btn--danger" disabled={busy} onclick={remove}>
+            {busy ? 'Removing…' : 'Remove'}
+        </button>
     </header>
+
+    {#if removeError}
+        <p class="notice notice--error" role="alert">{removeError}</p>
+    {:else if blocked}
+        <div class="refusal" role="alert">
+            <p class="refusal__reason">{blocked.reason}</p>
+            <ul class="deps">
+                {#each [...(blocked.clones ?? []), ...(blocked.holds ?? [])] as item (item)}
+                    <li><code>{item}</code></li>
+                {/each}
+            </ul>
+            <div class="refusal__actions">
+                <button type="button" class="btn btn--small" onclick={() => (blocked = null)}>Dismiss</button>
+            </div>
+        </div>
+    {/if}
 
     {#if !template.ready}
         <p class="notice notice--error">
@@ -202,6 +272,34 @@ let removable = $derived(template !== null && (template.dependents.clones.length
     flex-wrap: wrap;
     gap: var(--space-4);
     align-items: center;
+}
+
+.page-head--row {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+}
+
+/* A refusal is not an error: nothing ran, and what it names is the answer. */
+.refusal {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+    border-radius: var(--radius);
+    background: var(--warn-soft);
+}
+
+.refusal__reason {
+    color: var(--warn);
+    font-size: 0.9rem;
+}
+
+.refusal__actions {
+    display: flex;
+    justify-content: flex-end;
 }
 
 .panel { margin-top: var(--space-6); }

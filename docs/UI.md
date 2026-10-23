@@ -94,7 +94,9 @@ Acting on it (JD-029): a tag can be added, edited and removed; a child dataset c
 
 A refused snapshot operation is shown under its row, in the warning colour, naming what stood in the way. A rollback refused over newer snapshots offers them back once — "destroy them and roll back" — because that is the one refusal the API lets a client accept.
 
-Still to come: re-cloning the root; cloning the jail as a template; services, recent logs, recent operations, and which template the jail was cloned from.
+The jail as a whole: it can be **cloned as a template**, and its **root re-cloned** from a ready template's snapshot. A re-clone that fails part way through is rendered as the recovery procedure it is — which step stopped, where each dataset now sits, and that a restore brings it back.
+
+Still to come: services, recent logs, recent operations, and which template the jail was cloned from.
 
 ### Storage page
 
@@ -108,7 +110,9 @@ Purpose: the userlands a jail is cloned from — the thing jail creation depends
 - **Retained datasets** below: the datasets that outlived their jail (JD-025), on the same page because they answer the same question
 - a page per template at `/templates/{name}`: where it lives, and **what depends on it** — the jails cloned from it, the templates derived from it, anything else, and holds — which is what a removal would have to refuse over
 
-Still to come: preparing a release template (its own long-running-operation problem, JD-008), deriving one from the interface, removing one, and a release picker sourced from `download.freebsd.org` or manual version entry, depending on how "which releases are supported" resolves (`docs/SPEC.md`).
+Acting on it (JD-029): a template can be **derived** from a ready one with packages, and **removed** — from the list or from its own page, which navigates back when the template is gone. A removal refused over clones or holds is shown where the template is, with the `zfs promote` way out. A **retained dataset can be restored** under any jail, under any name.
+
+Still to come: preparing a release template (its own long-running-operation problem, JD-008), and a release picker sourced from `download.freebsd.org` or manual version entry, depending on how "which releases are supported" resolves (`docs/SPEC.md`).
 
 ### Logs page
 

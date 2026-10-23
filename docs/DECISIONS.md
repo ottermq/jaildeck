@@ -985,6 +985,22 @@ Destroying a snapshot of the jail's **own** dataset is recursive: every snapshot
 
 A snapshot on a **child** dataset is destroyed through the child's own route and takes only itself. Which route a row uses is therefore decided by which dataset the row names, and the confirmation says what that means.
 
+### A template snapshot is chosen, not typed
+
+Re-cloning a jail's root takes the full `dataset@snapshot`, with no default — every jail is already a clone of some template's `@base`, so defaulting to one would be a no-op dressed as an upgrade (JD-026). But a string nobody can remember is not a choice either, so the form offers the **ready** templates and sends the snapshot each one names.
+
+Only the ready ones: without its `@base` snapshot there is nothing to clone (JD-007). When none is ready the button is disabled and says why, which is the one place a hint becomes a check — there is no request that could succeed.
+
+### A re-clone reports where it came from, not what it replaced
+
+`Reclone` carries both: `to` is the template snapshot the new root was cloned from, `from` is what the root was a clone of before. An early version of this page printed `from` as "re-cloned from", which described the upgrade as the thing it replaced — on a jail whose template had just changed, it read as though nothing had happened.
+
+A failure is rendered differently from every other error on these pages, because it is the only record of where the jail's datasets went: it names the step that stopped, lists each dataset and where it now sits, and says that a restore brings it back. Nothing is retried and nothing is undone (JD-026), so this message is the recovery procedure.
+
+### Removing a template from its own page leaves no page
+
+A successful removal on `/templates/{name}` navigates back to the list, because the thing the page was about is gone. A refusal stays, rendered against the dependents the page already lists — and if the two ever disagree, the server is the one that just read ZFS.
+
 ### What is not here
 
 Setting a native property on a dataset that already exists — growing a `refquota`, say — is possible in the API but absent from the page, because the jail endpoint does not report native properties and a form that edits a value it cannot show would be guessing. That is an API gap, filed as [#55](https://github.com/ottermq/jaildeck/issues/55), not a UI decision.

@@ -2,9 +2,13 @@
 import { onMount } from 'svelte'
 import {
     getJail, listSnapshots, setTags, ensureDataset, retainDataset,
-    createSnapshot, destroySnapshot, rollbackSnapshot,
+    createSnapshot, destroySnapshot, rollbackSnapshot, makeTemplate, recloneJail,
 } from '../stores/jails.svelte'
-import type { JailData, Snapshot, Dataset, PropertyConflict, SnapshotBlock } from '../stores/jails.svelte'
+import type {
+    JailData, Snapshot, Dataset, PropertyConflict, SnapshotBlock, Reclone,
+} from '../stores/jails.svelte'
+import { listTemplates } from '../stores/templates.svelte'
+import type { Template } from '../stores/templates.svelte'
 import { ApiError } from '../services/api'
 import { onNavClick } from '../router.svelte'
 import { ask } from '../stores/confirm.svelte'
@@ -16,6 +20,9 @@ let jail = $state<JailData | null>(null)
 let snapshots = $state<Snapshot[] | null>(null)
 let loadError = $state('')
 let snapshotError = $state('')
+// Ready templates only: without its @base snapshot there is nothing to clone
+// from (JD-007).
+let templates = $state<Template[]>([])
 
 async function load() {
     loadError = ''
@@ -33,6 +40,13 @@ async function load() {
     } catch (err) {
         snapshots = []
         snapshotError = describe(err, 'Could not load snapshots')
+    }
+    // Only needed to offer a root to re-clone from. A failure costs that
+    // button and nothing else.
+    try {
+        templates = (await listTemplates()).filter(t => t.ready)
+    } catch {
+        templates = []
     }
 }
 
@@ -203,6 +217,88 @@ function conflictMessage(err: unknown): string | null {
 let retaining = $state('')
 let retainAs = $state('')
 
+// ---- the whole jail ---------------------------------------------------
+
+let cloning = $state(false)
+let templateName = $state('')
+
+function startClone() {
+    cloning = true
+    templateName = `${name}-base`
+    jailNote = ''
+    delete actionError['clone']
+}
+
+async function cloneAsTemplate(event: Event) {
+    event.preventDefault()
+    const ok = await run('clone', async () => {
+        const made = await makeTemplate(name, templateName.trim())
+        jailNote = `${made.name} is now a template at ${made.dataset}.`
+    })
+    if (ok) cloning = false
+}
+
+let recloning = $state(false)
+let recloneFrom = $state('')
+let jailNote = $state('')
+// A re-clone that failed part way through. Not an error message: it says which
+// step stopped and where every dataset now sits, and that is the only record
+// of where they went (JD-026).
+let recloneFailure = $state<Reclone | null>(null)
+
+function startReclone() {
+    recloning = true
+    recloneFrom = templates[0]?.snapshot ?? ''
+    jailNote = ''
+    recloneFailure = null
+    delete actionError['reclone']
+}
+
+async function reclone(event: Event) {
+    event.preventDefault()
+    const from = recloneFrom
+    const confirmed = await ask({
+        title: `Replace ${name}'s root from ${from}?`,
+        lines: [
+            'The jail is stopped, its child datasets are moved aside, the old root is parked, the new one is cloned, the children are moved back, and the jail is started again. It ends in the state it was found in.',
+            'Nothing is destroyed — the old root is kept under retained/, so a re-clone onto the wrong template costs one call to undo.',
+            'Everything written to the root itself since it was cloned is not in the new one. State that has to survive belongs in a child dataset.',
+        ],
+        verb: 'Re-clone',
+        typed: name,
+    })
+    if (!confirmed) return
+
+    if (busy) return
+    busy = 'reclone'
+    delete actionError['reclone']
+    recloneFailure = null
+    try {
+        const result = await recloneJail(name, from)
+        recloning = false
+        // `to` is where the new root came from; `from` is what it used to be a
+        // clone of. Reporting `from` here would describe the upgrade as the
+        // thing it replaced.
+        const children = result.children.length
+        jailNote = `Root re-cloned from ${result.to}, replacing a clone of ${result.from}.`
+            + ` The old one is parked at ${result.old_root}`
+            + (children === 0
+                ? ' and nothing else moved.'
+                : `, and ${children === 1 ? 'one child dataset' : `${children} child datasets`} came back with it.`)
+    } catch (err) {
+        // A failure after the datasets started moving carries the recovery
+        // information; an error message alone would throw it away.
+        const body = err instanceof ApiError ? (err.body as Reclone | undefined) : undefined
+        if (body?.failed_at) {
+            recloneFailure = body
+        }
+        actionError['reclone'] = describe(err, 'Could not re-clone the root')
+    } finally {
+        busy = ''
+        await load()
+    }
+}
+
 // ---- snapshots --------------------------------------------------------
 
 // Where a snapshot lives, in the terms the API takes: an empty child is the
@@ -350,15 +446,117 @@ async function retain(event: Event, dataset: Dataset) {
 {:else if jail === null}
     <p class="notice">Loading {name}…</p>
 {:else}
-    <header class="page-head">
-        <h1>{jail.name}</h1>
-        <p class="page-sub">
-            <span class="badge badge--{jail.status}">{jail.status}</span>
-            <span>JID {normalizeEmptyValue(jail.jid)}</span>
-            <span>{normalizeEmptyValue(jail.hostname)}</span>
-            <span>{normalizeEmptyValue(jail.ip)}</span>
-        </p>
+    <header class="page-head page-head--row">
+        <div>
+            <h1>{jail.name}</h1>
+            <p class="page-sub">
+                <span class="badge badge--{jail.status}">{jail.status}</span>
+                <span>JID {normalizeEmptyValue(jail.jid)}</span>
+                <span>{normalizeEmptyValue(jail.hostname)}</span>
+                <span>{normalizeEmptyValue(jail.ip)}</span>
+            </p>
+        </div>
+        {#if jail.path}
+            <div class="actions">
+                <button type="button" class="btn btn--small" onclick={startClone} disabled={cloning || !!busy}>
+                    Clone as a template
+                </button>
+                <button
+                    type="button"
+                    class="btn btn--small"
+                    onclick={startReclone}
+                    disabled={recloning || !!busy || templates.length === 0}
+                    title={templates.length === 0 ? 'No ready template to clone a new root from' : undefined}
+                >Re-clone the root</button>
+            </div>
+        {/if}
     </header>
+
+    {#if jailNote}
+        <p class="notice" aria-live="polite">{jailNote}</p>
+    {/if}
+
+    {#if cloning}
+        <form class="form" onsubmit={cloneAsTemplate}>
+            <div class="form__row">
+                <div class="field field--grow">
+                    <label for="template-name">Template name</label>
+                    <input id="template-name" bind:value={templateName}
+                           autocomplete="off" spellcheck="false" required />
+                </div>
+            </div>
+            <p class="hint">
+                Snapshot this jail as <code>@base</code>, clone it into the templates dataset, then
+                <code>zfs promote</code> the clone — which is the step that matters: without it the
+                template is a clone <em>of</em> this jail, and this jail could never be destroyed.
+                It captures whatever you did to the jail, not only packages.
+                <strong>The jail must be stopped</strong>, and this refuses rather than stopping it.
+            </p>
+            {#if actionError['clone']}
+                <p class="notice notice--error" role="alert">{actionError['clone']}</p>
+            {/if}
+            <div class="form__actions">
+                <button type="button" class="btn btn--small" onclick={() => (cloning = false)}>Cancel</button>
+                <button type="submit" class="btn btn--small btn--primary" disabled={busy === 'clone'}>
+                    {busy === 'clone' ? 'Cloning…' : 'Clone'}
+                </button>
+            </div>
+        </form>
+    {/if}
+
+    {#if recloning}
+        <form class="form" onsubmit={reclone}>
+            <div class="form__row">
+                <div class="field field--grow">
+                    <label for="reclone-from">New root cloned from</label>
+                    <select id="reclone-from" bind:value={recloneFrom}>
+                        {#each templates as template (template.name)}
+                            <option value={template.snapshot}>{template.name} — {template.snapshot}</option>
+                        {/each}
+                    </select>
+                </div>
+            </div>
+            <p class="hint">
+                The upgrade path for a jail whose state lives in a child dataset. There is no
+                default: every jail is already a clone of some template's <code>@base</code>, so
+                defaulting to one would be a no-op dressed as an upgrade.
+            </p>
+            {#if actionError['reclone'] && !recloneFailure}
+                <p class="notice notice--error" role="alert">{actionError['reclone']}</p>
+            {/if}
+            <div class="form__actions">
+                <button type="button" class="btn btn--small" onclick={() => (recloning = false)}>Cancel</button>
+                <button type="submit" class="btn btn--small btn--danger" disabled={busy === 'reclone'}>
+                    {busy === 'reclone' ? 'Re-cloning…' : 'Re-clone'}
+                </button>
+            </div>
+        </form>
+    {/if}
+
+    {#if recloneFailure}
+        <div class="notice notice--error failure" role="alert">
+            <p><strong>The re-clone stopped at “{recloneFailure.failed_at}”.</strong>
+               {actionError['reclone']}</p>
+            <p>
+                Nothing was retried and nothing was undone: an automatic undo that itself failed
+                would leave two interleaved failures and a host neither describes. These datasets
+                are no longer under the jail, and this is where they are now.
+            </p>
+            {#if recloneFailure.parked && recloneFailure.parked.length > 0}
+                <ul class="items">
+                    {#each recloneFailure.parked as moved (moved.now)}
+                        <li><code>{moved.was}</code> → <code>{moved.now}</code></li>
+                    {/each}
+                </ul>
+                <p>
+                    Each can be brought back with a restore, from the Templates page.
+                </p>
+            {/if}
+            <div class="form__actions">
+                <button type="button" class="btn btn--small" onclick={() => (recloneFailure = null)}>Dismiss</button>
+            </div>
+        </div>
+    {/if}
 
     <section class="panel">
         <div class="panel__head">
@@ -773,6 +971,22 @@ async function retain(event: Event, dataset: Dataset) {
     flex-wrap: wrap;
     gap: var(--space-4);
     align-items: center;
+}
+
+.page-head--row {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+}
+
+/* A failed re-clone is the one message on this page worth making hard to
+   miss: it is the only record of where the jail's datasets went. */
+.failure {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+    font-size: 0.925rem;
 }
 
 .panel {

@@ -106,44 +106,52 @@ doing to the host. No credential material is logged at any level.
 
 ## Running as a service
 
-`make install` puts the binary in `/usr/local/sbin` and an `rc.d` script in
-`/usr/local/etc/rc.d`, both under `PREFIX` (default `/usr/local`), with `DESTDIR` to stage
-the same layout for a package build:
+`make install` puts the binary in `$PREFIX/bin`, the `rc.d` script in
+`$PREFIX/etc/rc.d`, and a sample config in `$PREFIX/etc/jaildeck` (`PREFIX` defaults to
+`/usr/local`; `DESTDIR` stages the same layout for a package build):
 
 ```sh
 make install                 # on the FreeBSD host
 make install DESTDIR=/stage  # or staged elsewhere
 ```
 
-Set a credential first — the service will not start without one — then enable it:
+**Configuration lives in one file**, not in the script and not in `rc.conf`:
+
+```sh
+cp /usr/local/etc/jaildeck/jaildeck.env.sample /usr/local/etc/jaildeck/jaildeck.env
+$EDITOR /usr/local/etc/jaildeck/jaildeck.env
+```
+
+It takes the same `KEY=value` lines as [`.env.sample`](.env.sample) and the same variables
+as the table above, so one file configures Jail Deck whether it is started by hand or by
+`rc.d`. The script sources it with `set -a`, so keep it to plain `KEY=value` — it is read
+by `sh(1)`, not by a dotenv parser.
+
+Set a credential first, since the service will not start without one, then enable it:
 
 ```sh
 jaildeck passwd
 sysrc jaildeck_enable=YES
-sysrc jaildeck_zfs_pool=tank      # required where the host has more than one pool
 service jaildeck start
 ```
 
-Every environment variable in the table above has an `rc.conf` knob of the same name
-lower-cased: `jaildeck_host`, `jaildeck_port`, `jaildeck_state_dir`, `jaildeck_audit_log`,
-`jaildeck_log_level`, `jaildeck_adapter`, `jaildeck_zfs_pool`. Set only what differs from
-the defaults; the script's header lists them all.
+The script itself has only four knobs, all overridable in `rc.conf` and none of them
+Jail Deck's own configuration: `jaildeck_enable`, `jaildeck_env_file`,
+`jaildeck_pidfile` and `jaildeck_daemon_args`.
 
-Jail Deck runs in the foreground, so the script runs it under `daemon(8)` with `-S`, which
-sends its output to syslog under the tag `jaildeck` — which is why Jail Deck's own log
-lines carry no timestamp of their own:
+Jail Deck runs in the foreground, so the script runs it under `daemon(8)` with `-f -S -T
+jaildeck`: `-S` sends its output to syslog, which is why Jail Deck's own log lines carry
+no timestamp, and `-f` detaches the descriptors so starting the service over `ssh` does
+not hang the session.
 
 ```
-Oct 22 21:56:19 isengard jaildeck[78942]: level=INFO msg=listening version=v0.7.0 addr=127.0.0.1:8888
+Oct 22 22:23:51 isengard jaildeck[81634]: level=INFO msg=listening version=v0.7.0 addr=127.0.0.1:8888
 ```
 
-`daemon(8)` is **not** given `-r`, so a stopped service stays stopped and
-`service jaildeck stop` signals the process `rc.subr` is tracking. Add `-r` through
-`jaildeck_daemon_args` in `rc.conf` to have it restarted on exit instead.
-
-One operational wrinkle: starting the service over `ssh` without redirecting output hangs
-the ssh session, because the daemonised process inherits its descriptors. The service
-itself starts correctly; use `service jaildeck start >/dev/null 2>&1` from a remote shell.
+`daemon(8)` is **not** given `-r`, so a stopped service stays stopped. Add it through
+`jaildeck_daemon_args` for restart-on-exit. Replacing `-S` with `-o /var/log/jaildeck.log`
+would write to a file instead — but Jail Deck emits no timestamps of its own, so those
+lines would have none at all.
 
 ## Command line
 

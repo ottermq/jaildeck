@@ -19,18 +19,24 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### Added
 
-- **An `rc.d` service script and `make install`.** `make install` puts the binary
-  in `$PREFIX/sbin` and the script in `$PREFIX/etc/rc.d` (`PREFIX` defaults to
-  `/usr/local`, `DESTDIR` stages the layout elsewhere), after which
+- **An `rc.d` service script, `make install`, and one config file.** `make install`
+  puts the binary in `$PREFIX/bin`, the script in `$PREFIX/etc/rc.d` and a sample
+  config in `$PREFIX/etc/jaildeck` (`PREFIX` defaults to `/usr/local`, `DESTDIR`
+  stages the layout elsewhere). After that,
   `sysrc jaildeck_enable=YES && service jaildeck start` runs Jail Deck as a
   service that survives a reboot.
 
-  Every environment variable has an `rc.conf` knob of the same name lower-cased.
+  **Configuration is a file, not rc.conf knobs.** `/usr/local/etc/jaildeck/jaildeck.env`
+  takes the same `KEY=value` lines as `.env.sample` and the same variables as the
+  README's table, so one format configures Jail Deck whether it is started by hand
+  or by `rc.d`. The script sources it with `set -a` and keeps only four knobs of its
+  own, none of which are Jail Deck's configuration.
+
   Jail Deck runs in the foreground, so the script runs it under `daemon(8)` with
-  `-S`: its output goes to syslog under the tag `jaildeck`, which is what the log
-  handler's missing timestamps were always for. `-r` is deliberately not passed,
-  so `service jaildeck stop` stops it and nothing puts it back; `jaildeck_daemon_args`
-  can add it.
+  `-f -S`: output goes to syslog under the tag `jaildeck`, which is what the log
+  handler's missing timestamps were always for, and `-f` keeps `service jaildeck
+  start` from hanging a remote shell. `-r` is deliberately not passed, so
+  `service jaildeck stop` stops it and nothing puts it back.
 
 ## v0.7.0 — 2026-10-22
 

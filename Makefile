@@ -74,12 +74,18 @@ tidy-check:
 check: fmt-check vet build test
 	@echo "check: OK"
 
-## install: install the binary and rc.d script under PREFIX (run on the FreeBSD host, or stage with DESTDIR)
+## install: install the binary, rc.d script and sample env under PREFIX (run on the FreeBSD host, or stage with DESTDIR)
 install: build
-	@install -d $(DESTDIR)$(PREFIX)/sbin $(DESTDIR)$(PREFIX)/etc/rc.d
-	@install -m 0555 ./$(BUILD_DIR)/$(BINARY_NAME) $(DESTDIR)$(PREFIX)/sbin/$(BINARY_NAME)
+	@install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/etc/rc.d $(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)
+	@install -m 0555 ./$(BUILD_DIR)/$(BINARY_NAME) $(DESTDIR)$(PREFIX)/bin/$(BINARY_NAME)
 	@install -m 0555 ./rc.d/$(BINARY_NAME) $(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)
-	@echo "installed $(DESTDIR)$(PREFIX)/sbin/$(BINARY_NAME) and $(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)"
+	@# The sample only. A live jaildeck.env is the operator's and is never overwritten.
+	@install -m 0644 ./.env.sample $(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)/$(BINARY_NAME).env.sample
+	@echo "installed:"
+	@echo "  $(DESTDIR)$(PREFIX)/bin/$(BINARY_NAME)"
+	@echo "  $(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)"
+	@echo "  $(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)/$(BINARY_NAME).env.sample"
+	@echo "copy the sample to $(PREFIX)/etc/$(BINARY_NAME)/$(BINARY_NAME).env and edit it"
 
 ## clean: remove build artifacts
 clean:

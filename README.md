@@ -7,10 +7,13 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.6.0.** Jails can be listed, started, stopped and restarted from
-the browser or the API, every operation is audited, and nothing is reachable without a
-password or an API token. Host setup checks, ZFS storage, release templates, jail
-creation and bhyve VMs are planned — see [the roadmap](docs/ROADMAP.md).
+**Current release: v0.7.0.** Jails can be listed, started, stopped and restarted from
+the browser or the API, host setup is checked, their ZFS datasets and tags are visible and
+writable, snapshots can be taken and rolled back, every operation is audited, and nothing
+is reachable without a password or an API token. Release templates, jail creation and
+bhyve VMs are planned — see [the roadmap](docs/ROADMAP.md).
+
+Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com/jaildeck/)**.
 
 > Jail Deck is a personal project, written to learn Go and FreeBSD properly rather than
 > to be a product. It is built for a single operator on hosts they administer directly,

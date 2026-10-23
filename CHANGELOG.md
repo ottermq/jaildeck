@@ -24,6 +24,17 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### Changed
 
+- **The documentation is published as a site.** `docs/` is now a Jekyll site built by
+  GitHub Pages at [otter-labs.com/jaildeck](https://otter-labs.com/jaildeck/): the
+  specification, architecture, decisions, roadmap, interface notes and the API guide, with
+  the generated spec downloadable at `/jaildeck/api/swagger.json`.
+
+  Nothing moved, so every existing link into `docs/` still works. Each page gained front
+  matter and a link back to the index, because the theme has no navigation of its own.
+
+  The site builds from `main`, and pull requests land on `dev` first, so the published
+  version tracks releases rather than development.
+
 - **The API is described by a generated OpenAPI spec, not a hand-maintained collection.**
   `collections/insomnium.json` is gone. `make doc` generates
   [`docs/api/swagger.json`](docs/api/swagger.json) from annotations on the handlers, using

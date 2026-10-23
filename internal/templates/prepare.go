@@ -28,12 +28,18 @@ const (
 	// half-unpacked userland from a whole one, which is why neither is built
 	// on top of.
 	StateExtracted = "extracted"
+	StateUpdating  = "updating"
 	StateReady     = "ready"
 )
 
 const (
 	OperationFetchBase = "fetch-base"
 	OperationExtract   = "extract-base"
+	OperationUpdate    = "update-template"
+	// OperationSeal is only logged when sealing fails: the snapshot itself is
+	// already audited by the storage domain as create-snapshot, and logging it
+	// twice would put one act in the operations list under two names.
+	OperationSeal = "seal-template"
 )
 
 // Host is what the host itself is, which decides both the default release to
@@ -65,6 +71,11 @@ type ReleaseSource interface {
 	// localtime, which every runbook copies in at this point and without which
 	// a jail cloned from the template cannot reach a package mirror.
 	Extract(ctx context.Context, release, root string) (Result, error)
+	// Update brings an extracted userland to the release's current patch
+	// level with freebsd-update, against the directory rather than a running
+	// system. Reports what it ran; the patch level it reached is in the
+	// command's own output and in the audit log, not recorded here.
+	Update(ctx context.Context, release, root string) (Result, error)
 }
 
 // releaseName is the shape the mirror publishes: 15.1-RELEASE, 14.3-RELEASE.
@@ -123,7 +134,9 @@ func (s *Service) Prepare(ctx context.Context, name, release string) (Template, 
 			// the filesystem cannot tell a half-unpacked tree from a whole one.
 			return Template{}, common.NewAppError(http.StatusConflict, fmt.Sprintf(
 				"%s already has a dataset and no @%s snapshot, which is what a stage that "+
-					"stopped leaves behind; destroy it rather than unpacking on top of it",
+					"stopped leaves behind; destroy it and prepare it again rather than "+
+					"unpacking on top of it — the release archive is kept, so only the "+
+					"unpacking is repeated",
 				name, ReadySnapshot))
 		}
 	}
@@ -162,7 +175,14 @@ func (s *Service) prepare(ctx context.Context, name, release, arch string) {
 		// the stage that did complete; the audit log says why this one did not.
 		return
 	}
-	s.extract(ctx, name, release)
+	root, ok := s.extract(ctx, name, release)
+	if !ok {
+		return
+	}
+	if !s.update(ctx, name, release, root) {
+		return
+	}
+	s.seal(ctx, name)
 }
 
 // fetch is the first stage, skipped when the archive is already there: that is
@@ -185,16 +205,46 @@ func (s *Service) fetch(ctx context.Context, name, release, arch string) bool {
 // a dataset that already exists: that is the same refusal Derive makes, for
 // the same reason, and the operator destroys it rather than having a second
 // userland written over the first.
-func (s *Service) extract(ctx context.Context, name, release string) bool {
+func (s *Service) extract(ctx context.Context, name, release string) (string, bool) {
 	s.running.step(name, StateExtracting, "unpacking "+release+" into the template")
 
 	root, err := s.storage.Create(ctx, name)
 	if err != nil {
 		s.logOperation(ctx, OperationExtract, name, "", err)
-		return false
+		return "", false
 	}
 	result, err := s.releases.Extract(ctx, release, root)
 	s.logOperation(ctx, OperationExtract, name, result.Command, err)
+	return root, err == nil
+}
+
+// update is the third stage: freebsd-update against the directory, bringing a
+// freshly unpacked release to its current patch level. base.txz is the release
+// as published, so a template built from it is behind from the moment it is
+// extracted -- every security advisory since.
+//
+// Nothing records which patch level it reached. freebsd-update says so in its
+// own output, which the audit log keeps, and `freebsd-version -u` inside a jail
+// cloned from the template is the live answer. A number stored here could
+// disagree with the userland it describes (JD-011).
+func (s *Service) update(ctx context.Context, name, release, root string) bool {
+	s.running.step(name, StateUpdating, "bringing "+release+" to its current patch level")
+
+	result, err := s.releases.Update(ctx, release, root)
+	s.logOperation(ctx, OperationUpdate, name, result.Command, err)
+	return err == nil
+}
+
+// seal takes the @base snapshot, which is the whole of what makes a template
+// usable (JD-007). It is last for that reason: until it runs, every stage
+// before it has left something that is honestly not ready.
+func (s *Service) seal(ctx context.Context, name string) bool {
+	s.running.step(name, StateUpdating, "snapshotting the finished template")
+
+	err := s.storage.Seal(ctx, name)
+	if err != nil {
+		s.logOperation(ctx, OperationSeal, name, "", err)
+	}
 	return err == nil
 }
 

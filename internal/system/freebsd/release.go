@@ -199,6 +199,58 @@ func (a *ReleaseAdapter) Extract(ctx context.Context, release, root string) (tem
 	return result, nil
 }
 
+// updateTimeout bounds freebsd-update. It fetches patches and installs them,
+// so it is a download as well as local work (JD-014).
+const updateTimeout = 45 * time.Minute
+
+// Update brings an extracted userland to the release's current patch level.
+//
+//	freebsd-update -b <root> -d <workdir> --currently-running <release> \
+//	    --not-running-from-cron fetch install
+//
+// Four flags, each load-bearing, and all of them measured against the real
+// tool on the deployment host rather than read off a web page:
+//
+//   - **-b** operates on a directory instead of the running system. This is
+//     the same shape JD-007 already accepted for template preparation, and the
+//     reason no jail has to be started to patch a template.
+//   - **--currently-running** takes the plain release, not a patch level.
+//     freebsd-update cannot ask an unbooted directory what it is, and a freshly
+//     unpacked base.txz is exactly the release as published. Verified: the plain
+//     form is accepted and reports "updating to 15.1-RELEASE-p6".
+//   - **--not-running-from-cron** is what makes it non-interactive. Without it
+//     the tool expects a terminal, and the command runner gives it none.
+//   - **-d** keeps the working files out of /var/db/freebsd-update, which is
+//     the host's own update state. Per release rather than per template, so
+//     two templates of the same release share one download.
+//
+// `fetch install` in one invocation exits 0 even when there is nothing new to
+// install, which is the ordinary case for a release published recently. Also
+// measured: a second run against an already-patched directory exits 0.
+func (a *ReleaseAdapter) Update(ctx context.Context, release, root string) (templates.Result, error) {
+	workdir := path.Join(a.media, release, "freebsd-update")
+	args := []string{
+		"-b", root,
+		"-d", workdir,
+		"--currently-running", release,
+		"--not-running-from-cron",
+		"fetch", "install",
+	}
+	result := templates.Result{Root: root, Command: "freebsd-update " + strings.Join(args, " ")}
+
+	if _, err := a.runHost(ctx, system.Command{
+		Name: "mkdir", Args: []string{"-p", workdir},
+	}); err != nil {
+		return result, err
+	}
+	_, err := a.runHost(ctx, system.Command{
+		Name:    "freebsd-update",
+		Args:    args,
+		Timeout: updateTimeout,
+	})
+	return result, err
+}
+
 // manifestSHA256 reads the checksum for one file out of a release MANIFEST.
 //
 // The format is tab-separated, filename first and SHA256 second:

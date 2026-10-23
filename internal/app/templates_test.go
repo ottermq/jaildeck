@@ -400,22 +400,22 @@ func TestPrepareAReleaseAnswersAtOnce(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &polled); err != nil {
 			t.Fatalf("decode: %v\n%s", err, rec.Body)
 		}
-		if polled.State == "extracted" {
+		if polled.State == "ready" {
 			if polled.Running != nil {
 				t.Errorf("running = %+v, want nothing once it is done", polled.Running)
 			}
-			// A dataset now, and still not ready: taking @base is a later
-			// stage, so this is a template that exists and cannot be cloned.
 			if polled.Dataset == "" {
 				t.Error("dataset is empty, want the one the extract created")
 			}
-			if polled.Ready {
-				t.Error("ready = true, want false: nothing has taken @base yet")
+			// Ready is the @base snapshot and nothing else: a jail can be
+			// cloned from this now (JD-007).
+			if !polled.Ready || polled.Snapshot == "" {
+				t.Errorf("ready=%v snapshot=%q, want a sealed template", polled.Ready, polled.Snapshot)
 			}
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("state stuck at %q, want extracted", polled.State)
+			t.Fatalf("state stuck at %q, want ready", polled.State)
 		}
 		time.Sleep(time.Millisecond)
 	}

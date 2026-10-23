@@ -24,6 +24,28 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### API
 
+- **A release template is brought to its patch level and sealed.** The last two stages,
+  which carry a prepare from `extracted` through `updating` to **`ready`** — a template a
+  jail can be cloned from, prepared end to end from the interface with no shell steps.
+
+  `freebsd-update -b <root> --currently-running <release> --not-running-from-cron fetch
+  install`, every flag measured against the real tool on the deployment host. The **plain
+  release** is what `--currently-running` wants, not a patch level: a freshly unpacked
+  `base.txz` is exactly the release as published. `--not-running-from-cron` is what makes
+  it non-interactive. `fetch install` in one invocation exits 0 even when there is nothing
+  new, which is the ordinary case for a recently published release.
+
+  **The `@base` snapshot is taken last, and that ordering is the point.** `base.txz` is
+  the release as published, so a template sealed before `freebsd-update` would carry every
+  advisory since into every jail cloned from it. An update that fails leaves the template
+  `extracted` and unsealed — honestly not ready — with `freebsd-update`'s own sentence in
+  the operations log.
+
+  Nothing records which patch level it reached. `freebsd-update` says so in its own output,
+  which the audit log keeps, and `freebsd-version -u` inside a jail cloned from the
+  template is the live answer; a number stored here could disagree with the userland it
+  describes (JD-011).
+
 - **A fetched release is unpacked into a template dataset.** The second stage, which
   carries a prepare from `fetched` to `extracted`: create an empty dataset under
   `<pool>/jails/templates/`, `tar -xpf` the archive into it, and copy the host's

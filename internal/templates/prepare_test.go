@@ -66,14 +66,14 @@ func TestPrepareReturnsBeforeTheWorkFinishes(t *testing.T) {
 	waitUntil(t, func() bool {
 		after, _ := service.List(context.Background())
 		found, _ := byName(after, "15.1-RELEASE")
-		return found.State == StateExtracted && found.Running == nil
-	}, "the template to reach extracted with nothing running")
+		return found.State == StateReady && found.Running == nil
+	}, "the template to reach ready with nothing running")
 }
 
-// The second stage: an empty dataset, then the archive unpacked into it. The
-// state moves off the disk as each one lands, which is what a client polling
-// the template sees (JD-008).
-func TestPrepareExtractsAfterFetching(t *testing.T) {
+// All four stages, in order, ending in a template a jail can be cloned from.
+// The state moves off the disk as each one lands, which is what a client
+// polling the template sees (JD-008).
+func TestPrepareRunsEveryStageInOrder(t *testing.T) {
 	storage := &stubStorage{}
 	releases := &stubReleases{}
 	service := NewService(storage, &stubPackages{}, releases, &fakeLogger{})
@@ -84,14 +84,55 @@ func TestPrepareExtractsAfterFetching(t *testing.T) {
 	waitUntil(t, func() bool {
 		listed, _ := service.List(context.Background())
 		found, _ := byName(listed, "15.1-RELEASE")
-		return found.State == StateExtracted && found.Running == nil
-	}, "the template to reach extracted")
+		return found.State == StateReady && found.Running == nil
+	}, "the template to reach ready")
 
+	if got := releases.tried(); len(got) != 1 {
+		t.Errorf("fetched %v, want one download", got)
+	}
 	if got := storage.madeDatasets(); len(got) != 1 || got[0] != "15.1-RELEASE" {
 		t.Errorf("created %v, want the one template dataset", got)
 	}
-	if got := releases.unpackedInto(); len(got) != 1 || got[0] != "15.1-RELEASE" {
+	if got := releases.unpackedInto(); len(got) != 1 {
 		t.Errorf("extracted %v, want the fetched release", got)
+	}
+	if got := releases.brought(); len(got) != 1 {
+		t.Errorf("patched %v, want freebsd-update once", got)
+	}
+	if got := storage.sealedTemplates(); len(got) != 1 || got[0] != "15.1-RELEASE" {
+		t.Errorf("sealed %v, want the finished template", got)
+	}
+}
+
+// Sealing is last, and only after the patch level lands. A template snapshotted
+// before freebsd-update would be @base at the release as published -- every
+// advisory since, baked into every jail cloned from it.
+func TestPrepareDoesNotSealWhenTheUpdateFails(t *testing.T) {
+	logger := &fakeLogger{}
+	storage := &stubStorage{}
+	releases := &stubReleases{updateErr: errors.New("freebsd-update: cannot fetch metadata")}
+	service := NewService(storage, &stubPackages{}, releases, logger)
+
+	if _, err := service.Prepare(context.Background(), "15.1-RELEASE", "15.1-RELEASE"); err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	waitUntil(t, func() bool {
+		listed, _ := service.List(context.Background())
+		found, _ := byName(listed, "15.1-RELEASE")
+		return found.Running == nil && found.State == StateExtracted
+	}, "the failed update to stop, leaving the template unsealed")
+
+	if got := storage.sealedTemplates(); len(got) != 0 {
+		t.Errorf("sealed %v, want nothing: an unpatched userland is not ready", got)
+	}
+	var failed bool
+	for _, entry := range logger.entries {
+		if entry.Operation == OperationUpdate && !entry.Success {
+			failed = true
+		}
+	}
+	if !failed {
+		t.Errorf("no failed %s entry in %+v", OperationUpdate, logger.entries)
 	}
 }
 

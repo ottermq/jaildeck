@@ -207,6 +207,10 @@ ZFS clone-from-snapshot is what makes jail creation fast and cheap — copy-on-w
 Creating a jail is a two-stage process:
 
 1. **Release template preparation** (once per FreeBSD version): create a dataset, fetch `base.txz` for that release, extract it, patch in host `resolv.conf`/`localtime`, bring it to the current patch level with `freebsd-update`, snapshot it as `@base`. A template is only usable once its `@base` snapshot exists.
+
+   *Built 2026-10-23, detached and polled per JD-008.* Four stages, each audited: `fetch-base`, `extract-base`, `update-template`, `create-snapshot`. **The snapshot is last, and that ordering is the point** — `base.txz` is the release as published, so a template sealed before `freebsd-update` would carry every advisory since into every jail cloned from it. A stage that fails leaves the template honestly not ready rather than sealed.
+
+   `freebsd-update -b <root> --currently-running <release> --not-running-from-cron fetch install`, measured against the real tool on the deployment host: the **plain release** is what `--currently-running` wants, not a patch level, because a freshly unpacked `base.txz` is exactly the release as published — it answered "updating to 15.1-RELEASE-p6". `--not-running-from-cron` is what makes it non-interactive, and `fetch install` in one invocation exits 0 even when there is nothing new, which is the ordinary case for a recent release.
 2. **Jail creation** (per jail, requires a ready template): clone the template snapshot into the jail's own dataset, generate the `jail.conf.d/<name>.conf` stanza, start the jail, and hand off to in-jail provisioning (`jexec` + `pkg`) for service-specific setup.
 
 ### Rationale

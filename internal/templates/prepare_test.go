@@ -66,8 +66,99 @@ func TestPrepareReturnsBeforeTheWorkFinishes(t *testing.T) {
 	waitUntil(t, func() bool {
 		after, _ := service.List(context.Background())
 		found, _ := byName(after, "15.1-RELEASE")
-		return found.State == StateFetched && found.Running == nil
-	}, "the template to reach fetched with nothing running")
+		return found.State == StateExtracted && found.Running == nil
+	}, "the template to reach extracted with nothing running")
+}
+
+// The second stage: an empty dataset, then the archive unpacked into it. The
+// state moves off the disk as each one lands, which is what a client polling
+// the template sees (JD-008).
+func TestPrepareExtractsAfterFetching(t *testing.T) {
+	storage := &stubStorage{}
+	releases := &stubReleases{}
+	service := NewService(storage, &stubPackages{}, releases, &fakeLogger{})
+
+	if _, err := service.Prepare(context.Background(), "15.1-RELEASE", "15.1-RELEASE"); err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	waitUntil(t, func() bool {
+		listed, _ := service.List(context.Background())
+		found, _ := byName(listed, "15.1-RELEASE")
+		return found.State == StateExtracted && found.Running == nil
+	}, "the template to reach extracted")
+
+	if got := storage.madeDatasets(); len(got) != 1 || got[0] != "15.1-RELEASE" {
+		t.Errorf("created %v, want the one template dataset", got)
+	}
+	if got := releases.unpackedInto(); len(got) != 1 || got[0] != "15.1-RELEASE" {
+		t.Errorf("extracted %v, want the fetched release", got)
+	}
+}
+
+// A dataset holding half a userland looks exactly like one holding a whole
+// userland: the filesystem cannot tell them apart and neither can the state
+// machine. So a second prepare refuses rather than unpacking over it.
+func TestPrepareRefusesToUnpackOverAnExistingDataset(t *testing.T) {
+	storage := &stubStorage{templates: []Template{
+		{Name: "15.1-RELEASE", Dataset: "tank/jails/templates/15.1-RELEASE"},
+	}}
+	releases := &stubReleases{fetched: []string{"15.1-RELEASE"}}
+	service := NewService(storage, &stubPackages{}, releases, &fakeLogger{})
+
+	_, err := service.Prepare(context.Background(), "15.1-RELEASE", "15.1-RELEASE")
+	if err == nil {
+		t.Fatal("Prepare() succeeded, want a refusal over the half-built dataset")
+	}
+	if got := releases.unpackedInto(); len(got) != 0 {
+		t.Errorf("extracted %v, want nothing: the refusal comes before any work", got)
+	}
+}
+
+// Repeating the call resumes: the archive is already a fact on disk, so the
+// download is not done again (JD-016).
+func TestPrepareSkipsAFetchThatAlreadyHappened(t *testing.T) {
+	releases := &stubReleases{fetched: []string{"15.1-RELEASE"}}
+	service := NewService(&stubStorage{}, &stubPackages{}, releases, &fakeLogger{})
+
+	if _, err := service.Prepare(context.Background(), "15.1-RELEASE", "15.1-RELEASE"); err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	waitUntil(t, func() bool { return len(releases.unpackedInto()) == 1 }, "the extract to run")
+
+	if got := releases.tried(); len(got) != 0 {
+		t.Errorf("fetched %v, want nothing: 372 MB already on disk is not downloaded again", got)
+	}
+}
+
+// An extract that fails leaves the dataset it had already created. That is
+// reported as extracted-and-not-ready, which is the truth about the disk, and
+// the audit log is what says it went wrong.
+func TestPrepareLeavesADatasetBehindWhenExtractFails(t *testing.T) {
+	logger := &fakeLogger{}
+	releases := &stubReleases{extractErr: errors.New("tar: Unrecognized archive format")}
+	service := NewService(&stubStorage{}, &stubPackages{}, releases, logger)
+
+	if _, err := service.Prepare(context.Background(), "15.1-RELEASE", "15.1-RELEASE"); err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	waitUntil(t, func() bool {
+		listed, _ := service.List(context.Background())
+		found, _ := byName(listed, "15.1-RELEASE")
+		return found.Running == nil && found.State == StateExtracted
+	}, "the failed extract to stop, leaving the dataset it made")
+
+	var extract *struct{ ok bool }
+	for _, entry := range logger.entries {
+		if entry.Operation == OperationExtract {
+			extract = &struct{ ok bool }{entry.Success}
+		}
+	}
+	if extract == nil {
+		t.Fatalf("no %s entry in %+v", OperationExtract, logger.entries)
+	}
+	if extract.ok {
+		t.Error("the failed extract is recorded as a success")
+	}
 }
 
 // A second request while one is in flight is refused rather than queued: two

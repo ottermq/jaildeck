@@ -157,6 +157,48 @@ func (a *ReleaseAdapter) FetchBase(ctx context.Context, release, arch string) (t
 	return result, nil
 }
 
+// extractTimeout bounds unpacking. Smaller than the fetch's because this is
+// local I/O rather than a download over whatever link the host has, and still
+// far larger than anything else (JD-014).
+const extractTimeout = 30 * time.Minute
+
+// Extract unpacks a fetched release into root and leaves the userland able to
+// resolve names and tell the time.
+//
+// Three commands. The tar is `-xpf`, keeping permissions and flags: a userland
+// extracted without them has a world-writable /etc and no schg on the files
+// that want it. The two copies are what every FreeBSD jail runbook does at
+// this point -- without resolv.conf a jail cloned from this template cannot
+// reach a package mirror, and without localtime it logs in UTC while the host
+// does not.
+func (a *ReleaseAdapter) Extract(ctx context.Context, release, root string) (templates.Result, error) {
+	archive := path.Join(a.media, release, "base.txz")
+	result := templates.Result{Root: root, Command: "tar -xpf " + archive + " -C " + root}
+
+	if _, err := a.runHost(ctx, system.Command{
+		Name:    "tar",
+		Args:    []string{"-xpf", archive, "-C", root},
+		Timeout: extractTimeout,
+	}); err != nil {
+		return result, err
+	}
+
+	for _, file := range []string{"/etc/resolv.conf", "/etc/localtime"} {
+		if _, err := a.runHost(ctx, system.Command{
+			Name:    "cp",
+			Args:    []string{file, path.Join(root, file)},
+			Timeout: time.Minute,
+		}); err != nil {
+			// A host with no /etc/resolv.conf of its own is a host that
+			// resolves names some other way, not a failure to extract. The
+			// archive is unpacked either way, and that is what the state says.
+			common.Logger(ctx, "templates").Warn("could not copy a host file into the template",
+				"file", file, "root", root, "err", err)
+		}
+	}
+	return result, nil
+}
+
 // manifestSHA256 reads the checksum for one file out of a release MANIFEST.
 //
 // The format is tab-separated, filename first and SHA256 second:

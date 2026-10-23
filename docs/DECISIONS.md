@@ -891,6 +891,12 @@ After it the jail is a clone of the template instead, which is also the right wa
 
 **The jail must be stopped**, and Jail Deck refuses rather than stopping it. "Stop the jail before snapshotting so the image is consistent" is the Handbook's instruction; unlike a re-clone, nothing here *requires* the jail to be down — a snapshot of a running jail succeeds, it is just an image of a system caught mid-stride. Taking a service down is the operator's call, and it is one call they already have.
 
+**Nothing is ever built on top of a template that already has a dataset and no `@base`.** Added 2026-10-23, when preparing a release template landed its extract stage.
+
+A dataset holding half a userland looks exactly like one holding a whole userland — the filesystem cannot tell them apart, so JD-008's derived state machine cannot either, and both report `extracted`. Unpacking a second `base.txz` over the first would merge two trees into something nothing can describe afterwards.
+
+So the rule that `Derive` already followed is now the rule for every path: a template with a dataset and no `@base` is a stage that stopped, it is a `409` naming itself, and the operator destroys it. That is also why a failed extract is left exactly where it stopped rather than cleaned up — the dataset is the evidence, and removing it is a decision with the operator's name on it (JD-026's stance, one domain over).
+
 **A jail already carrying `@base` is refused.** `CreateSnapshot` is idempotent by design (JD-024), so an existing one would be silently reused — and the template would then capture whenever *that* was taken rather than the jail as it is now. The name is a template's convention; a jail wearing it is worth stopping for.
 
 ### The shortcut: packages without a jail

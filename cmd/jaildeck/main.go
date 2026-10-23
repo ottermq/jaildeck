@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ottermq/jaildeck/internal/app"
@@ -56,9 +58,15 @@ func main() {
 		slog.Warn("unknown log level, defaulting to info", "value", cfg.LogLevel)
 	}
 
-	warning := config.BindWarning(cfg.Host)
-	if warning != "" {
-		slog.Warn(warning)
+	if cfg.Socket == "" && cfg.SocketOnly {
+		slog.Error("JAILDECK_SOCKET_ONLY is set but JAILDECK_SOCKET names no socket, so there would be nothing to listen on")
+		os.Exit(1)
+	}
+	// Only warn about the bind that is actually going to happen.
+	if !cfg.SocketOnly {
+		if warning := config.BindWarning(cfg.Host); warning != "" {
+			slog.Warn(warning)
+		}
 	}
 	a, err := app.New(cfg)
 	if err != nil {
@@ -67,15 +75,70 @@ func main() {
 	}
 
 	addr := net.JoinHostPort(cfg.Host, cfg.Port)
-
 	srv := newServer(addr, a.Routes(web.Assets()))
-	slog.Info("listening", "version", buildinfo.Version(), "addr", addr)
 
-	err = srv.ListenAndServe()
+	listeners, err := openListeners(cfg)
 	if err != nil {
 		slog.Error(err.Error())
 		os.Exit(1)
 	}
+	slog.Info("listening", "version", buildinfo.Version(), "on", listenerNames(listeners))
+
+	// One http.Server over both listeners, so they share the handler and the
+	// timeouts and cannot drift apart (#13). The first to fail ends the process:
+	// a half-listening Jail Deck is harder to notice than one that exited.
+	failed := make(chan error, len(listeners))
+	for _, l := range listeners {
+		go func(l net.Listener) { failed <- srv.Serve(l) }(l)
+	}
+	err = <-failed
+	// Only reached when Serve itself returns. Jail Deck installs no signal
+	// handler, so a SIGTERM from `service jaildeck stop` skips this entirely and
+	// the socket file survives -- which is why clearStaleSocket exists and is
+	// the path that actually runs after a restart, rather than this one.
+	if err != nil {
+		slog.Error(err.Error())
+		os.Exit(1)
+	}
+}
+
+// openListeners returns every listener the config asks for, closing the ones it
+// already opened if a later one fails.
+func openListeners(cfg *config.Config) ([]net.Listener, error) {
+	listeners := make([]net.Listener, 0, 2)
+	if !cfg.SocketOnly {
+		l, err := net.Listen("tcp", net.JoinHostPort(cfg.Host, cfg.Port))
+		if err != nil {
+			return nil, err
+		}
+		listeners = append(listeners, l)
+	}
+	if cfg.Socket != "" {
+		l, err := listenUnix(cfg.Socket, cfg.SocketGroup)
+		if err != nil {
+			closeListeners(listeners)
+			return nil, err
+		}
+		listeners = append(listeners, l)
+	}
+	if len(listeners) == 0 {
+		return nil, errors.New("no listener configured")
+	}
+	return listeners, nil
+}
+
+func closeListeners(listeners []net.Listener) {
+	for _, l := range listeners {
+		_ = l.Close()
+	}
+}
+
+func listenerNames(listeners []net.Listener) string {
+	names := make([]string, 0, len(listeners))
+	for _, l := range listeners {
+		names = append(names, l.Addr().Network()+":"+l.Addr().String())
+	}
+	return strings.Join(names, " ")
 }
 
 func newServer(addr string, h http.Handler) *http.Server {

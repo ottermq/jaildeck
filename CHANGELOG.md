@@ -40,6 +40,26 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### Added
 
+- **A unix socket listener.** `JAILDECK_SOCKET` adds a second listener serving the
+  same router, and `JAILDECK_SOCKET_ONLY=true` drops the TCP one, so a local
+  automation client needs neither a port nor TLS (JD-002). One `http.Server` over
+  both listeners, so they cannot drift apart in handler or timeouts.
+
+  The socket is created mode `0660` by umask rather than chmodded afterwards: a
+  listening socket queues connections from the moment it exists, so a chmod would
+  leave a window in which the default `0755` was world-connectable. Its group is a
+  first access check and not the only one — `RequireAuth` runs here exactly as on
+  TCP, so the token is still required. `JAILDECK_SOCKET_GROUP` names the group;
+  empty leaves it in the process's own, which for a root service on FreeBSD is
+  `wheel`.
+
+  Jail Deck installs no signal handler, so a stopped service leaves the socket file
+  behind. The next start probes it: something answering means another instance, and
+  it refuses rather than stealing its clients; nothing answering means a leftover,
+  which it removes. A path holding a regular file is a configuration error and is
+  never deleted. `JAILDECK_SOCKET_ONLY` needs `JAILDECK_SOCKET` set, and says so
+  rather than starting with nothing to listen on. (#13)
+
 - **An `rc.d` service script, `make install`, and one config file.** `make install`
   puts the binary in `$PREFIX/bin`, the script in `$PREFIX/etc/rc.d` and a sample
   config in `$PREFIX/etc/jaildeck` (`PREFIX` defaults to `/usr/local`, `DESTDIR`

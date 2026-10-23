@@ -323,6 +323,6 @@ Unit test domain services with fake repositories, unit test command-output parse
 1. Which domain (or a new coordinating layer) owns orchestration for multi-step flows that cross the jail/storage boundary, like jail creation?
 2. What does partial-failure recovery look like for jail creation (clone succeeded, config write failed — now what)?
 3. Should there be a command allowlist, and at what layer?
-4. How should long-running operations (template fetch/extract/update) be represented in the API, once JD-008 is resolved?
+4. ~~How should long-running operations (template fetch/extract/update) be represented in the API, once JD-008 is resolved?~~ **Answered (JD-008):** `202` and poll the template's own resource; `state` derived from the filesystem, `running` from memory, no job object.
 5. Exact REST/JSON API shape — not finalized, see "API conventions" above.
 6. Should `internal/audit` gain a real database backing, and if so, does that pull `storage`/`jails` metadata along with it, or stay scoped to operation history only?

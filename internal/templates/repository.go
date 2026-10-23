@@ -10,6 +10,10 @@ type TemplateStorage interface {
 	// Templates lists what is under <pool>/jails/templates, with each one's
 	// readiness and parent already resolved from ZFS.
 	Templates(ctx context.Context) ([]Template, error)
+	// Create makes an empty template dataset and returns where it is mounted.
+	// A release template starts empty and becomes a userland by having
+	// base.txz unpacked into it, which is the one path that clones nothing.
+	Create(ctx context.Context, name string) (string, error)
 	// Derive clones a parent's snapshot into a new template dataset and
 	// returns where it is mounted, which is what pkg -c needs.
 	Derive(ctx context.Context, parentSnapshot, name string) (string, error)

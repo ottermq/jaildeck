@@ -20,8 +20,9 @@ import (
 // "15.0-RELEASE" always fails, because a template left half prepared by a
 // failed fetch is a state worth being able to see.
 type ReleaseSource struct {
-	mu      sync.Mutex
-	fetched []string
+	mu        sync.Mutex
+	fetched   []string
+	extracted []string
 	// delay holds FetchBase open, so a test can observe the in-flight state
 	// the real thing spends minutes in.
 	delay time.Duration
@@ -99,6 +100,41 @@ func (s *ReleaseSource) FetchBase(ctx context.Context, release, arch string) (te
 		}
 	}
 	s.fetched = append(s.fetched, release)
+	return result, nil
+}
+
+// Extract unpacks nothing and records that it was asked. The delay applies
+// here too, so fake mode shows the second stage in flight as well as the first.
+func (s *ReleaseSource) Extract(ctx context.Context, release, root string) (templates.Result, error) {
+	s.mu.Lock()
+	delay := s.delay
+	s.mu.Unlock()
+
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return templates.Result{}, ctx.Err()
+		}
+	}
+
+	archive := "/fake/jail/media/" + release + "/base.txz"
+	result := templates.Result{Root: root, Command: "tar -xpf " + archive + " -C " + root}
+	if strings.HasPrefix(release, "14.0-") {
+		// A second failure mode, at the stage after the download: the archive
+		// is there and unpacking it is what goes wrong.
+		const stderr = "tar: Error opening archive: Unrecognized archive format"
+		return result, &system.CommandError{
+			Command: "tar",
+			Args:    []string{"-xpf", archive, "-C", root},
+			Result:  system.CommandResult{Stderr: stderr, ExitCode: 1},
+			Err:     errors.New("exit status 1: " + stderr),
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.extracted = append(s.extracted, release)
 	return result, nil
 }
 

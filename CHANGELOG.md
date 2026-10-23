@@ -24,6 +24,22 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### API
 
+- **A fetched release is unpacked into a template dataset.** The second stage, which
+  carries a prepare from `fetched` to `extracted`: create an empty dataset under
+  `<pool>/jails/templates/`, `tar -xpf` the archive into it, and copy the host's
+  `resolv.conf` and `localtime` in — without the first a jail cloned from this template
+  cannot reach a package mirror, and without the second it logs in UTC while the host does
+  not. The tar keeps permissions and flags; a userland extracted without them has a
+  world-writable `/etc`.
+
+  **Nothing is ever unpacked over an existing dataset.** A dataset holding half a userland
+  looks exactly like one holding a whole one, so a template that already has a dataset and
+  no `@base` is a `409` naming itself — the same refusal a derive already made, now the
+  rule for every path (JD-027). A failed extract is left exactly where it stopped: the
+  dataset is the evidence, and the audit log carries `tar`'s own sentence.
+
+  Repeating a call **resumes**: an archive already in `media/` is not downloaded again.
+
 - **A release template's archive can be fetched from the FreeBSD mirror.** The first stage
   of preparing one, and the first operation to use JD-008's answer:
   `PUT /api/templates/{name}` with `{"release": "15.1-RELEASE"}` **returns 202 and does not

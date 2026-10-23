@@ -16,11 +16,16 @@ import (
 )
 
 type stubStorage struct {
+	// Guarded for the same reason stubReleases is: Prepare detaches its work,
+	// so these are written from a goroutine while a test reads them.
+	mu        sync.Mutex
 	templates []Template
 	listErr   error
 	derived   []string
+	created   []string
 	sealed    []string
 	deriveErr error
+	createErr error
 	sealErr   error
 	// The removal half.
 	dependents    map[string]Dependents
@@ -30,10 +35,35 @@ type stubStorage struct {
 }
 
 func (s *stubStorage) Templates(context.Context) ([]Template, error) {
-	return s.templates, s.listErr
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]Template(nil), s.templates...), s.listErr
+}
+
+func (s *stubStorage) Create(_ context.Context, name string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.created = append(s.created, name)
+	if s.createErr != nil {
+		return "", s.createErr
+	}
+	root := "/usr/local/jails/templates/" + name
+	s.templates = append(s.templates, Template{
+		Name: name, Dataset: "tank/jails/templates/" + name, Mountpoint: root,
+	})
+	return root, nil
+}
+
+// madeDatasets is what Create was asked for, copied under the lock.
+func (s *stubStorage) madeDatasets() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.created...)
 }
 
 func (s *stubStorage) Derive(_ context.Context, parentSnapshot, name string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.derived = append(s.derived, parentSnapshot+" -> "+name)
 	if s.deriveErr != nil {
 		return "", s.deriveErr
@@ -47,6 +77,8 @@ func (s *stubStorage) Derive(_ context.Context, parentSnapshot, name string) (st
 }
 
 func (s *stubStorage) Seal(_ context.Context, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.sealed = append(s.sealed, name)
 	if s.sealErr != nil {
 		return s.sealErr
@@ -74,11 +106,13 @@ type stubPackages struct {
 // safe to share would be lying about the contract it stands in for, and -race
 // says so.
 type stubReleases struct {
-	mu       sync.Mutex
-	fetched  []string
-	host     Host
-	fetchErr error
-	attempts []string
+	mu         sync.Mutex
+	fetched    []string
+	host       Host
+	fetchErr   error
+	extractErr error
+	attempts   []string
+	unpacked   []string
 }
 
 func (s *stubReleases) Host(context.Context) (Host, error) {
@@ -105,6 +139,23 @@ func (s *stubReleases) FetchBase(_ context.Context, release, _ string) (Result, 
 	}
 	s.fetched = append(s.fetched, release)
 	return Result{Root: "/media/" + release + "/base.txz", Command: "fetch " + release}, nil
+}
+
+func (s *stubReleases) Extract(_ context.Context, release, root string) (Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unpacked = append(s.unpacked, release)
+	if s.extractErr != nil {
+		return Result{Command: "tar -xpf " + release}, s.extractErr
+	}
+	return Result{Root: root, Command: "tar -xpf " + release + " -C " + root}, nil
+}
+
+// unpackedInto is what Extract was asked for, copied under the lock.
+func (s *stubReleases) unpackedInto() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.unpacked...)
 }
 
 // tried is what FetchBase was asked for, copied under the lock.

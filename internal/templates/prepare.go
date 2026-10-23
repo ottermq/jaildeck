@@ -20,14 +20,21 @@ const (
 	// what this process is doing, not from the disk.
 	StateFetching = "fetching"
 	// StateFetched is base.txz in media/ and no dataset yet.
-	StateFetched = "fetched"
+	StateFetched    = "fetched"
+	StateExtracting = "extracting"
 	// StateExtracted is a dataset with a userland and no @base: a template
-	// that exists and is not usable. A failed derive leaves this too.
+	// that exists and is not usable. A failed derive leaves this too, and so
+	// does an extract that stopped half way -- the filesystem cannot tell a
+	// half-unpacked userland from a whole one, which is why neither is built
+	// on top of.
 	StateExtracted = "extracted"
 	StateReady     = "ready"
 )
 
-const OperationFetchBase = "fetch-base"
+const (
+	OperationFetchBase = "fetch-base"
+	OperationExtract   = "extract-base"
+)
 
 // Host is what the host itself is, which decides both the default release to
 // prepare and the ceiling: a jail's userland must be the same as or older than
@@ -53,6 +60,11 @@ type ReleaseSource interface {
 	// release's own MANIFEST before reporting success. Minutes of work: the
 	// caller has already returned 202 (JD-008).
 	FetchBase(ctx context.Context, release, arch string) (Result, error)
+	// Extract unpacks a fetched release into root, and leaves the userland
+	// able to resolve names and tell the time -- the host's resolv.conf and
+	// localtime, which every runbook copies in at this point and without which
+	// a jail cloned from the template cannot reach a package mirror.
+	Extract(ctx context.Context, release, root string) (Result, error)
 }
 
 // releaseName is the shape the mirror publishes: 15.1-RELEASE, 14.3-RELEASE.
@@ -98,10 +110,22 @@ func (s *Service) Prepare(ctx context.Context, name, release string) (Template, 
 	if err != nil {
 		return Template{}, err
 	}
-	if current, ok := byName(existing, name); ok && current.State == StateReady {
-		// Already there and usable. The answer to a client that timed out and
-		// repeated the call (JD-016), not a conflict.
-		return current, nil
+	if current, ok := byName(existing, name); ok {
+		if current.State == StateReady {
+			// Already there and usable. The answer to a client that timed out
+			// and repeated the call (JD-016), not a conflict.
+			return current, nil
+		}
+		if current.Dataset != "" && current.Running == nil {
+			// A dataset with no @base is a stage that stopped: a derive that
+			// failed, or an extract that did. Unpacking a second userland over
+			// the first would make a mess nothing can describe afterwards, and
+			// the filesystem cannot tell a half-unpacked tree from a whole one.
+			return Template{}, common.NewAppError(http.StatusConflict, fmt.Sprintf(
+				"%s already has a dataset and no @%s snapshot, which is what a stage that "+
+					"stopped leaves behind; destroy it rather than unpacking on top of it",
+				name, ReadySnapshot))
+		}
 	}
 
 	// start is the claim, so the check and the claim cannot interleave: two
@@ -133,13 +157,45 @@ func (s *Service) Prepare(ctx context.Context, name, release string) (Template, 
 func (s *Service) prepare(ctx context.Context, name, release, arch string) {
 	defer s.running.stop(name)
 
-	result, err := s.releases.FetchBase(ctx, release, arch)
-	s.logOperation(ctx, OperationFetchBase, name, result.Command, err)
-	if err != nil {
+	if !s.fetch(ctx, name, release, arch) {
 		// Left where it stopped. The next GET reads the filesystem and reports
 		// the stage that did complete; the audit log says why this one did not.
 		return
 	}
+	s.extract(ctx, name, release)
+}
+
+// fetch is the first stage, skipped when the archive is already there: that is
+// what makes repeating a timed-out call resume rather than start again.
+func (s *Service) fetch(ctx context.Context, name, release, arch string) bool {
+	if fetched, err := s.releases.Fetched(ctx); err == nil && containsString(fetched, release) {
+		return true
+	}
+	s.running.step(name, StateFetching, "fetching "+release+" base.txz")
+	result, err := s.releases.FetchBase(ctx, release, arch)
+	s.logOperation(ctx, OperationFetchBase, name, result.Command, err)
+	return err == nil
+}
+
+// extract is the second: an empty dataset, then the archive unpacked into it.
+//
+// A failed extract leaves a dataset holding half a userland, which looks
+// exactly like a complete one -- the filesystem cannot tell them apart, and
+// JD-008's state machine therefore cannot either. So this never extracts into
+// a dataset that already exists: that is the same refusal Derive makes, for
+// the same reason, and the operator destroys it rather than having a second
+// userland written over the first.
+func (s *Service) extract(ctx context.Context, name, release string) bool {
+	s.running.step(name, StateExtracting, "unpacking "+release+" into the template")
+
+	root, err := s.storage.Create(ctx, name)
+	if err != nil {
+		s.logOperation(ctx, OperationExtract, name, "", err)
+		return false
+	}
+	result, err := s.releases.Extract(ctx, release, root)
+	s.logOperation(ctx, OperationExtract, name, result.Command, err)
+	return err == nil
 }
 
 // stateOf reads a template's state from what exists, with the in-flight record

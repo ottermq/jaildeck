@@ -82,7 +82,7 @@ func (s *StorageSystem) CreateDataset(_ context.Context, name string, properties
 	mountpoint := properties["mountpoint"]
 	if mountpoint == "" {
 		parent, child, _ := cutLast(name, "/")
-		mountpoint = s.mountpointOf(parent) + "/" + child
+		mountpoint = s.childMountpointOf(parent, child)
 	}
 	const gib = 1 << 30
 	s.datasets = append(s.datasets, storage.Dataset{
@@ -139,6 +139,17 @@ func (s *StorageSystem) mountpointOf(name string) string {
 		}
 	}
 	return "none"
+}
+
+// childMountpointOf is where a child of parent lands with no mountpoint of its
+// own. A parent mounted nowhere passes that down as it is: zfs inherits the
+// value "none", it does not append a name to it.
+func (s *StorageSystem) childMountpointOf(parent, child string) string {
+	mountpoint := s.mountpointOf(parent)
+	if mountpoint == "none" || mountpoint == "-" || mountpoint == "" {
+		return mountpoint
+	}
+	return mountpoint + "/" + child
 }
 
 func cutLast(s, sep string) (before, after string, found bool) {
@@ -223,7 +234,7 @@ func (s *StorageSystem) RenameDataset(_ context.Context, from, to string) (stora
 		}
 		suffix := strings.TrimPrefix(d.Name, from)
 		s.datasets[i].Name = to + suffix
-		s.datasets[i].Mountpoint = s.mountpointOf(parent) + "/" + lastComponent(to) + suffix
+		s.datasets[i].Mountpoint = s.childMountpointOf(parent, lastComponent(to)) + suffix
 		moved = true
 	}
 	if !moved {
@@ -287,7 +298,7 @@ func (s *StorageSystem) CloneSnapshot(_ context.Context, snapshot, target string
 	parent, child, _ := cutLast(target, "/")
 	const gib = 1 << 30
 	s.datasets = append(s.datasets, storage.Dataset{
-		Name: target, Mountpoint: s.mountpointOf(parent) + "/" + child,
+		Name: target, Mountpoint: s.childMountpointOf(parent, child),
 		Used: 96 << 10, Referenced: 372 << 20, Available: 400 * gib,
 	})
 	slices.SortFunc(s.datasets, func(a, b storage.Dataset) int { return strings.Compare(a.Name, b.Name) })

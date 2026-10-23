@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onMount } from 'svelte'
+import { onNavClick } from '../router.svelte'
 import { listJails, runJailOperation } from '../stores/jails.svelte'
 import type { JailData, Operation } from '../stores/jails.svelte'
 import { ApiError } from '../services/api'
@@ -116,7 +117,11 @@ const labels: Record<Operation, string> = {
                         <td>
                             <span class="badge badge--{j.status}">{j.status}</span>
                         </td>
-                        <td class="name">{j.name}</td>
+                        <td class="name">
+                            <a href={`/jails/${encodeURIComponent(j.name)}`}
+                               onclick={(e) => onNavClick(e, `/jails/${encodeURIComponent(j.name)}`)}
+                            >{j.name}</a>
+                        </td>
                         <td class="num">{normalizeEmptyValue(j.jid)}</td>
                         <td>{normalizeEmptyValue(j.hostname)}</td>
                         <td class="nowrap">{normalizeEmptyValue(j.ip)}</td>

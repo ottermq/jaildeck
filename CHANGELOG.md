@@ -45,6 +45,10 @@ versions' release notes stay there. GitHub numbering started again at #1.
   **`PUT /api/templates/{name}`** is the shortcut for the package-only case: clone a
   parent's `@base`, `pkg -c <root> install -y`, snapshot as `@base`.
 
+  **`GET /api/templates/{name}`** is one template with its `dependents` — every clone and
+  every hold — which is what a removal would refuse over, answerable before asking for one.
+  Both lists are present and empty rather than absent.
+
   **`DELETE /api/templates/{name}?confirm={name}`** destroys one, and **refuses while
   anything is cloned from it**, naming every jail and derived template in the way. ZFS
   would refuse too, but only after being asked and without saying which; this asks
@@ -234,6 +238,26 @@ versions' release notes stay there. GitHub numbering started again at #1.
   Jail Deck normalises. (#14)
 
 ### Added
+
+- **The web interface reads the storage model.** Six releases of storage endpoints had
+  nothing on screen; this is the reading half of catching up. (JD-028)
+
+  **A page per jail** at `/jails/{name}`, behind the jail's name on the list: its datasets
+  with the jail's own marked as such, its ZFS tags, and its snapshots newest first.
+
+  **A Templates page** at `/templates` showing the lineage as an indented table — parent
+  before child, ready or not — with the retained datasets below it, and a page per template
+  at `/templates/{name}` listing what depends on it: the jails cloned from it, the templates
+  derived from it, anything else, and holds.
+
+  **What a clone is, is read from the host, not from the dataset's name.** Sorting
+  dependents by looking for `/containers/` or `/templates/` in the path was tried and was
+  wrong the first time it ran — `<pool>/jails/containers` is the layout Jail Deck creates,
+  not where the jails it lists have to be. A clone is a jail when a jail reports that
+  dataset as its own, and otherwise it is shown as the dataset it is.
+
+  Nothing destructive is on these pages yet. The actions come next, each with the
+  confirmation its refusal already defines.
 
 - **A unix socket listener.** `JAILDECK_SOCKET` adds a second listener serving the
   same router, and `JAILDECK_SOCKET_ONLY=true` drops the TCP one, so a local

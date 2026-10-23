@@ -22,6 +22,32 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
 
+### Changed
+
+- **JD-008 is decided: a long-running operation returns `202` and you watch the
+  resource.** Preparing a release template will not hold the request open for the minutes
+  it takes. There is **no job and no job id** — the thing being watched is the template,
+  at the URL it keeps for the rest of its life.
+
+  `state` is read off the filesystem, not recorded: `media/<release>/base.txz` exists, the
+  dataset exists, the `@base` snapshot exists. JD-011 had already named those checks as
+  the template's state machine. So a restart or a client that never comes back costs
+  nothing — the next `GET` reports where the work actually got to, and repeating the call
+  resumes from whatever stage is already a fact on disk.
+
+  The one thing that cannot be derived — whether a step is executing *now* rather than
+  having stopped half way — is held in memory and reported as `running`. Deliberately not
+  persisted: a restart kills the work, so a marker that survived it would be claiming
+  something false.
+
+  Deriving a template with `pkg -c` **stays synchronous**. The line is not "slow" in the
+  abstract but whether the operator needs to be told what is happening to keep using the
+  tool: ~25 s measured on the deployment target is a spinner; a 372 MB fetch plus
+  `freebsd-update` is not.
+
+  No code yet — this is the decision and the records that pointed at it. The
+  implementation is the rest of the Templates milestone.
+
 ### API
 
 - **A dataset reports the native ZFS properties it sets.** `GET /api/jails` and

@@ -223,7 +223,7 @@ Goal: automate the template-preparation workflow described in `docs/SPEC.md`. **
 - **release identifier normalization:** use the release, never the patch level. `freebsd-version -u | sed -E 's/-p[0-9]+$//'`. The mirror publishes no `-pN` directories — `.../15.1-RELEASE-p3/base.txz` returns 404 while `.../15.1-RELEASE/base.txz` returns 200. `freebsd-update --currently-running` is the deliberate exception and wants the full `-pN` form
 - **version ceiling:** a jail's userland must be the same as or older than the host kernel, so the host's own release is both the default and the upper bound. Any release picker may offer versions at or below the host only; cross-version support goes downward
 - note that `freebsd-update -b` requires `--currently-running` alongside it
-- resolve JD-008 for this domain — a progress mechanism for a handful of endpoints, not a general async strategy
+- ~~resolve JD-008 for this domain~~ **done 2026-10-23**: the prepare call returns `202`, the template's own resource carries a `state` read off the filesystem and a `running` step held in memory, and there is no job object
 - ~~removal must refuse while any jail is still cloned from the template's snapshot~~ **done** (JD-027): `DELETE /api/templates/{name}` asks `zfs get clones` first and names what is in the way
 
 ### Completion criteria
@@ -440,7 +440,7 @@ Added 2026-10-21 with the host-agent scope:
 Earlier:
 
 1. Who orchestrates the multi-step jail-creation flow across the `jails`/`storage` boundary?
-2. How should long-running template operations be represented — synchronous with a long timeout, polling, or SSE? (JD-008, now scoped to the Templates milestone alone)
+2. ~~How should long-running template operations be represented — synchronous with a long timeout, polling, or SSE?~~ **Answered 2026-10-23 (JD-008):** detached, `202`, and the client polls the template. SSE is not excluded; it sits on top rather than replacing it.
 3. How is per-jail resource accounting sourced when `kern.racct.enable` is off?
 4. How does Host Setup establish the dataset layout — an `init` subcommand, or a guided first-run screen?
 5. Is the default template prepared on demand only, or offered proactively once the host release is known?

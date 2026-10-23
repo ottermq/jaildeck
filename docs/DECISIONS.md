@@ -224,21 +224,70 @@ The same rename is what lets a jail be destroyed while its data is kept: `zfs de
 
 ## JD-008 — Long-running Operations
 
-**Status:** Open — scope narrowed 2026-09-04
+**Status:** Locked — 2026-10-23 (scope narrowed 2026-09-04, amended 2026-10-21)
 
-Fetching `base.txz`, extracting it, and running `freebsd-update` can take real time. Whether this needs task queues, polling, or Server-Sent Events, versus staying synchronous with a longer timeout, is still undecided.
+Fetching `base.txz`, extracting it and running `freebsd-update` take minutes. **The request that starts that work does not wait for it.** It returns `202` at once; the client watches the resource itself.
 
-**What is now settled is the scope of the question: it applies to the template domain only.** Template preparation is a distinct, operator-initiated step — not part of application setup, and not folded into jail creation (JD-007). Jail creation stays synchronous and fast, because cloning a snapshot is a copy-on-write operation that returns immediately. Jail lifecycle operations are already fast.
+```
+PUT /api/templates/15.1-RELEASE        -> 202, {"state": "fetching"}
+GET /api/templates/15.1-RELEASE        -> {"state": "extracting",
+                                           "running": {"step": "extract", "since": …}}
+   …
+GET /api/templates/15.1-RELEASE        -> {"state": "ready", "ready": true}
+```
 
-So the remaining decision is a progress mechanism for one domain and a handful of endpoints, not a general asynchronous-execution strategy for the application.
+**There is no job, and no job id.** The thing being watched is the template, at the URL it will keep for the rest of its life. A handle that only exists while an operation is in flight would be a second identity for the same object, and a client that lost it would have no way back to the work it started.
 
-**Amended 2026-10-21.** VM image import joins template preparation as the other slow flow that needs the progress mechanism. Jail operations stay synchronous. An automation client that wants asynchronous behaviour provides it itself — it already has its own job state, and a synchronous, idempotent call (JD-016) is easier to retry safely than a job handle Jail Deck would have to remember.
+### The state comes off the disk
+
+`state` is read, not recorded. JD-011 already settled this when it listed "what state is a template in?" among the derived questions, and named the checks:
+
+| State | What makes it true |
+| --- | --- |
+| `absent` | no dataset |
+| `fetching` | nothing yet, and an operation is running |
+| `fetched` | `media/<release>/base.txz` exists |
+| `extracting` / `extracted` | the template's dataset exists and holds a userland |
+| `updating` | as above, with an operation running |
+| `ready` | the `@base` snapshot exists |
+
+So a restart, a crash, or a client that never comes back cost nothing: the next `GET` reads the same filesystem and reports where the work actually got to. Nothing can disagree with the host, which is the whole of JD-011 in one sentence.
+
+**It is also what makes the call retry-safe.** JD-016 wants an idempotent `PUT`; repeating this one resumes from whatever stage is already a fact on disk rather than starting again. That was the 2026-10-21 amendment's argument for staying synchronous, and it survives the move to `202` intact — because the idempotency never came from the response shape, it came from the stages being facts.
+
+### `running` is in memory, and that is correct
+
+One thing cannot be derived: whether a step is executing *right now*, as opposed to having stopped half way. A dataset that exists without `@base` looks identical whether `freebsd-update` is running in it or died an hour ago.
+
+So the process keeps an in-memory record of what it is currently doing — step and start time — and reports it as `running` beside the derived state. It is deliberately **not persisted**:
+
+- A restart kills the work, so a marker that survived the restart would be claiming something false. Losing it is the truthful outcome, not a limitation.
+- Persisting it would make Jail Deck own durable state about operations, which is exactly the database JD-011 refuses. `/var/db/jaildeck/state.json` holds credentials because they cannot be re-derived; a step counter can be.
+
+**What happened, as opposed to what is happening, is the audit log's job.** Every stage writes its own entry with the command, exit code and duration (JD-011), so a failed prepare is answered by the operations page rather than by a status field that would have to be invented and stored.
+
+### Where the line is
+
+| | |
+| --- | --- |
+| **Detached, `202`, polled** | preparing a release template; importing a VM image (JD-019) |
+| **Synchronous** | everything else, including deriving a template with `pkg -c` |
+
+The line is not "slow" in the abstract, it is **whether the operator needs to be told what is happening to keep using the tool**. Deriving a template with packages measured ~25 s on the deployment target — long enough to notice, short enough that a spinner is an honest answer. A 372 MB fetch followed by `freebsd-update` is not.
+
+Deriving stays synchronous for a second reason: it shipped that way in v0.8.0, and a client that works should not be broken to make two endpoints in the same domain look alike.
+
+### Why not the alternatives
+
+**Synchronous with a long timeout** was the cheapest, and nearly won — JD-016's retry contract already covers the client that gives up. It loses on what the operator sees: minutes of spinner with no way to tell working from wedged, through an intermediary that may well cut the connection first. "Retry and find out" is an answer for a script, not for someone watching a release download.
+
+**A task queue, or any job store**, is disproportionate at this scale and would reintroduce the database JD-011 removed. Two slow flows on one host do not need a scheduler.
+
+**Server-Sent Events** streaming the command's own output is the nicest version of this and is not excluded — it sits on top of what is above rather than replacing it. It is not in the first implementation because the stream dies with a page reload while the polled state does not, an automation client has no use for it, and the command runner collects output rather than streaming it, so it is a change to the runner as much as to the API. Worth doing when watching `freebsd-update` scroll is worth that; the polled state is what makes the feature usable without it.
 
 ### Rationale
 
-Worth deciding deliberately once template preparation is actually being built, rather than guessing ahead of the real shape of the problem.
-
-Separating template preparation from jail creation shrank this problem considerably. The earlier framing implied every long operation across the app needed an answer; in fact only one flow is slow, which makes polling or SSE on a single resource a proportionate solution and removes any argument for a task queue at this scale.
+The decision that mattered was not the transport. It was refusing to invent a job object: once the resource is the thing you watch and its state is read off the disk, the asynchronous version of this API is barely different from the synchronous one, and nothing new has to be remembered, migrated or cleaned up.
 
 ---
 
@@ -436,7 +485,7 @@ Every part of this exists because the obvious version does not work.
 
 **Timeouts belong to the runner, not to callers.** Callers wrapping contexts would mean a slow operation consumes the whole budget, leaving nothing for the verification step that follows it — precisely when knowing the jail's real state matters most. It would also make "unbounded" the default for any caller who forgets.
 
-This decision is about bounding individual commands. How a legitimately slow flow is represented to the operator — progress, polling, or SSE during template preparation — remains open under JD-008.
+This decision is about bounding individual commands. How a legitimately slow flow is represented to the operator is JD-008's, and it is settled: the call returns `202` and the operator polls the template. The two meet at one point — a detached stage still runs under a timeout, just a much larger one than `jls` gets.
 
 **Amended 2026-10-21 — exec.** The exec endpoint (JD-016) is the one place a caller supplies a command's timeout. It is capped by a server-side maximum, so a caller can shorten the bound but never remove it, and the output kept is capped in size. The cap values are still open.
 
@@ -466,7 +515,7 @@ TanStack Query, a generated client and polling are premature at two domains. Ref
 
 ### Still open
 
-- How a multi-minute template preparation is represented in the UI — blocked on JD-008.
+- How a multi-minute template preparation is represented in the UI. JD-008 settled the API half; the page is not designed.
 - Table-first or card-first for the jails list; browser `confirm()` or a custom dialog; when dark mode arrives. All reversible, none blocking.
 
 ---
@@ -488,7 +537,7 @@ Jail Deck has a second kind of API consumer: a program on the same host, driving
 
 **The desired state lives in the client, not here.** A platform like Otter has a desired-state model — that is its job. Jail Deck stays a desired-state-free executor and reporter, which is what JD-011 asks for. An idempotent `PUT` gives the client everything it needs from that position: after a crash it repeats the call, and the answer (`201`, `200` or `409`) tells it exactly where it stands, derived from the system rather than from a record of what Jail Deck thinks it did.
 
-**Synchronous is better for automation, not worse.** Jail creation is fast (JD-008). A client with its own job queue gains nothing from a Jail Deck job handle except a second piece of state that can disagree with the first.
+**Synchronous is better for automation, not worse.** Jail creation is fast (JD-008). A client with its own job queue gains nothing from a Jail Deck job handle except a second piece of state that can disagree with the first — which is why, when JD-008 finally did detach something, it still issued no handle: the template's own URL is what you watch.
 
 **Generic primitives only.** Every capability here passes the scope test in `docs/SPEC.md`: an operator on their own box can use `PUT`, `exec` and `confirm` from a script just as well. Nothing in the API knows what a customer, a quota or a database is.
 

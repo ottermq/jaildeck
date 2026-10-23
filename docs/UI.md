@@ -112,7 +112,7 @@ Purpose: the userlands a jail is cloned from — the thing jail creation depends
 
 Acting on it (JD-029): a template can be **derived** from a ready one with packages, and **removed** — from the list or from its own page, which navigates back when the template is gone. A removal refused over clones or holds is shown where the template is, with the `zfs promote` way out. A **retained dataset can be restored** under any jail, under any name.
 
-Still to come: preparing a release template (its own long-running-operation problem, JD-008), and a release picker sourced from `download.freebsd.org` or manual version entry, depending on how "which releases are supported" resolves (`docs/SPEC.md`).
+Still to come: preparing a release template — the API shape is settled (JD-008: `202`, then poll the template for `state` and `running`), the page is not — and a release picker sourced from `download.freebsd.org` or manual version entry, depending on how "which releases are supported" resolves (`docs/SPEC.md`).
 
 ### Logs page
 
@@ -132,7 +132,7 @@ Not designed yet:
 4. **Component library / styling approach** — plain CSS, a utility framework, or a component library?
 5. **API client pattern** — hand-rolled `fetch` wrappers, a generated client, or something like TanStack Query (`@tanstack/svelte-query`) for caching/refetch?
 6. **Refresh pattern** — how the UI reflects state after a mutation: polling, optimistic updates, or plain refetch-after-mutation?
-7. **Long-running operation UI** — once JD-008 resolves, how does the frontend represent a multi-minute template-preparation operation? (progress bar, polling a status endpoint, toast-on-completion?)
+7. **Long-running operation UI** — JD-008 settled the API half (2026-10-23): the prepare call returns `202` and the template's own resource carries `state` and `running`. What the page does with that — a progress row on the template, a toast on completion, how often it polls — is still open.
 8. **Build tooling** — Vite, either standalone or via SvelteKit (which is itself Vite-based) — the specific setup depends on the framework-mode decision above.
 
 These should be settled together when Phase 1b (`docs/ROADMAP.md`) actually starts, not decided piecemeal ahead of time.

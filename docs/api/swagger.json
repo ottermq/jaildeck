@@ -345,7 +345,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Clones a ready template's snapshot into the jail's own dataset, writes\nits stanza to /etc/jail.conf.d/\u003cname\u003e.conf, optionally adds it to\nrc.conf's jail_list, and starts it (JD-007, JD-030).\n\n**The start is confirmed, not assumed.** `service jail start` exits 0\nwhether or not the jail came up, so the jail is read back from jls before\nthis reports it running.\n\n**If a step fails, nothing is undone.** The response names the step and\nsays what exists — a dataset that was cloned stays cloned, a stanza that\nwas written stays written. Rolling back automatically is a second\ndestructive operation run at the moment least is known about the state.\n\nThe template is the full dataset@snapshot of a template that is ready;\nGET /api/templates lists them with the snapshot each one offers. The\njail's root is cloned into \u003cpool\u003e/jails/containers/\u003cname\u003e, in the\ntemplate's own pool, because a clone cannot cross one.\n\nNetwork modes: `alias` (one address on a host interface, needs ip4 and\ninterface), `inherit` (the host's addresses and its stack), `disable`\n(no network, the default). `vnet` is decided (JD-017) and not built yet.",
+                "description": "Clones a ready template's snapshot into the jail's own dataset, writes\nits stanza to /etc/jail.conf.d/\u003cname\u003e.conf, optionally adds it to\nrc.conf's jail_list, and starts it (JD-007, JD-030).\n\n**The start is confirmed, not assumed.** `service jail start` exits 0\nwhether or not the jail came up, so the jail is read back from jls before\nthis reports it running.\n\n**If a step fails, nothing is undone.** The response names the step and\nsays what exists — a dataset that was cloned stays cloned, a stanza that\nwas written stays written. Rolling back automatically is a second\ndestructive operation run at the moment least is known about the state.\n\nThe template is the full dataset@snapshot of a template that is ready;\nGET /api/templates lists them with the snapshot each one offers. The\njail's root is cloned into \u003cpool\u003e/jails/containers/\u003cname\u003e, in the\ntemplate's own pool, because a clone cannot cross one.\n\nNetwork modes: `alias` (one address on a host interface, needs ip4 and\ninterface), `inherit` (the host's addresses and its stack), `disable`\n(no network, the default), and `vnet`.\n\n**`vnet`** gives the jail its own network stack on an epair, with the host\nend on `bridge` — which must already exist, because **Jail Deck never\ncreates a bridge** (JD-017); `GET /api/host` reports the ones that do.\n`private: true` makes the host end a private bridge member. Measured: two\n**private** members cannot reach each other at layer 2, but a private\nmember still reaches non-private ones and the bridge itself — so the\nisolation only holds where every jail on the bridge asks for it.\n`ip4` and `gateway`\nare set inside the jail and are both optional — a VNET jail may instead\nget its address from DHCP of its own.\n\nThe epair is created in `exec.prestart` and destroyed in `exec.poststop`,\nso the jail gets the same network started from a shell as from here. The\nunit is chosen when the stanza is written, from what no interface uses and\nno jail configuration claims.\n\n**A VNET jail reports no `ip` in the listing.** It sets no `ip4.addr`, so\nneither `jls` nor its configuration carries one — the address is in the\njail's own stack. This response carries the one that was asked for.\n\nIf the start of a VNET jail cannot be confirmed, Jail Deck destroys the\nepair, because `jail(8)` does not run `exec.poststop` for a start that\nfailed and the orphan would block every retry (JD-030). That is the only\nthing a failed create undoes. If the cleanup itself fails, the interface\nis named in the error rather than left silent.",
                 "consumes": [
                     "application/json"
                 ],
@@ -470,7 +470,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Stops the jail, takes it out of rc.conf's `jail_list`, deletes\n/etc/jail.conf.d/\u003cname\u003e.conf, and destroys its dataset — in that order\n(JD-030).\n\n**Child datasets go with it** (JD-007). They are listed in `taken`. A\ndataset worth keeping has to stop being a child first: `POST\n/api/jails/{name}/datasets/{child}/retain` moves it out.\n\n**Snapshots, clones and holds refuse the destroy**, with each one named\nand nothing touched. Each was kept on purpose, so each goes first — and\n`zfs destroy -R` is never passed, which is what would make this check\ndecorative.\n\n**The last word is ZFS's.** Nothing here re-checks that the jail is down\nbefore destroying its dataset: `zfs destroy` refuses one whose jail is\nrunning with `pool or dataset is busy`, and a check of our own would read\nthe state and then act on what it read, while the mount is held the whole\ntime. Only one of those can lose a race.\n\nA jail with no file of its own in jail.conf.d is refused: its block is in\n/etc/jail.conf, which belongs to you and which Jail Deck never writes, so\ndestroying the dataset would leave the jail declared and pointing nowhere.\n\n**If a step fails, nothing is undone.** The body names the step and says\nwhat was already done — a stopped jail stays stopped.",
+                "description": "Stops the jail, takes it out of rc.conf's `jail_list`, deletes\n/etc/jail.conf.d/\u003cname\u003e.conf, and destroys its dataset — in that order\n(JD-030).\n\nA VNET jail's epair goes when it stops, through its own `exec.poststop`.\nOne left behind by an earlier failed start is destroyed here too, and\nnamed in `epair` — otherwise it would outlive the jail it belongs to.\n\n**Child datasets go with it** (JD-007). They are listed in `taken`. A\ndataset worth keeping has to stop being a child first: `POST\n/api/jails/{name}/datasets/{child}/retain` moves it out.\n\n**Snapshots, clones and holds refuse the destroy**, with each one named\nand nothing touched. Each was kept on purpose, so each goes first — and\n`zfs destroy -R` is never passed, which is what would make this check\ndecorative.\n\n**The last word is ZFS's.** Nothing here re-checks that the jail is down\nbefore destroying its dataset: `zfs destroy` refuses one whose jail is\nrunning with `pool or dataset is busy`, and a check of our own would read\nthe state and then act on what it read, while the mount is held the whole\ntime. Only one of those can lose a race.\n\nA jail with no file of its own in jail.conf.d is refused: its block is in\n/etc/jail.conf, which belongs to you and which Jail Deck never writes, so\ndestroying the dataset would leave the jail declared and pointing nowhere.\n\n**If a step fails, nothing is undone.** The body names the step and says\nwhat was already done — a stopped jail stays stopped.",
                 "produces": [
                     "application/json"
                 ],
@@ -2306,6 +2306,14 @@
                     "description": "Config is the file the stanza was written to.",
                     "type": "string"
                 },
+                "epair": {
+                    "description": "Epair is the host end of a VNET jail's epair -- what appears on the\nbridge, and what a failed start would leave behind. Empty for every\nother mode.",
+                    "type": "string"
+                },
+                "epair_removed": {
+                    "description": "EpairRemoved says the epair was destroyed after a start that could not\nbe confirmed. Only Jail Deck will do that: jail(8) does not run\nexec.poststop for a start that failed (JD-030).",
+                    "type": "boolean"
+                },
                 "error": {
                     "description": "Error is why it stopped. The body of a failed create carries both: what\nexists is the recovery information, and this is the reason it is\nneeded. Filled in by the handler, which is where the response is\ndecided -- the service returns a Go error like every other method here.",
                     "type": "string"
@@ -2448,6 +2456,14 @@
                 "destroyed": {
                     "type": "boolean"
                 },
+                "epair": {
+                    "description": "Epair is the interface destroyed with the jail. Normally there is\nnone: a VNET jail's exec.poststop takes its own epair away when it\nstops. One turns up here when an earlier start failed and left the\nepair behind, which would otherwise outlive the jail (JD-030).",
+                    "type": "string"
+                },
+                "epair_error": {
+                    "description": "EpairError says why a leftover epair could not be removed. The destroy\ncarried on regardless -- the jail and its dataset are the point, and a\nstranded interface is a nuisance rather than a blocker. It is named\nhere because a silent one is an interface on a bridge that nothing\nwill ever account for.",
+                    "type": "string"
+                },
                 "error": {
                     "type": "string"
                 },
@@ -2529,16 +2545,28 @@
         "jails.Network": {
             "type": "object",
             "properties": {
+                "bridge": {
+                    "description": "Bridge is the bridge the host end of the epair joins, and is required\nfor NetworkVNET. **It is the operator's.** Jail Deck adds and removes\nits own epairs and nothing else: it never creates a bridge, never adds\na physical interface to one, and never edits rc.conf's network\nsettings (JD-017). GET /api/host reports which bridges exist.",
+                    "type": "string"
+                },
+                "gateway": {
+                    "description": "Gateway is the jail's default route, set inside the jail. Only\nmeaningful with IP4, because a route needs an address to leave by.",
+                    "type": "string"
+                },
                 "interface": {
-                    "description": "Interface is the host interface the alias is added to.",
+                    "description": "Interface is the host interface the alias is added to. NetworkAlias\nonly: a VNET jail reaches the network through Bridge instead.",
                     "type": "string"
                 },
                 "ip4": {
-                    "description": "IP4 is the address for NetworkAlias, with its prefix: 192.0.2.10/24.",
+                    "description": "IP4 is the address, with its prefix: 192.0.2.10/24. Read by\nNetworkAlias, where it is required, and by NetworkVNET, where it is\noptional -- a VNET jail may get its address from DHCP inside itself.",
                     "type": "string"
                 },
                 "mode": {
                     "$ref": "#/definitions/jails.NetworkMode"
+                },
+                "private": {
+                    "description": "Private makes the host end a private member of the bridge.\n\nMeasured on 15.1-RELEASE-p5: two private members cannot reach each\nother, but a private member still reaches non-private members and the\nbridge itself. So this isolates a jail from the other jails that also\nask for it -- not from every jail on the bridge, and not from the\nhost. Worth being exact about, because the weaker guarantee is the one\nan operator would assume they had.",
+                    "type": "boolean"
                 }
             }
         },

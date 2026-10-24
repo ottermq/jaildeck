@@ -107,7 +107,7 @@ func TestWriteConfigRoundTripsThroughTheParser(t *testing.T) {
 		Template: "tank/jails/templates/15.1-RELEASE@base",
 		Network:  jails.Network{Mode: jails.NetworkAlias, IP4: "192.0.2.10", Interface: "em0"},
 	}
-	content, err := spec.Stanza("/usr/local/jails/containers/db1")
+	content, err := spec.Stanza(jails.Placement{Path: "/usr/local/jails/containers/db1"})
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

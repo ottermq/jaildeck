@@ -85,6 +85,9 @@ func New(cfg *config.Config) (*App, error) {
 		Autostart:     jailAdapter.autostart,
 		RootDestroyer: jailStorage,
 		ConfigRemover: jailAdapter.remover,
+		Bridges:       jailAdapter.bridges,
+		Epairs:        jailAdapter.epairs,
+		Epair:         jailAdapter.epair,
 	})
 	jailHandler := jails.NewJailHandler(jailService)
 
@@ -149,6 +152,9 @@ type jailAdapters struct {
 	config    jails.ConfigWriter
 	remover   jails.ConfigRemover
 	autostart jails.Autostarter
+	bridges   jails.BridgeSource
+	epairs    jails.EpairAllocator
+	epair     jails.EpairCleaner
 }
 
 // newJailAdapters selects the implementations named by adapter. An unknown
@@ -158,10 +164,12 @@ func newJailAdapters(adapter string) (jailAdapters, error) {
 	switch adapter {
 	case config.AdapterFreeBSD:
 		a := freebsd.NewAdapter(system.NewExecCommandRunner())
-		return jailAdapters{system: a, config: a, remover: a, autostart: a}, nil
+		return jailAdapters{system: a, config: a, remover: a, autostart: a,
+			bridges: a, epairs: a, epair: a}, nil
 	case config.AdapterFake:
 		f := fake.NewJailSystem()
-		return jailAdapters{system: f, config: f, remover: f, autostart: f}, nil
+		return jailAdapters{system: f, config: f, remover: f, autostart: f,
+			bridges: f, epairs: f, epair: f}, nil
 	default:
 		return jailAdapters{}, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

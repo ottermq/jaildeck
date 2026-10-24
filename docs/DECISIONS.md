@@ -571,6 +571,15 @@ A jail spec may ask for VNET networking:
 - **The bridge is the operator's.** Jail Deck adds and removes only its own epairs; it never creates a bridge, adds a physical interface to one, or edits `rc.conf` network settings. Host Setup reports whether the named bridge exists.
 - `ip4=inherit` jails remain supported, unchanged.
 
+**Built 2026-10-24**, measured on isengard, 15.1-RELEASE-p5. Four things the decision did not say, settled by measuring:
+
+- **The epair unit is fixed in the stanza, and Jail Deck picks it.** `ifconfig epair create` allocates a unit but prints only the `a` end, so the peer's name is not knowable in advance — and both are needed before the jail runs, by `vnet.interface` and by `exec.poststop`. The unit is chosen from what no interface uses *and* no jail configuration claims: the host answers for running jails, the files in `jail.conf.d` for stopped ones whose stanza will create a unit the moment they start. Two creates racing can still be handed the same unit; the loser's start fails at `already exists` and is cleaned up like any other failed start.
+- **The cleanup is one command.** `ifconfig <host end> destroy` takes the jail end *and* the bridge membership with it, so the orphan sweep needs neither a `deletem` first nor the bridge's name — and has no second command that can fail after the first succeeded. `exec.poststop` is one line for the same reason.
+- **A VNET jail's loopback starts down.** The stanza brings `lo0` up, sets the address and adds the route *before* `/bin/sh /etc/rc`, so the services rc starts find an interface that is already configured.
+- **`private` isolates private members from each other, and only from each other.** Measured: private→private is blocked, private→non-private works, private→the bridge works. The sentence above is accurate only where every jail on the bridge asks for it; a jail sharing a bridge with a non-private member is not isolated from it.
+
+A VNET jail sets no `ip4.addr`, so neither `jls` nor its configuration reports an address for it and the jail listing shows none. The address is in the jail's own stack. A stanza cannot carry it as metadata either: an assignment jail(8) does not recognise is a hard error (`unknown parameter`), measured.
+
 ### Rationale
 
 VNET gives each jail its own network stack, which is what makes a jail safe to hand to an untrusted workload: no shared `127.0.0.1` (the very risk JD-003 describes), its own firewall view, and isolation enforceable at the bridge. The line between what Jail Deck writes and what the operator writes follows the SPEC: jail creation may write what jail creation needs — the stanza and its epair — and nothing broader. A bridge is host network policy.
@@ -1126,7 +1135,7 @@ Nothing else will take it away afterwards. `service jail stop <name>` does nothi
 The resolution keeps both halves where they belong:
 
 - **The stanza keeps `exec.prestart` and `exec.poststop`.** An operator who never runs Jail Deck gets a jail that starts and stops correctly, including its networking. That is the "integrate, do not replace" principle, and a generated file that only works when the generator is present would quietly break it.
-- **Jail Deck adds the step only it can take.** After a start it could not confirm, it destroys the epair that stanza would have created.
+- **Jail Deck adds the step only it can take.** After a start it could not confirm, it destroys the epair that stanza would have created. *Built 2026-10-24 and exercised end to end: a create whose `exec.start` failed on an unreachable gateway reported `failed_at: start` with the failing command in the message, and left no interface behind.*
 
 The orphan is found by the description the stanza writes, `descr jail:<name>`, not by the interface name alone. A sweep that matched on name could take an interface belonging to something else on the host.
 

@@ -318,3 +318,48 @@ type RootDestroyer interface {
 	// still busy is the guard that cannot race (JD-030).
 	DestroyRoot(ctx context.Context, jailPath string) (string, error)
 }
+
+// BridgeSource names the bridges the host has.
+//
+// Asked before a VNET jail is created, so a mistyped bridge name costs an
+// error rather than a jail whose start fails after its epair already exists.
+// The same list Host Setup reports (JD-017); Jail Deck never creates one.
+type BridgeSource interface {
+	Bridges(ctx context.Context) ([]string, error)
+}
+
+// EpairAllocator picks the epair unit a VNET jail's stanza is written
+// against.
+//
+// The unit is fixed in the file rather than allocated at start time, because
+// both ends have to be named before the jail runs: vnet.interface names the
+// jail end, and exec.poststop names the host end. Measured: `ifconfig epair
+// create` allocates a unit and prints only the "a" end, so the peer's name
+// is not knowable in advance without choosing the unit.
+type EpairAllocator interface {
+	// FreeEpairUnit returns a unit as "epair7": one no interface currently
+	// uses and no jail configuration already names. Two creates racing can
+	// still be handed the same unit; the loser's start fails at `ifconfig
+	// epair7 create: already exists` and is cleaned up like any other failed
+	// start, which is a refusal rather than a wrong jail.
+	FreeEpairUnit(ctx context.Context) (string, error)
+}
+
+// EpairCleaner destroys the epair a failed start left behind.
+//
+// This is the one piece of a half-created jail Jail Deck undoes (JD-030).
+// When a start fails after exec.prestart has run, jail(8) does not run
+// exec.poststop, and nothing afterwards will: `service jail stop` and
+// `jail -r` both answer "no such jail" and so never run the hook. The orphan
+// then blocks every retry at `ifconfig epair7 create: already exists`.
+type EpairCleaner interface {
+	// RemoveJailEpair destroys the interface described as "jail:<name>" and
+	// returns what it destroyed, or "" when there was nothing to destroy.
+	//
+	// Found by the description rather than by the interface name, because a
+	// sweep matching on name could take an interface belonging to something
+	// else on the host. Destroying the host end takes the jail end and the
+	// bridge membership with it -- measured, so no bridge name is needed
+	// here and no second command can fail halfway.
+	RemoveJailEpair(ctx context.Context, name string) (string, error)
+}

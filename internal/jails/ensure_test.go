@@ -74,10 +74,97 @@ func (s *stubOrigin) RootOrigin(_ context.Context, jailPath string) (string, str
 	return s.dataset, s.origin, s.err
 }
 
+// stubStorage is the pool beneath the jail: its own dataset, whatever
+// children have been made under it, and the tags on its own. It is both
+// halves of the port, because a test that creates a child and then asks
+// whether the jail matches has to see the one it just made.
+type stubStorage struct {
+	root       string
+	path       string
+	children   map[string]Dataset
+	properties map[string]string
+	conflict   *PropertyConflict
+	ensureErr  error
+	readErr    error
+	ensured    []string
+}
+
+func newStubStorage() *stubStorage {
+	return &stubStorage{
+		root: clonedRoot().Dataset, path: clonedRoot().Mountpoint,
+		children: map[string]Dataset{}, properties: map[string]string{},
+	}
+}
+
+func (s *stubStorage) StorageForPaths(_ context.Context, paths []string) (map[string]JailStorage, error) {
+	if s.readErr != nil {
+		return nil, s.readErr
+	}
+	found := map[string]JailStorage{}
+	for _, path := range paths {
+		if path != s.path {
+			continue
+		}
+		datasets := []Dataset{{Name: s.root, Mountpoint: s.path}}
+		for _, name := range sortedChildren(s.children) {
+			datasets = append(datasets, s.children[name])
+		}
+		found[path] = JailStorage{Datasets: datasets, Properties: s.properties}
+	}
+	return found, nil
+}
+
+func (s *stubStorage) EnsureDataset(_ context.Context, jailPath, child string, properties map[string]string) (DatasetChange, error) {
+	s.ensured = append(s.ensured, child)
+	if s.ensureErr != nil {
+		return DatasetChange{}, s.ensureErr
+	}
+	if s.conflict != nil {
+		return DatasetChange{Dataset: s.root + "/" + child, Conflict: s.conflict}, nil
+	}
+	dataset := Dataset{
+		Name:       s.root + "/" + child,
+		Mountpoint: jailPath + "/" + child,
+		Properties: map[string]string{},
+	}
+	_, existed := s.children[child]
+	for property, value := range properties {
+		if property == "mountpoint" {
+			dataset.Mountpoint = value
+			continue
+		}
+		dataset.Properties[property] = value
+	}
+	s.children[child] = dataset
+	return DatasetChange{Dataset: dataset.Name, Created: !existed, Applied: properties}, nil
+}
+
+func (s *stubStorage) SetUserProperties(_ context.Context, _, _ string, properties map[string]*string) (map[string]string, error) {
+	for name, value := range properties {
+		if value == nil {
+			delete(s.properties, name)
+			continue
+		}
+		s.properties[name] = *value
+	}
+	return s.properties, nil
+}
+
+func sortedChildren(children map[string]Dataset) []string {
+	names := make([]string, 0, len(children))
+	for name := range children {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
 var (
 	_ ConfigReader    = (*stubConfigReader)(nil)
 	_ AutostartSource = (*stubAutostartSource)(nil)
 	_ CloneOrigin     = (*stubOrigin)(nil)
+	_ DatasetSource   = (*stubStorage)(nil)
+	_ DatasetWriter   = (*stubStorage)(nil)
 )
 
 // ensureHost is a whole host: the doubles a create needs, plus the three a
@@ -97,6 +184,7 @@ type ensureHost struct {
 	reader    *stubConfigReader
 	starts    *stubAutostartSource
 	origin    *stubOrigin
+	storage   *stubStorage
 }
 
 func newEnsureHost() *ensureHost {
@@ -115,6 +203,7 @@ func newEnsureHost() *ensureHost {
 		reader:  &stubConfigReader{config: config},
 		starts:  &stubAutostartSource{autostart: autostart},
 		origin:  &stubOrigin{dataset: clonedRoot().Dataset, origin: validSpec().Template},
+		storage: newStubStorage(),
 	}
 }
 
@@ -125,6 +214,7 @@ func (h *ensureHost) service() *JailService {
 		Bridges: h.bridges, Epairs: h.epairs, Epair: h.cleaner,
 		Rctl: h.rctl, DevfsRulesets: h.devfs,
 		ConfigReader: h.reader, AutostartSource: h.starts, CloneOrigin: h.origin,
+		Datasets: h.storage, DatasetWriter: h.storage,
 	})
 }
 
@@ -552,6 +642,7 @@ func TestEnsureNeedsWhatItReadsBackThrough(t *testing.T) {
 			System: host.system, Audit: host.logger,
 			RootCloner: host.cloner, Config: host.config, Autostart: host.autostart,
 			ConfigReader: host.reader, AutostartSource: host.starts, CloneOrigin: host.origin,
+			Datasets: host.storage, DatasetWriter: host.storage,
 		}
 		switch missing {
 		case "config":

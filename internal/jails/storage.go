@@ -30,6 +30,12 @@ func (s *JailService) EnsureDataset(ctx context.Context, name JailName, child st
 	if jail.Path == "" {
 		return DatasetChange{}, ErrJailNotOnZFS
 	}
+	// The same refusal the create makes, in the one place both doors pass
+	// through: a child of this jail mounted outside it is one the jail
+	// cannot see and that destroying the jail would destroy anyway.
+	if err := checkChildMountpoint(jail.Path, child, properties); err != nil {
+		return DatasetChange{}, err
+	}
 	// A write must not be abandoned half-way because the client hung up: zfs
 	// create either made the dataset or did not, and the audit entry is what
 	// records which. The runner still bounds it.

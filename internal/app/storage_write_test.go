@@ -139,10 +139,21 @@ func TestEnsureDatasetStatuses(t *testing.T) {
 			want: http.StatusBadRequest,
 		},
 		{
-			name: "the jail's own dataset is somewhere else",
+			// mountpoint is settable only at creation (JD-023), so a child
+			// that is already somewhere else is reported with both values
+			// rather than moved.
+			name: "a child that exists somewhere else",
+			path: "/api/jails/nginx/datasets/logs",
+			body: `{"properties":{"mountpoint":"/fake/jail/nginx/somewhere-else"}}`,
+			want: http.StatusConflict,
+		},
+		{
+			// A child of the jail mounted outside it is one the jail cannot
+			// see and that destroying the jail would destroy anyway (JD-007).
+			name: "a child mounted outside the jail",
 			path: "/api/jails/nginx/datasets/logs",
 			body: `{"properties":{"mountpoint":"/srv/elsewhere"}}`,
-			want: http.StatusConflict,
+			want: http.StatusBadRequest,
 		},
 	}
 	for _, tt := range tests {

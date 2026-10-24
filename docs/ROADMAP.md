@@ -249,7 +249,7 @@ Goal: create and destroy jails, including VNET jails with resource limits, from 
 ### Capabilities
 
 - create a jail from a ready template, from a spec covering network, limits, jail parameters, child datasets, user properties and autostart (JD-017, JD-018)
-- **idempotent create:** `PUT /api/jails/{name}` with the full spec creates the jail if absent, returns `200` unchanged if present and matching, and `409` with a diff if present and different (JD-016). `POST /api/jails` stays for the UI
+- **idempotent create:** `PUT /api/jails/{name}` with the full spec creates the jail if absent, returns `200` unchanged if present and matching, and `409` with a diff if present and different (JD-016). `POST /api/jails` stays for the UI. *Built 2026-10-24: "matching" is decided by rendering the stanza the spec would write and holding it against the one on disk, setting by setting, so the comparison covers every field the generator writes rather than a list somebody has to keep up to date. `template` comes from the root's clone origin and `autostart` from `jail_list`; `start` is deliberately not compared (JD-016).*
 - destroy a jail: `DELETE /api/jails/{name}?confirm=<name>`
 - autostart via rc.conf `jail_list`
 
@@ -274,6 +274,8 @@ Goal: create and destroy jails, including VNET jails with resource limits, from 
 ### Completion criteria
 
 A VNET jail with limits and a quota'd child dataset can be created end to end (clone → configure → start) from one `PUT`, a repeated `PUT` changes nothing, and the jail can be destroyed again — without manually touching `zfs`, `rctl` or `jail.conf.d`.
+
+*Met 2026-10-24 except for the child dataset: a VNET jail with limits and parameters is created, re-`PUT` unchanged and destroyed, all through the API, verified on isengard. Child datasets and user properties are in the spec's shape (JD-007, JD-018) but are not yet part of the create — they remain the one gap in this milestone, alongside a UI for any of it.*
 
 ---
 

@@ -180,3 +180,49 @@ func TestCheckTemplate(t *testing.T) {
 		})
 	}
 }
+
+// --- what a jail's root was cloned from --------------------------------
+
+func TestRootOrigin(t *testing.T) {
+	system := withAJail()
+
+	root, origin, err := jailSourceFor(system, &fakeLogger{}).RootOrigin(context.Background(), jailPath)
+	if err != nil {
+		t.Fatalf("RootOrigin: %v", err)
+	}
+	if root != jailRoot {
+		t.Errorf("dataset = %q, want %q", root, jailRoot)
+	}
+	if origin != createTemplate {
+		t.Errorf("origin = %q, want %q", origin, createTemplate)
+	}
+	// Read only: this answers a question, and the comparison it answers for
+	// changes nothing (JD-016).
+	if len(system.ran) != 0 {
+		t.Errorf("RootOrigin ran commands: %v", system.ran)
+	}
+}
+
+// A root that is not a clone has no template. That is a fact about the
+// dataset, not a failure, and the caller reports it as a difference.
+func TestRootOriginOfARootNobodyCloned(t *testing.T) {
+	system := withAJail()
+	delete(system.origins, jailRoot)
+
+	_, origin, err := jailSourceFor(system, &fakeLogger{}).RootOrigin(context.Background(), jailPath)
+	if err != nil {
+		t.Fatalf("RootOrigin: %v", err)
+	}
+	if origin != "" {
+		t.Errorf("origin = %q, want empty", origin)
+	}
+}
+
+func TestRootOriginOfAJailThatIsNotOnZFS(t *testing.T) {
+	system := withContainersParent()
+
+	_, _, err := jailSourceFor(system, &fakeLogger{}).RootOrigin(context.Background(), "/not/a/dataset")
+	if err == nil {
+		t.Fatal("want an error for a path no dataset is mounted at")
+	}
+}

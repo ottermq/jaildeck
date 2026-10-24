@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -142,8 +143,52 @@ func (a *Adapter) RemoveConfig(_ context.Context, name string) (string, error) {
 	return path, nil
 }
 
+// ReadConfig returns the jail's own stanza as it is on disk.
+//
+// Plain file I/O, as WriteConfig is, and for the same reason: the adapter
+// already reads this directory directly to find configured jails (JD-004).
+// What the content means is the domain's business -- the comparison that
+// needs this generates the file it is held against (JD-016).
+func (a *Adapter) ReadConfig(_ context.Context, name string) (string, error) {
+	path, err := a.confPath(name)
+	if err != nil {
+		return "", err
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", common.NewAppError(http.StatusInternalServerError, fmt.Sprintf(
+			"could not read %s: %s", path, err))
+	}
+	return string(content), nil
+}
+
+// Autostarts reports whether rc.conf's jail_list names this jail.
+//
+//	sysrc -n jail_list
+//
+// A host that has never set jail_list answers "unknown variable 'jail_list'"
+// and exits 1 -- measured. That is an empty list, not a failure to read:
+// every jail on such a host is one that does not come back after a reboot,
+// which is an answer.
+func (a *Adapter) Autostarts(ctx context.Context, name string) (bool, error) {
+	result, err := a.runHost(ctx, system.Command{
+		Name:    "sysrc",
+		Args:    []string{"-n", "jail_list"},
+		Timeout: sysrcTimeout,
+	})
+	if err != nil {
+		if exited(result, err) && strings.Contains(result.Stderr, "unknown variable") {
+			return false, nil
+		}
+		return false, err
+	}
+	return slices.Contains(strings.Fields(result.Stdout), name), nil
+}
+
 var (
-	_ jails.ConfigWriter  = (*Adapter)(nil)
-	_ jails.ConfigRemover = (*Adapter)(nil)
-	_ jails.Autostarter   = (*Adapter)(nil)
+	_ jails.ConfigWriter    = (*Adapter)(nil)
+	_ jails.ConfigRemover   = (*Adapter)(nil)
+	_ jails.ConfigReader    = (*Adapter)(nil)
+	_ jails.Autostarter     = (*Adapter)(nil)
+	_ jails.AutostartSource = (*Adapter)(nil)
 )

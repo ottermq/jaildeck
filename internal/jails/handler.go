@@ -952,6 +952,93 @@ func (h *JailHandler) Create(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusCreated, result)
 }
 
+// Ensure makes a jail exist exactly as the spec describes it, or says why not.
+//
+// @Summary      Create a jail if it is not there (idempotent)
+// @Description  The same spec as POST /api/jails, by the verb an automation client
+// @Description  wants: absent → created, `201`; already what the spec describes →
+// @Description  `200` with `changed: false`; there but different → `409` with the
+// @Description  differences. **Nothing is ever reconciled** — a jail that differs is
+// @Description  left exactly as it is and the client decides (JD-016).
+// @Description
+// @Description  Safe to repeat. A client that lost its answer to a timeout sends the
+// @Description  same request again and the reply says where it stands, derived from the
+// @Description  host rather than from anything Jail Deck remembers (JD-011).
+// @Description
+// @Description  **How "matching" is decided.** Jail Deck renders the stanza this spec
+// @Description  would write — against the path the jail's dataset reports and the epair
+// @Description  its existing stanza already claims — and compares it with the stanza on
+// @Description  disk, setting by setting. So the comparison covers every field the
+// @Description  generator writes, including ones added after this endpoint was built.
+// @Description  Comments, blank lines, line order and the quoting of a value are not
+// @Description  differences; anything else is, including a setting only one side has.
+// @Description
+// @Description  `template` and `autostart` are not in that file and are read where they
+// @Description  live: the root's clone origin, and rc.conf's `jail_list`. A jail whose
+// @Description  root was re-cloned reports the template it actually came from.
+// @Description
+// @Description  **`start` is not compared.** It says whether to start the jail once it
+// @Description  has been configured, which is an instruction about the create rather
+// @Description  than a property of the jail — comparing it would make a jail stopped for
+// @Description  maintenance refuse every PUT, and acting on it would be the
+// @Description  reconciliation this endpoint refuses to do. The response says whether
+// @Description  the jail is running and the client decides.
+// @Description
+// @Description  `field` in a difference is the jail.conf(5) setting, because that is
+// @Description  where the difference is and what an operator would edit; `template` and
+// @Description  `autostart` are named for the spec field instead.
+// @Description
+// @Description  The body may leave `name` out — the URL has already said it. A body that
+// @Description  names a different jail is refused.
+// @Tags         jails
+// @Accept       json
+// @Produce      json
+// @Param        name  path      string  true  "The jail to ensure"
+// @Param        spec  body      Spec    true  "The jail it should be"
+// @Success      200   {object}  Ensured  "Already what the spec describes; nothing changed"
+// @Success      201   {object}  Ensured  "Created"
+// @Failure      400   {object}  common.ErrorResponse  "A malformed spec, or one naming a different jail"
+// @Failure      401   {object}  common.ErrorResponse
+// @Failure      404   {object}  common.ErrorResponse  "No such template snapshot"
+// @Failure      409   {object}  Ensured               "It is there and different; `differences` says how"
+// @Failure      500   {object}  Ensured               "A step of the create failed; the body says which and what exists"
+// @Failure      501   {object}  common.ErrorResponse  "This Jail Deck cannot read a jail back"
+// @Security     BearerAuth
+// @Router       /jails/{name} [put]
+func (h *JailHandler) Ensure(w http.ResponseWriter, r *http.Request) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	var spec Spec
+	if err := decodeJSON(r, &spec); err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+
+	result, err := h.service.Ensure(r.Context(), name, spec)
+	if err != nil {
+		// As with POST: once the root exists there is something the caller
+		// has to know about, and an error message alone would throw it away.
+		if result.Root != "" && result.Changed {
+			result.Error = err.Error()
+			common.WriteJSON(w, statusForPartial(err), result)
+			return
+		}
+		common.HandlerError(w, err)
+		return
+	}
+	switch {
+	case len(result.Differences) > 0:
+		common.WriteJSON(w, http.StatusConflict, result)
+	case result.Changed:
+		common.WriteJSON(w, http.StatusCreated, result)
+	default:
+		common.WriteJSON(w, http.StatusOK, result)
+	}
+}
+
 // Destroy removes a jail, its configuration and its filesystem.
 //
 // @Summary      Destroy a jail

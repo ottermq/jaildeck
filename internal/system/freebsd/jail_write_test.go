@@ -304,3 +304,106 @@ func TestConfigFilePathsCannotEscapeTheDirectory(t *testing.T) {
 		})
 	}
 }
+
+func TestReadConfig(t *testing.T) {
+	adapter := writeAdapter(t)
+	want := "db1 {\n\tpath = \"/usr/local/jails/containers/db1\";\n}\n"
+	if _, err := adapter.WriteConfig(context.Background(), "db1", want); err != nil {
+		t.Fatalf("WriteConfig: %v", err)
+	}
+
+	got, err := adapter.ReadConfig(context.Background(), "db1")
+	if err != nil {
+		t.Fatalf("ReadConfig: %v", err)
+	}
+	if got != want {
+		t.Errorf("content = %q, want %q", got, want)
+	}
+}
+
+func TestReadConfigOfAJailWithNoFile(t *testing.T) {
+	adapter := writeAdapter(t)
+
+	if _, err := adapter.ReadConfig(context.Background(), "db1"); err == nil {
+		t.Fatal("want an error for a jail with no file of its own")
+	}
+}
+
+// The same guard WriteConfig and RemoveConfig use: the name arrives from a
+// URL and is the one place it becomes a filesystem path.
+func TestReadConfigPathsCannotEscapeTheDirectory(t *testing.T) {
+	adapter := writeAdapter(t)
+
+	for _, name := range []string{"", ".", "..", "../etc/jail.conf", `a\b`} {
+		if _, err := adapter.ReadConfig(context.Background(), name); err == nil {
+			t.Errorf("ReadConfig accepted %q", name)
+		}
+	}
+}
+
+// --- jail_list, read back ----------------------------------------------
+
+func sysrcAdapter(t *testing.T, stdout string, exitCode int, stderr string) *Adapter {
+	t.Helper()
+	return NewAdapter(runnerFunc(func(_ context.Context, cmd system.Command) (system.CommandResult, error) {
+		if got := cmd.String(); got != "sysrc -n jail_list" {
+			t.Errorf("ran %q, want `sysrc -n jail_list`", got)
+		}
+		result := system.CommandResult{Stdout: stdout, Stderr: stderr, ExitCode: exitCode}
+		if exitCode != 0 {
+			return result, errors.New("exit status 1")
+		}
+		return result, nil
+	}))
+}
+
+func TestAutostarts(t *testing.T) {
+	tests := []struct {
+		name   string
+		jail   string
+		stdout string
+		want   bool
+	}{
+		{name: "listed", jail: "ottermq", stdout: "postgres ottermq goodiesdb\n", want: true},
+		{name: "not listed", jail: "db1", stdout: "postgres ottermq goodiesdb\n", want: false},
+		{name: "the list is empty", jail: "db1", stdout: "\n", want: false},
+		// Not a prefix match: jail_list holds whole names.
+		{name: "a name that is a prefix of one", jail: "otter", stdout: "ottermq\n", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			adapter := sysrcAdapter(t, test.stdout, 0, "")
+
+			got, err := adapter.Autostarts(context.Background(), test.jail)
+			if err != nil {
+				t.Fatalf("Autostarts: %v", err)
+			}
+			if got != test.want {
+				t.Errorf("autostarts = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+// A host that has never set jail_list answers "unknown variable" and exits
+// 1 -- measured. Every jail on such a host is one that does not come back
+// after a reboot, which is an answer rather than a failure to read.
+func TestAutostartsOnAHostWithNoJailList(t *testing.T) {
+	adapter := sysrcAdapter(t, "", 1, "sysrc: unknown variable 'jail_list'")
+
+	got, err := adapter.Autostarts(context.Background(), "db1")
+	if err != nil {
+		t.Fatalf("Autostarts: %v", err)
+	}
+	if got {
+		t.Error("autostarts = true on a host with no jail_list at all")
+	}
+}
+
+func TestAutostartsPassesOnARealFailure(t *testing.T) {
+	adapter := sysrcAdapter(t, "", 1, "sysrc: /etc/rc.conf: permission denied")
+
+	if _, err := adapter.Autostarts(context.Background(), "db1"); err == nil {
+		t.Fatal("want the error, not a false answer")
+	}
+}

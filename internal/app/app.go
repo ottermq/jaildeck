@@ -90,6 +90,10 @@ func New(cfg *config.Config) (*App, error) {
 		Epair:         jailAdapter.epair,
 		Rctl:          jailAdapter.rctl,
 		DevfsRulesets: jailAdapter.devfsRulesets,
+
+		ConfigReader:    jailAdapter.configReader,
+		AutostartSource: jailAdapter.autostartSource,
+		CloneOrigin:     jailStorage,
 	})
 	jailHandler := jails.NewJailHandler(jailService)
 
@@ -152,15 +156,17 @@ func setupAuditLog(auditLogFilePath string) (*audit.FileLogger, error) {
 // jail whose stanza was just written must appear in the next listing, and
 // one that was just started must carry the rules its stanza asked for.
 type jailAdapters struct {
-	system        jails.JailSystem
-	config        jails.ConfigWriter
-	remover       jails.ConfigRemover
-	autostart     jails.Autostarter
-	bridges       jails.BridgeSource
-	epairs        jails.EpairAllocator
-	epair         jails.EpairCleaner
-	rctl          jails.RctlSystem
-	devfsRulesets jails.DevfsRulesetSource
+	system          jails.JailSystem
+	config          jails.ConfigWriter
+	remover         jails.ConfigRemover
+	autostart       jails.Autostarter
+	bridges         jails.BridgeSource
+	epairs          jails.EpairAllocator
+	epair           jails.EpairCleaner
+	rctl            jails.RctlSystem
+	devfsRulesets   jails.DevfsRulesetSource
+	configReader    jails.ConfigReader
+	autostartSource jails.AutostartSource
 }
 
 // newJailAdapters selects the implementations named by adapter. An unknown
@@ -171,11 +177,13 @@ func newJailAdapters(adapter string) (jailAdapters, error) {
 	case config.AdapterFreeBSD:
 		a := freebsd.NewAdapter(system.NewExecCommandRunner())
 		return jailAdapters{system: a, config: a, remover: a, autostart: a,
-			bridges: a, epairs: a, epair: a, rctl: a, devfsRulesets: a}, nil
+			bridges: a, epairs: a, epair: a, rctl: a, devfsRulesets: a,
+			configReader: a, autostartSource: a}, nil
 	case config.AdapterFake:
 		f := fake.NewJailSystem()
 		return jailAdapters{system: f, config: f, remover: f, autostart: f,
-			bridges: f, epairs: f, epair: f, rctl: f, devfsRulesets: f}, nil
+			bridges: f, epairs: f, epair: f, rctl: f, devfsRulesets: f,
+			configReader: f, autostartSource: f}, nil
 	default:
 		return jailAdapters{}, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

@@ -227,6 +227,25 @@ func (s *JailSystem) RemoveConfig(_ context.Context, name string) (string, error
 	return "/fake/etc/jail.conf.d/" + name + ".conf", nil
 }
 
+// ReadConfig hands back the stanza WriteConfig recorded, which is what the
+// comparison behind the idempotent PUT reads (JD-016).
+func (s *JailSystem) ReadConfig(_ context.Context, name string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	content, written := s.configs[name]
+	if !written {
+		return "", fmt.Errorf("/fake/etc/jail.conf.d/%s.conf: no such file", name)
+	}
+	return content, nil
+}
+
+// Autostarts reads the fake's jail_list back.
+func (s *JailSystem) Autostarts(_ context.Context, name string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.autostart[name], nil
+}
+
 // Bridges is the operator-owned bridge a vnet jail can ask for. One, so a
 // spec naming any other bridge is refused the way a real host would refuse
 // it (JD-017).

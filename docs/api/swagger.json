@@ -464,6 +464,92 @@
                     }
                 }
             },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The same spec as POST /api/jails, by the verb an automation client\nwants: absent → created, `201`; already what the spec describes →\n`200` with `changed: false`; there but different → `409` with the\ndifferences. **Nothing is ever reconciled** — a jail that differs is\nleft exactly as it is and the client decides (JD-016).\n\nSafe to repeat. A client that lost its answer to a timeout sends the\nsame request again and the reply says where it stands, derived from the\nhost rather than from anything Jail Deck remembers (JD-011).\n\n**How \"matching\" is decided.** Jail Deck renders the stanza this spec\nwould write — against the path the jail's dataset reports and the epair\nits existing stanza already claims — and compares it with the stanza on\ndisk, setting by setting. So the comparison covers every field the\ngenerator writes, including ones added after this endpoint was built.\nComments, blank lines, line order and the quoting of a value are not\ndifferences; anything else is, including a setting only one side has.\n\n`template` and `autostart` are not in that file and are read where they\nlive: the root's clone origin, and rc.conf's `jail_list`. A jail whose\nroot was re-cloned reports the template it actually came from.\n\n**`start` is not compared.** It says whether to start the jail once it\nhas been configured, which is an instruction about the create rather\nthan a property of the jail — comparing it would make a jail stopped for\nmaintenance refuse every PUT, and acting on it would be the\nreconciliation this endpoint refuses to do. The response says whether\nthe jail is running and the client decides.\n\n`field` in a difference is the jail.conf(5) setting, because that is\nwhere the difference is and what an operator would edit; `template` and\n`autostart` are named for the spec field instead.\n\nThe body may leave `name` out — the URL has already said it. A body that\nnames a different jail is refused.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jails"
+                ],
+                "summary": "Create a jail if it is not there (idempotent)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The jail to ensure",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The jail it should be",
+                        "name": "spec",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/jails.Spec"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Already what the spec describes; nothing changed",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Ensured"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Ensured"
+                        }
+                    },
+                    "400": {
+                        "description": "A malformed spec, or one naming a different jail",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such template snapshot",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "It is there and different; `differences` says how",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Ensured"
+                        }
+                    },
+                    "500": {
+                        "description": "A step of the create failed; the body says which and what exists",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Ensured"
+                        }
+                    },
+                    "501": {
+                        "description": "This Jail Deck cannot read a jail back",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
             "delete": {
                 "security": [
                     {
@@ -2513,6 +2599,87 @@
                 },
                 "unlisted": {
                     "description": "Unlisted says it was taken out of rc.conf's jail_list.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "jails.Difference": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "have": {
+                    "type": "string"
+                },
+                "want": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.Ensured": {
+            "type": "object",
+            "properties": {
+                "autostart": {
+                    "type": "boolean"
+                },
+                "changed": {
+                    "description": "Changed says whether this call changed anything on the host. It is\nfalse for a jail that already matched and false for one that differs:\nnothing here reconciles a jail towards a spec (JD-016).",
+                    "type": "boolean"
+                },
+                "config": {
+                    "description": "Config is the file the stanza was written to.",
+                    "type": "string"
+                },
+                "differences": {
+                    "description": "Differences is every setting the spec and the host disagree about,\nand is the whole of the answer when they do.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/jails.Difference"
+                    }
+                },
+                "epair": {
+                    "description": "Epair is the host end of a VNET jail's epair -- what appears on the\nbridge, and what a failed start would leave behind. Empty for every\nother mode.",
+                    "type": "string"
+                },
+                "epair_removed": {
+                    "description": "EpairRemoved says the epair was destroyed after a start that could not\nbe confirmed. Only Jail Deck will do that: jail(8) does not run\nexec.poststop for a start that failed (JD-030).",
+                    "type": "boolean"
+                },
+                "error": {
+                    "description": "Error is why it stopped. The body of a failed create carries both: what\nexists is the recovery information, and this is the reason it is\nneeded. Filled in by the handler, which is where the response is\ndecided -- the service returns a Go error like every other method here.",
+                    "type": "string"
+                },
+                "failed_at": {
+                    "description": "FailedAt names the step that stopped, and is absent on success.",
+                    "type": "string"
+                },
+                "from": {
+                    "description": "From is the template snapshot the root was cloned from.",
+                    "type": "string"
+                },
+                "jail": {
+                    "$ref": "#/definitions/jails.Jail"
+                },
+                "mountpoint": {
+                    "type": "string"
+                },
+                "root": {
+                    "description": "Root is the jail's own dataset and Mountpoint is where it is mounted,\nwhich is the jail's path.",
+                    "type": "string"
+                },
+                "rules_error": {
+                    "description": "RulesError says why they could not be taken back. The next create of\nthis name will refuse until they are gone, and say so.",
+                    "type": "string"
+                },
+                "rules_removed": {
+                    "description": "RulesRemoved are the rctl rules taken back after a start that could\nnot be confirmed. A start that fails part way through exec.poststart\nkeeps the rules it had already added and never runs exec.prestop, so\nthey would otherwise outlive the jail they are named after (JD-018).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "running": {
                     "type": "boolean"
                 }
             }

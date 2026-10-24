@@ -13,7 +13,9 @@ Jail Deck is a single-host operations dashboard and host agent for FreeBSD jails
 
 Not multi-host. Not OCI. Never the author of `pf.conf`.
 
-Milestones marked **★ Otter** are needed by Otter Labs Cloud, which drives Jail Deck through its API (JD-016); the note on each says for what. They are ordered first where that does not fight the dependency chain.
+Milestones marked **★ Otter Cloud** are needed by Otter Labs Cloud, which drives Jail Deck through its API (JD-016); the note on each says for what. They are ordered first where that does not fight the dependency chain.
+
+*Called **★ Otter** until 2026-10-23.* "Otter" on its own is the umbrella the sibling projects share, and `otter:instance` is the ZFS tag namespace any consumer writes — so a marker that also meant "the cloud asked for this" was carrying three jobs. The tracker's label moved with it, from `otter` to `otter-cloud`.
 
 ## Roadmap philosophy
 
@@ -116,7 +118,7 @@ Jails and operations are usable in a browser, served by the single binary.
 
 **Status:** done in v0.7.0. Kept for the record of what it set out to do, with two readiness bullets reworded: they named a *configured* bridge and devfs ruleset, and neither is a global setting — both are named per jail spec (JD-017, JD-018), so there is nothing to validate a configured value against. The report answers the host-level question instead.
 
-**Depends on:** nothing. **Precondition for:** Templates, Jail Provisioning. **★ Otter:** node preparation — a node is not usable until these checks pass.
+**Depends on:** nothing. **Precondition for:** Templates, Jail Provisioning. **★ Otter Cloud:** node preparation — a node is not usable until these checks pass.
 
 Goal: Jail Deck establishes the dataset layout its own jail and template work depends on, instead of assuming an operator followed a runbook first, and reports whether the host is ready for VNET jails, resource limits and VMs.
 
@@ -176,7 +178,7 @@ Dataset and snapshot state is visible through the API and the UI. Read-only; cre
 
 **Status:** done in v0.8.0. Kept for the record of what it set out to do. Every capability below is reachable from the API and from the interface, each destructive one behind the `confirm=<exact name>` the API already required (JD-029).
 
-**Depends on:** Storage Visibility. **★ Otter:** per-instance data datasets with quotas, on-demand snapshots, and keeping data when a jail is destroyed or its root replaced.
+**Depends on:** Storage Visibility. **★ Otter Cloud:** per-instance data datasets with quotas, on-demand snapshots, and keeping data when a jail is destroyed or its root replaced.
 
 Goal: the ZFS write operations jail creation, upgrades and safe deletion need — moved out of Deferred because a real consumer now needs them.
 
@@ -212,7 +214,7 @@ Listing with lineage and readiness, deriving one template from another with pack
 
 What the milestone asked for and did **not** get: a release picker sourced from `download.freebsd.org`. The release is typed, validated against the shape the mirror publishes, and defaults to the host's own — which is also the ceiling. Whether to offer a list is the open "which releases are supported" question in `docs/SPEC.md`, not something this milestone settled.
 
-**Depends on:** Host Setup, Storage Visibility. **★ Otter:** the release template every service template derives from.
+**Depends on:** Host Setup, Storage Visibility. **★ Otter Cloud:** the release template every service template derives from.
 
 Goal: automate the template-preparation workflow described in `docs/SPEC.md`. **Template preparation is an explicit, operator-initiated step** — not part of setup, and not folded into jail creation.
 
@@ -240,7 +242,7 @@ A template can be prepared end to end from the UI, ending in a usable `@base` sn
 
 ## Milestone: Jail Provisioning
 
-**Depends on:** Templates, Storage Writes. **★ Otter:** the critical path — every managed instance is a jail created here.
+**Depends on:** Templates, Storage Writes. **★ Otter Cloud:** the critical path — every managed instance is a jail created here.
 
 Goal: create and destroy jails, including VNET jails with resource limits, from a full spec.
 
@@ -272,7 +274,7 @@ A VNET jail with limits and a quota'd child dataset can be created end to end (c
 
 ## Milestone: Exec and Automation Contract
 
-**Depends on:** Jail Provisioning for exec to have something to run in; the listener and correlation work can land earlier. **★ Otter:** in-jail bootstrap (e.g. `initdb`) and the worker's connection to Jail Deck.
+**Depends on:** Jail Provisioning for exec to have something to run in; the listener and correlation work can land earlier. **★ Otter Cloud:** in-jail bootstrap (e.g. `initdb`) and the worker's connection to Jail Deck.
 
 Goal: make the API safe and predictable for a program, not only for the SPA (JD-016).
 
@@ -298,7 +300,7 @@ A local program can create a jail, run a command in it and destroy it over the u
 
 ## Milestone: Metrics
 
-**Depends on:** Web UI. **★ Otter:** monitoring before the beta.
+**Depends on:** Web UI. **★ Otter Cloud:** monitoring before the beta.
 
 Goal: the observability half of the stated scope — see load and memory, for the host and per jail.
 
@@ -346,7 +348,7 @@ The loaded PF policy and its counters are visible in the API and the UI, and not
 
 ## Milestone: Packaging and Distribution
 
-**Depends on:** nothing functionally; most useful once the above is worth installing. **★ Otter:** before the beta — each node runs Jail Deck as an rc.d service.
+**Depends on:** nothing functionally; most useful once the above is worth installing. **★ Otter Cloud:** before the beta — each node runs Jail Deck as an rc.d service.
 
 Goal: make Jail Deck feel native to install and operate on FreeBSD.
 
@@ -373,7 +375,7 @@ Jail Deck can be installed on FreeBSD in a repeatable way and run as a service.
 
 ## Milestone: Virtual Machines
 
-**Depends on:** Host Setup (UG check), Storage Writes (zvols), Jail Provisioning (the patterns VMs mirror). **★ Otter:** Linux VMs, after its first beta.
+**Depends on:** Host Setup (UG check), Storage Writes (zvols), Jail Provisioning (the patterns VMs mirror). **★ Otter Cloud:** Linux VMs, after its first beta.
 
 Goal: a `vms` domain mirroring jails (JD-019).
 

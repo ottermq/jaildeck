@@ -45,7 +45,7 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	jailSystem, err := newJailSystem(cfg.Adapter)
+	jailAdapter, err := newJailAdapters(cfg.Adapter)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func New(cfg *config.Config) (*App, error) {
 
 	jailStorage := storage.NewJailSource(storageService)
 	jailService := jails.NewJailService(jails.Dependencies{
-		System:        jailSystem,
+		System:        jailAdapter.system,
 		Audit:         auditLogger,
 		Datasets:      jailStorage,
 		DatasetWriter: jailStorage,
@@ -80,6 +80,9 @@ func New(cfg *config.Config) (*App, error) {
 		DatasetMover:  jailStorage,
 		Recloner:      jailStorage,
 		TemplateMaker: jailStorage,
+		RootCloner:    jailStorage,
+		Config:        jailAdapter.config,
+		Autostart:     jailAdapter.autostart,
 	})
 	jailHandler := jails.NewJailHandler(jailService)
 
@@ -135,17 +138,29 @@ func setupAuditLog(auditLogFilePath string) (*audit.FileLogger, error) {
 	return auditLogger, nil
 }
 
-// newJailSystem selects the jails.JailSystem implementation named by adapter.
-// An unknown name is an error rather than a silent fallback: which adapter is
-// running determines whether real jails are touched.
-func newJailSystem(adapter string) (jails.JailSystem, error) {
+// jailAdapters are the three jail ports one adapter object implements: the
+// jail system itself, the configuration file, and rc.conf's jail_list. They
+// are built together because in fake mode they have to be the same object --
+// a jail whose stanza was just written must appear in the next listing.
+type jailAdapters struct {
+	system    jails.JailSystem
+	config    jails.ConfigWriter
+	autostart jails.Autostarter
+}
+
+// newJailAdapters selects the implementations named by adapter. An unknown
+// name is an error rather than a silent fallback: which adapter is running
+// determines whether real jails are touched.
+func newJailAdapters(adapter string) (jailAdapters, error) {
 	switch adapter {
 	case config.AdapterFreeBSD:
-		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+		a := freebsd.NewAdapter(system.NewExecCommandRunner())
+		return jailAdapters{system: a, config: a, autostart: a}, nil
 	case config.AdapterFake:
-		return fake.NewJailSystem(), nil
+		f := fake.NewJailSystem()
+		return jailAdapters{system: f, config: f, autostart: f}, nil
 	default:
-		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+		return jailAdapters{}, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)
 	}
 }

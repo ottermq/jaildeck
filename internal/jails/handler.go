@@ -744,7 +744,7 @@ func (h *JailHandler) Reclone(w http.ResponseWriter, r *http.Request) {
 		// A failure after the datasets started moving carries the recovery
 		// information, and an error message alone would throw it away.
 		if result.FailedAt != "" {
-			common.WriteJSON(w, statusForReclone(err), result)
+			common.WriteJSON(w, statusForPartial(err), result)
 			return
 		}
 		common.HandlerError(w, err)
@@ -753,9 +753,10 @@ func (h *JailHandler) Reclone(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, result)
 }
 
-// statusForReclone keeps a refusal a refusal. A template that does not exist
-// is a 404 whether or not anything had started.
-func statusForReclone(err error) int {
+// statusForPartial keeps a refusal a refusal when the response carries a
+// partly-done operation. A template that does not exist is a 404 whether or
+// not anything had started.
+func statusForPartial(err error) int {
 	var appErr *common.AppError
 	if errors.As(err, &appErr) {
 		return appErr.Code
@@ -829,4 +830,66 @@ func (h *JailHandler) MakeTemplate(w http.ResponseWriter, r *http.Request) {
 type Template struct {
 	Name    string `json:"name"`
 	Dataset string `json:"dataset"`
+}
+
+// Create builds a jail from a ready template.
+//
+// @Summary      Create a jail
+// @Description  Clones a ready template's snapshot into the jail's own dataset, writes
+// @Description  its stanza to /etc/jail.conf.d/<name>.conf, optionally adds it to
+// @Description  rc.conf's jail_list, and starts it (JD-007, JD-030).
+// @Description
+// @Description  **The start is confirmed, not assumed.** `service jail start` exits 0
+// @Description  whether or not the jail came up, so the jail is read back from jls before
+// @Description  this reports it running.
+// @Description
+// @Description  **If a step fails, nothing is undone.** The response names the step and
+// @Description  says what exists — a dataset that was cloned stays cloned, a stanza that
+// @Description  was written stays written. Rolling back automatically is a second
+// @Description  destructive operation run at the moment least is known about the state.
+// @Description
+// @Description  The template is the full dataset@snapshot of a template that is ready;
+// @Description  GET /api/templates lists them with the snapshot each one offers. The
+// @Description  jail's root is cloned into <pool>/jails/containers/<name>, in the
+// @Description  template's own pool, because a clone cannot cross one.
+// @Description
+// @Description  Network modes: `alias` (one address on a host interface, needs ip4 and
+// @Description  interface), `inherit` (the host's addresses and its stack), `disable`
+// @Description  (no network, the default). `vnet` is decided (JD-017) and not built yet.
+// @Tags         jails
+// @Accept       json
+// @Produce      json
+// @Param        spec  body      Spec  true  "The jail to create"
+// @Success      201   {object}  Created
+// @Failure      400   {object}  common.ErrorResponse  "A malformed spec: see the message for the field"
+// @Failure      401   {object}  common.ErrorResponse
+// @Failure      404   {object}  common.ErrorResponse  "No such template snapshot"
+// @Failure      409   {object}  common.ErrorResponse  "A jail of that name already exists, or its configuration file does"
+// @Failure      500   {object}  Created               "A step failed; the body says which and what exists"
+// @Failure      501   {object}  common.ErrorResponse  "This Jail Deck has no storage wired"
+// @Security     BearerAuth
+// @Router       /jails [post]
+func (h *JailHandler) Create(w http.ResponseWriter, r *http.Request) {
+	var spec Spec
+	if err := decodeJSON(r, &spec); err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+
+	result, err := h.service.Create(r.Context(), spec)
+	if err != nil {
+		// Once the root exists there is something the caller has to know
+		// about, and an error message on its own would throw it away. Before
+		// that -- a name already taken, a template that is not there, a clone
+		// that failed -- nothing was created, so the plain error is the whole
+		// answer and the empty result would only bury it.
+		if result.Root != "" {
+			result.Error = err.Error()
+			common.WriteJSON(w, statusForPartial(err), result)
+			return
+		}
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusCreated, result)
 }

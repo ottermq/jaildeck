@@ -179,7 +179,12 @@ service jail restart <name>
 
 `service` is the standard administrative interface FreeBSD operators already know. Building on it keeps behavior predictable instead of reimplementing jail lifecycle management at a lower level.
 
-**To verify (2026-10-21):** that `service jail start|stop` behaves as expected with VNET stanzas whose `exec.prestart`/`exec.poststop` create and destroy epairs (JD-017), and how `jail_enable`/`jail_list` autostart interacts with `jail.conf.d` on 15.1. Neither is expected to change this decision; both are checked in Jail Provisioning.
+**Verified 2026-10-24** on 15.1-RELEASE-p5, against both questions this decision left open:
+
+- `service jail start|stop <name>` drives a VNET stanza whose `exec.prestart` and `exec.poststop` create and destroy the epair, exactly as JD-017 assumed. The host end joins the bridge with the `private` flag set, the jail end is moved into the vnet, the jail's own `/etc/rc` configures it, and the stop takes both ends away again.
+- Autostart reads `jail_list`, and a jail whose only configuration is `/etc/jail.conf.d/<name>.conf` starts from it. `service jail start <name>` works just as well for a name that is *not* in the list, so membership means "start at boot" and nothing more.
+
+Neither answer changes this decision. What they did change is how much `service` can be trusted to *report*, which is JD-030.
 
 ---
 
@@ -1077,6 +1082,77 @@ A successful removal on `/templates/{name}` navigates back to the list, because 
 A jail's **own** dataset can be read but not written. Its native properties show beside it like any other dataset's, and there is no Properties button, because `PUT /api/jails/{name}/datasets/{child}` writes to a child and there is no route to the dataset the jail runs from. Offering the form anyway would be offering a request that cannot be made.
 
 *(Until [#55](https://github.com/ottermq/jaildeck/issues/55) the properties were not reported at all, so no dataset could be edited from the page. That gap is closed; this narrower one is what is left of it.)*
+
+---
+
+## JD-030 — Creating and Destroying a Jail
+
+**Status:** Locked — 2026-10-24
+
+JD-005 decided that lifecycle goes through `service jail`. JD-007 decided that a jail is a clone of a template's `@base`. This is the order those steps run in, which package owns each one, and what happens when the middle of it fails.
+
+Everything measured here was measured on isengard, 15.1-RELEASE-p5, on 2026-10-24.
+
+### The jail is configured by a file of its own
+
+`/etc/jail.conf.d/<name>.conf`, rendered with `text/template`. Jail Deck does not create or write `/etc/jail.conf`.
+
+`rc.d/jail` reads a per-jail file directly as long as `/etc/jail.conf` carries no `.include` of the directory — and if it does carry one, it prefers the shared file instead, so that a jail is never defined twice. A tool that wrote the shared file would be rewriting something that belongs to the operator, on a host that may already have jails in it. One file per jail is also one file to delete.
+
+### Autostart is membership of `jail_list`
+
+`sysrc jail_list+=<name>` to enable it, `sysrc jail_list-=<name>` to disable it. Both are idempotent: adding a name twice and removing one that was never there each change nothing and exit 0.
+
+The alternative is an `/etc/jail.conf` holding `.include "/etc/jail.conf.d/*.conf";` with `jail_list` left empty, which makes `service jail start` start everything in the directory. It is rejected because it removes the distinction: every jail that exists would boot, and "this jail exists but should not start" becomes inexpressible. Autostart is a property of a jail, and `jail_list` is where FreeBSD keeps it.
+
+The cost accepted is that Jail Deck writes to `/etc/rc.conf`. It does so through `sysrc` rather than by editing the file, so the operator's comments and ordering survive.
+
+### `service jail start` exits 0 whether or not the jail started
+
+`rc.d/jail` prints `jail(8)`'s error and returns success anyway. Measured for a jail that failed to start, and for one that was already running — both print a message and both exit 0. `jail(8)` run directly exits 1; the exit status is lost in between.
+
+So a jail is started and then **confirmed with `jls -j <name>`**. The exit code is not evidence, and neither is the absence of output.
+
+This is the second tool in this project whose exit status does not answer the question being asked of it; `freebsd-update fetch install` was the first. Both were found by measuring rather than by reading, and the lesson is recorded here rather than in a comment: when a step's success matters, Jail Deck reads the state back.
+
+### A failed start leaves the epair behind, and only Jail Deck will clean it up
+
+When a start fails after `exec.prestart` has already run, `jail(8)` does **not** run `exec.poststop`. The epair survives, still a member of the bridge. This holds whether `exec.start` failed or `prestart` itself failed partway through.
+
+Nothing else will take it away afterwards. `service jail stop <name>` does nothing and `jail -r <name>` answers `not found`, both for the same reason: the jail does not exist, so there is nothing to remove and the hook never runs. With a per-jail epair name the orphan then blocks every retry at the stanza's first line, `ifconfig epair<N> create` → `already exists`.
+
+The resolution keeps both halves where they belong:
+
+- **The stanza keeps `exec.prestart` and `exec.poststop`.** An operator who never runs Jail Deck gets a jail that starts and stops correctly, including its networking. That is the "integrate, do not replace" principle, and a generated file that only works when the generator is present would quietly break it.
+- **Jail Deck adds the step only it can take.** After a start it could not confirm, it destroys the epair that stanza would have created.
+
+The orphan is found by the description the stanza writes, `descr jail:<name>`, not by the interface name alone. A sweep that matched on name could take an interface belonging to something else on the host.
+
+The cleanup is itself a command that can fail, and when it does the orphan is **named in the error** rather than swallowed. A leaked epair someone has been told about is a minute's work; a silent one is a jail that will never start again and no clue as to why.
+
+### Destroy stops, unconfigures, and then lets ZFS have the last word
+
+In order: stop the jail, remove it from `jail_list`, delete its configuration file, destroy the dataset.
+
+Measured: `devfs` is unmounted when the jail stops, and `zfs destroy` then succeeds immediately with no busy error. Measured also: `zfs destroy` *while* the jail runs exits 1 with `pool or dataset is busy`.
+
+That refusal is kept as the last line of defence rather than replaced by a check of Jail Deck's own. A check reads the state and then acts on what it read; the mount is held for as long as the jail is up. Only one of those can lose a race.
+
+Destruction takes `DELETE /api/jails/{name}?confirm=<name>` — the same typed confirmation JD-024 asks for before a snapshot goes and JD-027 before a template does, for the same reason.
+
+A jail whose dataset has snapshots or clones is **refused**, with the dependents named, as JD-024 already refuses. `zfs destroy -R` is never passed.
+
+### Orchestration lives in `jails`; the primitives stay in `storage`
+
+The `jails` context owns the order of the steps, because the order is a rule about jails: confirm the template's `@base`, clone it, render the configuration, set autostart, start, confirm. Cloning a snapshot, creating a child dataset and destroying a root belong to `storage`, reached through ports that `jails` defines — the direction JD-010 set, and the one `storage.JailSource` already implements for the storage writes.
+
+The alternative, a single `storage` method that creates a jail end to end, would put the knowledge that a jail is "clone, then configure, then start" inside the package whose subject is datasets.
+
+### A half-created jail is reported, not rolled back
+
+If the configuration write fails after the clone succeeded, the clone stays. The response names the step that stopped and what exists, and nothing is undone — the same position JD-026 takes for a re-clone, and for the same reason: an automatic rollback is a second destructive operation running at the moment least is known about the state.
+
+The epair is the one exception, and it is an exception precisely because it is not recoverable state. Everything else a half-created jail leaves behind can be looked at, kept or removed deliberately. A leftover epair can only block the retry.
 
 ---
 

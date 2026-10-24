@@ -6,6 +6,10 @@ func RegisterJailRoutes(r chi.Router, h *JailHandler) {
 	r.Route("/jails", func(r chi.Router) {
 
 		r.Get("/", h.List)
+		// POST creates a jail. The idempotent PUT /api/jails/{name} an
+		// automation client wants (JD-016) is the same spec by another verb,
+		// and lands with the diff it has to answer with.
+		r.Post("/", h.Create)
 
 		r.Route("/{name}", func(r chi.Router) {
 			r.Get("/", h.Get)

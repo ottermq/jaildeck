@@ -218,6 +218,8 @@ Creating a jail is a two-stage process:
    `freebsd-update -b <root> --currently-running <release> --not-running-from-cron fetch install`, measured against the real tool on the deployment host: the **plain release** is what `--currently-running` wants, not a patch level, because a freshly unpacked `base.txz` is exactly the release as published — it answered "updating to 15.1-RELEASE-p6". `--not-running-from-cron` is what makes it non-interactive, and `fetch install` in one invocation exits 0 even when there is nothing new, which is the ordinary case for a recent release.
 2. **Jail creation** (per jail, requires a ready template): clone the template snapshot into the jail's own dataset, generate the `jail.conf.d/<name>.conf` stanza, start the jail, and hand off to in-jail provisioning (`jexec` + `pkg`) for service-specific setup.
 
+   *Built 2026-10-24 for `inherit`, `alias` and `disable` networking; the order and the failure path are JD-030.* The root is cloned into `<pool>/jails/containers/<name>` **in the template's own pool**, because a clone cannot cross one. The start is confirmed with `jls` rather than believed from an exit code. VNET (JD-017) and limits (JD-018) extend the same spec and are not built yet.
+
 ### Rationale
 
 Templates are shared, immutable-once-snapshotted bases; jails are cheap clones of them. This keeps jail creation fast and avoids re-fetching/re-patching a userland per jail.

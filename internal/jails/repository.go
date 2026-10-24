@@ -222,3 +222,42 @@ type Recloner interface {
 type TemplateMaker interface {
 	MakeTemplate(ctx context.Context, jailPath, templateName string) (string, error)
 }
+
+// Root is a jail's own dataset, as the storage domain created it.
+type Root struct {
+	Dataset    string
+	Mountpoint string
+}
+
+// RootCloner creates a jail's root by cloning a ready template's snapshot
+// (JD-007). The jails domain defines it and the storage domain implements it,
+// which is the direction JD-010 fixed.
+type RootCloner interface {
+	// CheckTemplate refuses a template that cannot be cloned, before anything
+	// has been created. Asked first so a mistyped snapshot name costs an
+	// error rather than a dataset nobody wanted.
+	CheckTemplate(ctx context.Context, templateSnapshot string) error
+	// CloneRoot clones templateSnapshot into the conventional root for a jail
+	// of this name, <pool>/jails/containers/<name> (JD-021), and reports
+	// where it ended up mounted. A root that already exists is refused by ZFS
+	// rather than by a check here, because only ZFS can answer without racing.
+	CloneRoot(ctx context.Context, templateSnapshot, name string) (Root, error)
+}
+
+// ConfigWriter puts a jail's generated stanza on disk as its own file in
+// jail.conf.d (JD-030). The content is rendered in this package; the adapter
+// only persists it and says where it went.
+type ConfigWriter interface {
+	// WriteConfig refuses to overwrite a file that is already there. A
+	// configuration Jail Deck did not write this moment belongs to whoever
+	// did write it.
+	WriteConfig(ctx context.Context, name, content string) (string, error)
+}
+
+// Autostarter is rc.conf's jail_list. Membership means "start at boot" and
+// nothing else: a jail is startable by name whether or not it is listed
+// (JD-030).
+type Autostarter interface {
+	// SetAutostart returns the command it ran, for the audit log.
+	SetAutostart(ctx context.Context, name string, enabled bool) (string, error)
+}

@@ -63,6 +63,12 @@ type Dependencies struct {
 	DatasetMover  DatasetMover
 	Recloner      Recloner
 	TemplateMaker TemplateMaker
+
+	// The three creating a jail needs (JD-030). Absent, Create answers 501
+	// rather than failing halfway through.
+	RootCloner RootCloner
+	Config     ConfigWriter
+	Autostart  Autostarter
 }
 
 type JailService struct {
@@ -74,6 +80,9 @@ type JailService struct {
 	datasetMover    DatasetMover
 	recloner        Recloner
 	templateMaker   TemplateMaker
+	rootCloner      RootCloner
+	config          ConfigWriter
+	autostart       Autostarter
 }
 
 func NewJailService(deps Dependencies) *JailService {
@@ -86,6 +95,9 @@ func NewJailService(deps Dependencies) *JailService {
 		datasetMover:    deps.DatasetMover,
 		recloner:        deps.Recloner,
 		templateMaker:   deps.TemplateMaker,
+		rootCloner:      deps.RootCloner,
+		config:          deps.Config,
+		autostart:       deps.Autostart,
 	}
 }
 

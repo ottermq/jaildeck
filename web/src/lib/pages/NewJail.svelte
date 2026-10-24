@@ -342,8 +342,8 @@ let stoppedAt = $derived(failed?.failed_at)
 
 {#if !created}
     <form class="form form--page" onsubmit={submit}>
-        <fieldset class="group">
-            <legend>Source</legend>
+        <section class="group" aria-labelledby="group-source">
+            <h2 class="group__title" id="group-source">Source</h2>
             <div class="form__row">
                 <div class="field field--grow">
                     <label for="template">Template</label>
@@ -386,10 +386,10 @@ let stoppedAt = $derived(failed?.failed_at)
                 jail(8) reads a dotted name as a hierarchical jail, and rc.d/jail maps it to
                 an underscore, so two such names collide there.
             </p>
-        </fieldset>
+        </section>
 
-        <fieldset class="group">
-            <legend>Network</legend>
+        <section class="group" aria-labelledby="group-network">
+            <h2 class="group__title" id="group-network">Network</h2>
             <div class="form__row">
                 <div class="field field--grow">
                     <label for="mode">Mode</label>
@@ -446,10 +446,10 @@ let stoppedAt = $derived(failed?.failed_at)
                     private member still reaches non-private ones and the bridge itself.
                 </p>
             {/if}
-        </fieldset>
+        </section>
 
-        <fieldset class="group">
-            <legend>After it is built</legend>
+        <section class="group" aria-labelledby="group-after">
+            <h2 class="group__title" id="group-after">After it is built</h2>
             <label class="check">
                 <input type="checkbox" bind:checked={start} />
                 Start it once it is configured
@@ -458,15 +458,15 @@ let stoppedAt = $derived(failed?.failed_at)
                 <input type="checkbox" bind:checked={autostart} />
                 Bring it back after a reboot — adds it to rc.conf’s <code>jail_list</code>
             </label>
-        </fieldset>
+        </section>
 
-        <fieldset class="group">
-            <legend class="group__legend">
-                Limits
+        <section class="group" aria-labelledby="group-limits">
+            <div class="group__head">
+                <h2 class="group__title" id="group-limits">Limits</h2>
                 <button type="button" class="btn btn--small" onclick={() => (showLimits = !showLimits)}>
                     {showLimits ? 'Hide' : 'Set limits'}
                 </button>
-            </legend>
+            </div>
             {#if showLimits}
                 <div class="form__row">
                     {#each limitFields as field (field.name)}
@@ -490,15 +490,15 @@ let stoppedAt = $derived(failed?.failed_at)
                     <a href="/host" onclick={(e) => onNavClick(e, '/host')}>host report</a> answers.
                 </p>
             {/if}
-        </fieldset>
+        </section>
 
-        <fieldset class="group">
-            <legend class="group__legend">
-                Jail parameters
+        <section class="group" aria-labelledby="group-params">
+            <div class="group__head">
+                <h2 class="group__title" id="group-params">Jail parameters</h2>
                 <button type="button" class="btn btn--small" onclick={() => (showParams = !showParams)}>
                     {showParams ? 'Hide' : 'Set parameters'}
                 </button>
-            </legend>
+            </div>
             {#if showParams}
                 <div class="form__row">
                     {#each parameterFields as field (field.name)}
@@ -527,15 +527,15 @@ let stoppedAt = $derived(failed?.failed_at)
                     refused with the parameter named.
                 </p>
             {/if}
-        </fieldset>
+        </section>
 
-        <fieldset class="group">
-            <legend class="group__legend">
-                Datasets and tags
+        <section class="group" aria-labelledby="group-storage">
+            <div class="group__head">
+                <h2 class="group__title" id="group-storage">Datasets and tags</h2>
                 <button type="button" class="btn btn--small" onclick={() => (showStorage = !showStorage)}>
                     {showStorage ? 'Hide' : 'Add storage'}
                 </button>
-            </legend>
+            </div>
             {#if showStorage}
                 {#each children as child (child.id)}
                     <div class="form__row row--child">
@@ -591,7 +591,7 @@ let stoppedAt = $derived(failed?.failed_at)
                     needs a colon, and Jail Deck never reads what it says.
                 </p>
             {/if}
-        </fieldset>
+        </section>
 
         {#if submitError && !report}
             <p class="notice notice--error" role="alert">{submitError}</p>
@@ -611,38 +611,43 @@ let stoppedAt = $derived(failed?.failed_at)
 {/if}
 
 <style>
+/* The page's own form: no sunken panel, because this page *is* the form.
+   Spacing is on the sections rather than a gap here, so the rule between two
+   of them sits the same distance from each. */
 .form--page {
+    display: flex;
+    flex-direction: column;
     margin-top: var(--space-5);
-    gap: var(--space-5);
 }
 
+/* A section rather than a fieldset: a legend is rendered inside the
+   fieldset's top border, where it cuts through the rule and crowds whatever
+   sits above it. The grouping is kept by aria-labelledby. */
 .group {
-    border: 0;
-    border-top: 1px solid var(--border);
-    padding: var(--space-4) 0 0;
-    margin: 0;
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+    margin: 0;
 }
 
-.group:first-of-type {
-    border-top: 0;
-    padding-top: 0;
+.group + .group {
+    border-top: 1px solid var(--border);
+    margin-top: var(--space-5);
+    padding-top: var(--space-5);
 }
 
-legend {
+.group__title {
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    padding: 0;
+    margin: 0;
 }
 
 /* A section that is usually left alone carries its own reveal, so the form
    reads as what this jail needs rather than as what was skipped. */
-.group__legend {
+.group__head {
     display: flex;
     align-items: center;
     gap: var(--space-3);
@@ -675,6 +680,17 @@ legend {
     gap: var(--space-2);
     justify-content: flex-end;
     align-items: center;
+    margin-top: var(--space-5);
+    padding-top: var(--space-5);
+    border-top: 1px solid var(--border);
+}
+
+/* The in-section ones add rows rather than submit, so they carry neither the
+   rule nor the margin. */
+.group .form__actions {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
 }
 
 .form__actions--left {
@@ -696,6 +712,13 @@ legend {
     font-size: 0.85rem;
     color: var(--text-muted);
     max-width: 68ch;
+}
+
+/* In the report the hints follow the steps rather than a heading, so they
+   need the gap the form's own layout supplies elsewhere. */
+.panel .hint,
+.panel .notice {
+    margin-top: var(--space-3);
 }
 
 .panel {

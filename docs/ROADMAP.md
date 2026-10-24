@@ -258,14 +258,16 @@ Goal: create and destroy jails, including VNET jails with resource limits, from 
 - confirm the template's `@base` snapshot exists (precondition), then clone it into the jail's own dataset
 - generate `jail.conf.d/<name>.conf` with `text/template`, not string concatenation
 - **VNET:** the stanza creates the epair in `exec.prestart` and destroys it in `exec.poststop`, adds the host end to the configured bridge as a `private` member, and sets the address and default route inside the jail. The bridge itself is the operator's (Host Setup reports it). *Built 2026-10-24: the unit is chosen from what no interface uses and no stanza claims, `lo0` and the address come up before `/etc/rc`, and a start that cannot be confirmed has its epair destroyed (JD-017, JD-030).*
-- **limits:** rctl rules and cpuset applied when the jail starts and removed when it stops — by `exec.*` hooks or by the adapter, see the open questions
-- **parameters:** only from the allowlist in JD-018; anything else is rejected with the parameter named
+- **limits:** rctl rules and cpuset applied when the jail starts and removed when it stops — by `exec.*` hooks or by the adapter, see the open questions. *Built 2026-10-24 with hooks: `exec.poststart` applies them and `exec.prestop` takes the rules back, so a jail started from a shell is limited the same way and a jail whose limits cannot be applied does not start at all. Rules are keyed to the name and outlive the jail, so a create refuses a name that still carries them and a destroy sweeps what is left (JD-018).*
+- **parameters:** only from the allowlist in JD-018; anything else is rejected with the parameter named. *Built 2026-10-24: nine parameters, each with its own range or enumeration, and `devfs_ruleset` checked against the kernel's loaded sets — an unloaded number gives the jail the host's whole `/dev` (JD-018).*
 - child datasets and user properties created through the Storage Writes primitives
 - start the jail; surface clear step-by-step failure state — a failed config write after a successful clone must not leave an undiagnosable half-created jail
 - destruction: stop, remove config, destroy the dataset. The sharpest edge in the tool — explicit confirmation, a clear audit entry, and a refusal or warning when the dataset has dependent snapshots or clones. *Built 2026-10-24: `DELETE /api/jails/{name}?confirm=<name>` — children go with it and are named, snapshots and clones refuse it, and `zfs destroy` refusing a busy dataset is the guard rather than a check of our own (JD-030).*
 - **start is confirmed, not assumed:** `service jail start` exits 0 whether or not the jail came up, so every start is followed by `jls -j <name>` (JD-030)
 - **a failed start leaks its epair:** `exec.poststop` does not run when the start fails, and nothing afterwards will run it, so Jail Deck destroys the orphan itself — found by the `descr jail:<name>` the stanza writes (JD-030)
 - autostart is `sysrc jail_list+=<name>`; Jail Deck writes no `/etc/jail.conf` (JD-030)
+- **a failed start leaves its rctl rules too:** `exec.prestop` does not run either, so whatever `exec.poststart` had already applied stays in the kernel and Jail Deck takes it back — the same cleanup as the epair, for a leftover that would otherwise be inherited by the next jail of that name (JD-018)
+- **neither sweep is audited.** The audit log records the steps a create or a destroy is made of; the two cleanups of things that should not have been there are reported in the response instead. Worth revisiting — they are host mutations
 
 *Settled 2026-10-24: orchestration ownership across the `jails`/`storage` boundary, and both of the behaviours JD-005 left to verify — all measured on 15.1-RELEASE-p5 and recorded in JD-030.*
 
@@ -442,7 +444,7 @@ Applies across every milestone: keep docs current as domains land, keep parser/f
 
 Added 2026-10-21 with the host-agent scope:
 
-- Should rctl rules be applied by jail.conf `exec.*` hooks or by the adapter? Leaning **hooks**: they survive a Jail Deck outage and behave the same when a jail is started with `service jail start` from a shell
+- ~~Should rctl rules be applied by jail.conf `exec.*` hooks or by the adapter?~~ **Answered 2026-10-24 (JD-018): hooks.** Measuring added a second reason to the first: jail(8) destroys a jail whose `exec.poststart` fails, so a jail that could not be limited never runs — which an adapter could only have achieved by stopping a jail it had just started
 - What are the exec timeout cap and output size cap?
 - Does `/metrics` share auth with the API, or bind a separate loopback/socket listener?
 - Are derived templates (release + packages) owned by the template domain, or are they exec + snapshot from the caller's point of view?

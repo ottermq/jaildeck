@@ -80,6 +80,12 @@ type Dependencies struct {
 	Bridges BridgeSource
 	Epairs  EpairAllocator
 	Epair   EpairCleaner
+
+	// The two a jail with limits or parameters needs (JD-018). Both only
+	// ever refuse or clean up -- the stanza is what applies a limit -- so
+	// absent, a create still works and simply cannot make those refusals.
+	Rctl          RctlSystem
+	DevfsRulesets DevfsRulesetSource
 }
 
 type JailService struct {
@@ -99,6 +105,8 @@ type JailService struct {
 	bridges         BridgeSource
 	epairs          EpairAllocator
 	epair           EpairCleaner
+	rctl            RctlSystem
+	devfsRulesets   DevfsRulesetSource
 }
 
 func NewJailService(deps Dependencies) *JailService {
@@ -119,6 +127,8 @@ func NewJailService(deps Dependencies) *JailService {
 		bridges:         deps.Bridges,
 		epairs:          deps.Epairs,
 		epair:           deps.Epair,
+		rctl:            deps.Rctl,
+		devfsRulesets:   deps.DevfsRulesets,
 	}
 }
 

@@ -345,7 +345,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Clones a ready template's snapshot into the jail's own dataset, writes\nits stanza to /etc/jail.conf.d/\u003cname\u003e.conf, optionally adds it to\nrc.conf's jail_list, and starts it (JD-007, JD-030).\n\n**The start is confirmed, not assumed.** `service jail start` exits 0\nwhether or not the jail came up, so the jail is read back from jls before\nthis reports it running.\n\n**If a step fails, nothing is undone.** The response names the step and\nsays what exists — a dataset that was cloned stays cloned, a stanza that\nwas written stays written. Rolling back automatically is a second\ndestructive operation run at the moment least is known about the state.\n\nThe template is the full dataset@snapshot of a template that is ready;\nGET /api/templates lists them with the snapshot each one offers. The\njail's root is cloned into \u003cpool\u003e/jails/containers/\u003cname\u003e, in the\ntemplate's own pool, because a clone cannot cross one.\n\nNetwork modes: `alias` (one address on a host interface, needs ip4 and\ninterface), `inherit` (the host's addresses and its stack), `disable`\n(no network, the default), and `vnet`.\n\n**`vnet`** gives the jail its own network stack on an epair, with the host\nend on `bridge` — which must already exist, because **Jail Deck never\ncreates a bridge** (JD-017); `GET /api/host` reports the ones that do.\n`private: true` makes the host end a private bridge member. Measured: two\n**private** members cannot reach each other at layer 2, but a private\nmember still reaches non-private ones and the bridge itself — so the\nisolation only holds where every jail on the bridge asks for it.\n`ip4` and `gateway`\nare set inside the jail and are both optional — a VNET jail may instead\nget its address from DHCP of its own.\n\nThe epair is created in `exec.prestart` and destroyed in `exec.poststop`,\nso the jail gets the same network started from a shell as from here. The\nunit is chosen when the stanza is written, from what no interface uses and\nno jail configuration claims.\n\n**A VNET jail reports no `ip` in the listing.** It sets no `ip4.addr`, so\nneither `jls` nor its configuration carries one — the address is in the\njail's own stack. This response carries the one that was asked for.\n\nIf the start of a VNET jail cannot be confirmed, Jail Deck destroys the\nepair, because `jail(8)` does not run `exec.poststop` for a start that\nfailed and the orphan would block every retry (JD-030). That is the only\nthing a failed create undoes. If the cleanup itself fails, the interface\nis named in the error rather than left silent.",
+                "description": "Clones a ready template's snapshot into the jail's own dataset, writes\nits stanza to /etc/jail.conf.d/\u003cname\u003e.conf, optionally adds it to\nrc.conf's jail_list, and starts it (JD-007, JD-030).\n\n**The start is confirmed, not assumed.** `service jail start` exits 0\nwhether or not the jail came up, so the jail is read back from jls before\nthis reports it running.\n\n**If a step fails, nothing is undone.** The response names the step and\nsays what exists — a dataset that was cloned stays cloned, a stanza that\nwas written stays written. Rolling back automatically is a second\ndestructive operation run at the moment least is known about the state.\n\nThe template is the full dataset@snapshot of a template that is ready;\nGET /api/templates lists them with the snapshot each one offers. The\njail's root is cloned into \u003cpool\u003e/jails/containers/\u003cname\u003e, in the\ntemplate's own pool, because a clone cannot cross one.\n\nNetwork modes: `alias` (one address on a host interface, needs ip4 and\ninterface), `inherit` (the host's addresses and its stack), `disable`\n(no network, the default), and `vnet`.\n\n**`vnet`** gives the jail its own network stack on an epair, with the host\nend on `bridge` — which must already exist, because **Jail Deck never\ncreates a bridge** (JD-017); `GET /api/host` reports the ones that do.\n`private: true` makes the host end a private bridge member. Measured: two\n**private** members cannot reach each other at layer 2, but a private\nmember still reaches non-private ones and the bridge itself — so the\nisolation only holds where every jail on the bridge asks for it.\n`ip4` and `gateway`\nare set inside the jail and are both optional — a VNET jail may instead\nget its address from DHCP of its own.\n\nThe epair is created in `exec.prestart` and destroyed in `exec.poststop`,\nso the jail gets the same network started from a shell as from here. The\nunit is chosen when the stanza is written, from what no interface uses and\nno jail configuration claims.\n\n**A VNET jail reports no `ip` in the listing.** It sets no `ip4.addr`, so\nneither `jls` nor its configuration carries one — the address is in the\njail's own stack. This response carries the one that was asked for.\n\nIf the start of a VNET jail cannot be confirmed, Jail Deck destroys the\nepair, because `jail(8)` does not run `exec.poststop` for a start that\nfailed and the orphan would block every retry (JD-030). That is the only\nthing a failed create undoes. If the cleanup itself fails, the interface\nis named in the error rather than left silent.\n\n**`limits`** are rctl rules — `memoryuse`, `vmemoryuse`, `maxproc`,\n`openfiles`, `pcpu` — plus a `cpuset`. They are applied by the stanza's\n`exec.poststart` and removed by its `exec.prestop`, so a jail started\nfrom a shell is limited the same way, and a jail whose limits cannot be\napplied does not start at all: `jail(8)` destroys a jail whose poststart\nfails (JD-018). Sizes take a K, M, G or T suffix; `pcpu` is percent of\none core.\n\nrctl rules need `kern.racct.enable=1`, which `GET /api/host/readiness`\nreports; a spec asking for them on a host without it is refused rather\nthan built. `cpuset` needs no accounting and is allowed either way.\n\n**rctl rules are keyed to the jail's name, not to the jail**, and outlive\nit. A create is refused when rules are still keyed to the name it was\ngiven — otherwise the new jail would silently run under them — and the\nrefusal lists them and the one command that clears them. A start that\ncould not be confirmed has whatever rules it managed to apply taken back\nhere, and says so in `rules_removed`.\n\n**`params`** are jail(8) parameters, and only these:\n`devfs_ruleset`, `securelevel` (-1..3), `enforce_statfs` (0..2),\n`children.max` (0 only), `sysvmsg`, `sysvsem`, `sysvshm`\n(`\"disable\"` or `\"new\"`), `allow.chflags` and `allow.set_hostname`.\nAnything else is refused with the parameter named — an allowlist, because\na denylist fails open the day jail(8) gains a parameter (JD-018).\n\n`devfs_ruleset` is checked against the rulesets the kernel has loaded.\nMeasured on 15.1-RELEASE-p5: a number it does not have gives the jail the\nhost's **whole /dev** — disks, mem, kmem, bpf — silently, while `jls`\nreports the number that was asked for. Rulesets live in\n/etc/devfs.rules and are yours; Jail Deck never writes them.",
                 "consumes": [
                     "application/json"
                 ],
@@ -375,7 +375,7 @@
                         }
                     },
                     "400": {
-                        "description": "A malformed spec: see the message for the field",
+                        "description": "A malformed spec, a parameter that is not allowed, a devfs ruleset the kernel has not loaded, or rctl limits on a host that is not accounting",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -393,7 +393,7 @@
                         }
                     },
                     "409": {
-                        "description": "A jail of that name already exists, or its configuration file does",
+                        "description": "A jail of that name already exists, its configuration file does, or rctl rules are still keyed to the name",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -470,7 +470,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Stops the jail, takes it out of rc.conf's `jail_list`, deletes\n/etc/jail.conf.d/\u003cname\u003e.conf, and destroys its dataset — in that order\n(JD-030).\n\nA VNET jail's epair goes when it stops, through its own `exec.poststop`.\nOne left behind by an earlier failed start is destroyed here too, and\nnamed in `epair` — otherwise it would outlive the jail it belongs to.\n\n**Child datasets go with it** (JD-007). They are listed in `taken`. A\ndataset worth keeping has to stop being a child first: `POST\n/api/jails/{name}/datasets/{child}/retain` moves it out.\n\n**Snapshots, clones and holds refuse the destroy**, with each one named\nand nothing touched. Each was kept on purpose, so each goes first — and\n`zfs destroy -R` is never passed, which is what would make this check\ndecorative.\n\n**The last word is ZFS's.** Nothing here re-checks that the jail is down\nbefore destroying its dataset: `zfs destroy` refuses one whose jail is\nrunning with `pool or dataset is busy`, and a check of our own would read\nthe state and then act on what it read, while the mount is held the whole\ntime. Only one of those can lose a race.\n\nA jail with no file of its own in jail.conf.d is refused: its block is in\n/etc/jail.conf, which belongs to you and which Jail Deck never writes, so\ndestroying the dataset would leave the jail declared and pointing nowhere.\n\n**If a step fails, nothing is undone.** The body names the step and says\nwhat was already done — a stopped jail stays stopped.",
+                "description": "Stops the jail, takes it out of rc.conf's `jail_list`, deletes\n/etc/jail.conf.d/\u003cname\u003e.conf, and destroys its dataset — in that order\n(JD-030).\n\nA VNET jail's epair goes when it stops, through its own `exec.poststop`.\nOne left behind by an earlier failed start is destroyed here too, and\nnamed in `epair` — otherwise it would outlive the jail it belongs to.\n\n**rctl rules are cleared on the same terms**, and named in `rules`. A\njail stopped cleanly has had them removed by its own `exec.prestop`, so\nnormally there are none; one left behind matters more than a stranded\ninterface, because rules are keyed to the name and the next jail called\nthis would inherit them (JD-018). Neither sweep can fail the destroy:\nwhat could not be cleared is reported in `epair_error` or `rules_error`.\n\n**Child datasets go with it** (JD-007). They are listed in `taken`. A\ndataset worth keeping has to stop being a child first: `POST\n/api/jails/{name}/datasets/{child}/retain` moves it out.\n\n**Snapshots, clones and holds refuse the destroy**, with each one named\nand nothing touched. Each was kept on purpose, so each goes first — and\n`zfs destroy -R` is never passed, which is what would make this check\ndecorative.\n\n**The last word is ZFS's.** Nothing here re-checks that the jail is down\nbefore destroying its dataset: `zfs destroy` refuses one whose jail is\nrunning with `pool or dataset is busy`, and a check of our own would read\nthe state and then act on what it read, while the mount is held the whole\ntime. Only one of those can lose a race.\n\nA jail with no file of its own in jail.conf.d is refused: its block is in\n/etc/jail.conf, which belongs to you and which Jail Deck never writes, so\ndestroying the dataset would leave the jail declared and pointing nowhere.\n\n**If a step fails, nothing is undone.** The body names the step and says\nwhat was already done — a stopped jail stays stopped.",
                 "produces": [
                     "application/json"
                 ],
@@ -2336,6 +2336,17 @@
                     "description": "Root is the jail's own dataset and Mountpoint is where it is mounted,\nwhich is the jail's path.",
                     "type": "string"
                 },
+                "rules_error": {
+                    "description": "RulesError says why they could not be taken back. The next create of\nthis name will refuse until they are gone, and say so.",
+                    "type": "string"
+                },
+                "rules_removed": {
+                    "description": "RulesRemoved are the rctl rules taken back after a start that could\nnot be confirmed. A start that fails part way through exec.poststart\nkeeps the rules it had already added and never runs exec.prestop, so\nthey would otherwise outlive the jail they are named after (JD-018).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "running": {
                     "type": "boolean"
                 }
@@ -2478,6 +2489,17 @@
                     "description": "Root is the jail's own dataset, named even when the destroy was\nrefused -- it is the dataset an operator would go and look at.",
                     "type": "string"
                 },
+                "rules": {
+                    "description": "Rules are the rctl rules cleared with the jail. Like the epair there\nare normally none: a jail stopped cleanly has had them removed by its\nown exec.prestop. One turns up here when an earlier start failed\n(JD-018).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "rules_error": {
+                    "description": "RulesError says why they could not be cleared, on the same terms as\nEpairError -- except that a leftover rule is worse than a stranded\ninterface, because the next jail of this name would inherit it.",
+                    "type": "string"
+                },
                 "stopped": {
                     "description": "Stopped says the jail was running and this stopped it.",
                     "type": "boolean"
@@ -2541,6 +2563,32 @@
                 "JailStatusRunning",
                 "JailStatusStopped"
             ]
+        },
+        "jails.Limits": {
+            "type": "object",
+            "properties": {
+                "cpuset": {
+                    "description": "CPUSet is the cpu list the jail is pinned to: \"0-3\", \"0-3,8\", \"2\". It\nis not an rctl rule and needs no accounting, so it is the one limit a\nhost with kern.racct.enable=0 can still have.",
+                    "type": "string"
+                },
+                "maxproc": {
+                    "type": "integer"
+                },
+                "memoryuse": {
+                    "description": "MemoryUse is resident memory and VMemoryUse is address space. Both are\na byte count with an optional K, M, G or T suffix, in either case --\nwhat rctl(8) accepts, measured.",
+                    "type": "string"
+                },
+                "openfiles": {
+                    "type": "integer"
+                },
+                "pcpu": {
+                    "description": "PCPU is percent of one core: 100 is a whole core, and a sixteen-core\nhost takes up to 1600. How many the host has is the host's to judge,\nand it refuses more than it has (JD-012).",
+                    "type": "integer"
+                },
+                "vmemoryuse": {
+                    "type": "string"
+                }
+            }
         },
         "jails.Network": {
             "type": "object",
@@ -2740,11 +2788,24 @@
                     "description": "Hostname defaults to the jail's name, which is what an operator writing\nthe stanza by hand almost always sets it to.",
                     "type": "string"
                 },
+                "limits": {
+                    "description": "Limits are rctl rules and a cpuset, applied by the generated stanza\nwhen the jail starts (JD-018).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/jails.Limits"
+                        }
+                    ]
+                },
                 "name": {
                     "type": "string"
                 },
                 "network": {
                     "$ref": "#/definitions/jails.Network"
+                },
+                "params": {
+                    "description": "Params are jail(8) parameters, and only ones on the allowlist: the\nAPI refuses anything else, naming it. The values are whatever\njail(8) wants -- a number for devfs_ruleset, a word for sysvshm, a\nflag for allow.chflags -- so the map is typed by the allowlist\nrather than by Go (JD-018).",
+                    "type": "object",
+                    "additionalProperties": {}
                 },
                 "start": {
                     "description": "Start says whether to start the jail once it is configured. A pointer\nbecause absent means yes: creating a jail and leaving it down is the\nunusual request, and it should be the one that has to be spelled out.",

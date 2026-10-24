@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,6 +73,14 @@ func (s *JailService) Create(ctx context.Context, spec Spec) (Created, error) {
 		return result, err
 	}
 	if err := s.checkBridge(ctx, spec.Network); err != nil {
+		result.FailedAt = StepCheck
+		return result, err
+	}
+	if err := s.checkRctl(ctx, spec); err != nil {
+		result.FailedAt = StepCheck
+		return result, err
+	}
+	if err := s.checkDevfsRuleset(ctx, spec); err != nil {
 		result.FailedAt = StepCheck
 		return result, err
 	}
@@ -146,6 +155,7 @@ func (s *JailService) Create(ctx context.Context, spec Spec) (Created, error) {
 	result.Jail = started.Jail
 	if startErr != nil {
 		result.FailedAt = StepStart
+		s.cleanRules(opCtx, spec, &result)
 		return result, s.cleanEpair(opCtx, spec, &result, startErr)
 	}
 	result.Running = true
@@ -175,6 +185,131 @@ func (s *JailService) checkBridge(ctx context.Context, network Network) error {
 	}
 	return common.NewAppError(http.StatusBadRequest, fmt.Sprintf(
 		"no bridge named %q; %s. Jail Deck never creates one (JD-017)", network.Bridge, have))
+}
+
+// checkRctl makes the two refusals the kernel's accounting calls for, before
+// anything is created.
+//
+// A spec asking for rctl limits on a host that is not accounting is refused
+// rather than built: the jail would not start anyway -- jail(8) destroys a
+// jail whose exec.poststart fails -- and "it would not start" is a worse
+// answer than "this host cannot do that, here is how to change it".
+//
+// A name whose rules are still in the kernel is refused for the opposite
+// reason: that jail *would* start, and would silently run under limits
+// nobody asked it for. Measured on 15.1-RELEASE-p5: rules are keyed to the
+// name, outlive the jail, and can even be added for a name no jail answers
+// to. Jail Deck will not clear somebody else's rules on its own -- it names
+// them and the one command that does.
+func (s *JailService) checkRctl(ctx context.Context, spec Spec) error {
+	if s.rctl == nil {
+		return nil
+	}
+	enabled, err := s.rctl.RacctEnabled(ctx)
+	if err != nil {
+		return common.NewAppError(http.StatusInternalServerError,
+			"could not read whether this host accounts resource usage: "+err.Error())
+	}
+	if !enabled {
+		if spec.Limits.rctl() {
+			return common.NewAppError(http.StatusBadRequest,
+				"this host has kern.racct.enable=0, so rctl limits cannot be applied and a jail asking "+
+					"for them would not start. Put kern.racct.enable=1 in /boot/loader.conf and reboot, "+
+					"or ask only for limits.cpuset, which needs no accounting (JD-018)")
+		}
+		// Nothing is accounted, so nothing can have been left behind either.
+		return nil
+	}
+	rules, err := s.rctl.JailRules(ctx, spec.Name)
+	if err != nil {
+		return common.NewAppError(http.StatusInternalServerError,
+			"could not read the rctl rules keyed to "+spec.Name+": "+err.Error())
+	}
+	if len(rules) == 0 {
+		return nil
+	}
+	return common.NewAppError(http.StatusConflict, fmt.Sprintf(
+		"no jail is named %q, but %d rctl rule(s) are still keyed to that name and a new jail would "+
+			"run under them: %s. Clear them with: %s",
+		spec.Name, len(rules), strings.Join(rules, ", "), RemoveRulesCommand(spec.Name)))
+}
+
+// checkDevfsRuleset refuses a ruleset number the kernel has not loaded.
+//
+// The one check here that is about confinement rather than accuracy.
+// Measured on 15.1-RELEASE-p5: an unloaded number names an empty ruleset, an
+// empty ruleset hides nothing, and the jail comes up with the host's whole
+// /dev -- ada0, mem, kmem, io, bpf -- while jls reports the number that was
+// asked for. A jail with no devfs_ruleset at all gets the restricted set, so
+// this is strictly a failure of asking for one (JD-018).
+func (s *JailService) checkDevfsRuleset(ctx context.Context, spec Spec) error {
+	if s.devfsRulesets == nil {
+		return nil
+	}
+	wanted, asked := asInt(spec.Params["devfs_ruleset"])
+	if !asked || wanted == 0 {
+		return nil
+	}
+	loaded, err := s.devfsRulesets.DevfsRulesetNumbers(ctx)
+	if err != nil {
+		return common.NewAppError(http.StatusInternalServerError,
+			"could not read which devfs rulesets this kernel has loaded: "+err.Error())
+	}
+	if slices.Contains(loaded, wanted) {
+		return nil
+	}
+	have := "it has loaded none"
+	if len(loaded) > 0 {
+		have = "it has loaded " + joinNumbers(loaded)
+	}
+	return common.NewAppError(http.StatusBadRequest, fmt.Sprintf(
+		"this kernel has no devfs ruleset %d; %s. A jail given a ruleset the kernel does not have "+
+			"gets the host's whole /dev instead of a restricted one, so it is refused rather than "+
+			"created. Rulesets live in /etc/devfs.rules and are yours (JD-018)", wanted, have))
+}
+
+func joinNumbers(numbers []int) string {
+	text := make([]string, 0, len(numbers))
+	for _, n := range numbers {
+		text = append(text, strconv.Itoa(n))
+	}
+	return strings.Join(text, ", ")
+}
+
+// cleanRules takes back the rctl rules a start that could not be confirmed
+// had already applied.
+//
+// jail(8) destroys a jail whose exec.poststart fails and does not run
+// exec.prestop on the way, so a poststart that got as far as its second rule
+// leaves the first one in the kernel. Measured.
+//
+// Unlike the epair, a leftover rule does not block a retry on the host: the
+// retry would add the same rules again. It blocks it *here*, because the
+// next create refuses a name whose rules are still keyed to it. That is why
+// a cleanup that fails is reported with the command that clears it, rather
+// than being left to turn up later as a refusal with no history.
+func (s *JailService) cleanRules(ctx context.Context, spec Spec, result *Created) {
+	if s.rctl == nil || !spec.Limits.rctl() {
+		return
+	}
+	rules, err := s.rctl.JailRules(ctx, spec.Name)
+	if err == nil {
+		if len(rules) == 0 {
+			return
+		}
+		_, err = s.rctl.RemoveJailRules(ctx, spec.Name)
+	}
+	if err != nil {
+		result.RulesError = fmt.Sprintf(
+			"the rctl rules its start had already applied are still in the kernel, and the next "+
+				"create of %q will refuse until they are gone; clear them with: %s (%s)",
+			spec.Name, RemoveRulesCommand(spec.Name), err)
+		common.Logger(ctx, "jail").Warn("could not take back the jail's rctl rules",
+			slog.String("jail", spec.Name),
+			slog.Any("err", err))
+		return
+	}
+	result.RulesRemoved = rules
 }
 
 // cleanEpair destroys the epair a start that could not be confirmed left

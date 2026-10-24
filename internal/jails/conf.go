@@ -37,6 +37,9 @@ var confTemplate = template.Must(template.New("jail.conf").Parse(
 
 	host.hostname = "{{ .Hostname }}";
 	path = "{{ .Path }}";
+{{- range .Params }}
+	{{ .Name }} = {{ .Value }};
+{{- end }}
 
 {{- if eq .Mode "alias" }}
 	ip4.addr = {{ .IP4 }};
@@ -62,11 +65,23 @@ var confTemplate = template.Must(template.New("jail.conf").Parse(
 	exec.start += "route -q add default {{ .Gateway }}";
 {{- end }}
 	exec.start += "/bin/sh /etc/rc";
-
-	exec.poststop = "ifconfig {{ .HostEpair }} destroy";
 {{- else }}
 	ip4 = {{ .Mode }};
 	ip6 = {{ .Mode }};
+{{- end }}
+{{- if .Poststart }}
+{{ range $i, $command := .Poststart }}
+	exec.poststart {{ if $i }}+{{ end }}= "{{ $command }}";
+{{- end }}
+{{- end }}
+{{- if .Prestop }}
+{{ range $i, $command := .Prestop }}
+	exec.prestop {{ if $i }}+{{ end }}= "{{ $command }}";
+{{- end }}
+{{- end }}
+{{- if eq .Mode "vnet" }}
+
+	exec.poststop = "ifconfig {{ .HostEpair }} destroy";
 {{- end }}
 }
 `))
@@ -88,6 +103,16 @@ type confData struct {
 	Bridge  string
 	Private bool
 	Gateway string
+
+	// Params are the allowed jail(8) parameters, already rendered and in a
+	// fixed order (JD-018).
+	Params []confParam
+	// Poststart and Prestop are the commands of the two hooks that apply a
+	// jail's limits and take them away again, in the order they run. The
+	// first line of each hook assigns and the rest append, which the
+	// template does from the index rather than from a second field.
+	Poststart []string
+	Prestop   []string
 }
 
 // HostEpair is the end that stays on the host and joins the bridge.
@@ -129,6 +154,15 @@ func (spec Spec) Stanza(at Placement) (string, error) {
 		return "", common.NewAppError(http.StatusInternalServerError, fmt.Sprintf(
 			"no epair was reserved for %q, so its stanza cannot be written", spec.Name))
 	}
+	params, err := renderParams(spec.Params)
+	if err != nil {
+		// Unreachable after normalize, which refuses the same specs this
+		// does. Returned rather than ignored because Stanza is exported and
+		// the adapter's own tests call it directly.
+		return "", err
+	}
+	poststart, prestop := spec.Limits.hooks(spec.Name)
+
 	var out strings.Builder
 	data := confData{
 		Name:      spec.Name,
@@ -141,6 +175,9 @@ func (spec Spec) Stanza(at Placement) (string, error) {
 		Bridge:    spec.Network.Bridge,
 		Private:   spec.Network.Private,
 		Gateway:   spec.Network.Gateway,
+		Params:    params,
+		Poststart: poststart,
+		Prestop:   prestop,
 	}
 	if err := confTemplate.Execute(&out, data); err != nil {
 		return "", common.NewAppError(http.StatusInternalServerError,

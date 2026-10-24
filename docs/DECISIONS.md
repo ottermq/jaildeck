@@ -218,7 +218,7 @@ Creating a jail is a two-stage process:
    `freebsd-update -b <root> --currently-running <release> --not-running-from-cron fetch install`, measured against the real tool on the deployment host: the **plain release** is what `--currently-running` wants, not a patch level, because a freshly unpacked `base.txz` is exactly the release as published — it answered "updating to 15.1-RELEASE-p6". `--not-running-from-cron` is what makes it non-interactive, and `fetch install` in one invocation exits 0 even when there is nothing new, which is the ordinary case for a recent release.
 2. **Jail creation** (per jail, requires a ready template): clone the template snapshot into the jail's own dataset, generate the `jail.conf.d/<name>.conf` stanza, start the jail, and hand off to in-jail provisioning (`jexec` + `pkg`) for service-specific setup.
 
-   *Built 2026-10-24 for `inherit`, `alias` and `disable` networking; the order and the failure path are JD-030.* The root is cloned into `<pool>/jails/containers/<name>` **in the template's own pool**, because a clone cannot cross one. The start is confirmed with `jls` rather than believed from an exit code. VNET (JD-017) and limits (JD-018) extend the same spec and are not built yet.
+   *Built 2026-10-24 for `inherit`, `alias` and `disable` networking; the order and the failure path are JD-030.* The root is cloned into `<pool>/jails/containers/<name>` **in the template's own pool**, because a clone cannot cross one. The start is confirmed with `jls` rather than believed from an exit code. VNET (JD-017) and limits (JD-018) extend the same spec and are built too; child datasets and user properties are not.
 
 ### Rationale
 
@@ -604,15 +604,34 @@ A jail spec may carry limits and jail(8) parameters:
 - **devfs** references a ruleset number the operator installed. Jail Deck never appends to `/etc/devfs.rules` at runtime.
 - **Child datasets and user properties** (JD-007, JD-004) are part of the same spec, so one `PUT` describes the whole jail.
 
+**Built 2026-10-24**, measured on isengard, 15.1-RELEASE-p5. **Limits are applied by hooks**, which settles the question this decision left open, and six things it did not say were settled by measuring:
+
+- **A hook that fails takes the jail down with it.** An `exec.poststart` command exiting non-zero makes jail(8) destroy the jail it has just created — measured with a deliberately invalid rule — so a jail whose limits could not be applied never runs. That is "refusing beats running unlimited" enforced by jail(8) itself, on every start, including the ones Jail Deck knows nothing about. `service jail start` still exits 0 throughout; the `jls` confirmation from JD-030 is what notices.
+- **Rules outlive the jail.** A jail removed without `rctl -r` leaves its rules in the kernel, keyed to the name, and the next jail of that name silently inherits them — a rule can even be added for a jail that does not exist. So a create refuses a name that already carries rules, naming them and the command that clears them, and a destroy sweeps whatever is left the way it sweeps a leftover epair.
+- **A start that fails part way through `exec.poststart` keeps the rules it had already added**, and `exec.prestop` does not run. Jail Deck removes them itself, as it does the epair.
+- **`rctl -l jail:<name>` does not work** — "Operation not supported". The listing form for a jail subject is the bare filter, `rctl jail:<name>`, which exits 0 with no output when there are none and matches the name exactly rather than as a prefix. `rctl -r` on a name with no rules exits 1, "No such process", so the removal is only asked for when the listing found something.
+- **`pcpu` takes `deny`, not `throttle`**, which is the reverse of what rctl(8)'s description of `throttle` suggests: `throttle` on a jail subject is "Operation not supported".
+- **A `devfs_ruleset` the kernel has not loaded gives the jail the host's whole `/dev`** — `ada0`, `mem`, `kmem`, `io`, `bpf` — silently, while `jls` reports the ruleset number that was asked for. An unloaded number names an empty ruleset, and an empty ruleset hides nothing; a stanza with no `devfs_ruleset` at all gets the restricted set. The number is therefore checked against `devfs rule showsets` before anything is created. It is the one check here that exists for confinement rather than for accuracy.
+
+The allowlist as built is nine parameters: `devfs_ruleset`, `securelevel`, `enforce_statfs`, `children.max` (`0` only, which is what "never above 0" comes to in practice), `sysvmsg`, `sysvsem`, `sysvshm`, `allow.chflags` and `allow.set_hostname`. Each carries its own rule — a range, an enumeration or a boolean — so a value out of range is refused as precisely as an unknown name. `allow.sysvipc` is deliberately *not* on it: the three `sysv*` parameters set to `new` give a jail its own IPC namespaces, which is the same capability without the host's.
+
+Parameters Jail Deck writes itself — `path`, `host.hostname`, `ip4`, `vnet`, the `exec.*` hooks — are refused with a different message, naming the spec field that sets them instead. An operator writing `"params": {"path": …}` has made a different mistake from one writing `"params": {"allow.mount": true}`.
+
+Two values are validated here rather than left to the host (JD-012), because the host's own refusal says nothing useful: a size like `640X` and a cpu list like `abc`. `cpuset` answers the second with "Resource deadlock avoided".
+
 ### Rationale
 
 **The allowlist is the API's security boundary.** A token holder can already do anything root can (JD-003), but the API should not make it *easy* to create a jail that can escape its own confinement. A denylist fails open the day jail(8) gains a parameter; an allowlist fails closed.
 
 **Refusing beats running unlimited.** A jail that was asked for a 640M memory limit and silently got none is worse than an error: the operator believes something that is false.
 
+### Settled
+
+- **Limits are applied by `exec.poststart` and removed by `exec.prestop`**, as this decision leaned. Measuring made the case stronger than the original reason: a jail started from a shell gets the same limits, *and* a jail whose limits cannot be applied does not start at all. The adapter would have had to re-implement both, and could only have managed the second by stopping a jail it had just started.
+
 ### Still open
 
-- Whether limits are applied by `exec.poststart`/`exec.prestop` hooks in the stanza or by the adapter. Leaning hooks, for the same reason as the epair in JD-017: the jail behaves the same however it is started.
+- `allow.raw_sockets` is refused for every jail. That is right for one sharing the host's network stack and arguably too strict for a VNET jail with its own. Revisit when something actually needs `ping` inside a jail.
 
 ---
 

@@ -35,7 +35,12 @@ type JailSystem struct {
 	// epairs maps a jail name to the host end of the epair its stanza
 	// claims, so the fake can hand out units that do not collide and can
 	// answer a cleanup truthfully.
-	epairs  map[string]string
+	epairs map[string]string
+	// rules is the kernel's rctl rule list, which is where the real thing
+	// keeps them: added when the jail starts, dropped when it stops, and
+	// keyed to the name rather than to the jail, so they outlive it exactly
+	// as measured on a real host (JD-018).
+	rules   map[string][]string
 	nextJID int
 }
 
@@ -73,6 +78,7 @@ func NewJailSystem() *JailSystem {
 		configs:   map[string]string{},
 		autostart: map[string]bool{},
 		epairs:    map[string]string{},
+		rules:     map[string][]string{},
 	}
 	for _, jail := range seed {
 		s.jails[jail.Name] = jail
@@ -110,6 +116,10 @@ func (s *JailSystem) Start(ctx context.Context, name string) (jails.OperationRes
 	}
 	jail = s.runningLocked(jail)
 	s.jails[name] = jail
+	// What the stanza's exec.poststart would have done.
+	if rules := rulesInConfig(s.configs[name]); len(rules) > 0 {
+		s.rules[name] = rules
+	}
 	s.mu.Unlock()
 
 	time.Sleep(3 * time.Second)
@@ -127,6 +137,8 @@ func (s *JailSystem) Stop(ctx context.Context, name string) (jails.OperationResu
 	jail.Status = jails.JailStatusStopped
 	jail.JID = ""
 	s.jails[name] = jail
+	// And what its exec.prestop would have done.
+	delete(s.rules, name)
 	s.mu.Unlock()
 
 	time.Sleep(3 * time.Second)
@@ -210,6 +222,7 @@ func (s *JailSystem) RemoveConfig(_ context.Context, name string) (string, error
 	delete(s.configs, name)
 	delete(s.jails, name)
 	delete(s.epairs, name)
+	delete(s.rules, name)
 	s.order = slices.DeleteFunc(s.order, func(listed string) bool { return listed == name })
 	return "/fake/etc/jail.conf.d/" + name + ".conf", nil
 }
@@ -260,6 +273,44 @@ func (s *JailSystem) RemoveJailEpair(_ context.Context, name string) (string, er
 }
 
 var epairUnitRE = regexp.MustCompile(`\bepair(\d+)`)
+
+// RacctEnabled: the fake host accounts, so a spec with limits is not refused
+// for the host's sake. There is a readiness check for the other answer.
+func (s *JailSystem) RacctEnabled(context.Context) (bool, error) { return true, nil }
+
+// JailRules reports what the kernel would be holding for this name.
+func (s *JailSystem) JailRules(_ context.Context, name string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.rules[name]), nil
+}
+
+func (s *JailSystem) RemoveJailRules(_ context.Context, name string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.rules, name)
+	return "rctl -r jail:" + name, nil
+}
+
+// DevfsRulesetNumbers are the sets a stock FreeBSD kernel loads from
+// /etc/defaults/devfs.rules, so a spec naming 4 works here and one naming 99
+// is refused the way a real host would refuse it (JD-018).
+func (s *JailSystem) DevfsRulesetNumbers(context.Context) ([]int, error) {
+	return []int{1, 2, 3, 4, 5}, nil
+}
+
+// rctlRuleRE picks the rules out of a stanza's exec.poststart lines, which
+// is the same place the real jail(8) finds them.
+var rctlRuleRE = regexp.MustCompile(`rctl -a (jail:[^"\s]+)`)
+
+func rulesInConfig(content string) []string {
+	matches := rctlRuleRE.FindAllStringSubmatch(content, -1)
+	rules := make([]string, 0, len(matches))
+	for _, match := range matches {
+		rules = append(rules, match[1])
+	}
+	return rules
+}
 
 func (s *JailSystem) SetAutostart(_ context.Context, name string, enabled bool) (string, error) {
 	s.mu.Lock()

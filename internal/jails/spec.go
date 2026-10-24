@@ -11,10 +11,10 @@ import (
 // Spec describes a jail to create. It is the body of POST /api/jails, and the
 // shape the idempotent PUT will take when it lands (JD-016).
 //
-// Only what this milestone's first stage builds is here. VNET (JD-017),
-// resource limits and the parameter allowlist (JD-018) extend this struct
-// rather than replacing it, which is why Network is already a nested object
-// with a mode rather than a pair of loose fields.
+// Network, Limits and Params are nested objects rather than loose fields
+// because each is a whole subject with its own rules: how the jail reaches
+// the network (JD-017), what it may consume, and which jail(8) parameters it
+// is allowed to set (JD-018).
 type Spec struct {
 	Name string `json:"name"`
 	// Template is the snapshot the jail's root is cloned from, in full:
@@ -26,6 +26,15 @@ type Spec struct {
 	// the stanza by hand almost always sets it to.
 	Hostname string  `json:"hostname,omitempty"`
 	Network  Network `json:"network"`
+	// Limits are rctl rules and a cpuset, applied by the generated stanza
+	// when the jail starts (JD-018).
+	Limits Limits `json:"limits"`
+	// Params are jail(8) parameters, and only ones on the allowlist: the
+	// API refuses anything else, naming it. The values are whatever
+	// jail(8) wants -- a number for devfs_ruleset, a word for sysvshm, a
+	// flag for allow.chflags -- so the map is typed by the allowlist
+	// rather than by Go (JD-018).
+	Params map[string]any `json:"params,omitempty"`
 	// Autostart adds the jail to rc.conf's jail_list, which is what makes it
 	// come back after a reboot and nothing else (JD-030).
 	Autostart bool `json:"autostart,omitempty"`
@@ -121,6 +130,14 @@ type Created struct {
 	// be confirmed. Only Jail Deck will do that: jail(8) does not run
 	// exec.poststop for a start that failed (JD-030).
 	EpairRemoved bool `json:"epair_removed,omitempty"`
+	// RulesRemoved are the rctl rules taken back after a start that could
+	// not be confirmed. A start that fails part way through exec.poststart
+	// keeps the rules it had already added and never runs exec.prestop, so
+	// they would otherwise outlive the jail they are named after (JD-018).
+	RulesRemoved []string `json:"rules_removed,omitempty"`
+	// RulesError says why they could not be taken back. The next create of
+	// this name will refuse until they are gone, and say so.
+	RulesError string `json:"rules_error,omitempty"`
 	// FailedAt names the step that stopped, and is absent on success.
 	FailedAt string `json:"failed_at,omitempty"`
 	// Error is why it stopped. The body of a failed create carries both: what
@@ -166,6 +183,19 @@ func (s Spec) normalize() (Spec, error) {
 		return Spec{}, err
 	}
 	s.Network = network
+
+	limits, err := s.Limits.normalize()
+	if err != nil {
+		return Spec{}, err
+	}
+	s.Limits = limits
+
+	// Rendered and thrown away. The allowlist lives in one function, and
+	// calling it here is what makes a forbidden parameter a refusal before
+	// anything is created rather than a surprise when the stanza is written.
+	if _, err := renderParams(s.Params); err != nil {
+		return Spec{}, err
+	}
 	return s, nil
 }
 

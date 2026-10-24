@@ -882,15 +882,47 @@ type Template struct {
 // @Description  failed and the orphan would block every retry (JD-030). That is the only
 // @Description  thing a failed create undoes. If the cleanup itself fails, the interface
 // @Description  is named in the error rather than left silent.
+// @Description
+// @Description  **`limits`** are rctl rules — `memoryuse`, `vmemoryuse`, `maxproc`,
+// @Description  `openfiles`, `pcpu` — plus a `cpuset`. They are applied by the stanza's
+// @Description  `exec.poststart` and removed by its `exec.prestop`, so a jail started
+// @Description  from a shell is limited the same way, and a jail whose limits cannot be
+// @Description  applied does not start at all: `jail(8)` destroys a jail whose poststart
+// @Description  fails (JD-018). Sizes take a K, M, G or T suffix; `pcpu` is percent of
+// @Description  one core.
+// @Description
+// @Description  rctl rules need `kern.racct.enable=1`, which `GET /api/host/readiness`
+// @Description  reports; a spec asking for them on a host without it is refused rather
+// @Description  than built. `cpuset` needs no accounting and is allowed either way.
+// @Description
+// @Description  **rctl rules are keyed to the jail's name, not to the jail**, and outlive
+// @Description  it. A create is refused when rules are still keyed to the name it was
+// @Description  given — otherwise the new jail would silently run under them — and the
+// @Description  refusal lists them and the one command that clears them. A start that
+// @Description  could not be confirmed has whatever rules it managed to apply taken back
+// @Description  here, and says so in `rules_removed`.
+// @Description
+// @Description  **`params`** are jail(8) parameters, and only these:
+// @Description  `devfs_ruleset`, `securelevel` (-1..3), `enforce_statfs` (0..2),
+// @Description  `children.max` (0 only), `sysvmsg`, `sysvsem`, `sysvshm`
+// @Description  (`"disable"` or `"new"`), `allow.chflags` and `allow.set_hostname`.
+// @Description  Anything else is refused with the parameter named — an allowlist, because
+// @Description  a denylist fails open the day jail(8) gains a parameter (JD-018).
+// @Description
+// @Description  `devfs_ruleset` is checked against the rulesets the kernel has loaded.
+// @Description  Measured on 15.1-RELEASE-p5: a number it does not have gives the jail the
+// @Description  host's **whole /dev** — disks, mem, kmem, bpf — silently, while `jls`
+// @Description  reports the number that was asked for. Rulesets live in
+// @Description  /etc/devfs.rules and are yours; Jail Deck never writes them.
 // @Tags         jails
 // @Accept       json
 // @Produce      json
 // @Param        spec  body      Spec  true  "The jail to create"
 // @Success      201   {object}  Created
-// @Failure      400   {object}  common.ErrorResponse  "A malformed spec: see the message for the field"
+// @Failure      400   {object}  common.ErrorResponse  "A malformed spec, a parameter that is not allowed, a devfs ruleset the kernel has not loaded, or rctl limits on a host that is not accounting"
 // @Failure      401   {object}  common.ErrorResponse
 // @Failure      404   {object}  common.ErrorResponse  "No such template snapshot"
-// @Failure      409   {object}  common.ErrorResponse  "A jail of that name already exists, or its configuration file does"
+// @Failure      409   {object}  common.ErrorResponse  "A jail of that name already exists, its configuration file does, or rctl rules are still keyed to the name"
 // @Failure      500   {object}  Created               "A step failed; the body says which and what exists"
 // @Failure      501   {object}  common.ErrorResponse  "This Jail Deck has no storage wired"
 // @Security     BearerAuth
@@ -930,6 +962,13 @@ func (h *JailHandler) Create(w http.ResponseWriter, r *http.Request) {
 // @Description  A VNET jail's epair goes when it stops, through its own `exec.poststop`.
 // @Description  One left behind by an earlier failed start is destroyed here too, and
 // @Description  named in `epair` — otherwise it would outlive the jail it belongs to.
+// @Description
+// @Description  **rctl rules are cleared on the same terms**, and named in `rules`. A
+// @Description  jail stopped cleanly has had them removed by its own `exec.prestop`, so
+// @Description  normally there are none; one left behind matters more than a stranded
+// @Description  interface, because rules are keyed to the name and the next jail called
+// @Description  this would inherit them (JD-018). Neither sweep can fail the destroy:
+// @Description  what could not be cleared is reported in `epair_error` or `rules_error`.
 // @Description
 // @Description  **Child datasets go with it** (JD-007). They are listed in `taken`. A
 // @Description  dataset worth keeping has to stop being a child first: `POST

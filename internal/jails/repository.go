@@ -363,3 +363,38 @@ type EpairCleaner interface {
 	// here and no second command can fail halfway.
 	RemoveJailEpair(ctx context.Context, name string) (string, error)
 }
+
+// RctlSystem is the kernel's resource-limit facility: whether it is turned
+// on, and what rules are keyed to a jail's name (JD-018).
+//
+// One port rather than three, because it is one facility with one switch.
+// Nothing here *applies* a limit -- the generated stanza does that -- so
+// every method is either a refusal's evidence or a cleanup.
+type RctlSystem interface {
+	// RacctEnabled reports kern.racct.enable. A kernel built without RACCT
+	// has no such oid, which is false rather than an error: it is an
+	// answer about the host, not a failure to ask.
+	RacctEnabled(ctx context.Context) (bool, error)
+	// JailRules lists the rules keyed to this jail's name, which is not the
+	// same as the rules of a jail that is running: a rule can be added for a
+	// name no jail answers to, and a jail removed without `rctl -r` leaves
+	// its rules behind. Measured, both. No rules is an empty list, not an
+	// error.
+	JailRules(ctx context.Context, name string) ([]string, error)
+	// RemoveJailRules clears them and returns the command that did it. A
+	// name with no rules is not an error here, though rctl itself exits 1
+	// for one -- the caller's question is whether any are left, not whether
+	// this particular invocation found work.
+	RemoveJailRules(ctx context.Context, name string) (string, error)
+}
+
+// DevfsRulesetSource lists the devfs rulesets the kernel has loaded.
+//
+// Asked before a jail that names one is created, and the one check in a
+// create that exists for confinement rather than accuracy: measured on
+// 15.1-RELEASE-p5, a devfs_ruleset the kernel does not have gives the jail
+// the host's entire /dev -- disks, mem, kmem, io, bpf -- silently, while jls
+// reports the number that was asked for (JD-018).
+type DevfsRulesetSource interface {
+	DevfsRulesetNumbers(ctx context.Context) ([]int, error)
+}

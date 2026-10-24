@@ -94,6 +94,10 @@ type createSystem struct {
 	started  []string
 	stopped  []string
 	steps    *[]string
+	// onStart, when set, runs as the jail comes up -- the hook for what the
+	// stanza's own exec.poststart does to the host, which happens whether
+	// the start then succeeds or not.
+	onStart func(name string)
 }
 
 // record appends a step to a shared list, for the tests that care which
@@ -124,6 +128,9 @@ func (s *createSystem) put(jail Jail) {
 
 func (s *createSystem) Start(_ context.Context, name string) (OperationResult, error) {
 	s.started = append(s.started, name)
+	if s.onStart != nil {
+		s.onStart(name)
+	}
 	if s.startErr != nil {
 		return OperationResult{Jail: Jail{Name: name}, Command: "service jail start " + name}, s.startErr
 	}

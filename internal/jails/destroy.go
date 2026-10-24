@@ -52,6 +52,15 @@ type Destroyed struct {
 	// here because a silent one is an interface on a bridge that nothing
 	// will ever account for.
 	EpairError string `json:"epair_error,omitempty"`
+	// Rules are the rctl rules cleared with the jail. Like the epair there
+	// are normally none: a jail stopped cleanly has had them removed by its
+	// own exec.prestop. One turns up here when an earlier start failed
+	// (JD-018).
+	Rules []string `json:"rules,omitempty"`
+	// RulesError says why they could not be cleared, on the same terms as
+	// EpairError -- except that a leftover rule is worse than a stranded
+	// interface, because the next jail of this name would inherit it.
+	RulesError string `json:"rules_error,omitempty"`
 	// Blocked is set when something kept on purpose is in the way. Nothing
 	// ran: the jail is still there, still configured, still as it was.
 	Blocked *DestroyBlock `json:"blocked,omitempty"`
@@ -146,6 +155,7 @@ func (s *JailService) Destroy(ctx context.Context, name JailName, confirm string
 	// an earlier start failed: jail(8) skips poststop then, and the orphan
 	// would otherwise outlive the jail it is named after.
 	s.sweepEpair(opCtx, name, &result)
+	s.sweepRules(opCtx, name, &result)
 
 	// Idempotent in both directions, so a jail that was never in the list
 	// costs one command and no special case (JD-030).
@@ -199,6 +209,40 @@ func (s *JailService) sweepEpair(ctx context.Context, name JailName, result *Des
 		return
 	}
 	result.Epair = removed
+}
+
+// sweepRules clears whatever rctl rules are still keyed to the jail's name,
+// and never fails the destroy, for the same reason sweepEpair does not.
+//
+// A jail stopped cleanly has already had them removed by its own
+// exec.prestop, so this normally finds nothing. It finds something after a
+// start that failed part way through exec.poststart, or for a jail somebody
+// configured by hand. Clearing them matters more than the epair does: rules
+// are keyed to the name and outlive the jail, so the next jail called this
+// would quietly run under them (JD-018).
+//
+// Like sweepEpair, it writes no audit entry. The audited steps are the ones
+// the destroy is made of; a sweep is a cleanup of something that should not
+// have been there, and both are reported in the result instead.
+func (s *JailService) sweepRules(ctx context.Context, name JailName, result *Destroyed) {
+	if s.rctl == nil {
+		return
+	}
+	rules, err := s.rctl.JailRules(ctx, name.String())
+	if err == nil {
+		if len(rules) == 0 {
+			return
+		}
+		_, err = s.rctl.RemoveJailRules(ctx, name.String())
+	}
+	if err != nil {
+		result.RulesError = err.Error()
+		common.Logger(ctx, "jail").Warn("could not clear the jail's leftover rctl rules",
+			slog.String("jail", name.String()),
+			slog.Any("err", err))
+		return
+	}
+	result.Rules = rules
 }
 
 // blockedReason says what is in the way and what to do about it, in the shape

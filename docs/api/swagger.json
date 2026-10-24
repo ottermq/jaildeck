@@ -338,6 +338,79 @@
                         }
                     }
                 }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Clones a ready template's snapshot into the jail's own dataset, writes\nits stanza to /etc/jail.conf.d/\u003cname\u003e.conf, optionally adds it to\nrc.conf's jail_list, and starts it (JD-007, JD-030).\n\n**The start is confirmed, not assumed.** `service jail start` exits 0\nwhether or not the jail came up, so the jail is read back from jls before\nthis reports it running.\n\n**If a step fails, nothing is undone.** The response names the step and\nsays what exists — a dataset that was cloned stays cloned, a stanza that\nwas written stays written. Rolling back automatically is a second\ndestructive operation run at the moment least is known about the state.\n\nThe template is the full dataset@snapshot of a template that is ready;\nGET /api/templates lists them with the snapshot each one offers. The\njail's root is cloned into \u003cpool\u003e/jails/containers/\u003cname\u003e, in the\ntemplate's own pool, because a clone cannot cross one.\n\nNetwork modes: `alias` (one address on a host interface, needs ip4 and\ninterface), `inherit` (the host's addresses and its stack), `disable`\n(no network, the default). `vnet` is decided (JD-017) and not built yet.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jails"
+                ],
+                "summary": "Create a jail",
+                "parameters": [
+                    {
+                        "description": "The jail to create",
+                        "name": "spec",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/jails.Spec"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Created"
+                        }
+                    },
+                    "400": {
+                        "description": "A malformed spec: see the message for the field",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such template snapshot",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "A jail of that name already exists, or its configuration file does",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "A step failed; the body says which and what exists",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Created"
+                        }
+                    },
+                    "501": {
+                        "description": "This Jail Deck has no storage wired",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/jails/{name}": {
@@ -2148,6 +2221,43 @@
                 }
             }
         },
+        "jails.Created": {
+            "type": "object",
+            "properties": {
+                "autostart": {
+                    "type": "boolean"
+                },
+                "config": {
+                    "description": "Config is the file the stanza was written to.",
+                    "type": "string"
+                },
+                "error": {
+                    "description": "Error is why it stopped. The body of a failed create carries both: what\nexists is the recovery information, and this is the reason it is\nneeded. Filled in by the handler, which is where the response is\ndecided -- the service returns a Go error like every other method here.",
+                    "type": "string"
+                },
+                "failed_at": {
+                    "description": "FailedAt names the step that stopped, and is absent on success.",
+                    "type": "string"
+                },
+                "from": {
+                    "description": "From is the template snapshot the root was cloned from.",
+                    "type": "string"
+                },
+                "jail": {
+                    "$ref": "#/definitions/jails.Jail"
+                },
+                "mountpoint": {
+                    "type": "string"
+                },
+                "root": {
+                    "description": "Root is the jail's own dataset and Mountpoint is where it is mounted,\nwhich is the jail's path.",
+                    "type": "string"
+                },
+                "running": {
+                    "type": "boolean"
+                }
+            }
+        },
         "jails.Dataset": {
             "type": "object",
             "properties": {
@@ -2264,6 +2374,37 @@
             "x-enum-varnames": [
                 "JailStatusRunning",
                 "JailStatusStopped"
+            ]
+        },
+        "jails.Network": {
+            "type": "object",
+            "properties": {
+                "interface": {
+                    "description": "Interface is the host interface the alias is added to.",
+                    "type": "string"
+                },
+                "ip4": {
+                    "description": "IP4 is the address for NetworkAlias, with its prefix: 192.0.2.10/24.",
+                    "type": "string"
+                },
+                "mode": {
+                    "$ref": "#/definitions/jails.NetworkMode"
+                }
+            }
+        },
+        "jails.NetworkMode": {
+            "type": "string",
+            "enum": [
+                "inherit",
+                "alias",
+                "disable",
+                "vnet"
+            ],
+            "x-enum-varnames": [
+                "NetworkInherit",
+                "NetworkAlias",
+                "NetworkDisable",
+                "NetworkVNET"
             ]
         },
         "jails.Parked": {
@@ -2406,6 +2547,33 @@
                     "type": "boolean"
                 },
                 "snapshot": {
+                    "type": "string"
+                }
+            }
+        },
+        "jails.Spec": {
+            "type": "object",
+            "properties": {
+                "autostart": {
+                    "description": "Autostart adds the jail to rc.conf's jail_list, which is what makes it\ncome back after a reboot and nothing else (JD-030).",
+                    "type": "boolean"
+                },
+                "hostname": {
+                    "description": "Hostname defaults to the jail's name, which is what an operator writing\nthe stanza by hand almost always sets it to.",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "network": {
+                    "$ref": "#/definitions/jails.Network"
+                },
+                "start": {
+                    "description": "Start says whether to start the jail once it is configured. A pointer\nbecause absent means yes: creating a jail and leaving it down is the\nunusual request, and it should be the one that has to be spelled out.",
+                    "type": "boolean"
+                },
+                "template": {
+                    "description": "Template is the snapshot the jail's root is cloned from, in full:\n\u003cdataset\u003e@\u003csnapshot\u003e. There is no default, for the reason JD-026 gives\nfor a re-clone — every jail is a clone of some template, so a default\nwould be a choice made silently.",
                     "type": "string"
                 }
             }

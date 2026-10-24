@@ -4,6 +4,7 @@ import { route, navigate, onNavClick, match } from '../router.svelte'
 import { auth, logout } from '../stores/auth.svelte'
 import Jails from './Jails.svelte'
 import Jail from './Jail.svelte'
+import NewJail from './NewJail.svelte'
 import Templates from './Templates.svelte'
 import Template from './Template.svelte'
 import Operations from './Operations.svelte'
@@ -78,6 +79,11 @@ onMount(() => {
     <main class="main">
         {#if route.path === '/jails'}
             <Jails />
+        <!-- Before the :name match, so /jails/new is the form. A jail really
+             called "new" would be shadowed by it; nothing stops one being
+             created, and no host has ever had one. -->
+        {:else if route.path === '/jails/new'}
+            <NewJail />
         {:else if jail}
             {#key jail.name}<Jail name={jail.name} />{/key}
         {:else if route.path === '/templates'}

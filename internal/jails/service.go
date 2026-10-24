@@ -69,6 +69,11 @@ type Dependencies struct {
 	RootCloner RootCloner
 	Config     ConfigWriter
 	Autostart  Autostarter
+
+	// The two destroying one needs, on the same terms. Autostart is needed by
+	// both: a destroy takes the jail back out of jail_list.
+	RootDestroyer RootDestroyer
+	ConfigRemover ConfigRemover
 }
 
 type JailService struct {
@@ -83,6 +88,8 @@ type JailService struct {
 	rootCloner      RootCloner
 	config          ConfigWriter
 	autostart       Autostarter
+	rootDestroyer   RootDestroyer
+	configRemover   ConfigRemover
 }
 
 func NewJailService(deps Dependencies) *JailService {
@@ -98,6 +105,8 @@ func NewJailService(deps Dependencies) *JailService {
 		rootCloner:      deps.RootCloner,
 		config:          deps.Config,
 		autostart:       deps.Autostart,
+		rootDestroyer:   deps.RootDestroyer,
+		configRemover:   deps.ConfigRemover,
 	}
 }
 

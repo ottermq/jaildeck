@@ -83,6 +83,8 @@ func New(cfg *config.Config) (*App, error) {
 		RootCloner:    jailStorage,
 		Config:        jailAdapter.config,
 		Autostart:     jailAdapter.autostart,
+		RootDestroyer: jailStorage,
+		ConfigRemover: jailAdapter.remover,
 	})
 	jailHandler := jails.NewJailHandler(jailService)
 
@@ -145,6 +147,7 @@ func setupAuditLog(auditLogFilePath string) (*audit.FileLogger, error) {
 type jailAdapters struct {
 	system    jails.JailSystem
 	config    jails.ConfigWriter
+	remover   jails.ConfigRemover
 	autostart jails.Autostarter
 }
 
@@ -155,10 +158,10 @@ func newJailAdapters(adapter string) (jailAdapters, error) {
 	switch adapter {
 	case config.AdapterFreeBSD:
 		a := freebsd.NewAdapter(system.NewExecCommandRunner())
-		return jailAdapters{system: a, config: a, autostart: a}, nil
+		return jailAdapters{system: a, config: a, remover: a, autostart: a}, nil
 	case config.AdapterFake:
 		f := fake.NewJailSystem()
-		return jailAdapters{system: f, config: f, autostart: f}, nil
+		return jailAdapters{system: f, config: f, remover: f, autostart: f}, nil
 	default:
 		return jailAdapters{}, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

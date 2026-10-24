@@ -261,3 +261,60 @@ type Autostarter interface {
 	// SetAutostart returns the command it ran, for the audit log.
 	SetAutostart(ctx context.Context, name string, enabled bool) (string, error)
 }
+
+// ConfigRemover deletes the file a jail was configured by, and says whether
+// it is there at all.
+//
+// Kept apart from ConfigWriter for the reason DatasetSource and DatasetWriter
+// are kept apart: creating a jail must not need the ability to delete another
+// jail's configuration. One adapter implements both, which costs nothing.
+type ConfigRemover interface {
+	// ConfigFile reports where this jail's own file would be and whether it
+	// exists. A jail declared in /etc/jail.conf has none, because Jail Deck
+	// never writes that file (JD-030) -- so it also cannot take a jail out of
+	// it, which is a destroy that has to be refused rather than half done.
+	ConfigFile(ctx context.Context, name string) (path string, exists bool, err error)
+	// RemoveConfig deletes the file and returns the path it deleted.
+	RemoveConfig(ctx context.Context, name string) (string, error)
+}
+
+// RootDependents is what destroying a jail's root would take with it, and
+// what would stop it.
+//
+// The two halves are deliberately separate. Children go with the jail by
+// design (JD-007): a dataset worth keeping is moved out with retain before
+// the jail is destroyed. Snapshots, clones and holds stop the destroy, because
+// each is something somebody kept on purpose.
+type RootDependents struct {
+	// Root is the jail's own dataset.
+	Root string `json:"root"`
+	// Children are the datasets mounted beneath it, which are destroyed with
+	// it. Named in the response because they go silently otherwise.
+	Children []string `json:"children,omitempty"`
+	// Snapshots are of the root or of a child, and each one blocks.
+	Snapshots []string `json:"snapshots,omitempty"`
+	// Clones are datasets made from one of those snapshots -- a template
+	// cloned from this jail, or another jail re-cloned off it.
+	Clones []string `json:"clones,omitempty"`
+	Holds  []string `json:"holds,omitempty"`
+}
+
+// Blocking reports whether anything here stops the destroy.
+func (d RootDependents) Blocking() bool {
+	return len(d.Snapshots) > 0 || len(d.Clones) > 0 || len(d.Holds) > 0
+}
+
+// RootDestroyer destroys a jail's own dataset and everything mounted beneath
+// it. Which zfs flags that takes is the storage domain's business (JD-030);
+// this names the act.
+type RootDestroyer interface {
+	// CheckDestroy answers what a destroy would take and what would stop it,
+	// touching nothing. Asked before the jail is stopped, so a jail that
+	// cannot be destroyed is not left shut down to no purpose.
+	CheckDestroy(ctx context.Context, jailPath string) (RootDependents, error)
+	// DestroyRoot destroys the jail's root and returns the dataset it
+	// destroyed. It is called last and checks nothing itself: by then the
+	// jail is stopped and unconfigured, and ZFS refusing a dataset that is
+	// still busy is the guard that cannot race (JD-030).
+	DestroyRoot(ctx context.Context, jailPath string) (string, error)
+}

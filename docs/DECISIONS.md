@@ -1144,6 +1144,11 @@ Destruction takes `DELETE /api/jails/{name}?confirm=<name>` — the same typed c
 
 A jail whose dataset has snapshots or clones is **refused**, with the dependents named, as JD-024 already refuses. `zfs destroy -R` is never passed.
 
+Two details settled while building it, 2026-10-24:
+
+- **`-r` only when the jail has children.** A jail's child datasets go with it (JD-007), and that needs `-r`. A jail with none is destroyed without it, so that a snapshot taken between the check and the destroy makes ZFS refuse rather than being swept up silently. The check is not the guard; it is the explanation given before the guard runs.
+- **A jail with no file of its own in `jail.conf.d` is refused.** Its block is in `/etc/jail.conf`, which belongs to the operator and which Jail Deck never writes — so Jail Deck also cannot take the jail out of it. Destroying the dataset anyway would leave the jail still declared, still listed, and pointing at a path that no longer exists. Refusing names the file instead.
+
 ### Orchestration lives in `jails`; the primitives stay in `storage`
 
 The `jails` context owns the order of the steps, because the order is a rule about jails: confirm the template's `@base`, clone it, render the configuration, set autostart, start, confirm. Cloning a snapshot, creating a child dataset and destroying a root belong to `storage`, reached through ports that `jails` defines — the direction JD-010 set, and the one `storage.JailSource` already implements for the storage writes.

@@ -463,6 +463,81 @@
                         }
                     }
                 }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stops the jail, takes it out of rc.conf's `jail_list`, deletes\n/etc/jail.conf.d/\u003cname\u003e.conf, and destroys its dataset — in that order\n(JD-030).\n\n**Child datasets go with it** (JD-007). They are listed in `taken`. A\ndataset worth keeping has to stop being a child first: `POST\n/api/jails/{name}/datasets/{child}/retain` moves it out.\n\n**Snapshots, clones and holds refuse the destroy**, with each one named\nand nothing touched. Each was kept on purpose, so each goes first — and\n`zfs destroy -R` is never passed, which is what would make this check\ndecorative.\n\n**The last word is ZFS's.** Nothing here re-checks that the jail is down\nbefore destroying its dataset: `zfs destroy` refuses one whose jail is\nrunning with `pool or dataset is busy`, and a check of our own would read\nthe state and then act on what it read, while the mount is held the whole\ntime. Only one of those can lose a race.\n\nA jail with no file of its own in jail.conf.d is refused: its block is in\n/etc/jail.conf, which belongs to you and which Jail Deck never writes, so\ndestroying the dataset would leave the jail declared and pointing nowhere.\n\n**If a step fails, nothing is undone.** The body names the step and says\nwhat was already done — a stopped jail stays stopped.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jails"
+                ],
+                "summary": "Destroy a jail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The jail to destroy",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The jail's name again",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Destroyed"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing or mismatched confirm",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail, or it has no dataset of its own",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Snapshots, clones or holds are in the way, or the jail is configured in /etc/jail.conf",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Destroyed"
+                        }
+                    },
+                    "500": {
+                        "description": "A step failed; the body says which and what was done",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Destroyed"
+                        }
+                    },
+                    "501": {
+                        "description": "This Jail Deck has no storage wired",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/jails/{name}/datasets/{child}": {
@@ -2326,6 +2401,81 @@
                 },
                 "to": {
                     "type": "string"
+                }
+            }
+        },
+        "jails.DestroyBlock": {
+            "type": "object",
+            "properties": {
+                "clones": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "holds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "snapshots": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "jails.Destroyed": {
+            "type": "object",
+            "properties": {
+                "blocked": {
+                    "description": "Blocked is set when something kept on purpose is in the way. Nothing\nran: the jail is still there, still configured, still as it was.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/jails.DestroyBlock"
+                        }
+                    ]
+                },
+                "config": {
+                    "description": "Config is the configuration file that was deleted.",
+                    "type": "string"
+                },
+                "destroyed": {
+                    "type": "boolean"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "failed_at": {
+                    "description": "FailedAt names the step that stopped, and Error says why.",
+                    "type": "string"
+                },
+                "jail": {
+                    "type": "string"
+                },
+                "root": {
+                    "description": "Root is the jail's own dataset, named even when the destroy was\nrefused -- it is the dataset an operator would go and look at.",
+                    "type": "string"
+                },
+                "stopped": {
+                    "description": "Stopped says the jail was running and this stopped it.",
+                    "type": "boolean"
+                },
+                "taken": {
+                    "description": "Taken are the child datasets destroyed along with the root. A jail's\nchildren go with it (JD-007), and they go silently unless listed here.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "unlisted": {
+                    "description": "Unlisted says it was taken out of rc.conf's jail_list.",
+                    "type": "boolean"
                 }
             }
         },

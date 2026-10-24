@@ -41,33 +41,51 @@ func (n JailName) String() string {
 	return string(n)
 }
 
+// Dependencies is everything a JailService needs from outside the domain.
+//
+// A struct rather than a parameter list: the storage ports are deliberately
+// narrow (JD-010), so one object satisfies most of them and the call site was
+// passing the same value six times in a row with nothing to say which was
+// which. Every field here is optional except System and Audit, and a test
+// names only the ones its subject actually uses.
+type Dependencies struct {
+	System JailSystem
+	Audit  audit.Logger
+
+	// Datasets may be nil, which means no storage source is wired and every
+	// listing reports jails without their datasets. Only tests that are not
+	// about storage leave it out; the application always wires one.
+	Datasets DatasetSource
+	// The rest may be nil on the same terms, and every operation checks the
+	// one it needs rather than assuming the application wired it.
+	DatasetWriter DatasetWriter
+	Snapshots     SnapshotWriter
+	DatasetMover  DatasetMover
+	Recloner      Recloner
+	TemplateMaker TemplateMaker
+}
+
 type JailService struct {
 	system          JailSystem
 	operationLogger audit.Logger
-	// datasets may be nil, which means no storage source is wired and every
-	// listing reports jails without their datasets. Only tests that are not
-	// about storage pass nil; the application always wires one.
-	datasets DatasetSource
-	// datasetWriter may be nil on the same terms as datasets, and every write
-	// checks it rather than assuming the application wired one.
-	datasetWriter DatasetWriter
-	// snapshots and datasetMover may be nil on the same terms as the others.
-	snapshots     SnapshotWriter
-	datasetMover  DatasetMover
-	recloner      Recloner
-	templateMaker TemplateMaker
+	datasets        DatasetSource
+	datasetWriter   DatasetWriter
+	snapshots       SnapshotWriter
+	datasetMover    DatasetMover
+	recloner        Recloner
+	templateMaker   TemplateMaker
 }
 
-func NewJailService(system JailSystem, operationLogger audit.Logger, datasets DatasetSource, datasetWriter DatasetWriter, snapshots SnapshotWriter, datasetMover DatasetMover, recloner Recloner, templateMaker TemplateMaker) *JailService {
+func NewJailService(deps Dependencies) *JailService {
 	return &JailService{
-		system:          system,
-		operationLogger: operationLogger,
-		datasets:        datasets,
-		datasetWriter:   datasetWriter,
-		snapshots:       snapshots,
-		datasetMover:    datasetMover,
-		recloner:        recloner,
-		templateMaker:   templateMaker,
+		system:          deps.System,
+		operationLogger: deps.Audit,
+		datasets:        deps.Datasets,
+		datasetWriter:   deps.DatasetWriter,
+		snapshots:       deps.Snapshots,
+		datasetMover:    deps.DatasetMover,
+		recloner:        deps.Recloner,
+		templateMaker:   deps.TemplateMaker,
 	}
 }
 

@@ -544,6 +544,18 @@ Jail Deck has a second kind of API consumer: a program on the same host, driving
 - **Transport.** A unix socket listener (JD-002) with token auth (JD-003).
 - **Change policy.** Breaking changes are allowed before 1.0 but each is recorded under an **API** heading in the changelog. A client pins a Jail Deck version and runs contract tests before upgrading.
 
+**The idempotent `PUT` was built 2026-10-24.** What was left to decide was the hard half: what "matching" means.
+
+**It is the jail's own configuration file that answers.** Jail Deck renders the stanza the spec would produce — against the path the jail's dataset actually reports and the epair unit its existing stanza already claims — and compares that with the stanza on disk, setting by setting. Nothing about the comparison is a list of fields to check, so no field can be forgotten by a comparison that does not know about it: a parameter added to the allowlist next month is compared the day it is generated. It is also JD-011 read literally, because the file is what the host says the jail is (JD-004).
+
+Settings rather than bytes. A stanza written by an older Jail Deck has its lines in a different order — the limits work moved `exec.poststop` below `exec.prestop` — and that is not a difference in the jail. Comments, blank lines and the quoting of a value are ignored for the same reason; everything else is compared, including a bare flag an operator added by hand, which appears as a setting with no value.
+
+**Two things are not in the file, and are read where they live.** `template` is the root's clone origin, from `zfs get origin`; `autostart` is `sysrc -n jail_list`. A host that never set `jail_list` answers "unknown variable" and exits 1 — measured — which is an empty list rather than a failure.
+
+**`start` is deliberately not compared.** It says whether to start the jail *once it has been configured*, which is an instruction about the create and not a property of the jail. Comparing it would make a jail an operator stopped for maintenance refuse every `PUT` until they started it again, and acting on it would be reconciliation — the one thing this decision rules out. The response reports whether the jail is running, and the client decides.
+
+A jail with no file of its own in `jail.conf.d` is refused rather than compared, on the same grounds the destroy refuses one (JD-030): its block is in `/etc/jail.conf`, which belongs to the operator and which Jail Deck never writes.
+
 ### Rationale
 
 **The desired state lives in the client, not here.** A platform like Otter has a desired-state model — that is its job. Jail Deck stays a desired-state-free executor and reporter, which is what JD-011 asks for. An idempotent `PUT` gives the client everything it needs from that position: after a crash it repeats the call, and the answer (`201`, `200` or `409`) tells it exactly where it stands, derived from the system rather than from a record of what Jail Deck thinks it did.

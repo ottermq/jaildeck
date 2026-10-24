@@ -398,3 +398,41 @@ type RctlSystem interface {
 type DevfsRulesetSource interface {
 	DevfsRulesetNumbers(ctx context.Context) ([]int, error)
 }
+
+// ConfigReader hands back a jail's stanza as it is on disk.
+//
+// Read rather than remembered, and compared rather than trusted: the
+// idempotent PUT answers "does this jail already match the spec?" by
+// rendering what the spec would write and holding it against this (JD-016).
+type ConfigReader interface {
+	// ConfigFile is ConfigRemover's, repeated here because a comparison has
+	// to tell "no file of its own" from "a file that differs" before it
+	// reads anything: the first is a refusal, the second is a diff.
+	ConfigFile(ctx context.Context, name string) (path string, exists bool, err error)
+	// ReadConfig returns the content of that file.
+	ReadConfig(ctx context.Context, name string) (string, error)
+}
+
+// AutostartSource reads what Autostarter writes.
+//
+// Separate from Autostarter because they are asked at different times and
+// by different callers -- a create and a destroy only ever set it, and only
+// the comparison needs to read it back.
+type AutostartSource interface {
+	// Autostarts reports whether rc.conf's jail_list names this jail. A host
+	// that has never set jail_list has an empty list, not an error.
+	Autostarts(ctx context.Context, name string) (bool, error)
+}
+
+// CloneOrigin answers what a jail's root was cloned from, which is the one
+// part of a spec that is neither in the jail's configuration nor in jls.
+type CloneOrigin interface {
+	// RootOrigin names the dataset mounted at the jail's path and the
+	// snapshot it was cloned from.
+	//
+	// A root that is not a clone reports an empty origin, which is a fact
+	// about the dataset rather than a failure -- a jail whose root was made
+	// by hand has no template. A path no dataset is mounted at is
+	// ErrJailNotOnZFS, as it is everywhere else here.
+	RootOrigin(ctx context.Context, jailPath string) (dataset string, origin string, err error)
+}

@@ -113,3 +113,28 @@ func (s *Service) ensureContainers(ctx context.Context, pool string) (string, er
 func containersParent(pool string) string {
 	return pool + "/jails/" + ContainerChild
 }
+
+// RootOrigin names a jail's own dataset and the snapshot it was cloned from.
+//
+// The template is the one part of a jail's spec that is neither in its
+// configuration nor in jls, and the clone's origin is where the host keeps
+// it (JD-016). Read rather than remembered, like everything else here: a
+// jail whose root was re-cloned from a newer template (JD-026) reports the
+// template it actually came from, not the one it was created with.
+//
+// A root that is not a clone reports an empty origin. That is a fact about
+// the dataset -- a jail whose root was made by hand has no template -- and
+// the caller reports it as a difference rather than as a failure.
+func (s *JailSource) RootOrigin(ctx context.Context, jailPath string) (string, string, error) {
+	root, err := s.datasetFor(ctx, jailPath, "")
+	if err != nil {
+		return "", "", err
+	}
+	origin, err := s.service.system.Origin(ctx, root)
+	if err != nil {
+		return "", "", toWriteError("read the origin of", root, err)
+	}
+	return root, origin, nil
+}
+
+var _ jails.CloneOrigin = (*JailSource)(nil)

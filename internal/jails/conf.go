@@ -3,6 +3,7 @@ package jails
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -184,4 +185,122 @@ func (spec Spec) Stanza(at Placement) (string, error) {
 			"could not generate the jail's configuration: "+err.Error())
 	}
 	return out.String(), nil
+}
+
+// --- reading a stanza back ---------------------------------------------
+//
+// The generator above writes these files, so the domain can read its own
+// output back. This is deliberately not a jail.conf(5) parser -- the adapter
+// has one of those, for discovering jails (JD-004). This answers one
+// narrower question: which settings does this block carry, and with what
+// values, so that the stanza a spec would write can be held against the
+// stanza that is there (JD-016).
+
+// settingRE matches an assignment: `key = value;` or `key += value;`.
+var settingRE = regexp.MustCompile(`^([A-Za-z0-9_.-]+)\s*(\+?)=\s*(.*?)\s*;?\s*$`)
+
+// flagRE matches a valueless setting: `exec.clean;`, `mount.devfs;`, and any
+// `allow.something;` an operator added by hand.
+var flagRE = regexp.MustCompile(`^([A-Za-z0-9_.-]+)\s*;\s*$`)
+
+// epairNumberRE finds the unit a stanza already claims.
+var epairNumberRE = regexp.MustCompile(`\bepair(\d+)`)
+
+// settingsIn reads a stanza into its settings: for each name, every value
+// assigned to it, in order. `=` starts the list and `+=` appends, which is
+// exactly how jail(8) reads the two; a flag is a setting with one empty
+// value.
+//
+// Comments, blank lines, the block's own braces and the quoting of a value
+// are all dropped, and $name is expanded. None of them is a difference in
+// the jail: a stanza an older Jail Deck wrote has its lines in another
+// order, jail(8) reads a value the same quoted or not, and a hand-written
+// stanza routinely says ${name} where a generated one says the name --
+// which is the same jail, because jail(8) expands it before the kernel sees
+// it.
+//
+// Only $name is expanded, which is the variable every stanza uses and the
+// only one the adapter's own parser resolves. A value holding any other
+// variable is compared as it is written, so it can be reported as a
+// difference that is not one -- the safe direction: a false difference is
+// read and dismissed, a hidden one is a jail nobody notices has changed.
+func settingsIn(content, name string) map[string][]string {
+	settings := map[string][]string{}
+	for line := range strings.SplitSeq(content, "\n") {
+		line = strings.TrimSpace(stripComment(line))
+		if line == "" || strings.HasSuffix(line, "{") || line == "}" {
+			continue
+		}
+		line = strings.TrimSuffix(line, "}")
+		if flag := flagRE.FindStringSubmatch(line); flag != nil {
+			settings[flag[1]] = []string{""}
+			continue
+		}
+		matches := settingRE.FindStringSubmatch(line)
+		if matches == nil {
+			// A form this does not know. Kept under its whole text so it
+			// still counts as a difference: silently dropping a line is how
+			// a jail that does not match is reported as matching.
+			settings[line] = []string{""}
+			continue
+		}
+		setting, appends := matches[1], matches[2] == "+"
+		value := expandName(unquote(matches[3]), name)
+		if appends {
+			settings[setting] = append(settings[setting], value)
+		} else {
+			settings[setting] = []string{value}
+		}
+	}
+	return settings
+}
+
+// stripComment drops a '#' comment, leaving one inside quotes alone -- a
+// generated exec line can hold any text at all.
+func stripComment(line string) string {
+	quoted := false
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case '"':
+			quoted = !quoted
+		case '#':
+			if !quoted {
+				return line[:i]
+			}
+		}
+	}
+	return line
+}
+
+// nameVarRE is $name as jail.conf(5) writes it bare, where \b stops it
+// matching the start of a longer variable such as $namespace.
+var nameVarRE = regexp.MustCompile(`\$name\b`)
+
+// expandName does what jail(8) does with $name before the kernel ever sees
+// the value, in the three spellings jail.conf(5) accepts.
+func expandName(value, name string) string {
+	value = strings.ReplaceAll(value, "${name}", name)
+	value = strings.ReplaceAll(value, "$(name)", name)
+	return nameVarRE.ReplaceAllString(value, name)
+}
+
+func unquote(value string) string {
+	if len(value) >= 2 && strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
+		return value[1 : len(value)-1]
+	}
+	return value
+}
+
+// epairIn returns the epair unit a stanza claims, as "epair7", or "" when it
+// claims none.
+//
+// A comparison has to regenerate the stanza, and a VNET jail's stanza names
+// a unit that was allocated when the jail was created. Allocating a second
+// one here would make every VNET jail look as though it had changed -- and
+// would be a unit nothing ever uses.
+func epairIn(content string) string {
+	if match := epairNumberRE.FindStringSubmatch(content); match != nil {
+		return "epair" + match[1]
+	}
+	return ""
 }

@@ -86,6 +86,15 @@ type Dependencies struct {
 	// absent, a create still works and simply cannot make those refusals.
 	Rctl          RctlSystem
 	DevfsRulesets DevfsRulesetSource
+
+	// The three the idempotent PUT needs to read a jail back and tell
+	// whether it already matches (JD-016). Absent, only that call is
+	// refused, with 501; every other operation is unaffected. Required
+	// rather than optional there, because a comparison that cannot read
+	// one of the three would answer "it matches" without having looked.
+	ConfigReader    ConfigReader
+	AutostartSource AutostartSource
+	CloneOrigin     CloneOrigin
 }
 
 type JailService struct {
@@ -107,6 +116,9 @@ type JailService struct {
 	epair           EpairCleaner
 	rctl            RctlSystem
 	devfsRulesets   DevfsRulesetSource
+	configReader    ConfigReader
+	autostartSource AutostartSource
+	cloneOrigin     CloneOrigin
 }
 
 func NewJailService(deps Dependencies) *JailService {
@@ -129,6 +141,9 @@ func NewJailService(deps Dependencies) *JailService {
 		epair:           deps.Epair,
 		rctl:            deps.Rctl,
 		devfsRulesets:   deps.DevfsRulesets,
+		configReader:    deps.ConfigReader,
+		autostartSource: deps.AutostartSource,
+		cloneOrigin:     deps.CloneOrigin,
 	}
 }
 

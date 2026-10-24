@@ -231,6 +231,14 @@ Templates are shared, immutable-once-snapshotted bases; jails are cheap clones o
 
 The same rename is what lets a jail be destroyed while its data is kept: `zfs destroy -r` on the jail takes its children and their snapshots with it, so anything worth keeping is renamed out first.
 
+**Built 2026-10-24.** Child datasets and the jail's own user properties are part of the create: `datasets` and `properties` in the spec, made and set **after the root is cloned and before the stanza is written**, so a jail whose `/etc/rc` expects its data mounted finds it there and a quota is in force before the first write. Each child takes the native properties of JD-023's allowlist, and `mountpoint` is a path on the host — the one a child inherits is `<jail path>/<name>`, which is `/<name>` seen from inside the jail.
+
+**A child mounted outside the jail is refused**, in the service rather than in the create, so the `PUT /api/jails/{name}/datasets/{child}` endpoint makes the same refusal. Measured on 15.1-RELEASE-p5: ZFS creates such a dataset without complaint, the jail cannot see it — and `zfs destroy -r` on the jail destroys it anyway, because it is the jail's child whatever it is mounted over. So destroying the jail would take a dataset living elsewhere on the host, and the operator would read its name in `taken` with no reason to look twice. Data meant to outlive the jail has its own door: `retain` moves it out of the jail's dataset tree, which is what makes the destroy leave it alone.
+
+It is the one refusal in a create that cannot come before anything is created: the jail has no path until its root is cloned, and JD-021 fixes only where the layout is mounted, not that every pool mounts it alike. It is made at the datasets step, and a create stopped there has a cloned root and no stanza, which the response says (JD-030).
+
+**What the idempotent `PUT` compares** (JD-016): a child the spec asks for and the jail does not have is a difference, and so is one the jail has that the spec does not name — a child takes space and goes with the jail, so it is part of the jail in a way a tag is not. Only direct children, because the spec describes one level and a deeper dataset is one it could neither ask for nor disown. Properties compare as a subset in both senses, which is what the write side already does: native properties are applied rather than replaced, and user properties are merged so that a tag another tool set survives (JD-023).
+
 ---
 
 ## JD-008 — Long-running Operations

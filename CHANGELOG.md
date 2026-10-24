@@ -24,6 +24,22 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### API
 
+- **A jail spec carries its child datasets and its tags** (#10, JD-007). `datasets` is a
+  list of datasets created one level beneath the jail's own — each with the native ZFS
+  properties of JD-023's allowlist — and `properties` sets ZFS user properties on the
+  jail's own dataset. Both are applied after the root is cloned and before the stanza is
+  written, so a jail whose `/etc/rc` expects its data mounted finds it there and a quota
+  is in force before the first write. The idempotent `PUT` compares both.
+
+- **Breaking: a child dataset mounted outside its jail is refused**, on `POST /api/jails`,
+  on `PUT /api/jails/{name}` and on `PUT /api/jails/{name}/datasets/{child}`, which took
+  any mountpoint before. Measured on 15.1-RELEASE-p5: ZFS creates such a dataset without
+  complaint and the jail cannot see it, yet `zfs destroy -r` on the jail destroys it
+  anyway — so destroying the jail would take a dataset living elsewhere on the host.
+  A dataset meant to outlive the jail goes through
+  `POST /api/jails/{name}/datasets/{child}/retain` instead, which moves it out of the
+  jail's dataset tree.
+
 - **A release template is brought to its patch level and sealed.** The last two stages,
   which carry a prepare from `extracted` through `updating` to **`ready`** — a template a
   jail can be cloned from, prepared end to end from the interface with no shell steps.

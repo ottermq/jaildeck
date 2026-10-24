@@ -90,7 +90,7 @@ func (s *JailService) Ensure(ctx context.Context, name JailName, spec Spec) (Ens
 // comparison is over whatever the two files say rather than over what this
 // function knows to ask about.
 func (s *JailService) compare(ctx context.Context, jail Jail, spec Spec) (Ensured, error) {
-	if s.configReader == nil || s.cloneOrigin == nil || s.autostartSource == nil {
+	if s.configReader == nil || s.cloneOrigin == nil || s.autostartSource == nil || s.datasets == nil {
 		return Ensured{}, common.NewAppError(http.StatusNotImplemented,
 			"this Jail Deck cannot read a jail back, so it cannot tell whether one already matches the spec")
 	}
@@ -153,6 +153,31 @@ func (s *JailService) compare(ctx context.Context, jail Jail, spec Spec) (Ensure
 			Field: "template", Want: spec.Template, Have: origin})
 	}
 	differences = append(differences, diffStanzas(want, content, jail.Name)...)
+
+	// Read here rather than taken from the jail the listing returned: that
+	// one degrades to no datasets at all when the pool cannot be read
+	// (JD-004), and a comparison that did the same would report every child
+	// the spec asks for as missing.
+	storage, err := s.datasets.StorageForPaths(ctx, []string{jail.Path})
+	if err != nil {
+		return result, common.NewAppError(http.StatusInternalServerError,
+			"could not read "+jail.Name+"'s datasets: "+err.Error())
+	}
+	found := storage[jail.Path]
+	result.Jail.Datasets, result.Jail.Properties = found.Datasets, found.Properties
+
+	// Refused rather than reported. A spec that could never be built is not
+	// a jail this one differs from, and answering with a difference would
+	// invite a client to keep sending it: nothing here reconciles, so the
+	// difference would never close. The create refuses the same spec at the
+	// datasets step, and the two doors should give the same answer.
+	for _, child := range spec.Datasets {
+		if err := checkChildMountpoint(jail.Path, child.Name, child.Properties); err != nil {
+			return result, err
+		}
+	}
+	differences = append(differences, diffStorage(spec, root, found)...)
+
 	if spec.Autostart != autostarts {
 		differences = append(differences, Difference{
 			Field: "autostart",
@@ -205,6 +230,109 @@ func diffStanzas(want, have, name string) []Difference {
 		})
 	}
 	return differences
+}
+
+// diffStorage names what the spec and the host disagree about beneath the
+// jail's own dataset: which child datasets it has, what each of them sets,
+// and the jail's own tags.
+//
+// **Direct children only.** The spec describes one level -- a child name may
+// not hold a slash, and retain and restore move one level -- so a dataset
+// deeper than that is one the spec has no way to ask for and no way to
+// disown. Reporting it would be a refusal nobody could resolve.
+//
+// A child the spec does not name **is** reported, because it is part of the
+// jail in a way a tag is not: it takes space, and `zfs destroy -r` on the
+// jail takes it along.
+//
+// Properties are compared as a subset, in both senses. A native property a
+// dataset sets and the spec does not mention is not a difference, because
+// the write side applies rather than replaces (JD-023); nor is a user
+// property somebody else's tool set, because the write side merges for
+// exactly that reason (JD-004).
+//
+// Values are compared as text, which is what JD-023 reports and what a
+// client is told to send back. A refquota written 2048M against one ZFS
+// prints as 2G reads as a difference -- the safe direction, since parsing
+// a size here would be the second opinion that decision refuses to add.
+func diffStorage(spec Spec, root string, storage JailStorage) []Difference {
+	differences := make([]Difference, 0)
+
+	have := map[string]Dataset{}
+	for _, dataset := range storage.Datasets {
+		child, direct := directChild(root, dataset.Name)
+		if direct {
+			have[child] = dataset
+		}
+	}
+
+	asked := make(map[string]bool, len(spec.Datasets))
+	for _, child := range spec.Datasets {
+		asked[child.Name] = true
+		dataset, present := have[child.Name]
+		if !present {
+			differences = append(differences, Difference{
+				Field: "datasets." + child.Name, Want: root + "/" + child.Name})
+			continue
+		}
+		differences = append(differences, diffChildProperties(child, dataset)...)
+	}
+
+	extra := make([]string, 0)
+	for name := range have {
+		if !asked[name] {
+			extra = append(extra, name)
+		}
+	}
+	sort.Strings(extra)
+	for _, name := range extra {
+		differences = append(differences, Difference{
+			Field: "datasets." + name, Have: have[name].Name})
+	}
+
+	for _, name := range sortedKeys(spec.Properties) {
+		if want, has := spec.Properties[name], storage.Properties[name]; want != has {
+			differences = append(differences, Difference{
+				Field: "properties." + name, Want: want, Have: has})
+		}
+	}
+	return differences
+}
+
+// directChild reports the name of a dataset directly beneath root, and
+// whether it is one: root itself is not, and neither is anything deeper.
+func directChild(root, dataset string) (string, bool) {
+	rest, beneath := strings.CutPrefix(dataset, root+"/")
+	if !beneath || rest == "" || strings.Contains(rest, "/") {
+		return "", false
+	}
+	return rest, true
+}
+
+func diffChildProperties(child ChildDataset, dataset Dataset) []Difference {
+	differences := make([]Difference, 0)
+	for _, property := range sortedKeys(child.Properties) {
+		// mountpoint is reported as its own column rather than among the
+		// properties a dataset sets locally (JD-023).
+		has := dataset.Properties[property]
+		if property == "mountpoint" {
+			has = dataset.Mountpoint
+		}
+		if want := child.Properties[property]; want != has {
+			differences = append(differences, Difference{
+				Field: "datasets." + child.Name + "." + property, Want: want, Have: has})
+		}
+	}
+	return differences
+}
+
+func sortedKeys(values map[string]string) []string {
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // showSetting renders a setting's values for the diff. An absent setting is

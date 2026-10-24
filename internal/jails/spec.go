@@ -35,6 +35,13 @@ type Spec struct {
 	// flag for allow.chflags -- so the map is typed by the allowlist
 	// rather than by Go (JD-018).
 	Params map[string]any `json:"params,omitempty"`
+	// Datasets are child datasets created beneath the jail's own, in the
+	// order given, before the jail is configured or started (JD-007).
+	Datasets []ChildDataset `json:"datasets,omitempty"`
+	// Properties are ZFS user properties set on the jail's own dataset --
+	// the tags an automation client finds its jails by, which Jail Deck
+	// carries and never interprets (JD-004, JD-023).
+	Properties map[string]string `json:"properties,omitempty"`
 	// Autostart adds the jail to rc.conf's jail_list, which is what makes it
 	// come back after a reboot and nothing else (JD-030).
 	Autostart bool `json:"autostart,omitempty"`
@@ -102,6 +109,7 @@ type Network struct {
 const (
 	StepCheck     = "check"
 	StepClone     = "clone"
+	StepDatasets  = "datasets"
 	StepConfigure = "configure"
 	StepAutostart = "autostart"
 	StepStart     = "start"
@@ -118,6 +126,13 @@ type Created struct {
 	Mountpoint string `json:"mountpoint"`
 	// From is the template snapshot the root was cloned from.
 	From string `json:"from"`
+	// Datasets is what each child dataset the spec asked for came to --
+	// created now, or already there and brought to its properties. The same
+	// report PUT /api/jails/{name}/datasets/{child} gives for one of them.
+	Datasets []DatasetChange `json:"datasets,omitempty"`
+	// Properties are the jail dataset's user properties as they stand
+	// afterwards, read back rather than assumed (JD-023).
+	Properties map[string]string `json:"properties,omitempty"`
 	// Config is the file the stanza was written to.
 	Config    string `json:"config,omitempty"`
 	Autostart bool   `json:"autostart"`
@@ -196,6 +211,18 @@ func (s Spec) normalize() (Spec, error) {
 	if _, err := renderParams(s.Params); err != nil {
 		return Spec{}, err
 	}
+
+	datasets, err := normalizeChildren(s.Datasets)
+	if err != nil {
+		return Spec{}, err
+	}
+	s.Datasets = datasets
+
+	// Whether a child's mountpoint is inside the jail cannot be asked yet:
+	// the jail has no path until its root is cloned, and JD-021 fixes only
+	// where the layout is mounted, not that every pool mounts it alike. It
+	// is the one refusal in a create that has to come after something
+	// exists, and it is made at the datasets step.
 	return s, nil
 }
 

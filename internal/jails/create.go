@@ -53,6 +53,10 @@ func (s *JailService) Create(ctx context.Context, spec Spec) (Created, error) {
 		return Created{}, common.NewAppError(http.StatusNotImplemented,
 			"this Jail Deck cannot build the epair a vnet jail needs")
 	}
+	if (len(spec.Datasets) > 0 || len(spec.Properties) > 0) && s.datasetWriter == nil {
+		return Created{}, common.NewAppError(http.StatusNotImplemented,
+			"this Jail Deck cannot create a jail's child datasets or tag its dataset")
+	}
 
 	result := Created{From: spec.Template}
 
@@ -108,6 +112,15 @@ func (s *JailService) Create(ctx context.Context, spec Spec) (Created, error) {
 	}
 	result.Root, result.Mountpoint = root.Dataset, root.Mountpoint
 
+	// The jail's own datasets and tags, before it is configured or started.
+	// A jail whose /etc/rc expects its data mounted should find it there,
+	// and a quota that arrives after the first write is a quota that was
+	// not in force when it mattered (JD-007).
+	if err := s.buildStorage(opCtx, spec, root.Mountpoint, &result); err != nil {
+		result.FailedAt = StepDatasets
+		return result, err
+	}
+
 	at.Path = root.Mountpoint
 	content, err := spec.Stanza(at)
 	if err != nil {
@@ -160,6 +173,55 @@ func (s *JailService) Create(ctx context.Context, spec Spec) (Created, error) {
 	}
 	result.Running = true
 	return result, nil
+}
+
+// buildStorage creates the jail's child datasets and tags its own dataset.
+//
+// Each child goes through the same idempotent EnsureDataset a client would
+// call on its own (JD-016), so a create repeated after a timeout brings the
+// datasets to the spec rather than failing on ones that are already there.
+//
+// A child that exists somewhere other than where the spec puts it stops the
+// create. EnsureDataset reports that as a conflict rather than an error --
+// mountpoint is settable only at creation (JD-023) -- and a jail built on
+// top of it would be a jail whose data is not where it says.
+func (s *JailService) buildStorage(ctx context.Context, spec Spec, jailPath string, result *Created) error {
+	if s.datasetWriter == nil {
+		return nil
+	}
+	for _, child := range spec.Datasets {
+		if err := checkChildMountpoint(jailPath, child.Name, child.Properties); err != nil {
+			return err
+		}
+		change, err := s.datasetWriter.EnsureDataset(ctx, jailPath, child.Name, child.Properties)
+		if err != nil {
+			return err
+		}
+		result.Datasets = append(result.Datasets, change)
+		if change.Conflict != nil {
+			return common.NewAppError(http.StatusConflict, fmt.Sprintf(
+				"%s already exists with %s %q, and the spec asks for %q. That is not a property "+
+					"this API changes on an existing dataset (JD-023)",
+				change.Dataset, change.Conflict.Property, change.Conflict.Have, change.Conflict.Want))
+		}
+	}
+
+	if len(spec.Properties) == 0 {
+		return nil
+	}
+	// A pointer per value because SetUserProperties takes nil as "remove
+	// this one". A spec never removes: it says what the jail's tags are,
+	// and a tag it does not mention belongs to somebody else (JD-023).
+	tags := make(map[string]*string, len(spec.Properties))
+	for name, value := range spec.Properties {
+		tags[name] = &value
+	}
+	properties, err := s.datasetWriter.SetUserProperties(ctx, jailPath, "", tags)
+	if err != nil {
+		return err
+	}
+	result.Properties = properties
+	return nil
 }
 
 // checkBridge refuses a bridge the host does not have, before anything is

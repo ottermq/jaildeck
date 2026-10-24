@@ -914,6 +914,31 @@ type Template struct {
 // @Description  host's **whole /dev** — disks, mem, kmem, bpf — silently, while `jls`
 // @Description  reports the number that was asked for. Rulesets live in
 // @Description  /etc/devfs.rules and are yours; Jail Deck never writes them.
+// @Description
+// @Description  **`datasets`** are child datasets made beneath the jail's own, one level
+// @Description  down, before the stanza is written and long before the jail starts — a
+// @Description  jail whose `/etc/rc` expects its data mounted should find it there, and a
+// @Description  quota that arrives after the first write was not in force when it
+// @Description  mattered. Each carries native ZFS properties from JD-023's allowlist:
+// @Description  `mountpoint`, `refquota`, `recordsize`, `compression`, `atime`. A quota
+// @Description  belongs on a child rather than on the jail's root, because a clone's
+// @Description  `referenced` space includes the template's blocks (JD-007).
+// @Description
+// @Description  `mountpoint` is a path on the **host** and defaults to the one the child
+// @Description  inherits — `<jail path>/<name>`, which is `/<name>` seen from inside the
+// @Description  jail. A dataset wanted at `/var/db/postgres` inside a jail at
+// @Description  `/usr/local/jails/containers/db1` asks for
+// @Description  `/usr/local/jails/containers/db1/var/db/postgres`.
+// @Description
+// @Description  **A mountpoint outside the jail is refused.** Measured: ZFS makes such a
+// @Description  dataset without complaint, the jail cannot see it, and `zfs destroy -r`
+// @Description  on the jail destroys it anyway — so the jail's destroy would take a
+// @Description  dataset living elsewhere on the host. Data meant to outlive the jail goes
+// @Description  through `POST /api/jails/{name}/datasets/{child}/retain` instead.
+// @Description
+// @Description  **`properties`** are ZFS user properties set on the jail's own dataset —
+// @Description  the tags a client finds its jails by. They are merged, never replaced, so
+// @Description  a tag another tool set is left alone (JD-004, JD-023).
 // @Tags         jails
 // @Accept       json
 // @Produce      json
@@ -922,7 +947,7 @@ type Template struct {
 // @Failure      400   {object}  common.ErrorResponse  "A malformed spec, a parameter that is not allowed, a devfs ruleset the kernel has not loaded, or rctl limits on a host that is not accounting"
 // @Failure      401   {object}  common.ErrorResponse
 // @Failure      404   {object}  common.ErrorResponse  "No such template snapshot"
-// @Failure      409   {object}  common.ErrorResponse  "A jail of that name already exists, its configuration file does, or rctl rules are still keyed to the name"
+// @Failure      409   {object}  common.ErrorResponse  "A jail of that name already exists, its configuration file does, rctl rules are still keyed to the name, or a child dataset is somewhere else"
 // @Failure      500   {object}  Created               "A step failed; the body says which and what exists"
 // @Failure      501   {object}  common.ErrorResponse  "This Jail Deck has no storage wired"
 // @Security     BearerAuth
@@ -977,6 +1002,21 @@ func (h *JailHandler) Create(w http.ResponseWriter, r *http.Request) {
 // @Description  live: the root's clone origin, and rc.conf's `jail_list`. A jail whose
 // @Description  root was re-cloned reports the template it actually came from.
 // @Description
+// @Description  **Child datasets and tags** are compared against ZFS. A child the spec
+// @Description  asks for and the jail does not have is a difference, and so is one the
+// @Description  jail has and the spec does not name — a child takes space and `zfs
+// @Description  destroy -r` on the jail takes it along, so it is part of the jail in a
+// @Description  way a tag is not. Only direct children: the spec describes one level, so
+// @Description  a deeper dataset is one it could neither ask for nor disown.
+// @Description
+// @Description  Properties are compared as a subset, both kinds. A native property a
+// @Description  dataset sets and the spec does not mention is not a difference, because
+// @Description  the write side applies rather than replaces; nor is a user property
+// @Description  another tool set, because the write side merges (JD-023). Values compare
+// @Description  as text, so a `refquota` written `2048M` against one ZFS prints as `2G`
+// @Description  reads as a difference — parsing a size here would be the second opinion
+// @Description  JD-023 refuses to add.
+// @Description
 // @Description  **`start` is not compared.** It says whether to start the jail once it
 // @Description  has been configured, which is an instruction about the create rather
 // @Description  than a property of the jail — comparing it would make a jail stopped for
@@ -985,8 +1025,11 @@ func (h *JailHandler) Create(w http.ResponseWriter, r *http.Request) {
 // @Description  the jail is running and the client decides.
 // @Description
 // @Description  `field` in a difference is the jail.conf(5) setting, because that is
-// @Description  where the difference is and what an operator would edit; `template` and
-// @Description  `autostart` are named for the spec field instead.
+// @Description  where the difference is and what an operator would edit; the ones that
+// @Description  live elsewhere are named for the spec field — `template`, `autostart`,
+// @Description  `datasets.<child>[.<property>]` and `properties.<tag>`. They are reported
+// @Description  in that order: template, the configuration's settings as they sort,
+// @Description  datasets, tags, autostart.
 // @Description
 // @Description  The body may leave `name` out — the URL has already said it. A body that
 // @Description  names a different jail is refused.

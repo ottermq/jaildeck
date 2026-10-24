@@ -48,10 +48,9 @@ const (
 	NetworkAlias NetworkMode = "alias"
 	// NetworkDisable gives the jail no network at all.
 	NetworkDisable NetworkMode = "disable"
-	// NetworkVNET is JD-017. Accepted by the type and refused by the
-	// validator until the stanza that builds the epair is written, because
-	// answering "unknown mode" to a mode this project has already decided on
-	// would be a lie about the roadmap.
+	// NetworkVNET gives the jail its own network stack on an epair, with the
+	// host end on a bridge the operator owns (JD-017). The jail that is safe
+	// to hand to an untrusted workload: no shared 127.0.0.1.
 	NetworkVNET NetworkMode = "vnet"
 )
 
@@ -61,10 +60,32 @@ const (
 // asked for is how a jail ends up reachable when it should not be.
 type Network struct {
 	Mode NetworkMode `json:"mode"`
-	// IP4 is the address for NetworkAlias, with its prefix: 192.0.2.10/24.
+	// IP4 is the address, with its prefix: 192.0.2.10/24. Read by
+	// NetworkAlias, where it is required, and by NetworkVNET, where it is
+	// optional -- a VNET jail may get its address from DHCP inside itself.
 	IP4 string `json:"ip4,omitempty"`
-	// Interface is the host interface the alias is added to.
+	// Interface is the host interface the alias is added to. NetworkAlias
+	// only: a VNET jail reaches the network through Bridge instead.
 	Interface string `json:"interface,omitempty"`
+
+	// Bridge is the bridge the host end of the epair joins, and is required
+	// for NetworkVNET. **It is the operator's.** Jail Deck adds and removes
+	// its own epairs and nothing else: it never creates a bridge, never adds
+	// a physical interface to one, and never edits rc.conf's network
+	// settings (JD-017). GET /api/host reports which bridges exist.
+	Bridge string `json:"bridge,omitempty"`
+	// Private makes the host end a private member of the bridge.
+	//
+	// Measured on 15.1-RELEASE-p5: two private members cannot reach each
+	// other, but a private member still reaches non-private members and the
+	// bridge itself. So this isolates a jail from the other jails that also
+	// ask for it -- not from every jail on the bridge, and not from the
+	// host. Worth being exact about, because the weaker guarantee is the one
+	// an operator would assume they had.
+	Private bool `json:"private,omitempty"`
+	// Gateway is the jail's default route, set inside the jail. Only
+	// meaningful with IP4, because a route needs an address to leave by.
+	Gateway string `json:"gateway,omitempty"`
 }
 
 // The steps of a create, in the order they run. A failure names the one it
@@ -92,6 +113,14 @@ type Created struct {
 	Config    string `json:"config,omitempty"`
 	Autostart bool   `json:"autostart"`
 	Running   bool   `json:"running"`
+	// Epair is the host end of a VNET jail's epair -- what appears on the
+	// bridge, and what a failed start would leave behind. Empty for every
+	// other mode.
+	Epair string `json:"epair,omitempty"`
+	// EpairRemoved says the epair was destroyed after a start that could not
+	// be confirmed. Only Jail Deck will do that: jail(8) does not run
+	// exec.poststop for a start that failed (JD-030).
+	EpairRemoved bool `json:"epair_removed,omitempty"`
 	// FailedAt names the step that stopped, and is absent on success.
 	FailedAt string `json:"failed_at,omitempty"`
 	// Error is why it stopped. The body of a failed create carries both: what
@@ -155,19 +184,36 @@ func (n Network) normalize() (Network, error) {
 			return Network{}, badSpec(`network.interface is required for mode "alias": an alias is added to an interface of the host`)
 		}
 	case NetworkVNET:
-		return Network{}, common.NewAppError(http.StatusNotImplemented,
-			`network mode "vnet" is decided (JD-017) but not built yet; use "alias", "inherit" or "disable"`)
+		if n.Bridge == "" {
+			return Network{}, badSpec(`network.bridge is required for mode "vnet": the host end of the epair has to join one, and Jail Deck never creates a bridge (JD-017)`)
+		}
+		if n.Gateway != "" && n.IP4 == "" {
+			return Network{}, badSpec(`network.gateway needs network.ip4: a default route needs an address to leave by`)
+		}
 	default:
 		return Network{}, badSpec(fmt.Sprintf(
 			`unknown network mode %q; it has to be "alias", "inherit", "disable" or "vnet"`, n.Mode))
 	}
 
-	if n.Mode != NetworkAlias {
-		if n.IP4 != "" {
-			return Network{}, badSpec(fmt.Sprintf(`network.ip4 is only read for mode "alias", and this spec asks for %q`, n.Mode))
+	// Each mode reads some fields and not others, and a field set for a mode
+	// that ignores it is refused rather than dropped: silently discarding an
+	// address someone asked for is how a jail ends up reachable when it was
+	// believed not to be.
+	if n.Mode != NetworkAlias && n.Mode != NetworkVNET && n.IP4 != "" {
+		return Network{}, badSpec(fmt.Sprintf(`network.ip4 is only read for modes "alias" and "vnet", and this spec asks for %q`, n.Mode))
+	}
+	if n.Mode != NetworkAlias && n.Interface != "" {
+		return Network{}, badSpec(fmt.Sprintf(`network.interface is only read for mode "alias", and this spec asks for %q`, n.Mode))
+	}
+	if n.Mode != NetworkVNET {
+		if n.Bridge != "" {
+			return Network{}, badSpec(fmt.Sprintf(`network.bridge is only read for mode "vnet", and this spec asks for %q`, n.Mode))
 		}
-		if n.Interface != "" {
-			return Network{}, badSpec(fmt.Sprintf(`network.interface is only read for mode "alias", and this spec asks for %q`, n.Mode))
+		if n.Private {
+			return Network{}, badSpec(fmt.Sprintf(`network.private is only read for mode "vnet", and this spec asks for %q`, n.Mode))
+		}
+		if n.Gateway != "" {
+			return Network{}, badSpec(fmt.Sprintf(`network.gateway is only read for mode "vnet", and this spec asks for %q`, n.Mode))
 		}
 	}
 	return n, nil

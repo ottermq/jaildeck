@@ -74,6 +74,12 @@ type Dependencies struct {
 	// both: a destroy takes the jail back out of jail_list.
 	RootDestroyer RootDestroyer
 	ConfigRemover ConfigRemover
+
+	// The three a VNET jail needs (JD-017). Absent, only mode "vnet" is
+	// refused; every other mode is unaffected.
+	Bridges BridgeSource
+	Epairs  EpairAllocator
+	Epair   EpairCleaner
 }
 
 type JailService struct {
@@ -90,6 +96,9 @@ type JailService struct {
 	autostart       Autostarter
 	rootDestroyer   RootDestroyer
 	configRemover   ConfigRemover
+	bridges         BridgeSource
+	epairs          EpairAllocator
+	epair           EpairCleaner
 }
 
 func NewJailService(deps Dependencies) *JailService {
@@ -107,6 +116,9 @@ func NewJailService(deps Dependencies) *JailService {
 		autostart:       deps.Autostart,
 		rootDestroyer:   deps.RootDestroyer,
 		configRemover:   deps.ConfigRemover,
+		bridges:         deps.Bridges,
+		epairs:          deps.Epairs,
+		epair:           deps.Epair,
 	}
 }
 

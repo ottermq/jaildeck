@@ -257,7 +257,7 @@ Goal: create and destroy jails, including VNET jails with resource limits, from 
 
 - confirm the template's `@base` snapshot exists (precondition), then clone it into the jail's own dataset
 - generate `jail.conf.d/<name>.conf` with `text/template`, not string concatenation
-- **VNET:** the stanza creates the epair in `exec.prestart` and destroys it in `exec.poststop`, adds the host end to the configured bridge as a `private` member, and sets the address and default route inside the jail. The bridge itself is the operator's (Host Setup reports it)
+- **VNET:** the stanza creates the epair in `exec.prestart` and destroys it in `exec.poststop`, adds the host end to the configured bridge as a `private` member, and sets the address and default route inside the jail. The bridge itself is the operator's (Host Setup reports it). *Built 2026-10-24: the unit is chosen from what no interface uses and no stanza claims, `lo0` and the address come up before `/etc/rc`, and a start that cannot be confirmed has its epair destroyed (JD-017, JD-030).*
 - **limits:** rctl rules and cpuset applied when the jail starts and removed when it stops — by `exec.*` hooks or by the adapter, see the open questions
 - **parameters:** only from the allowlist in JD-018; anything else is rejected with the parameter named
 - child datasets and user properties created through the Storage Writes primitives

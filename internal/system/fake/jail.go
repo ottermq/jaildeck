@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,7 +32,11 @@ type JailSystem struct {
 	// autostart is the fake's jail_list. Nothing reports it yet; it is kept
 	// so the fake cannot claim an autostart it did not record.
 	autostart map[string]bool
-	nextJID   int
+	// epairs maps a jail name to the host end of the epair its stanza
+	// claims, so the fake can hand out units that do not collide and can
+	// answer a cleanup truthfully.
+	epairs  map[string]string
+	nextJID int
 }
 
 func NewJailSystem() *JailSystem {
@@ -67,6 +72,7 @@ func NewJailSystem() *JailSystem {
 		order:     make([]string, 0, len(seed)),
 		configs:   map[string]string{},
 		autostart: map[string]bool{},
+		epairs:    map[string]string{},
 	}
 	for _, jail := range seed {
 		s.jails[jail.Name] = jail
@@ -161,12 +167,18 @@ func (s *JailSystem) WriteConfig(_ context.Context, name, content string) (strin
 	}
 	s.configs[name] = content
 
+	if match := epairUnitRE.FindStringSubmatch(content); match != nil {
+		s.epairs[name] = "epair" + match[1] + "a"
+	}
+
 	jail := jails.Jail{
 		Name:     name,
 		Status:   jails.JailStatusStopped,
 		Hostname: confValue(content, "host.hostname"),
-		IP:       confValue(content, "ip4.addr"),
-		Path:     confValue(content, "path"),
+		// A vnet jail sets no ip4.addr, so it reports no address -- which is
+		// what jls says about one on a real host too.
+		IP:   confValue(content, "ip4.addr"),
+		Path: confValue(content, "path"),
 	}
 	if jail.Hostname == "" {
 		jail.Hostname = name
@@ -197,9 +209,57 @@ func (s *JailSystem) RemoveConfig(_ context.Context, name string) (string, error
 
 	delete(s.configs, name)
 	delete(s.jails, name)
+	delete(s.epairs, name)
 	s.order = slices.DeleteFunc(s.order, func(listed string) bool { return listed == name })
 	return "/fake/etc/jail.conf.d/" + name + ".conf", nil
 }
+
+// Bridges is the operator-owned bridge a vnet jail can ask for. One, so a
+// spec naming any other bridge is refused the way a real host would refuse
+// it (JD-017).
+func (s *JailSystem) Bridges(context.Context) ([]string, error) {
+	return []string{"bridge0"}, nil
+}
+
+// FreeEpairUnit hands out the lowest unit no stanza here already claims,
+// which is the same question the real adapter asks of ifconfig and of
+// jail.conf.d.
+func (s *JailSystem) FreeEpairUnit(context.Context) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	taken := map[string]bool{}
+	for _, content := range s.configs {
+		for _, match := range epairUnitRE.FindAllStringSubmatch(content, -1) {
+			taken[match[1]] = true
+		}
+	}
+	for unit := 0; ; unit++ {
+		if number := strconv.Itoa(unit); !taken[number] {
+			return "epair" + number, nil
+		}
+	}
+}
+
+// RemoveJailEpair destroys the epair the jail's stanza claims, found the way
+// the real adapter finds it: by the description, not by the name.
+func (s *JailSystem) RemoveJailEpair(_ context.Context, name string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	content, configured := s.configs[name]
+	if !configured || !strings.Contains(content, "descr jail:"+name) {
+		return "", nil
+	}
+	iface, claimed := s.epairs[name]
+	if !claimed {
+		return "", nil
+	}
+	delete(s.epairs, name)
+	return iface, nil
+}
+
+var epairUnitRE = regexp.MustCompile(`\bepair(\d+)`)
 
 func (s *JailSystem) SetAutostart(_ context.Context, name string, enabled bool) (string, error) {
 	s.mu.Lock()
@@ -244,8 +304,11 @@ func createFakeCommand(name, op string) system.Command {
 }
 
 var (
-	_ jails.JailSystem    = (*JailSystem)(nil)
-	_ jails.ConfigWriter  = (*JailSystem)(nil)
-	_ jails.ConfigRemover = (*JailSystem)(nil)
-	_ jails.Autostarter   = (*JailSystem)(nil)
+	_ jails.JailSystem     = (*JailSystem)(nil)
+	_ jails.ConfigWriter   = (*JailSystem)(nil)
+	_ jails.ConfigRemover  = (*JailSystem)(nil)
+	_ jails.Autostarter    = (*JailSystem)(nil)
+	_ jails.BridgeSource   = (*JailSystem)(nil)
+	_ jails.EpairAllocator = (*JailSystem)(nil)
+	_ jails.EpairCleaner   = (*JailSystem)(nil)
 )

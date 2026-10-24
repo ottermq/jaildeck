@@ -855,7 +855,33 @@ type Template struct {
 // @Description
 // @Description  Network modes: `alias` (one address on a host interface, needs ip4 and
 // @Description  interface), `inherit` (the host's addresses and its stack), `disable`
-// @Description  (no network, the default). `vnet` is decided (JD-017) and not built yet.
+// @Description  (no network, the default), and `vnet`.
+// @Description
+// @Description  **`vnet`** gives the jail its own network stack on an epair, with the host
+// @Description  end on `bridge` — which must already exist, because **Jail Deck never
+// @Description  creates a bridge** (JD-017); `GET /api/host` reports the ones that do.
+// @Description  `private: true` makes the host end a private bridge member. Measured: two
+// @Description  **private** members cannot reach each other at layer 2, but a private
+// @Description  member still reaches non-private ones and the bridge itself — so the
+// @Description  isolation only holds where every jail on the bridge asks for it.
+// @Description  `ip4` and `gateway`
+// @Description  are set inside the jail and are both optional — a VNET jail may instead
+// @Description  get its address from DHCP of its own.
+// @Description
+// @Description  The epair is created in `exec.prestart` and destroyed in `exec.poststop`,
+// @Description  so the jail gets the same network started from a shell as from here. The
+// @Description  unit is chosen when the stanza is written, from what no interface uses and
+// @Description  no jail configuration claims.
+// @Description
+// @Description  **A VNET jail reports no `ip` in the listing.** It sets no `ip4.addr`, so
+// @Description  neither `jls` nor its configuration carries one — the address is in the
+// @Description  jail's own stack. This response carries the one that was asked for.
+// @Description
+// @Description  If the start of a VNET jail cannot be confirmed, Jail Deck destroys the
+// @Description  epair, because `jail(8)` does not run `exec.poststop` for a start that
+// @Description  failed and the orphan would block every retry (JD-030). That is the only
+// @Description  thing a failed create undoes. If the cleanup itself fails, the interface
+// @Description  is named in the error rather than left silent.
 // @Tags         jails
 // @Accept       json
 // @Produce      json
@@ -900,6 +926,10 @@ func (h *JailHandler) Create(w http.ResponseWriter, r *http.Request) {
 // @Description  Stops the jail, takes it out of rc.conf's `jail_list`, deletes
 // @Description  /etc/jail.conf.d/<name>.conf, and destroys its dataset — in that order
 // @Description  (JD-030).
+// @Description
+// @Description  A VNET jail's epair goes when it stops, through its own `exec.poststop`.
+// @Description  One left behind by an earlier failed start is destroyed here too, and
+// @Description  named in `epair` — otherwise it would outlive the jail it belongs to.
 // @Description
 // @Description  **Child datasets go with it** (JD-007). They are listed in `taken`. A
 // @Description  dataset worth keeping has to stop being a child first: `POST

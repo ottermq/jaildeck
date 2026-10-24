@@ -245,7 +245,31 @@ func TestSpecNormalizeRefuses(t *testing.T) {
 			name:    "an address for a mode that does not read one",
 			spec:    Spec{Name: "db1", Template: "p/t@base", Network: Network{Mode: NetworkInherit, IP4: "192.0.2.10/24"}},
 			code:    http.StatusBadRequest,
-			message: `only read for mode "alias"`,
+			message: `network.ip4 is only read for modes "alias" and "vnet"`,
+		},
+		{
+			name:    "an interface for vnet, which reaches the network by a bridge",
+			spec:    Spec{Name: "db1", Template: "p/t@base", Network: Network{Mode: NetworkVNET, Bridge: "bridge0", Interface: "em0"}},
+			code:    http.StatusBadRequest,
+			message: `network.interface is only read for mode "alias"`,
+		},
+		{
+			name:    "a bridge for a mode with no epair",
+			spec:    Spec{Name: "db1", Template: "p/t@base", Network: Network{Mode: NetworkInherit, Bridge: "bridge0"}},
+			code:    http.StatusBadRequest,
+			message: `network.bridge is only read for mode "vnet"`,
+		},
+		{
+			name:    "private for a mode with no bridge membership",
+			spec:    Spec{Name: "db1", Template: "p/t@base", Network: Network{Mode: NetworkDisable, Private: true}},
+			code:    http.StatusBadRequest,
+			message: `network.private is only read for mode "vnet"`,
+		},
+		{
+			name:    "a gateway for a mode that sets no route",
+			spec:    Spec{Name: "db1", Template: "p/t@base", Network: Network{Mode: NetworkAlias, IP4: "192.0.2.10/24", Interface: "em0", Gateway: "192.0.2.1"}},
+			code:    http.StatusBadRequest,
+			message: `network.gateway is only read for mode "vnet"`,
 		},
 		{
 			name:    "an unknown mode",
@@ -255,10 +279,18 @@ func TestSpecNormalizeRefuses(t *testing.T) {
 		},
 		{
 			// Decided in JD-017 and not built. "Unknown mode" would be a lie.
-			name:    "vnet is not built yet",
+			// The bridge is the operator's and Jail Deck never creates one
+			// (JD-017), so there is no sensible default to fall back on.
+			name:    "vnet without a bridge",
 			spec:    Spec{Name: "db1", Template: "p/t@base", Network: Network{Mode: NetworkVNET}},
-			code:    http.StatusNotImplemented,
-			message: "not built yet",
+			code:    http.StatusBadRequest,
+			message: "network.bridge is required",
+		},
+		{
+			name:    "a gateway with no address to leave by",
+			spec:    Spec{Name: "db1", Template: "p/t@base", Network: Network{Mode: NetworkVNET, Bridge: "bridge0", Gateway: "10.0.0.1"}},
+			code:    http.StatusBadRequest,
+			message: "network.gateway needs network.ip4",
 		},
 	}
 	for _, tt := range tests {
@@ -337,7 +369,7 @@ func TestStanza(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			spec := Spec{Name: "db1", Hostname: "db1.example", Network: tt.network}
-			got, err := spec.Stanza("/usr/local/jails/containers/db1")
+			got, err := spec.Stanza(Placement{Path: "/usr/local/jails/containers/db1", Epair: "epair7"})
 			if err != nil {
 				t.Fatalf("Stanza: %v", err)
 			}
@@ -365,7 +397,7 @@ func TestStanza(t *testing.T) {
 // be written and then never read back, so the jail would vanish from the
 // listing.
 func TestStanzaCommentsAreHash(t *testing.T) {
-	got, err := Spec{Name: "db1", Hostname: "db1", Network: Network{Mode: NetworkDisable}}.Stanza("/p")
+	got, err := Spec{Name: "db1", Hostname: "db1", Network: Network{Mode: NetworkDisable}}.Stanza(Placement{Path: "/p"})
 	if err != nil {
 		t.Fatalf("Stanza: %v", err)
 	}
@@ -382,7 +414,7 @@ func TestStanzaCommentsAreHash(t *testing.T) {
 // A clone that reported no mountpoint would produce a jail with no path, and
 // jail(8) would refuse the stanza. Caught before the file is written.
 func TestStanzaRefusesAnEmptyPath(t *testing.T) {
-	_, err := Spec{Name: "db1", Network: Network{Mode: NetworkDisable}}.Stanza("")
+	_, err := Spec{Name: "db1", Network: Network{Mode: NetworkDisable}}.Stanza(Placement{})
 	if err == nil {
 		t.Fatal("Stanza with no path = nil error, want one")
 	}

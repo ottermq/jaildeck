@@ -27,7 +27,9 @@ var confTemplate = template.Must(template.New("jail.conf").Parse(
 # not what Jail Deck remembers (JD-011).
 
 {{ .Name }} {
+{{- if ne .Mode "vnet" }}
 	exec.start = "/bin/sh /etc/rc";
+{{- end }}
 	exec.stop = "/bin/sh /etc/rc.shutdown";
 	exec.consolelog = "/var/log/jail_console_${name}.log";
 	exec.clean;
@@ -40,6 +42,28 @@ var confTemplate = template.Must(template.New("jail.conf").Parse(
 	ip4.addr = {{ .IP4 }};
 	interface = {{ .Interface }};
 	ip6 = disable;
+{{- else if eq .Mode "vnet" }}
+
+	vnet;
+	vnet.interface = "{{ .JailEpair }}";
+
+	exec.prestart = "ifconfig {{ .Epair }} create";
+	exec.prestart += "ifconfig {{ .HostEpair }} descr jail:{{ .Name }} up";
+	exec.prestart += "ifconfig {{ .Bridge }} addm {{ .HostEpair }}";
+{{- if .Private }}
+	exec.prestart += "ifconfig {{ .Bridge }} private {{ .HostEpair }}";
+{{- end }}
+
+	exec.start = "ifconfig lo0 inet 127.0.0.1/8 up";
+{{- if .IP4 }}
+	exec.start += "ifconfig {{ .JailEpair }} inet {{ .IP4 }} up";
+{{- end }}
+{{- if .Gateway }}
+	exec.start += "route -q add default {{ .Gateway }}";
+{{- end }}
+	exec.start += "/bin/sh /etc/rc";
+
+	exec.poststop = "ifconfig {{ .HostEpair }} destroy";
 {{- else }}
 	ip4 = {{ .Mode }};
 	ip6 = {{ .Mode }};
@@ -57,10 +81,32 @@ type confData struct {
 	Mode      string
 	IP4       string
 	Interface string
+
+	// The VNET half. Epair is the pair ("epair7"), and the two ends are
+	// derived from it rather than passed separately, so they cannot disagree.
+	Epair   string
+	Bridge  string
+	Private bool
+	Gateway string
 }
 
-// Stanza renders a spec's jail.conf block, for a jail whose root is mounted
-// at path.
+// HostEpair is the end that stays on the host and joins the bridge.
+func (d confData) HostEpair() string { return d.Epair + "a" }
+
+// JailEpair is the end moved into the jail's network stack.
+func (d confData) JailEpair() string { return d.Epair + "b" }
+
+// Placement is what the stanza needs that the spec does not carry: facts
+// decided while the jail was being built rather than asked for by the client.
+type Placement struct {
+	// Path is where the cloned root ended up mounted.
+	Path string
+	// Epair is the pair a VNET jail was given, as "epair7" -- the unit,
+	// without an end. Empty for every other mode.
+	Epair string
+}
+
+// Stanza renders a spec's jail.conf block for a jail placed at at.
 //
 // Exported because the FreeBSD adapter's tests write what this produces and
 // read it back with the adapter's own parser: a stanza Jail Deck generates
@@ -69,22 +115,32 @@ type confData struct {
 //
 // It expects a spec that has already been validated; Create normalizes before
 // it calls this.
-func (spec Spec) Stanza(path string) (string, error) {
-	if path == "" {
+func (spec Spec) Stanza(at Placement) (string, error) {
+	if at.Path == "" {
 		// Without a path a jail has no root, and jail(8) would refuse the
 		// stanza. Caught here because an empty path means the clone reported
 		// no mountpoint, which is worth saying plainly.
 		return "", common.NewAppError(http.StatusInternalServerError, fmt.Sprintf(
 			"the dataset cloned for %q reports no mountpoint, so the jail has no path", spec.Name))
 	}
+	if spec.Network.Mode == NetworkVNET && at.Epair == "" {
+		// Both ends of the stanza are derived from this, so an empty one
+		// would generate "ifconfig a create" and a jail with no network.
+		return "", common.NewAppError(http.StatusInternalServerError, fmt.Sprintf(
+			"no epair was reserved for %q, so its stanza cannot be written", spec.Name))
+	}
 	var out strings.Builder
 	data := confData{
 		Name:      spec.Name,
 		Hostname:  spec.Hostname,
-		Path:      path,
+		Path:      at.Path,
 		Mode:      string(spec.Network.Mode),
 		IP4:       spec.Network.IP4,
 		Interface: spec.Network.Interface,
+		Epair:     at.Epair,
+		Bridge:    spec.Network.Bridge,
+		Private:   spec.Network.Private,
+		Gateway:   spec.Network.Gateway,
 	}
 	if err := confTemplate.Execute(&out, data); err != nil {
 		return "", common.NewAppError(http.StatusInternalServerError,

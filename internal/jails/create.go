@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/ottermq/jaildeck/internal/audit"
@@ -46,6 +48,10 @@ func (s *JailService) Create(ctx context.Context, spec Spec) (Created, error) {
 		return Created{}, common.NewAppError(http.StatusNotImplemented,
 			"this Jail Deck cannot set autostart")
 	}
+	if spec.Network.Mode == NetworkVNET && (s.epairs == nil || s.epair == nil) {
+		return Created{}, common.NewAppError(http.StatusNotImplemented,
+			"this Jail Deck cannot build the epair a vnet jail needs")
+	}
 
 	result := Created{From: spec.Template}
 
@@ -65,10 +71,26 @@ func (s *JailService) Create(ctx context.Context, spec Spec) (Created, error) {
 		result.FailedAt = StepCheck
 		return result, err
 	}
+	if err := s.checkBridge(ctx, spec.Network); err != nil {
+		result.FailedAt = StepCheck
+		return result, err
+	}
 
 	// Detached from the request like every other mutation: a client hanging
 	// up must not leave a jail half built (JD-014).
 	opCtx := context.WithoutCancel(ctx)
+
+	// Reserved before the clone, because it is the last thing that can be
+	// refused without leaving a dataset behind.
+	at := Placement{}
+	if spec.Network.Mode == NetworkVNET {
+		at.Epair, err = s.epairs.FreeEpairUnit(ctx)
+		if err != nil {
+			result.FailedAt = StepCheck
+			return result, err
+		}
+		result.Epair = at.Epair + "a"
+	}
 
 	root, err := s.rootCloner.CloneRoot(opCtx, spec.Template, spec.Name)
 	if err != nil {
@@ -77,7 +99,8 @@ func (s *JailService) Create(ctx context.Context, spec Spec) (Created, error) {
 	}
 	result.Root, result.Mountpoint = root.Dataset, root.Mountpoint
 
-	content, err := spec.Stanza(root.Mountpoint)
+	at.Path = root.Mountpoint
+	content, err := spec.Stanza(at)
 	if err != nil {
 		result.FailedAt = StepConfigure
 		return result, err
@@ -123,10 +146,71 @@ func (s *JailService) Create(ctx context.Context, spec Spec) (Created, error) {
 	result.Jail = started.Jail
 	if startErr != nil {
 		result.FailedAt = StepStart
-		return result, startErr
+		return result, s.cleanEpair(opCtx, spec, &result, startErr)
 	}
 	result.Running = true
 	return result, nil
+}
+
+// checkBridge refuses a bridge the host does not have, before anything is
+// created. A typo here would otherwise surface as a start that fails *after*
+// the epair exists -- the one failure that leaves something behind.
+func (s *JailService) checkBridge(ctx context.Context, network Network) error {
+	if network.Mode != NetworkVNET || s.bridges == nil {
+		return nil
+	}
+	bridges, err := s.bridges.Bridges(ctx)
+	if err != nil {
+		// Unreadable, not absent. Creating the jail anyway would risk the
+		// leak this check exists to avoid.
+		return common.NewAppError(http.StatusInternalServerError,
+			"could not read the host's bridges: "+err.Error())
+	}
+	if slices.Contains(bridges, network.Bridge) {
+		return nil
+	}
+	have := "the host has none"
+	if len(bridges) > 0 {
+		have = "the host has " + strings.Join(bridges, ", ")
+	}
+	return common.NewAppError(http.StatusBadRequest, fmt.Sprintf(
+		"no bridge named %q; %s. Jail Deck never creates one (JD-017)", network.Bridge, have))
+}
+
+// cleanEpair destroys the epair a start that could not be confirmed left
+// behind, and folds the outcome into the error the caller will return.
+//
+// The only thing a half-created jail undoes (JD-030), and only because it is
+// the only leftover that *blocks the retry* rather than merely sitting there:
+// jail(8) skips exec.poststop for a failed start, so nothing else ever
+// destroys it, and the next attempt dies at `ifconfig ... already exists`.
+//
+// A cleanup that itself fails names the orphan in the error rather than
+// swallowing it. A leaked epair somebody has been told about is a minute's
+// work; a silent one is a jail that will never start again and no clue why.
+func (s *JailService) cleanEpair(ctx context.Context, spec Spec, result *Created, startErr error) error {
+	if spec.Network.Mode != NetworkVNET || s.epair == nil {
+		return startErr
+	}
+	removed, err := s.epair.RemoveJailEpair(ctx, spec.Name)
+	if err != nil {
+		return common.NewAppError(statusOf(startErr), fmt.Sprintf(
+			"%s. Its epair %s is still on %s and will block every retry; "+
+				"destroy it with: ifconfig %s destroy (cleaning it up failed: %s)",
+			startErr, result.Epair, spec.Network.Bridge, result.Epair, err))
+	}
+	result.EpairRemoved = removed != ""
+	return startErr
+}
+
+// statusOf keeps the status the failed start earned, so adding the epair's
+// fate to the message does not turn a refusal into a 500.
+func statusOf(err error) int {
+	var appErr *common.AppError
+	if errors.As(err, &appErr) {
+		return appErr.Code
+	}
+	return http.StatusInternalServerError
 }
 
 // logStep writes one audit line for a step of a larger operation, in the same

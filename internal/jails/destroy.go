@@ -3,6 +3,7 @@ package jails
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -40,6 +41,17 @@ type Destroyed struct {
 	// Config is the configuration file that was deleted.
 	Config    string `json:"config,omitempty"`
 	Destroyed bool   `json:"destroyed"`
+	// Epair is the interface destroyed with the jail. Normally there is
+	// none: a VNET jail's exec.poststop takes its own epair away when it
+	// stops. One turns up here when an earlier start failed and left the
+	// epair behind, which would otherwise outlive the jail (JD-030).
+	Epair string `json:"epair,omitempty"`
+	// EpairError says why a leftover epair could not be removed. The destroy
+	// carried on regardless -- the jail and its dataset are the point, and a
+	// stranded interface is a nuisance rather than a blocker. It is named
+	// here because a silent one is an interface on a bridge that nothing
+	// will ever account for.
+	EpairError string `json:"epair_error,omitempty"`
 	// Blocked is set when something kept on purpose is in the way. Nothing
 	// ran: the jail is still there, still configured, still as it was.
 	Blocked *DestroyBlock `json:"blocked,omitempty"`
@@ -129,6 +141,12 @@ func (s *JailService) Destroy(ctx context.Context, name JailName, confirm string
 		result.Stopped = true
 	}
 
+	// A stopped VNET jail has already taken its own epair away through
+	// exec.poststop, so this normally finds nothing. It finds something when
+	// an earlier start failed: jail(8) skips poststop then, and the orphan
+	// would otherwise outlive the jail it is named after.
+	s.sweepEpair(opCtx, name, &result)
+
 	// Idempotent in both directions, so a jail that was never in the list
 	// costs one command and no special case (JD-030).
 	command, err := s.autostart.SetAutostart(opCtx, name.String(), false)
@@ -160,6 +178,27 @@ func (s *JailService) Destroy(ctx context.Context, name JailName, confirm string
 	result.Root = root
 	result.Destroyed = true
 	return result, nil
+}
+
+// sweepEpair destroys a leftover epair, and never fails the destroy.
+//
+// The jail and its dataset are what the caller asked to be rid of. An
+// interface that cannot be removed is reported in the result and logged,
+// not raised: refusing to finish would leave the jail half destroyed over a
+// nuisance, which is the worse of the two outcomes.
+func (s *JailService) sweepEpair(ctx context.Context, name JailName, result *Destroyed) {
+	if s.epair == nil {
+		return
+	}
+	removed, err := s.epair.RemoveJailEpair(ctx, name.String())
+	if err != nil {
+		result.EpairError = err.Error()
+		common.Logger(ctx, "jail").Warn("could not remove the jail's leftover epair",
+			slog.String("jail", name.String()),
+			slog.Any("err", err))
+		return
+	}
+	result.Epair = removed
 }
 
 // blockedReason says what is in the way and what to do about it, in the shape

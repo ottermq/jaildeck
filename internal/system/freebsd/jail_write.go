@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ottermq/jaildeck/internal/common"
@@ -30,7 +31,10 @@ const confFileMode = 0o644
 // this file once, when the jail is created (JD-030), so an existing one was
 // written by somebody else and may well be a jail that is running.
 func (a *Adapter) WriteConfig(ctx context.Context, name, content string) (string, error) {
-	path := filepath.Join(a.confDir, name+".conf")
+	path, err := a.confPath(name)
+	if err != nil {
+		return "", err
+	}
 
 	if err := os.MkdirAll(a.confDir, 0o755); err != nil {
 		return path, common.NewAppError(http.StatusInternalServerError, fmt.Sprintf(
@@ -82,7 +86,64 @@ func (a *Adapter) SetAutostart(ctx context.Context, name string, enabled bool) (
 	return cmd.String(), err
 }
 
+// confPath is where a jail's own file goes, and the one place a jail name
+// becomes a filesystem path.
+//
+// The name reaches here from a URL. NewJailName accepts a dot because jls and
+// jail.conf do, so "." and ".." arrive intact -- and a path separator would
+// escape confDir outright. Neither can name a real jail, so neither is worth
+// anything but a refusal.
+func (a *Adapter) confPath(name string) (string, error) {
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return "", common.NewAppError(http.StatusBadRequest, fmt.Sprintf(
+			"%q cannot name a jail configuration file", name))
+	}
+	return filepath.Join(a.confDir, name+".conf"), nil
+}
+
+// ConfigFile reports where the jail's own file would be and whether it is
+// there.
+//
+// Absent means the jail is configured somewhere Jail Deck does not write --
+// /etc/jail.conf, or nowhere at all for a jail started by hand. The caller
+// decides what that means; this only answers.
+func (a *Adapter) ConfigFile(_ context.Context, name string) (string, bool, error) {
+	path, err := a.confPath(name)
+	if err != nil {
+		return "", false, err
+	}
+	switch _, err := os.Stat(path); {
+	case err == nil:
+		return path, true, nil
+	case os.IsNotExist(err):
+		return path, false, nil
+	default:
+		return path, false, common.NewAppError(http.StatusInternalServerError, fmt.Sprintf(
+			"could not read %s: %s", path, err))
+	}
+}
+
+// RemoveConfig deletes the jail's own file, which is what unconfigures the
+// jail: a configured jail is discovered from its configuration (JD-004), so
+// once this file is gone the jail is gone from the listing.
+//
+// A file that is already absent is not an error. ConfigFile is asked first
+// and refuses the destroy then; by this point the file was there a moment ago
+// and somebody removing it in between has done the same thing this would.
+func (a *Adapter) RemoveConfig(_ context.Context, name string) (string, error) {
+	path, err := a.confPath(name)
+	if err != nil {
+		return "", err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return path, common.NewAppError(http.StatusInternalServerError, fmt.Sprintf(
+			"could not remove %s: %s", path, err))
+	}
+	return path, nil
+}
+
 var (
-	_ jails.ConfigWriter = (*Adapter)(nil)
-	_ jails.Autostarter  = (*Adapter)(nil)
+	_ jails.ConfigWriter  = (*Adapter)(nil)
+	_ jails.ConfigRemover = (*Adapter)(nil)
+	_ jails.Autostarter   = (*Adapter)(nil)
 )

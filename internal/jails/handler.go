@@ -893,3 +893,73 @@ func (h *JailHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	common.WriteJSON(w, http.StatusCreated, result)
 }
+
+// Destroy removes a jail, its configuration and its filesystem.
+//
+// @Summary      Destroy a jail
+// @Description  Stops the jail, takes it out of rc.conf's `jail_list`, deletes
+// @Description  /etc/jail.conf.d/<name>.conf, and destroys its dataset — in that order
+// @Description  (JD-030).
+// @Description
+// @Description  **Child datasets go with it** (JD-007). They are listed in `taken`. A
+// @Description  dataset worth keeping has to stop being a child first: `POST
+// @Description  /api/jails/{name}/datasets/{child}/retain` moves it out.
+// @Description
+// @Description  **Snapshots, clones and holds refuse the destroy**, with each one named
+// @Description  and nothing touched. Each was kept on purpose, so each goes first — and
+// @Description  `zfs destroy -R` is never passed, which is what would make this check
+// @Description  decorative.
+// @Description
+// @Description  **The last word is ZFS's.** Nothing here re-checks that the jail is down
+// @Description  before destroying its dataset: `zfs destroy` refuses one whose jail is
+// @Description  running with `pool or dataset is busy`, and a check of our own would read
+// @Description  the state and then act on what it read, while the mount is held the whole
+// @Description  time. Only one of those can lose a race.
+// @Description
+// @Description  A jail with no file of its own in jail.conf.d is refused: its block is in
+// @Description  /etc/jail.conf, which belongs to you and which Jail Deck never writes, so
+// @Description  destroying the dataset would leave the jail declared and pointing nowhere.
+// @Description
+// @Description  **If a step fails, nothing is undone.** The body names the step and says
+// @Description  what was already done — a stopped jail stays stopped.
+// @Tags         jails
+// @Produce      json
+// @Param        name     path      string  true  "The jail to destroy"
+// @Param        confirm  query     string  true  "The jail's name again"
+// @Success      200      {object}  Destroyed
+// @Failure      400      {object}  common.ErrorResponse  "Missing or mismatched confirm"
+// @Failure      401      {object}  common.ErrorResponse
+// @Failure      404      {object}  common.ErrorResponse  "No such jail, or it has no dataset of its own"
+// @Failure      409      {object}  Destroyed             "Snapshots, clones or holds are in the way, or the jail is configured in /etc/jail.conf"
+// @Failure      500      {object}  Destroyed             "A step failed; the body says which and what was done"
+// @Failure      501      {object}  common.ErrorResponse  "This Jail Deck has no storage wired"
+// @Security     BearerAuth
+// @Router       /jails/{name} [delete]
+func (h *JailHandler) Destroy(w http.ResponseWriter, r *http.Request) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+
+	result, err := h.service.Destroy(r.Context(), name, r.URL.Query().Get("confirm"))
+	if err != nil {
+		// Once a step has run there is something the caller has to know
+		// about, and an error message on its own would throw it away. Before
+		// that -- a mismatched confirm, no such jail, a configuration file
+		// Jail Deck cannot remove -- nothing happened, so the plain error is
+		// the whole answer and an empty body would only bury it.
+		if result.Stopped || result.Unlisted || result.Config != "" {
+			result.Error = err.Error()
+			common.WriteJSON(w, statusForPartial(err), result)
+			return
+		}
+		common.HandlerError(w, err)
+		return
+	}
+	if result.Blocked != nil {
+		common.WriteJSON(w, http.StatusConflict, result)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, result)
+}

@@ -68,6 +68,9 @@ type stubAutostart struct {
 	err  error
 	set  map[string]bool
 	call int
+	// steps, when set, is shared with the other doubles so a test can assert
+	// the order the steps ran in and not merely that each one did.
+	steps *[]string
 }
 
 func (s *stubAutostart) SetAutostart(_ context.Context, name string, enabled bool) (string, error) {
@@ -75,6 +78,7 @@ func (s *stubAutostart) SetAutostart(_ context.Context, name string, enabled boo
 		s.set = map[string]bool{}
 	}
 	s.call++
+	record(s.steps, "autostart")
 	s.set[name] = enabled
 	return "sysrc jail_list+=" + name, s.err
 }
@@ -86,7 +90,18 @@ type createSystem struct {
 	existing []Jail
 	listErr  error
 	startErr error
+	stopErr  error
 	started  []string
+	stopped  []string
+	steps    *[]string
+}
+
+// record appends a step to a shared list, for the tests that care which
+// order the doubles were called in. A nil list means nobody is watching.
+func record(steps *[]string, step string) {
+	if steps != nil {
+		*steps = append(*steps, step)
+	}
 }
 
 func (s *createSystem) List(context.Context) ([]Jail, error) {
@@ -118,8 +133,22 @@ func (s *createSystem) Start(_ context.Context, name string) (OperationResult, e
 	return OperationResult{Jail: jail, Command: "service jail start " + name}, nil
 }
 
-func (s *createSystem) Stop(context.Context, string) (OperationResult, error) {
-	return OperationResult{}, nil
+// Stop takes the jail down the way the host would, so a destroy that runs
+// afterwards sees a stopped jail rather than the one it asked to stop.
+func (s *createSystem) Stop(_ context.Context, name string) (OperationResult, error) {
+	s.stopped = append(s.stopped, name)
+	record(s.steps, "stop")
+	if s.stopErr != nil {
+		return OperationResult{Jail: Jail{Name: name}, Command: "service jail stop " + name}, s.stopErr
+	}
+	for i, existing := range s.existing {
+		if existing.Name == name {
+			s.existing[i].Status = JailStatusStopped
+			s.existing[i].JID = ""
+			return OperationResult{Jail: s.existing[i], Command: "service jail stop " + name}, nil
+		}
+	}
+	return OperationResult{Jail: Jail{Name: name}, Command: "service jail stop " + name}, nil
 }
 func (s *createSystem) Restart(context.Context, string) (OperationResult, error) {
 	return OperationResult{}, nil

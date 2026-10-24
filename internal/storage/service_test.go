@@ -538,18 +538,25 @@ func (s *stubSystem) DestroyDataset(_ context.Context, dataset string, recursive
 	if s.writeErr != nil {
 		return Result{Dataset: dataset, Command: command}, s.writeErr
 	}
-	// zfs refuses a bare destroy of anything with snapshots. Modelled,
+	// zfs refuses a bare destroy of anything with snapshots or child
+	// datasets, and says "filesystem has children" for both. Modelled,
 	// because whether to pass -r is the code under test's decision.
 	if !recursive {
-		for _, snapshot := range s.snapshots {
-			if snapshot.Dataset == dataset {
-				return Result{Dataset: dataset, Command: command},
-					errors.New("cannot destroy '" + dataset + "': filesystem has children")
-			}
+		hasChildren := slices.ContainsFunc(s.snapshots, func(x Snapshot) bool {
+			return x.Dataset == dataset
+		}) || slices.ContainsFunc(s.datasets, func(d Dataset) bool {
+			return strings.HasPrefix(d.Name, dataset+"/")
+		})
+		if hasChildren {
+			return Result{Dataset: dataset, Command: command},
+				errors.New("cannot destroy '" + dataset + "': filesystem has children")
 		}
 	}
-	s.datasets = slices.DeleteFunc(s.datasets, func(d Dataset) bool { return d.Name == dataset })
-	s.snapshots = slices.DeleteFunc(s.snapshots, func(x Snapshot) bool { return x.Dataset == dataset })
+	under := func(name string) bool {
+		return name == dataset || (recursive && strings.HasPrefix(name, dataset+"/"))
+	}
+	s.datasets = slices.DeleteFunc(s.datasets, func(d Dataset) bool { return under(d.Name) })
+	s.snapshots = slices.DeleteFunc(s.snapshots, func(x Snapshot) bool { return under(x.Dataset) })
 	delete(s.origins, dataset)
 	return Result{Dataset: dataset, Command: command}, nil
 }

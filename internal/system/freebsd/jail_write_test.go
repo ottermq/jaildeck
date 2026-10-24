@@ -195,3 +195,112 @@ func TestSetAutostartReportsTheCommandItRanWhenItFails(t *testing.T) {
 		t.Errorf("reported command = %q, want the command that was attempted", command)
 	}
 }
+
+func TestConfigFile(t *testing.T) {
+	adapter := writeAdapter(t)
+	want := filepath.Join(adapter.confDir, "db1.conf")
+
+	// Before anything is written the directory does not even exist, which is
+	// still an answer rather than an error.
+	path, exists, err := adapter.ConfigFile(context.Background(), "db1")
+	if err != nil {
+		t.Fatalf("ConfigFile: %v", err)
+	}
+	if path != want {
+		t.Errorf("path = %q, want %q", path, want)
+	}
+	if exists {
+		t.Error("a file that was never written is reported as there")
+	}
+
+	if _, err := adapter.WriteConfig(context.Background(), "db1", "db1 {\n}\n"); err != nil {
+		t.Fatalf("WriteConfig: %v", err)
+	}
+	if _, exists, err = adapter.ConfigFile(context.Background(), "db1"); err != nil || !exists {
+		t.Errorf("after writing it: exists = %v, err = %v", exists, err)
+	}
+}
+
+// A jail declared in /etc/jail.conf has no file of its own, which is what
+// makes a destroy of it refusable rather than half doable (JD-030).
+func TestConfigFileIsAbsentForAJailInTheSharedFile(t *testing.T) {
+	adapter := writeAdapter(t)
+	if err := os.MkdirAll(adapter.confDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(adapter.confFile, []byte("shared {\n\tpath = \"/jails/shared\";\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	configured, err := adapter.listConfiguredJails()
+	if err != nil {
+		t.Fatalf("listConfiguredJails: %v", err)
+	}
+	if len(configured) != 1 || configured[0].Name != "shared" {
+		t.Fatalf("the jail is not configured as the test assumes: %+v", configured)
+	}
+
+	if _, exists, err := adapter.ConfigFile(context.Background(), "shared"); err != nil || exists {
+		t.Errorf("exists = %v, err = %v; a jail in the shared file has no file of its own", exists, err)
+	}
+}
+
+func TestRemoveConfig(t *testing.T) {
+	adapter := writeAdapter(t)
+	path, err := adapter.WriteConfig(context.Background(), "db1", "db1 {\n}\n")
+	if err != nil {
+		t.Fatalf("WriteConfig: %v", err)
+	}
+
+	removed, err := adapter.RemoveConfig(context.Background(), "db1")
+	if err != nil {
+		t.Fatalf("RemoveConfig: %v", err)
+	}
+	if removed != path {
+		t.Errorf("removed %q, want %q", removed, path)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the file is still there: %v", err)
+	}
+
+	// The jail is gone from the listing with it: a configured jail is
+	// discovered from its configuration (JD-004).
+	configured, err := adapter.listConfiguredJails()
+	if err != nil {
+		t.Fatalf("listConfiguredJails: %v", err)
+	}
+	if len(configured) != 0 {
+		t.Errorf("the jail is still listed after its file went: %+v", configured)
+	}
+}
+
+// Asked for a second time, after somebody else removed the file in between.
+// The destroy is already past the point of refusing, and the end state is the
+// one that was wanted.
+func TestRemoveConfigIsFineWithAFileThatIsAlreadyGone(t *testing.T) {
+	adapter := writeAdapter(t)
+
+	if _, err := adapter.RemoveConfig(context.Background(), "db1"); err != nil {
+		t.Errorf("RemoveConfig on a file that is not there: %v", err)
+	}
+}
+
+// The name arrives from a URL, and NewJailName accepts a dot because jls and
+// jail.conf do. Nothing here may become a path outside confDir.
+func TestConfigFilePathsCannotEscapeTheDirectory(t *testing.T) {
+	adapter := writeAdapter(t)
+
+	for _, name := range []string{"", ".", "..", "../evil", "sub/db1", `sub\db1`} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := adapter.ConfigFile(context.Background(), name); err == nil {
+				t.Errorf("ConfigFile(%q) was allowed", name)
+			}
+			if _, err := adapter.RemoveConfig(context.Background(), name); err == nil {
+				t.Errorf("RemoveConfig(%q) was allowed", name)
+			}
+			if _, err := adapter.WriteConfig(context.Background(), name, "x"); err == nil {
+				t.Errorf("WriteConfig(%q) was allowed", name)
+			}
+		})
+	}
+}

@@ -262,7 +262,7 @@ Goal: create and destroy jails, including VNET jails with resource limits, from 
 - **parameters:** only from the allowlist in JD-018; anything else is rejected with the parameter named
 - child datasets and user properties created through the Storage Writes primitives
 - start the jail; surface clear step-by-step failure state — a failed config write after a successful clone must not leave an undiagnosable half-created jail
-- destruction: stop, remove config, destroy the dataset. The sharpest edge in the tool — explicit confirmation, a clear audit entry, and a refusal or warning when the dataset has dependent snapshots or clones
+- destruction: stop, remove config, destroy the dataset. The sharpest edge in the tool — explicit confirmation, a clear audit entry, and a refusal or warning when the dataset has dependent snapshots or clones. *Built 2026-10-24: `DELETE /api/jails/{name}?confirm=<name>` — children go with it and are named, snapshots and clones refuse it, and `zfs destroy` refusing a busy dataset is the guard rather than a check of our own (JD-030).*
 - **start is confirmed, not assumed:** `service jail start` exits 0 whether or not the jail came up, so every start is followed by `jls -j <name>` (JD-030)
 - **a failed start leaks its epair:** `exec.poststop` does not run when the start fails, and nothing afterwards will run it, so Jail Deck destroys the orphan itself — found by the `descr jail:<name>` the stanza writes (JD-030)
 - autostart is `sysrc jail_list+=<name>`; Jail Deck writes no `/etc/jail.conf` (JD-030)

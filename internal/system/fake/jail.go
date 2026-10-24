@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -177,6 +178,29 @@ func (s *JailSystem) WriteConfig(_ context.Context, name, content string) (strin
 	return path, nil
 }
 
+// ConfigFile reports whether a stanza was written for this jail. A seeded
+// jail has none, which is the fake's version of a jail declared in
+// /etc/jail.conf -- so a destroy of one is refused here too.
+func (s *JailSystem) ConfigFile(_ context.Context, name string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, exists := s.configs[name]
+	return "/fake/etc/jail.conf.d/" + name + ".conf", exists, nil
+}
+
+// RemoveConfig deletes the stanza, and the jail leaves the listing with it --
+// a configured jail is discovered from its configuration (JD-004), so a fake
+// where unconfiguring changed nothing would let a broken destroy pass.
+func (s *JailSystem) RemoveConfig(_ context.Context, name string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.configs, name)
+	delete(s.jails, name)
+	s.order = slices.DeleteFunc(s.order, func(listed string) bool { return listed == name })
+	return "/fake/etc/jail.conf.d/" + name + ".conf", nil
+}
+
 func (s *JailSystem) SetAutostart(_ context.Context, name string, enabled bool) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -220,7 +244,8 @@ func createFakeCommand(name, op string) system.Command {
 }
 
 var (
-	_ jails.JailSystem   = (*JailSystem)(nil)
-	_ jails.ConfigWriter = (*JailSystem)(nil)
-	_ jails.Autostarter  = (*JailSystem)(nil)
+	_ jails.JailSystem    = (*JailSystem)(nil)
+	_ jails.ConfigWriter  = (*JailSystem)(nil)
+	_ jails.ConfigRemover = (*JailSystem)(nil)
+	_ jails.Autostarter   = (*JailSystem)(nil)
 )

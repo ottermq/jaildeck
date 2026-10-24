@@ -263,8 +263,11 @@ Goal: create and destroy jails, including VNET jails with resource limits, from 
 - child datasets and user properties created through the Storage Writes primitives
 - start the jail; surface clear step-by-step failure state — a failed config write after a successful clone must not leave an undiagnosable half-created jail
 - destruction: stop, remove config, destroy the dataset. The sharpest edge in the tool — explicit confirmation, a clear audit entry, and a refusal or warning when the dataset has dependent snapshots or clones
-- decide orchestration ownership across the `jails`/`storage` boundary
-- verify how `jail_enable`/`jail_list` interact with `jail.conf.d` on 15.1, and how `service jail` behaves with VNET stanzas (JD-005)
+- **start is confirmed, not assumed:** `service jail start` exits 0 whether or not the jail came up, so every start is followed by `jls -j <name>` (JD-030)
+- **a failed start leaks its epair:** `exec.poststop` does not run when the start fails, and nothing afterwards will run it, so Jail Deck destroys the orphan itself — found by the `descr jail:<name>` the stanza writes (JD-030)
+- autostart is `sysrc jail_list+=<name>`; Jail Deck writes no `/etc/jail.conf` (JD-030)
+
+*Settled 2026-10-24: orchestration ownership across the `jails`/`storage` boundary, and both of the behaviours JD-005 left to verify — all measured on 15.1-RELEASE-p5 and recorded in JD-030.*
 
 ### Completion criteria
 

@@ -74,12 +74,74 @@ export interface JailUsage {
     error?: string
 }
 
+// An NVMe has no SMART attribute table at all, so the two kinds carry
+// different evidence and the report says which it is rather than leaving a
+// missing field to be guessed at.
+export type DiskKind = 'ata' | 'nvme'
+
+// One SMART attribute smartctl flagged. `raw` is the string it printed, never
+// a number: vendors pack several fields into that integer.
+export interface Attribute {
+    id: number
+    name: string
+    value: number
+    worst: number
+    threshold: number
+    raw: string
+}
+
+export interface NVMeHealth {
+    critical_warning: number
+    percentage_used: number
+    available_spare: number
+    spare_threshold: number
+    media_errors: number
+    error_log_entries: number
+}
+
+export interface SelfTest {
+    type: string
+    status: string
+    passed: boolean
+    // The drive's power-on hour count when the test ran, which is how a
+    // self-test log dates itself.
+    hours: number
+}
+
+export interface Disk {
+    device: string
+    kind: DiskKind
+    pool?: string
+    vdev?: string
+    // Present only when smartctl has to be given a different path than
+    // /dev/<device> — an NVMe is nda0 everywhere else but /dev/nvme0 to
+    // smartctl.
+    smart_path?: string
+    model: string
+    serial: string
+    capacity: number
+    rotation_rate?: number
+    // The drive's OWN verdict. It is not a summary of the attributes below
+    // and routinely disagrees with them.
+    passed: boolean
+    temperature_c?: number
+    power_on_hours?: number
+    // smartctl's judgment, carried as given: below threshold now, and ever.
+    failing?: Attribute[]
+    failed?: Attribute[]
+    nvme?: NVMeHealth
+    self_test?: SelfTest
+}
+
 export interface MetricsReport {
     host: HostMetrics
     jails: JailUsage[]
     // Every jail the host has, running or not, so "3 of 5" needs no second
     // request.
     configured: number
+    // Empty on a host without smartmontools, which is a package rather than
+    // base.
+    disks: Disk[]
 }
 
 export async function getMetrics(): Promise<MetricsReport> {

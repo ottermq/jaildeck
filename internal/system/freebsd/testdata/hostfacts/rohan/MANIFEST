@@ -69,3 +69,10 @@ zfs_list_snapshots	zfs list -H -d 1 -t snapshot -o name,used,refer,creation medi
 zfs_list_snapshots_p	zfs list -H -p -d 1 -t snapshot -o name,used,refer,creation media	exit=0
 zfs_list_type_all	zfs list -H -d 1 -t all -o name,type,used,refer,mountpoint media	exit=0
 zfs_list_snapshots_absent	zfs list -H -d 1 -t snapshot -o name,used,refer,creation media/definitely-not-here	exit=1
+smartctl_version	smartctl --version	exit=0
+smartctl_scan	smartctl --scan	exit=0
+smartctl_ada0	smartctl --json -i -H -A -l selftest /dev/ada0	exit=0
+smartctl_da0	smartctl --json -i -H -A -l selftest /dev/da0	exit=32
+zpool_list_vdevs	zpool list -v -H -o name	exit=0
+glabel_status	glabel status	exit=0
+geom_disk_list	geom disk list	exit=0

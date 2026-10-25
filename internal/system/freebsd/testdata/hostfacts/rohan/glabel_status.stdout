@@ -1,0 +1,3 @@
+        Name  Status  Components
+gpt/efiboot0     N/A  ada0p1
+   gpt/media     N/A  da0p1

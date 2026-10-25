@@ -1,0 +1,2 @@
+/dev/ada0 -d atacam # /dev/ada0, ATA device
+/dev/da0 -d sat # /dev/da0 [SAT], ATA device

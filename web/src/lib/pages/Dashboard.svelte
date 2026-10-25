@@ -2,7 +2,7 @@
 import { onMount, onDestroy } from 'svelte'
 import { onNavClick } from '../router.svelte'
 import { getMetrics } from '../stores/metrics.svelte'
-import type { MetricsReport, Memory, JailUsage } from '../stores/metrics.svelte'
+import type { MetricsReport, Memory, JailUsage, Disk } from '../stores/metrics.svelte'
 import { ApiError } from '../services/api'
 import { formatBytes } from '../utils'
 
@@ -69,6 +69,81 @@ function cores(pcpu: number): string {
 let busiest = $derived(
     [...(report?.jails ?? [])].sort((a, b) => b.pcpu - a.pcpu),
 )
+
+type Tone = 'failed' | 'warn' | 'running'
+
+// A drive's own verdict and its attribute table disagree more often than
+// they agree, and the disagreement is the interesting part: ada3 on isengard
+// says PASSED while attribute 184 has been below threshold for days. Both are
+// shown, and the worse of the two decides the badge — a green row over a
+// failing attribute is how a disk gets ignored until it dies.
+function health(disk: Disk): { label: string; tone: Tone } {
+    if (!disk.passed) return { label: 'FAILING', tone: 'failed' }
+    if (disk.failing?.length) return { label: 'ATTENTION', tone: 'warn' }
+    if (disk.nvme && disk.nvme.critical_warning !== 0) {
+        return { label: 'ATTENTION', tone: 'warn' }
+    }
+    return { label: 'PASSED', tone: 'running' }
+}
+
+const RANK: Record<Tone, number> = { failed: 0, warn: 1, running: 2 }
+
+// Worst first. A dashboard is read from the top, and the disk that needs
+// attention should not sit below three that do not.
+let disks = $derived(
+    [...(report?.disks ?? [])].sort((a, b) => {
+        const byHealth = RANK[health(a).tone] - RANK[health(b).tone]
+        return byHealth !== 0 ? byHealth : a.device.localeCompare(b.device)
+    }),
+)
+
+// 8766 hours is a Julian year. Hours alone stop meaning much past five
+// digits, and the age in years is what decides whether a drive is worth
+// replacing rather than watching.
+function age(hours: number): string {
+    const years = hours / 8766
+    return years >= 1
+        ? `${hours.toLocaleString()} h · ${years.toFixed(1)} y`
+        : `${hours.toLocaleString()} h`
+}
+
+// The second line under the model: what the drive is, for the operator about
+// to work out which one to unplug. Joined here rather than in the markup,
+// where Svelte collapses the whitespace around an {#if} and eats the space
+// before the separator.
+function identity(disk: Disk): string {
+    const parts = [disk.serial]
+    if (disk.rotation_rate !== undefined) {
+        parts.push(disk.rotation_rate === 0 ? 'SSD' : `${disk.rotation_rate} rpm`)
+    }
+    return parts.filter(Boolean).join(' · ')
+}
+
+// What to say under a disk that has something to say. Failing attributes
+// first: those are below threshold now, not once.
+function flags(disk: Disk): string[] {
+    const notes: string[] = []
+    for (const a of disk.failing ?? []) {
+        notes.push(
+            `${a.id} ${a.name} is below threshold now — ${a.value} against ${a.threshold}, raw ${a.raw}`,
+        )
+    }
+    for (const a of disk.failed ?? []) {
+        notes.push(
+            `${a.id} ${a.name} was below threshold at some point — worst ${a.worst} against ${a.threshold}`,
+        )
+    }
+    const nvme = disk.nvme
+    if (nvme && nvme.critical_warning !== 0) {
+        notes.push(`NVMe critical warning ${nvme.critical_warning}`)
+    }
+    if (nvme && nvme.available_spare < nvme.spare_threshold) {
+        notes.push(
+            `spare blocks down to ${nvme.available_spare}%, under the drive's own ${nvme.spare_threshold}% threshold`,
+        )
+    }
+    return notes
+}
 
 // Every jail read the same way, or the report says which is which. Mixed
 // sources are possible only across restarts, never within one report.
@@ -194,6 +269,93 @@ let source = $derived(report?.jails[0]?.source)
                     </tbody>
                 </table>
             </div>
+        {/if}
+    </section>
+
+    <section class="panel">
+        <h2>Disks</h2>
+        {#if disks.length === 0}
+            <p class="notice">
+                No disk health to report. <code>smartctl</code> comes from the
+                <code>smartmontools</code> package, which is not part of the base system.
+            </p>
+        {:else}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Disk</th>
+                            <th>Pool</th>
+                            <th>Model</th>
+                            <th class="num">Size</th>
+                            <th class="num">Temp</th>
+                            <th class="num">Powered on</th>
+                            <th>Health</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each disks as disk (disk.device)}
+                            {@const state = health(disk)}
+                            {@const notes = flags(disk)}
+                            <tr>
+                                <td class="name">
+                                    {disk.device}
+                                    {#if disk.smart_path}
+                                        <span
+                                            class="sub"
+                                            title="smartctl will not open /dev/{disk.device} for this drive"
+                                        >read as {disk.smart_path}</span>
+                                    {/if}
+                                </td>
+                                <td>
+                                    {#if disk.pool}
+                                        {disk.pool}
+                                        <span class="sub">{disk.vdev}</span>
+                                    {:else}
+                                        <span class="sub">no pool</span>
+                                    {/if}
+                                </td>
+                                <td>
+                                    {disk.model}
+                                    <span class="sub">{identity(disk)}</span>
+                                </td>
+                                <td class="num">{formatBytes(disk.capacity)}</td>
+                                <td class="num">
+                                    {#if disk.temperature_c === undefined}—{:else}{disk.temperature_c}°C{/if}
+                                </td>
+                                <td class="num">
+                                    {#if disk.power_on_hours === undefined}—{:else}{age(disk.power_on_hours)}{/if}
+                                </td>
+                                <td>
+                                    <span class="badge badge--{state.tone}">{state.label}</span>
+                                </td>
+                            </tr>
+                            {#if notes.length > 0}
+                                <tr class="disk-note">
+                                    <td colspan="7">
+                                        <ul>
+                                            {#each notes as note (note)}<li>{note}</li>{/each}
+                                        </ul>
+                                        {#if disk.passed}
+                                            <p>
+                                                The drive still reports its overall self-assessment
+                                                as PASSED. That verdict is not a summary of the
+                                                attributes above, and routinely disagrees with them.
+                                            </p>
+                                        {/if}
+                                    </td>
+                                </tr>
+                            {/if}
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
+            {#if disks.some((disk) => disk.self_test)}
+                <p class="panel-note">
+                    Self-test logs are read, never started — a long test costs hours of real
+                    I/O, and choosing when to pay that is yours.
+                </p>
+            {/if}
         {/if}
     </section>
 
@@ -340,6 +502,41 @@ let source = $derived(report?.jails[0]?.source)
 }
 
 .under--note {
+    font-style: italic;
+}
+
+/* A second line under a cell's value: the serial under the model, the vdev
+   under the pool, the path smartctl needs under the disk. Block, so it sits
+   below rather than trailing off the end of the line. */
+.sub {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.panel-note {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin: var(--space-3) 0 0;
+}
+
+/* Why a disk is flagged, directly under the disk. A row of its own rather
+   than a tooltip: "184 End-to-End_Error is below threshold now" is the whole
+   reason the page exists, and it should not need hovering to find. */
+.disk-note td {
+    padding-top: 0;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+}
+
+.disk-note ul {
+    margin: 0;
+    padding-left: var(--space-4);
+}
+
+.disk-note p {
+    margin: var(--space-2) 0 0;
     font-style: italic;
 }
 

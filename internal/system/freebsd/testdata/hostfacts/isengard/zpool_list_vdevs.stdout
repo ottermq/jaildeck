@@ -1,0 +1,11 @@
+backup
+	mirror-0
+	gpt/backup0
+	gpt/backup1
+tank
+	mirror-0
+	ada0p4
+	ada1p3
+	indirect-1
+zroot
+	nda0p4

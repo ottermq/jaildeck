@@ -58,16 +58,21 @@ Still on the sketch above: Storage, Logs, Settings. Possible later: Snapshots (i
 
 Purpose: quick operational overview. Built at `/dashboard`, and it is where `/` now lands — "what is this host doing" is the question someone opens the page with, and the jail list is one click away.
 
-Four cards, then two tables:
+Four cards, then three tables:
 
 - **Load**, with the five- and fifteen-minute averages under it and the CPU count, because a load of 4 means something different on 2 cores than on 16
 - **CPU**, as a percentage with the window it was measured over. **It reads `—` on the first poll after a restart** rather than `0`: `kern.cp_time` is cumulative and a percentage exists only between two readings (JD-031), and the card says so where the number would be
 - **Memory**, used against physical, with wired, active and inactive spelled out underneath and a note that most of wired is the ZFS ARC — a single "used" figure on a ZFS host reads as pressure that is not there
 - **Jails**, running of configured
 - **Pools** — health, used, free, size and a capacity meter
+- **Disks** — worst first, with the pool each one holds up, model, size, temperature, age and a health badge
 - **Jails** — busiest first, with a CPU meter, memory, process count and open files
 
 **A jail's CPU is shown in cores, not in `pcpu`'s own unit.** The API reports percent of *one* core, so a jail on two whole cores reads 200 — which beside a meter that is a share of all sixteen is the same number twice on two different bases. The table says `1.75 cores` and keeps the raw figure in the row's tooltip.
+
+**A disk's badge is the worse of two disagreeing verdicts.** A drive reports its own overall assessment, and that verdict is not a summary of its attribute table: `isengard`'s `ada3` says `PASSED` while attribute 184 has been below threshold for days. The row reads `ATTENTION`, and a note under it names the attribute, its value against its threshold and the raw string smartctl printed — a green row over a failing attribute is how a disk gets ignored until it dies. Where the drive still claims `PASSED`, the note says so too, because an operator about to act on this deserves both halves (JD-032).
+
+Disks are listed whether or not a pool stands on them, since a spare can fail too; those read `no pool`. Where smartctl needs a different path than `/dev/<device>` — an NVMe is `nda0` everywhere else but `/dev/nvme0` to smartctl — the row carries `read as /dev/nvme0`, so an operator reaching for the command line is not refused by it. A host without `smartmontools` gets a line saying the package is not installed, not an empty table.
 
 The page polls every five seconds, which is also the window the host's CPU percentage is measured over, and the header carries a **Keep refreshing** checkbox — an operator reading a row should be able to stop it moving.
 

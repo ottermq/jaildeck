@@ -41,6 +41,18 @@ type JailUsageSource interface {
 	JailProcessUsage(ctx context.Context, name string) (JailUsage, error)
 }
 
+// DiskSource reads the host's physical disks and their health (JD-032).
+//
+// Separate from HostMetrics because it is the one part of a report that can
+// be absent for a reason worth stating: smartmontools is a package, not
+// base, and a host without it has no disks to report rather than a failed
+// request.
+type DiskSource interface {
+	// Disks returns every device that answers, with the pool it belongs to
+	// where one does. A host without smartctl returns none and no error.
+	Disks(ctx context.Context) ([]Disk, error)
+}
+
 // JailSource says which jails the host has and which of them are up.
 //
 // A map rather than a type of this package's: the jails domain implements

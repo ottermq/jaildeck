@@ -283,6 +283,8 @@ A VNET jail with limits and a quota'd child dataset can be created end to end (c
 
 ## Milestone: Exec and Automation Contract
 
+**Status:** done — 2026-10-25. The listener and correlation work landed in v0.8.0; exec finished it. Verified end to end on isengard: a program created a jail, ran commands in it and destroyed it over the unix socket with a token, and every audit entry carried its request id.
+
 **Depends on:** Jail Provisioning for exec to have something to run in; the listener and correlation work can land earlier. **★ Otter Cloud:** in-jail bootstrap (e.g. `initdb`) and the worker's connection to Jail Deck.
 
 Goal: make the API safe and predictable for a program, not only for the SPA (JD-016).
@@ -296,8 +298,8 @@ Goal: make the API safe and predictable for a program, not only for the SPA (JD-
 
 ### Technical tasks
 
-- exec runs `jexec <name> argv...` through the existing `CommandRunner` — an argument array, no shell, audited
-- the caller's timeout is capped by a server-side maximum, and output is capped in size (JD-014); a truncated output says so
+- exec runs `jexec <name> argv...` through the existing `CommandRunner` — an argument array, no shell, audited. *Built 2026-10-25 as `jexec -l`: measured, plain `jexec` hands the jail the caller's entire environment, so everything the Jail Deck process was started with would be readable by anything run through this endpoint (JD-016).*
+- the caller's timeout is capped by a server-side maximum, and output is capped in size (JD-014); a truncated output says so. *Built 2026-10-25: 60s by default, 5 minutes at most and 1 MiB of each stream. The cap is a writer rather than a truncation afterwards — a command that prints a gigabyte would otherwise be held in memory in full before anyone decided it was too much.*
 - socket mode `0660`, owned by a configurable group; the token is still required
 - request ids are validated (length, charset) before they reach the audit log
 
@@ -451,7 +453,7 @@ Applies across every milestone: keep docs current as domains land, keep parser/f
 Added 2026-10-21 with the host-agent scope:
 
 - ~~Should rctl rules be applied by jail.conf `exec.*` hooks or by the adapter?~~ **Answered 2026-10-24 (JD-018): hooks.** Measuring added a second reason to the first: jail(8) destroys a jail whose `exec.poststart` fails, so a jail that could not be limited never runs — which an adapter could only have achieved by stopping a jail it had just started
-- What are the exec timeout cap and output size cap?
+- ~~What are the exec timeout cap and output size cap?~~ **Answered 2026-10-25 (JD-014):** 60s by default, 5 minutes at most, 1 MiB per stream. Sized from what commands actually produce in a jail — `ps auxww` 1.4 KB against `find / -type f` at 2.85 MB.
 - Does `/metrics` share auth with the API, or bind a separate loopback/socket listener?
 - Are derived templates (release + packages) owned by the template domain, or are they exec + snapshot from the caller's point of view?
 - `vm-bhyve` or direct bhyve — settled by the spike in Virtual Machines (JD-019)

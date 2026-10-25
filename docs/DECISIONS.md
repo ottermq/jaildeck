@@ -506,7 +506,13 @@ Every part of this exists because the obvious version does not work.
 
 This decision is about bounding individual commands. How a legitimately slow flow is represented to the operator is JD-008's, and it is settled: the call returns `202` and the operator polls the template. The two meet at one point — a detached stage still runs under a timeout, just a much larger one than `jls` gets.
 
-**Amended 2026-10-21 — exec.** The exec endpoint (JD-016) is the one place a caller supplies a command's timeout. It is capped by a server-side maximum, so a caller can shorten the bound but never remove it, and the output kept is capped in size. The cap values are still open.
+**Amended 2026-10-21 — exec.** The exec endpoint (JD-016) is the one place a caller supplies a command's timeout. It is capped by a server-side maximum, so a caller can shorten the bound but never remove it, and the output kept is capped in size.
+
+**The caps, settled 2026-10-25: 60 seconds by default, 5 minutes at most, and 1 MiB of each stream.**
+
+Five minutes because the thing exec is for is an in-jail bootstrap — `initdb`, a service enable, a config written — and those are seconds. The minutes-long work is building a *template*, which is detached and polled precisely so that nothing holds a connection open for it (JD-008). A cap exists to stop a caller removing the bound, not to second-guess a legitimate install; when five minutes is genuinely not enough, the answer is that the work belongs in a template or behind something the caller polls, not a longer HTTP request.
+
+1 MiB because of what commands actually produce, measured in a real jail: `ps auxww` 1.4 KB, `pkg info` 1.3 KB, `pkg help install` 10 KB — and `find / -type f` **2.85 MB**, which is the shape of the mistake the cap is for. Anything above a mebibyte of text is not something a caller reads out of a JSON response; it is a file to write in the jail and fetch deliberately. Each stream is capped separately, and a truncated one says so rather than quietly ending early.
 
 ---
 
@@ -550,6 +556,17 @@ Jail Deck has a second kind of API consumer: a program on the same host, driving
 - **Exec.** `POST /api/jails/{name}/exec` with `{ "argv": [...], "timeout": "60s", "env": {...} }` returns stdout, stderr and exit code. It runs `jexec <name> argv...` through `CommandRunner`: an argument array, no shell, audited, bounded by JD-014. This is root inside the jail, which is no more than the API already implies (JD-001) — it is JD-007's "hand off to in-jail provisioning" made callable.
 - **Correlation.** An `X-Request-Id` header is recorded in every audit entry the request produces, so the client's own job id links both audit trails.
 - **Transport.** A unix socket listener (JD-002) with token auth (JD-003).
+
+**Exec was built 2026-10-25**, measured on isengard, 15.1-RELEASE-p5. Four things the decision did not say:
+
+- **`jexec` hands the jail the caller's entire environment.** Measured: a variable set on the Jail Deck process appears inside the jail, which means `/usr/local/etc/jaildeck/jaildeck.env` and whatever else the service was started with are readable by anything run through this endpoint. So every exec runs **`jexec -l`**, which replaces it with a clean login environment — `HOME`, `PATH`, `SHELL`, `USER`, `LANG` and nothing of the host's. The caller's own variables go on top.
+- **A caller's variables are applied with `/usr/bin/env`, and `env` has no `--`.** Measured: `env FOO=bar -- cmd` fails with "No such file or directory", so there is no separator to end the assignments with. `env` instead treats *any* leading argument containing `=` as another assignment — so a command whose first argument held one would silently become `env` printing the environment rather than the program the caller asked for. That combination is refused, naming it, rather than run.
+- **The timeout is real, not advisory.** `jexec` does not fork: the process *is* the command, inside the jail, so killing it kills the command. The runner already signals the whole process group (`Setpgid`), so a command that forked goes with it.
+- **Exec is root in the jail and takes no user.** `jexec -l -U <user>` needs that user to have a home directory in the jail — measured: `-U nobody` fails at `chdir: /nonexistent` — and nothing in scope needs it. Root is what this API already implies (JD-001, JD-003).
+
+**A non-zero exit is a `200`.** The exec succeeded; the thing it ran failed, and its exit code is the answer. That is the opposite of JD-023's rule for Jail Deck's *own* commands, where a non-zero exit is the API's failure to report — here the exit code is the payload, and a client that reads the HTTP status instead of `exit_code` is reading the wrong field.
+
+**There is no stdin, and no shell.** Jail Deck runs an argument array; a caller who wants a shell passes `["sh", "-c", "…"]` and has chosen it deliberately, which is a different thing from Jail Deck interposing one. A command that needs input writes a file in the jail first.
 - **Change policy.** Breaking changes are allowed before 1.0 but each is recorded under an **API** heading in the changelog. A client pins a Jail Deck version and runs contract tests before upgrading.
 
 **The idempotent `PUT` was built 2026-10-24.** What was left to decide was the hard half: what "matching" means.

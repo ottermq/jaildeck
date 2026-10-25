@@ -90,6 +90,7 @@ func New(cfg *config.Config) (*App, error) {
 		Bridges:       jailAdapter.bridges,
 		Epairs:        jailAdapter.epairs,
 		Epair:         jailAdapter.epair,
+		Exec:          jailAdapter.exec_,
 		Rctl:          jailAdapter.rctl,
 		DevfsRulesets: jailAdapter.devfsRulesets,
 
@@ -193,6 +194,7 @@ type jailAdapters struct {
 	rctl            jails.RctlSystem
 	devfsRulesets   jails.DevfsRulesetSource
 	usage           metrics.JailUsageSource
+	exec_           jails.JailExecutor
 	configReader    jails.ConfigReader
 	autostartSource jails.AutostartSource
 }
@@ -206,12 +208,12 @@ func newJailAdapters(adapter string) (jailAdapters, error) {
 		a := freebsd.NewAdapter(system.NewExecCommandRunner())
 		return jailAdapters{system: a, config: a, remover: a, autostart: a,
 			bridges: a, epairs: a, epair: a, rctl: a, devfsRulesets: a,
-			configReader: a, autostartSource: a, usage: a}, nil
+			configReader: a, autostartSource: a, usage: a, exec_: a}, nil
 	case config.AdapterFake:
 		f := fake.NewJailSystem()
 		return jailAdapters{system: f, config: f, remover: f, autostart: f,
 			bridges: f, epairs: f, epair: f, rctl: f, devfsRulesets: f,
-			configReader: f, autostartSource: f, usage: f}, nil
+			configReader: f, autostartSource: f, usage: f, exec_: f}, nil
 	default:
 		return jailAdapters{}, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

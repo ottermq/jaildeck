@@ -68,25 +68,29 @@ Status | Name | JID | Hostname | IP | Path | Actions
 
 Actions: View, Start, Stop, Restart, Create (opens the jail-creation flow). Action availability reflects current state (running: Stop/Restart/View; stopped: Start/View; unknown: View/Refresh).
 
+**Create a jail** sits in the page header and goes to `/jails/new`. A jail really called `new` would be shadowed by that route; nothing stops one being created, and the alternative — reserving the name in the API because of a URL in the interface — is the wrong way round.
+
 ### Jail creation flow
 
 Purpose: turn the clone-configure-start sequence (`docs/SPEC.md`) into a guided flow.
 
-Likely steps:
+Built at `/jails/new`, **as one form rather than a wizard**. A wizard suits a flow whose later questions depend on the earlier answers; this one's do not, and paging a dozen fields across four screens would hide from an operator the thing they most want to see — the whole jail they are about to make. The form is sectioned instead: Source, Network, After it is built, and then **Limits**, **Jail parameters** and **Datasets and tags**, which open only when asked for. A jail that needs none of them reads as one that needs none, not as one where three sections were skipped.
 
-1. choose a ready template (only templates with a `@base` snapshot are selectable)
-2. name the jail
-3. review/adjust generated config (network interface, any service-specific stanza)
-4. confirm and create — show per-step progress/result (clone, config write, start) since this is a multi-step operation that can partially fail
+- **Source** — the template select offers only ready ones; a template still being prepared is named underneath with its state, so a half-built template explains why it is not on offer rather than being silently absent. With no ready template at all, the form says so and links to Templates.
+- **Network** — the mode decides which fields exist, because a field set for a mode that ignores it is refused by the API rather than dropped (JD-017). `inherit` carries the warning that it shares the host's `127.0.0.1`; `vnet` carries the measured truth about `private` — it isolates a jail from the *other private members*, not from everything on the bridge.
+- **Limits** and **Jail parameters** are the allowlists made visible: the fields that exist are the ones the API will accept, so the interface and the refusal agree.
+- **Datasets and tags** — repeatable rows, each dataset with the five native properties of JD-023.
 
-Exact interaction shape (single form vs. wizard steps, how failures mid-flow are presented) is not designed yet.
+**The result is the create's own report**, rendered as the steps the server ran in the order it ran them: clone, datasets, configure, autostart, start, each marked done, failed or not reached. A create that stopped half way shows exactly how far it got, because nothing is undone and that report is the recovery information (JD-030). A leaked epair that was cleaned up, and rctl rules taken back after a failed start, are named where they happened.
+
+The one value the form will not quietly discard is a mistyped limit: `Number('abc')` is `NaN`, which JSON writes as `null` and the server reads as "no limit asked for", so a non-number is sent as typed and refused by name instead.
 
 ### Jail detail page
 
 At `/jails/{name}`, reached from the jail's name on the list (JD-028). Built:
 
 - header — name, status badge, JID, hostname, IP
-- **Datasets** — every dataset of the jail, the one mounted at the jail's own path marked as such, with mountpoint and used/referenced/available (JD-022)
+- **Datasets** — every dataset of the jail, the one mounted at the jail's own path marked as such, with mountpoint, used/referenced/available (JD-022), and the native ZFS properties it sets itself (JD-023)
 - **Tags** — the jail's `user:property` ZFS tags, its own and never a child's
 - **Snapshots** — newest first, ordered by transaction group rather than by time (JD-024); fetched separately and allowed to fail on its own
 
@@ -94,7 +98,9 @@ Acting on it (JD-029): a tag can be added, edited and removed; a child dataset c
 
 A refused snapshot operation is shown under its row, in the warning colour, naming what stood in the way. A rollback refused over newer snapshots offers them back once — "destroy them and roll back" — because that is the one refusal the API lets a client accept.
 
-The jail as a whole: it can be **cloned as a template**, and its **root re-cloned** from a ready template's snapshot. A re-clone that fails part way through is rendered as the recovery procedure it is — which step stopped, where each dataset now sits, and that a restore brings it back.
+The jail as a whole: it can be **cloned as a template**, its **root re-cloned** from a ready template's snapshot, and it can be **destroyed**. A re-clone that fails part way through is rendered as the recovery procedure it is — which step stopped, where each dataset now sits, and that a restore brings it back.
+
+**Destroy** is its own section at the foot of the page, in the danger colour: marked rather than hidden, because an operator looking for it should find it and should not reach it by accident. The confirmation names the child datasets that will go with the jail and asks for the jail's name to be typed, which is the API's own requirement shown rather than invented ceremony. A refusal over snapshots, clones or holds stays on the page with each one named — they have to be dealt with one at a time, so a message that disappears is no use. A jail with no dataset of its own cannot be destroyed here at all, and the section says so instead of offering a button that would always fail.
 
 Still to come: services, recent logs, recent operations, and which template the jail was cloned from.
 
@@ -112,7 +118,7 @@ Purpose: the userlands a jail is cloned from — the thing jail creation depends
 
 Acting on it (JD-029): a template can be **derived** from a ready one with packages, and **removed** — from the list or from its own page, which navigates back when the template is gone. A removal refused over clones or holds is shown where the template is, with the `zfs promote` way out. A **retained dataset can be restored** under any jail, under any name.
 
-Still to come: preparing a release template (its own long-running-operation problem, JD-008), and a release picker sourced from `download.freebsd.org` or manual version entry, depending on how "which releases are supported" resolves (`docs/SPEC.md`).
+Preparing a release is there: a form for the release, a **State** column, and the running step with its elapsed time beneath it. The page polls while anything is in flight and stops when nothing is. A release is prepared end to end from here — fetched, unpacked, brought to its patch level and sealed — with the stage and its elapsed time visible throughout. Still open: a release picker sourced from `download.freebsd.org` or manual version entry, depending on how "which releases are supported" resolves (`docs/SPEC.md`).
 
 ### Logs page
 
@@ -132,7 +138,7 @@ Not designed yet:
 4. **Component library / styling approach** — plain CSS, a utility framework, or a component library?
 5. **API client pattern** — hand-rolled `fetch` wrappers, a generated client, or something like TanStack Query (`@tanstack/svelte-query`) for caching/refetch?
 6. **Refresh pattern** — how the UI reflects state after a mutation: polling, optimistic updates, or plain refetch-after-mutation?
-7. **Long-running operation UI** — once JD-008 resolves, how does the frontend represent a multi-minute template-preparation operation? (progress bar, polling a status endpoint, toast-on-completion?)
+7. **Long-running operation UI** — JD-008 settled the API half (2026-10-23): the prepare call returns `202` and the template's own resource carries `state` and `running`. What the page does with that — a progress row on the template, a toast on completion, how often it polls — is still open.
 8. **Build tooling** — Vite, either standalone or via SvelteKit (which is itself Vite-based) — the specific setup depends on the framework-mode decision above.
 
 These should be settled together when Phase 1b (`docs/ROADMAP.md`) actually starts, not decided piecemeal ahead of time.

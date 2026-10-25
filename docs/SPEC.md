@@ -171,7 +171,7 @@ Should Jail Deck support creating jails on a FreeBSD release other than the host
 
 ### Long-running operations
 
-Template preparation (fetching `base.txz`, `freebsd-update`) can take real time. Synchronous request/response may not be sufficient — see `docs/DECISIONS.md` JD-008.
+*Settled 2026-10-23 (JD-008).* Template preparation returns `202` at once and the client watches the template's own resource: `state` is read off the filesystem, and an in-memory `running` says which step is executing now. There is no job and no job id. Deriving a template with `pkg -c` stays synchronous.
 
 ### Structured application logging
 

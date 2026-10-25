@@ -45,7 +45,7 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	jailSystem, err := newJailSystem(cfg.Adapter)
+	jailAdapter, err := newJailAdapters(cfg.Adapter)
 	if err != nil {
 		return nil, err
 	}
@@ -62,11 +62,39 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	templateService := templates.NewService(storage.NewTemplateSource(storageService), packageSystem, auditLogger)
+	releaseSource, err := newReleaseSource(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	templateService := templates.NewService(
+		storage.NewTemplateSource(storageService), packageSystem, releaseSource, auditLogger)
 	templateHandler := templates.NewTemplateHandler(templateService)
 
 	jailStorage := storage.NewJailSource(storageService)
-	jailService := jails.NewJailService(jailSystem, auditLogger, jailStorage, jailStorage, jailStorage, jailStorage, jailStorage, jailStorage)
+	jailService := jails.NewJailService(jails.Dependencies{
+		System:        jailAdapter.system,
+		Audit:         auditLogger,
+		Datasets:      jailStorage,
+		DatasetWriter: jailStorage,
+		Snapshots:     jailStorage,
+		DatasetMover:  jailStorage,
+		Recloner:      jailStorage,
+		TemplateMaker: jailStorage,
+		RootCloner:    jailStorage,
+		Config:        jailAdapter.config,
+		Autostart:     jailAdapter.autostart,
+		RootDestroyer: jailStorage,
+		ConfigRemover: jailAdapter.remover,
+		Bridges:       jailAdapter.bridges,
+		Epairs:        jailAdapter.epairs,
+		Epair:         jailAdapter.epair,
+		Rctl:          jailAdapter.rctl,
+		DevfsRulesets: jailAdapter.devfsRulesets,
+
+		ConfigReader:    jailAdapter.configReader,
+		AutostartSource: jailAdapter.autostartSource,
+		CloneOrigin:     jailStorage,
+	})
 	jailHandler := jails.NewJailHandler(jailService)
 
 	hostSystem, err := newHostSystem(cfg.Adapter)
@@ -121,17 +149,43 @@ func setupAuditLog(auditLogFilePath string) (*audit.FileLogger, error) {
 	return auditLogger, nil
 }
 
-// newJailSystem selects the jails.JailSystem implementation named by adapter.
-// An unknown name is an error rather than a silent fallback: which adapter is
-// running determines whether real jails are touched.
-func newJailSystem(adapter string) (jails.JailSystem, error) {
+// jailAdapters are the jail ports one adapter object implements: the jail
+// system itself, the configuration file, rc.conf's jail_list, the host's
+// bridges and epairs, and the kernel's rctl and devfs rulesets. They are
+// built together because in fake mode they have to be the same object -- a
+// jail whose stanza was just written must appear in the next listing, and
+// one that was just started must carry the rules its stanza asked for.
+type jailAdapters struct {
+	system          jails.JailSystem
+	config          jails.ConfigWriter
+	remover         jails.ConfigRemover
+	autostart       jails.Autostarter
+	bridges         jails.BridgeSource
+	epairs          jails.EpairAllocator
+	epair           jails.EpairCleaner
+	rctl            jails.RctlSystem
+	devfsRulesets   jails.DevfsRulesetSource
+	configReader    jails.ConfigReader
+	autostartSource jails.AutostartSource
+}
+
+// newJailAdapters selects the implementations named by adapter. An unknown
+// name is an error rather than a silent fallback: which adapter is running
+// determines whether real jails are touched.
+func newJailAdapters(adapter string) (jailAdapters, error) {
 	switch adapter {
 	case config.AdapterFreeBSD:
-		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+		a := freebsd.NewAdapter(system.NewExecCommandRunner())
+		return jailAdapters{system: a, config: a, remover: a, autostart: a,
+			bridges: a, epairs: a, epair: a, rctl: a, devfsRulesets: a,
+			configReader: a, autostartSource: a}, nil
 	case config.AdapterFake:
-		return fake.NewJailSystem(), nil
+		f := fake.NewJailSystem()
+		return jailAdapters{system: f, config: f, remover: f, autostart: f,
+			bridges: f, epairs: f, epair: f, rctl: f, devfsRulesets: f,
+			configReader: f, autostartSource: f}, nil
 	default:
-		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+		return jailAdapters{}, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)
 	}
 }
@@ -158,6 +212,20 @@ func newPackageSystem(adapter string) (templates.PackageSystem, error) {
 		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
 	case config.AdapterFake:
 		return fake.NewPackageSystem(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
+}
+
+// newReleaseSource selects the templates.ReleaseSource implementation named by
+// adapter, with the same refusal to guess as newJailSystem.
+func newReleaseSource(adapter string) (templates.ReleaseSource, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewReleaseAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewReleaseSource(), nil
 	default:
 		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

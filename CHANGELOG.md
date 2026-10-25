@@ -20,6 +20,258 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.9.0 — 2026-10-24
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.9.0)
+
+### API
+
+- **Create a jail from a ready template.** `POST /api/jails` takes the whole spec — template,
+  hostname, network, limits, jail parameters, child datasets, tags, autostart — and runs the
+  sequence `docs/SPEC.md` describes: clone the template's `@base` into
+  `<pool>/jails/containers/<name>` **in the template's own pool**, make the child datasets and
+  set the tags, write `/etc/jail.conf.d/<name>.conf`, add it to `jail_list` if asked, start it.
+  (#8, JD-007, JD-030)
+
+  **The start is confirmed, not assumed.** `service jail start` exits 0 whether or not the jail
+  came up, so every start is followed by `jls -j <name>`. Measured on 15.1-RELEASE-p5, along
+  with the rest of the ordering.
+
+  **A step that fails stops the create and nothing is undone.** The response says which step and
+  what exists so far — a dataset that was cloned stays cloned, a stanza that was written stays
+  written — because an automatic rollback is a second destructive operation running at the moment
+  least is known about the state. The one exception is a leaked epair, below.
+
+- **Destroy a jail.** `DELETE /api/jails/{name}?confirm=<name>` stops it, takes it out of
+  `jail_list`, deletes its file in `jail.conf.d`, and destroys its dataset, in that order.
+  **Its child datasets go with it** and are named in `taken`; anything worth keeping is moved out
+  with `retain` first. Snapshots, clones and holds refuse the whole thing with each one named and
+  nothing touched — `zfs destroy -R` is never passed, which is what would make that check
+  decorative, and `-r` only when the jail has children, so a snapshot taken in the gap makes ZFS
+  refuse rather than be swept up silently. (#11, JD-030)
+
+  A jail with no file of its own in `jail.conf.d` is refused: its block is in `/etc/jail.conf`,
+  which belongs to the operator and which Jail Deck never writes, so destroying the dataset would
+  leave the jail declared and pointing nowhere.
+
+- **VNET jails on an operator's bridge.** `"network": {"mode": "vnet", "bridge": …, "private": …,
+  "ip4": …, "gateway": …}`. The epair is created in the stanza's `exec.prestart` and destroyed in
+  its `exec.poststop`, so a jail started from a shell gets the same network. The bridge is the
+  operator's: Jail Deck adds and removes its own epairs and never creates one. (#9, JD-017)
+
+  Four things measured on 15.1-RELEASE-p5 shaped it. `ifconfig epair create` prints only the `a`
+  end, so the unit is chosen when the stanza is written — from what no interface uses *and* no
+  jail configuration claims. `ifconfig <host end> destroy` takes the jail end and the bridge
+  membership with it, so cleanup is one command. A VNET jail's `lo0` starts **down**, which breaks
+  anything talking to 127.0.0.1, so the stanza brings it up before `/etc/rc`. And **`private`
+  isolates a jail from the other private members only** — a private member still reaches
+  non-private ones and the bridge itself, which is narrower than it sounds.
+
+  **A start that fails after `exec.prestart` leaves the epair behind** and `jail(8)` never runs
+  `exec.poststop` for it, so the orphan would block every retry at `already exists`. Jail Deck
+  destroys it itself and says so; a cleanup that fails names the interface rather than going quiet.
+
+  **A VNET jail reports no `ip` in the listing.** It sets no `ip4.addr`, so neither `jls` nor its
+  configuration carries one, and an unknown assignment in a stanza is a hard error — so there is
+  nowhere honest to record it either. The create response carries the address that was asked for.
+
+- **Resource limits and the jail-parameter allowlist.** `"limits"` is rctl rules plus a cpuset;
+  `"params"` is jail(8) parameters, and only the nine on the allowlist — `devfs_ruleset`,
+  `securelevel`, `enforce_statfs`, `children.max` (`0` only), `sysvmsg`, `sysvsem`, `sysvshm`,
+  `allow.chflags`, `allow.set_hostname`. Anything else is refused with the parameter named,
+  because a denylist fails open the day jail(8) gains a parameter. (#10, JD-018)
+
+  Limits are applied by the stanza's `exec.poststart` and removed by its `exec.prestop`. Measured:
+  **jail(8) destroys a jail whose `exec.poststart` fails**, so a jail whose limits could not be
+  applied never runs — "refusing beats running unlimited" enforced by jail(8) itself, on every
+  start. Also measured: `pcpu` takes `deny`, not `throttle`; and `rctl -l jail:<name>` does not
+  work at all — the listing form for a jail is the bare filter `rctl jail:<name>`.
+
+  **rctl rules are keyed to the name and outlive the jail.** A jail removed without `rctl -r`
+  leaves its rules in the kernel and the next jail of that name inherits them, so a create refuses
+  a name that still carries rules — naming them and the one command that clears them — and a
+  destroy sweeps whatever is left. A start that fails part way through `exec.poststart` has the
+  rules it had already applied taken back.
+
+  **A `devfs_ruleset` the kernel has not loaded is refused.** Measured: an unloaded number names an
+  empty ruleset, an empty ruleset hides nothing, and the jail comes up with the host's **whole
+  `/dev`** — `ada0`, `mem`, `kmem`, `io`, `bpf` — while `jls` reports the number that was asked
+  for. A stanza with no `devfs_ruleset` at all gets the restricted set.
+
+- **Idempotent create.** `PUT /api/jails/{name}` with the same spec: absent → created, `201`;
+  already what the spec describes → `200` with `changed: false`; there but different → `409` with
+  the differences. **Nothing is ever reconciled** — a jail that differs is left exactly as it is
+  and the client decides. Safe to repeat after a timeout. (#8, JD-016)
+
+  "Matching" is decided by rendering the stanza the spec would write — against the path the host
+  reports and the epair the existing stanza already claims — and holding it against the stanza on
+  disk, setting by setting. So the comparison covers every field the generator writes rather than
+  a list that has to be kept up to date. Line order, comments, blank lines, the quoting of a value
+  and `$name` are not differences; anything else is, including a setting only one side has.
+  `template` comes from the root's clone origin and `autostart` from `jail_list`.
+
+  **`start` is deliberately not compared.** It says whether to start the jail once it has been
+  configured — an instruction about the create, not a property of the jail. Comparing it would make
+  a jail stopped for maintenance refuse every `PUT`.
+
+- **A jail spec carries its child datasets and its tags** (#10, JD-007). `datasets` is a
+  list of datasets created one level beneath the jail's own — each with the native ZFS
+  properties of JD-023's allowlist — and `properties` sets ZFS user properties on the
+  jail's own dataset. Both are applied after the root is cloned and before the stanza is
+  written, so a jail whose `/etc/rc` expects its data mounted finds it there and a quota
+  is in force before the first write. The idempotent `PUT` compares both.
+
+- **Breaking: a child dataset mounted outside its jail is refused**, on `POST /api/jails`,
+  on `PUT /api/jails/{name}` and on `PUT /api/jails/{name}/datasets/{child}`, which took
+  any mountpoint before. Measured on 15.1-RELEASE-p5: ZFS creates such a dataset without
+  complaint and the jail cannot see it, yet `zfs destroy -r` on the jail destroys it
+  anyway — so destroying the jail would take a dataset living elsewhere on the host.
+  A dataset meant to outlive the jail goes through
+  `POST /api/jails/{name}/datasets/{child}/retain` instead, which moves it out of the
+  jail's dataset tree.
+
+- **A release template is brought to its patch level and sealed.** The last two stages,
+  which carry a prepare from `extracted` through `updating` to **`ready`** — a template a
+  jail can be cloned from, prepared end to end from the interface with no shell steps.
+
+  `freebsd-update -b <root> --currently-running <release> --not-running-from-cron fetch
+  install`, every flag measured against the real tool on the deployment host. The **plain
+  release** is what `--currently-running` wants, not a patch level: a freshly unpacked
+  `base.txz` is exactly the release as published. `--not-running-from-cron` is what makes
+  it non-interactive. `fetch install` in one invocation exits 0 even when there is nothing
+  new, which is the ordinary case for a recently published release.
+
+  **The `@base` snapshot is taken last, and that ordering is the point.** `base.txz` is
+  the release as published, so a template sealed before `freebsd-update` would carry every
+  advisory since into every jail cloned from it. An update that fails leaves the template
+  `extracted` and unsealed — honestly not ready — with `freebsd-update`'s own sentence in
+  the operations log.
+
+  Nothing records which patch level it reached. `freebsd-update` says so in its own output,
+  which the audit log keeps, and `freebsd-version -u` inside a jail cloned from the
+  template is the live answer; a number stored here could disagree with the userland it
+  describes (JD-011).
+
+- **A fetched release is unpacked into a template dataset.** The second stage, which
+  carries a prepare from `fetched` to `extracted`: create an empty dataset under
+  `<pool>/jails/templates/`, `tar -xpf` the archive into it, and copy the host's
+  `resolv.conf` and `localtime` in — without the first a jail cloned from this template
+  cannot reach a package mirror, and without the second it logs in UTC while the host does
+  not. The tar keeps permissions and flags; a userland extracted without them has a
+  world-writable `/etc`.
+
+  **Nothing is ever unpacked over an existing dataset.** A dataset holding half a userland
+  looks exactly like one holding a whole one, so a template that already has a dataset and
+  no `@base` is a `409` naming itself — the same refusal a derive already made, now the
+  rule for every path (JD-027). A failed extract is left exactly where it stopped: the
+  dataset is the evidence, and the audit log carries `tar`'s own sentence.
+
+  Repeating a call **resumes**: an archive already in `media/` is not downloaded again.
+
+- **A release template's archive can be fetched from the FreeBSD mirror.** The first stage
+  of preparing one, and the first operation to use JD-008's answer:
+  `PUT /api/templates/{name}` with `{"release": "15.1-RELEASE"}` **returns 202 and does not
+  wait**. An empty release means the host's own, which is also the ceiling — a jail's
+  userland must be the same as or older than the kernel it runs under.
+
+  It fetches that release's `base.txz` into `<pool>/jails/media/{release}/` and **verifies
+  it against the release's own MANIFEST** before reporting success. That is not politeness:
+  an archive that arrived corrupt would be extracted into a template every later jail is
+  cloned from.
+
+  **The release, never a patch level.** `kern.osrelease` says `15.1-RELEASE-p5` and the
+  mirror publishes no `-pN` directory at all, so the patch level is dropped — it is what
+  `freebsd-update` brings the extracted userland to afterwards, not what is downloaded.
+
+  **Templates now report `state`.** Read off the filesystem — the archive is in `media/` or
+  it is not, the dataset exists or it does not, the `@base` snapshot exists or it does not
+  — so a reload, or a restart of Jail Deck, shows where the work actually got to. A
+  template that has only been fetched has no dataset and still appears, because the
+  resource a client was told to watch has to exist from the moment the work starts.
+
+  **`running`** is beside it when a step is executing, with the step and when it began. In
+  memory only; a second request for a template already in flight is a 409 rather than a
+  queued one.
+
+  Naming both `from` and `release` is a 400: they are two ways to build a template, and
+  picking one for the caller would be guessing.
+
+- **A dataset reports the native ZFS properties it sets.** `GET /api/jails` and
+  `GET /api/jails/{name}` carry a `properties` map beside each dataset: the four an
+  existing dataset may be given (JD-023), as the strings `zfs` prints — so `refquota`
+  reads `2G` and a client can send the same value back. (#55)
+
+  **The value the dataset sets, not the value in effect.** A property inherited from the
+  dataset above is absent. Showing it would be friendlier right up to the moment someone
+  edited it: the write would create a local override on the child rather than change the
+  setting they were looking at.
+
+  Only the allowlisted four. `canmount` is locally set on real datasets and stays out for
+  the same reason it is out of the write list — it would stop a jail's dataset mounting.
+  `mountpoint` keeps its own column.
+
+  It costs no extra command: the `zfs get -s local all` that reads the tags carried these
+  all along and was discarding them. The jail's user properties stay at the jail level
+  (JD-004); nothing moved.
+
+### Added
+
+- **Creating and destroying a jail from the interface.** `Create a jail` on the Jails page opens a
+  form at `/jails/new`: Source, Network, and then Limits, Jail parameters and Datasets and tags,
+  which open only when asked for, so a jail that needs none of them reads as one that needs none.
+  The fields that exist under Limits and Parameters are exactly the ones the API accepts — the
+  form is the allowlists made visible — and the network mode decides which fields exist at all,
+  because a field set for a mode that ignores it is refused rather than dropped. (#8, #11)
+
+  **The result is the create's own report**, rendered as the steps the server ran in the order it
+  ran them — clone, datasets, configure, autostart, start — each done, failed or not reached. A
+  create that stopped half way shows exactly how far it got, because nothing is undone and that
+  report is the recovery information.
+
+  **Destroy** is its own section at the foot of a jail's page, in the danger colour. The
+  confirmation names the child datasets that will go with the jail and asks for the jail's name to
+  be typed, which is the API's own requirement rather than invented ceremony. A refusal over
+  snapshots, clones or holds stays on the page with each one named — they have to be dealt with one
+  at a time, so a message that disappears is no use.
+
+- **Preparing a release from the Templates page.** A form for the release, a `State`
+  column in place of the ready badge, and the step with its elapsed time under it while
+  something is running. The page polls only while anything is in flight and stops when
+  nothing is; a template being prepared cannot be removed. What each stage actually ran is
+  on the Operations page, which is where a failure is explained.
+
+- **A jail's datasets show their properties, and a child's can be changed.** The chips
+  under each dataset name are what it sets itself; a child gets a **Properties** form
+  prefilled with them. An empty box leaves the property alone — there is no route that
+  makes a dataset inherit one again. The jail's own dataset shows its properties and has
+  no form, because the API writes to children and not to the dataset the jail runs from.
+
+### Changed
+
+- **JD-008 is decided: a long-running operation returns `202` and you watch the
+  resource.** Preparing a release template will not hold the request open for the minutes
+  it takes. There is **no job and no job id** — the thing being watched is the template,
+  at the URL it keeps for the rest of its life.
+
+  `state` is read off the filesystem, not recorded: `media/<release>/base.txz` exists, the
+  dataset exists, the `@base` snapshot exists. JD-011 had already named those checks as
+  the template's state machine. So a restart or a client that never comes back costs
+  nothing — the next `GET` reports where the work actually got to, and repeating the call
+  resumes from whatever stage is already a fact on disk.
+
+  The one thing that cannot be derived — whether a step is executing *now* rather than
+  having stopped half way — is held in memory and reported as `running`. Deliberately not
+  persisted: a restart kills the work, so a marker that survived it would be claiming
+  something false.
+
+  Deriving a template with `pkg -c` **stays synchronous**. The line is not "slow" in the
+  abstract but whether the operator needs to be told what is happening to keep using the
+  tool: ~25 s measured on the deployment target is a spinner; a 372 MB fetch plus
+  `freebsd-update` is not.
+
+  No code yet — this is the decision and the records that pointed at it. The
+  implementation is the rest of the Templates milestone.
+
 ## v0.8.0 — 2026-10-23
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.8.0)

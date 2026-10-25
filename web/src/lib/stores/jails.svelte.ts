@@ -8,6 +8,11 @@ export interface Dataset {
     used: number
     referenced: number
     available: number
+    // The native ZFS properties this dataset sets *locally*, out of the four
+    // an existing one may be given (JD-023), as the strings zfs prints -- so
+    // `refquota` reads "2G" and can be sent straight back. One the dataset
+    // merely inherits is absent: that value belongs to the parent.
+    properties?: Record<string, string>
 }
 
 export interface JailData {
@@ -263,4 +268,151 @@ export async function recloneJail(name: string, template: string): Promise<Reclo
         method: 'POST',
         body: JSON.stringify({ template }),
     })
+}
+
+// --- creating and destroying a jail ------------------------------------
+
+export type NetworkMode = 'inherit' | 'alias' | 'disable' | 'vnet'
+
+// A field set for a mode that does not read it is refused by the API rather
+// than ignored, so the form only sends what the chosen mode uses: silently
+// dropping an address someone typed is how a jail ends up reachable when it
+// was believed not to be (JD-017).
+export interface NetworkSpec {
+    mode: NetworkMode
+    ip4?: string
+    interface?: string
+    bridge?: string
+    private?: boolean
+    gateway?: string
+}
+
+// Sizes are strings because that is what rctl takes: a byte count with an
+// optional K, M, G or T. pcpu is percent of one core, so 100 is a whole one.
+export interface LimitsSpec {
+    memoryuse?: string
+    vmemoryuse?: string
+    maxproc?: number
+    openfiles?: number
+    pcpu?: number
+    cpuset?: string
+}
+
+// A dataset created one level beneath the jail's own, with the native ZFS
+// properties of JD-023's allowlist. `mountpoint` is a path on the host, and
+// has to be inside the jail: a child mounted elsewhere is one the jail cannot
+// see and that destroying the jail would destroy anyway (JD-007).
+export interface ChildDatasetSpec {
+    name: string
+    properties?: Record<string, string>
+}
+
+export interface JailSpec {
+    name?: string
+    template: string
+    hostname?: string
+    network: NetworkSpec
+    limits?: LimitsSpec
+    // Only parameters on the allowlist, and each with the type jail(8) wants
+    // (JD-018). The API names the list when one is not among them.
+    params?: Record<string, string | number | boolean>
+    datasets?: ChildDatasetSpec[]
+    properties?: Record<string, string>
+    autostart?: boolean
+    // Absent means yes: creating a jail and leaving it down is the unusual
+    // request, so it is the one that has to be spelled out.
+    start?: boolean
+}
+
+// Created is what the create did, or got as far as doing. It comes back
+// filled in on failure as well, because nothing is rolled back: a dataset
+// that was cloned stays cloned, and this is the recovery information
+// (JD-030).
+export interface Created {
+    jail: JailData
+    root: string
+    mountpoint: string
+    from: string
+    datasets?: DatasetChange[]
+    properties?: Record<string, string>
+    config?: string
+    autostart: boolean
+    running: boolean
+    // The host end of a vnet jail's epair, and whether a failed start had it
+    // taken away again.
+    epair?: string
+    epair_removed?: boolean
+    // The rctl rules a failed start had already applied and that were taken
+    // back, or why they could not be (JD-018).
+    rules_removed?: string[]
+    rules_error?: string
+    failed_at?: string
+    error?: string
+}
+
+export interface DestroyBlock {
+    reason: string
+    snapshots?: string[]
+    clones?: string[]
+    holds?: string[]
+}
+
+export interface Destroyed {
+    jail: string
+    root?: string
+    // The child datasets destroyed with the jail. They go silently unless
+    // listed (JD-007).
+    taken?: string[]
+    stopped: boolean
+    unlisted: boolean
+    config?: string
+    destroyed: boolean
+    // Leftovers swept with the jail: an epair a failed start stranded, and
+    // rctl rules still keyed to the name. Normally neither is there.
+    epair?: string
+    epair_error?: string
+    rules?: string[]
+    rules_error?: string
+    // Nothing ran: something kept on purpose is in the way.
+    blocked?: DestroyBlock
+    failed_at?: string
+    error?: string
+}
+
+export async function createJail(spec: JailSpec): Promise<Created> {
+    return await api<Created>('/jails', { method: 'POST', body: JSON.stringify(spec) })
+}
+
+// partialCreate pulls the step-by-step report out of a failed create. A
+// create that stopped after something existed answers with the whole report
+// and the reason; one refused before anything was made answers with the
+// reason alone, and there is nothing here to show.
+export function partialCreate(err: unknown): Created | null {
+    if (!(err instanceof ApiError)) return null
+    const body = err.body
+    if (typeof body !== 'object' || body === null) return null
+    return 'root' in body && (body as Created).root !== '' ? (body as Created) : null
+}
+
+// destroyJail removes the jail, its configuration and its filesystem. The
+// confirm parameter is the jail's own name, which the API requires: this
+// stops a running jail and destroys the filesystem its processes run on.
+//
+// A refusal over snapshots, clones or holds arrives as 409 with the result as
+// its body and nothing done, so it is returned rather than thrown -- it is an
+// answer, and the caller has something to show (JD-030).
+export async function destroyJail(name: string, confirm: string): Promise<Destroyed> {
+    const path = `/jails/${encodeURIComponent(name)}?confirm=${encodeURIComponent(confirm)}`
+    try {
+        return await api<Destroyed>(path, { method: 'DELETE' })
+    } catch (err) {
+        if (err instanceof ApiError && err.statusCode === 409 && isDestroyed(err.body)) {
+            return err.body
+        }
+        throw err
+    }
+}
+
+function isDestroyed(body: unknown): body is Destroyed {
+    return typeof body === 'object' && body !== null && 'jail' in body && 'destroyed' in body
 }

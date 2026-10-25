@@ -179,7 +179,12 @@ service jail restart <name>
 
 `service` is the standard administrative interface FreeBSD operators already know. Building on it keeps behavior predictable instead of reimplementing jail lifecycle management at a lower level.
 
-**To verify (2026-10-21):** that `service jail start|stop` behaves as expected with VNET stanzas whose `exec.prestart`/`exec.poststop` create and destroy epairs (JD-017), and how `jail_enable`/`jail_list` autostart interacts with `jail.conf.d` on 15.1. Neither is expected to change this decision; both are checked in Jail Provisioning.
+**Verified 2026-10-24** on 15.1-RELEASE-p5, against both questions this decision left open:
+
+- `service jail start|stop <name>` drives a VNET stanza whose `exec.prestart` and `exec.poststop` create and destroy the epair, exactly as JD-017 assumed. The host end joins the bridge with the `private` flag set, the jail end is moved into the vnet, the jail's own `/etc/rc` configures it, and the stop takes both ends away again.
+- Autostart reads `jail_list`, and a jail whose only configuration is `/etc/jail.conf.d/<name>.conf` starts from it. `service jail start <name>` works just as well for a name that is *not* in the list, so membership means "start at boot" and nothing more.
+
+Neither answer changes this decision. What they did change is how much `service` can be trusted to *report*, which is JD-030.
 
 ---
 
@@ -207,7 +212,13 @@ ZFS clone-from-snapshot is what makes jail creation fast and cheap — copy-on-w
 Creating a jail is a two-stage process:
 
 1. **Release template preparation** (once per FreeBSD version): create a dataset, fetch `base.txz` for that release, extract it, patch in host `resolv.conf`/`localtime`, bring it to the current patch level with `freebsd-update`, snapshot it as `@base`. A template is only usable once its `@base` snapshot exists.
+
+   *Built 2026-10-23, detached and polled per JD-008.* Four stages, each audited: `fetch-base`, `extract-base`, `update-template`, `create-snapshot`. **The snapshot is last, and that ordering is the point** — `base.txz` is the release as published, so a template sealed before `freebsd-update` would carry every advisory since into every jail cloned from it. A stage that fails leaves the template honestly not ready rather than sealed.
+
+   `freebsd-update -b <root> --currently-running <release> --not-running-from-cron fetch install`, measured against the real tool on the deployment host: the **plain release** is what `--currently-running` wants, not a patch level, because a freshly unpacked `base.txz` is exactly the release as published — it answered "updating to 15.1-RELEASE-p6". `--not-running-from-cron` is what makes it non-interactive, and `fetch install` in one invocation exits 0 even when there is nothing new, which is the ordinary case for a recent release.
 2. **Jail creation** (per jail, requires a ready template): clone the template snapshot into the jail's own dataset, generate the `jail.conf.d/<name>.conf` stanza, start the jail, and hand off to in-jail provisioning (`jexec` + `pkg`) for service-specific setup.
+
+   *Built 2026-10-24 for `inherit`, `alias` and `disable` networking; the order and the failure path are JD-030.* The root is cloned into `<pool>/jails/containers/<name>` **in the template's own pool**, because a clone cannot cross one. The start is confirmed with `jls` rather than believed from an exit code. VNET (JD-017) and limits (JD-018) extend the same spec and are built too; child datasets and user properties are not.
 
 ### Rationale
 
@@ -220,25 +231,82 @@ Templates are shared, immutable-once-snapshotted bases; jails are cheap clones o
 
 The same rename is what lets a jail be destroyed while its data is kept: `zfs destroy -r` on the jail takes its children and their snapshots with it, so anything worth keeping is renamed out first.
 
+**Built 2026-10-24.** Child datasets and the jail's own user properties are part of the create: `datasets` and `properties` in the spec, made and set **after the root is cloned and before the stanza is written**, so a jail whose `/etc/rc` expects its data mounted finds it there and a quota is in force before the first write. Each child takes the native properties of JD-023's allowlist, and `mountpoint` is a path on the host — the one a child inherits is `<jail path>/<name>`, which is `/<name>` seen from inside the jail.
+
+**A child mounted outside the jail is refused**, in the service rather than in the create, so the `PUT /api/jails/{name}/datasets/{child}` endpoint makes the same refusal. Measured on 15.1-RELEASE-p5: ZFS creates such a dataset without complaint, the jail cannot see it — and `zfs destroy -r` on the jail destroys it anyway, because it is the jail's child whatever it is mounted over. So destroying the jail would take a dataset living elsewhere on the host, and the operator would read its name in `taken` with no reason to look twice. Data meant to outlive the jail has its own door: `retain` moves it out of the jail's dataset tree, which is what makes the destroy leave it alone.
+
+It is the one refusal in a create that cannot come before anything is created: the jail has no path until its root is cloned, and JD-021 fixes only where the layout is mounted, not that every pool mounts it alike. It is made at the datasets step, and a create stopped there has a cloned root and no stanza, which the response says (JD-030).
+
+**What the idempotent `PUT` compares** (JD-016): a child the spec asks for and the jail does not have is a difference, and so is one the jail has that the spec does not name — a child takes space and goes with the jail, so it is part of the jail in a way a tag is not. Only direct children, because the spec describes one level and a deeper dataset is one it could neither ask for nor disown. Properties compare as a subset in both senses, which is what the write side already does: native properties are applied rather than replaced, and user properties are merged so that a tag another tool set survives (JD-023).
+
 ---
 
 ## JD-008 — Long-running Operations
 
-**Status:** Open — scope narrowed 2026-09-04
+**Status:** Locked — 2026-10-23 (scope narrowed 2026-09-04, amended 2026-10-21)
 
-Fetching `base.txz`, extracting it, and running `freebsd-update` can take real time. Whether this needs task queues, polling, or Server-Sent Events, versus staying synchronous with a longer timeout, is still undecided.
+Fetching `base.txz`, extracting it and running `freebsd-update` take minutes. **The request that starts that work does not wait for it.** It returns `202` at once; the client watches the resource itself.
 
-**What is now settled is the scope of the question: it applies to the template domain only.** Template preparation is a distinct, operator-initiated step — not part of application setup, and not folded into jail creation (JD-007). Jail creation stays synchronous and fast, because cloning a snapshot is a copy-on-write operation that returns immediately. Jail lifecycle operations are already fast.
+```
+PUT /api/templates/15.1-RELEASE        -> 202, {"state": "fetching"}
+GET /api/templates/15.1-RELEASE        -> {"state": "extracting",
+                                           "running": {"step": "extract", "since": …}}
+   …
+GET /api/templates/15.1-RELEASE        -> {"state": "ready", "ready": true}
+```
 
-So the remaining decision is a progress mechanism for one domain and a handful of endpoints, not a general asynchronous-execution strategy for the application.
+**There is no job, and no job id.** The thing being watched is the template, at the URL it will keep for the rest of its life. A handle that only exists while an operation is in flight would be a second identity for the same object, and a client that lost it would have no way back to the work it started.
 
-**Amended 2026-10-21.** VM image import joins template preparation as the other slow flow that needs the progress mechanism. Jail operations stay synchronous. An automation client that wants asynchronous behaviour provides it itself — it already has its own job state, and a synchronous, idempotent call (JD-016) is easier to retry safely than a job handle Jail Deck would have to remember.
+### The state comes off the disk
+
+`state` is read, not recorded. JD-011 already settled this when it listed "what state is a template in?" among the derived questions, and named the checks:
+
+| State | What makes it true |
+| --- | --- |
+| `absent` | no dataset |
+| `fetching` | nothing yet, and an operation is running |
+| `fetched` | `media/<release>/base.txz` exists |
+| `extracting` / `extracted` | the template's dataset exists and holds a userland |
+| `updating` | as above, with an operation running |
+| `ready` | the `@base` snapshot exists |
+
+So a restart, a crash, or a client that never comes back cost nothing: the next `GET` reads the same filesystem and reports where the work actually got to. Nothing can disagree with the host, which is the whole of JD-011 in one sentence.
+
+**It is also what makes the call retry-safe.** JD-016 wants an idempotent `PUT`; repeating this one resumes from whatever stage is already a fact on disk rather than starting again. That was the 2026-10-21 amendment's argument for staying synchronous, and it survives the move to `202` intact — because the idempotency never came from the response shape, it came from the stages being facts.
+
+### `running` is in memory, and that is correct
+
+One thing cannot be derived: whether a step is executing *right now*, as opposed to having stopped half way. A dataset that exists without `@base` looks identical whether `freebsd-update` is running in it or died an hour ago.
+
+So the process keeps an in-memory record of what it is currently doing — step and start time — and reports it as `running` beside the derived state. It is deliberately **not persisted**:
+
+- A restart kills the work, so a marker that survived the restart would be claiming something false. Losing it is the truthful outcome, not a limitation.
+- Persisting it would make Jail Deck own durable state about operations, which is exactly the database JD-011 refuses. `/var/db/jaildeck/state.json` holds credentials because they cannot be re-derived; a step counter can be.
+
+**What happened, as opposed to what is happening, is the audit log's job.** Every stage writes its own entry with the command, exit code and duration (JD-011), so a failed prepare is answered by the operations page rather than by a status field that would have to be invented and stored.
+
+### Where the line is
+
+| | |
+| --- | --- |
+| **Detached, `202`, polled** | preparing a release template; importing a VM image (JD-019) |
+| **Synchronous** | everything else, including deriving a template with `pkg -c` |
+
+The line is not "slow" in the abstract, it is **whether the operator needs to be told what is happening to keep using the tool**. Deriving a template with packages measured ~25 s on the deployment target — long enough to notice, short enough that a spinner is an honest answer. A 372 MB fetch followed by `freebsd-update` is not.
+
+Deriving stays synchronous for a second reason: it shipped that way in v0.8.0, and a client that works should not be broken to make two endpoints in the same domain look alike.
+
+### Why not the alternatives
+
+**Synchronous with a long timeout** was the cheapest, and nearly won — JD-016's retry contract already covers the client that gives up. It loses on what the operator sees: minutes of spinner with no way to tell working from wedged, through an intermediary that may well cut the connection first. "Retry and find out" is an answer for a script, not for someone watching a release download.
+
+**A task queue, or any job store**, is disproportionate at this scale and would reintroduce the database JD-011 removed. Two slow flows on one host do not need a scheduler.
+
+**Server-Sent Events** streaming the command's own output is the nicest version of this and is not excluded — it sits on top of what is above rather than replacing it. It is not in the first implementation because the stream dies with a page reload while the polled state does not, an automation client has no use for it, and the command runner collects output rather than streaming it, so it is a change to the runner as much as to the API. Worth doing when watching `freebsd-update` scroll is worth that; the polled state is what makes the feature usable without it.
 
 ### Rationale
 
-Worth deciding deliberately once template preparation is actually being built, rather than guessing ahead of the real shape of the problem.
-
-Separating template preparation from jail creation shrank this problem considerably. The earlier framing implied every long operation across the app needed an answer; in fact only one flow is slow, which makes polling or SSE on a single resource a proportionate solution and removes any argument for a task queue at this scale.
+The decision that mattered was not the transport. It was refusing to invent a job object: once the resource is the thing you watch and its state is read off the disk, the asynchronous version of this API is barely different from the synchronous one, and nothing new has to be remembered, migrated or cleaned up.
 
 ---
 
@@ -436,7 +504,7 @@ Every part of this exists because the obvious version does not work.
 
 **Timeouts belong to the runner, not to callers.** Callers wrapping contexts would mean a slow operation consumes the whole budget, leaving nothing for the verification step that follows it — precisely when knowing the jail's real state matters most. It would also make "unbounded" the default for any caller who forgets.
 
-This decision is about bounding individual commands. How a legitimately slow flow is represented to the operator — progress, polling, or SSE during template preparation — remains open under JD-008.
+This decision is about bounding individual commands. How a legitimately slow flow is represented to the operator is JD-008's, and it is settled: the call returns `202` and the operator polls the template. The two meet at one point — a detached stage still runs under a timeout, just a much larger one than `jls` gets.
 
 **Amended 2026-10-21 — exec.** The exec endpoint (JD-016) is the one place a caller supplies a command's timeout. It is capped by a server-side maximum, so a caller can shorten the bound but never remove it, and the output kept is capped in size. The cap values are still open.
 
@@ -466,7 +534,7 @@ TanStack Query, a generated client and polling are premature at two domains. Ref
 
 ### Still open
 
-- How a multi-minute template preparation is represented in the UI — blocked on JD-008.
+- How a multi-minute template preparation is represented in the UI. JD-008 settled the API half; the page is not designed.
 - Table-first or card-first for the jails list; browser `confirm()` or a custom dialog; when dark mode arrives. All reversible, none blocking.
 
 ---
@@ -484,11 +552,23 @@ Jail Deck has a second kind of API consumer: a program on the same host, driving
 - **Transport.** A unix socket listener (JD-002) with token auth (JD-003).
 - **Change policy.** Breaking changes are allowed before 1.0 but each is recorded under an **API** heading in the changelog. A client pins a Jail Deck version and runs contract tests before upgrading.
 
+**The idempotent `PUT` was built 2026-10-24.** What was left to decide was the hard half: what "matching" means.
+
+**It is the jail's own configuration file that answers.** Jail Deck renders the stanza the spec would produce — against the path the jail's dataset actually reports and the epair unit its existing stanza already claims — and compares that with the stanza on disk, setting by setting. Nothing about the comparison is a list of fields to check, so no field can be forgotten by a comparison that does not know about it: a parameter added to the allowlist next month is compared the day it is generated. It is also JD-011 read literally, because the file is what the host says the jail is (JD-004).
+
+Settings rather than bytes. A stanza written by an older Jail Deck has its lines in a different order — the limits work moved `exec.poststop` below `exec.prestop` — and that is not a difference in the jail. Comments, blank lines and the quoting of a value are ignored for the same reason; everything else is compared, including a bare flag an operator added by hand, which appears as a setting with no value.
+
+**Two things are not in the file, and are read where they live.** `template` is the root's clone origin, from `zfs get origin`; `autostart` is `sysrc -n jail_list`. A host that never set `jail_list` answers "unknown variable" and exits 1 — measured — which is an empty list rather than a failure.
+
+**`start` is deliberately not compared.** It says whether to start the jail *once it has been configured*, which is an instruction about the create and not a property of the jail. Comparing it would make a jail an operator stopped for maintenance refuse every `PUT` until they started it again, and acting on it would be reconciliation — the one thing this decision rules out. The response reports whether the jail is running, and the client decides.
+
+A jail with no file of its own in `jail.conf.d` is refused rather than compared, on the same grounds the destroy refuses one (JD-030): its block is in `/etc/jail.conf`, which belongs to the operator and which Jail Deck never writes.
+
 ### Rationale
 
 **The desired state lives in the client, not here.** A platform like Otter has a desired-state model — that is its job. Jail Deck stays a desired-state-free executor and reporter, which is what JD-011 asks for. An idempotent `PUT` gives the client everything it needs from that position: after a crash it repeats the call, and the answer (`201`, `200` or `409`) tells it exactly where it stands, derived from the system rather than from a record of what Jail Deck thinks it did.
 
-**Synchronous is better for automation, not worse.** Jail creation is fast (JD-008). A client with its own job queue gains nothing from a Jail Deck job handle except a second piece of state that can disagree with the first.
+**Synchronous is better for automation, not worse.** Jail creation is fast (JD-008). A client with its own job queue gains nothing from a Jail Deck job handle except a second piece of state that can disagree with the first — which is why, when JD-008 finally did detach something, it still issued no handle: the template's own URL is what you watch.
 
 **Generic primitives only.** Every capability here passes the scope test in `docs/SPEC.md`: an operator on their own box can use `PUT`, `exec` and `confirm` from a script just as well. Nothing in the API knows what a customer, a quota or a database is.
 
@@ -510,6 +590,15 @@ A jail spec may ask for VNET networking:
 - The address and default route are set inside the jail.
 - **The bridge is the operator's.** Jail Deck adds and removes only its own epairs; it never creates a bridge, adds a physical interface to one, or edits `rc.conf` network settings. Host Setup reports whether the named bridge exists.
 - `ip4=inherit` jails remain supported, unchanged.
+
+**Built 2026-10-24**, measured on isengard, 15.1-RELEASE-p5. Four things the decision did not say, settled by measuring:
+
+- **The epair unit is fixed in the stanza, and Jail Deck picks it.** `ifconfig epair create` allocates a unit but prints only the `a` end, so the peer's name is not knowable in advance — and both are needed before the jail runs, by `vnet.interface` and by `exec.poststop`. The unit is chosen from what no interface uses *and* no jail configuration claims: the host answers for running jails, the files in `jail.conf.d` for stopped ones whose stanza will create a unit the moment they start. Two creates racing can still be handed the same unit; the loser's start fails at `already exists` and is cleaned up like any other failed start.
+- **The cleanup is one command.** `ifconfig <host end> destroy` takes the jail end *and* the bridge membership with it, so the orphan sweep needs neither a `deletem` first nor the bridge's name — and has no second command that can fail after the first succeeded. `exec.poststop` is one line for the same reason.
+- **A VNET jail's loopback starts down.** The stanza brings `lo0` up, sets the address and adds the route *before* `/bin/sh /etc/rc`, so the services rc starts find an interface that is already configured.
+- **`private` isolates private members from each other, and only from each other.** Measured: private→private is blocked, private→non-private works, private→the bridge works. The sentence above is accurate only where every jail on the bridge asks for it; a jail sharing a bridge with a non-private member is not isolated from it.
+
+A VNET jail sets no `ip4.addr`, so neither `jls` nor its configuration reports an address for it and the jail listing shows none. The address is in the jail's own stack. A stanza cannot carry it as metadata either: an assignment jail(8) does not recognise is a hard error (`unknown parameter`), measured.
 
 ### Rationale
 
@@ -535,15 +624,34 @@ A jail spec may carry limits and jail(8) parameters:
 - **devfs** references a ruleset number the operator installed. Jail Deck never appends to `/etc/devfs.rules` at runtime.
 - **Child datasets and user properties** (JD-007, JD-004) are part of the same spec, so one `PUT` describes the whole jail.
 
+**Built 2026-10-24**, measured on isengard, 15.1-RELEASE-p5. **Limits are applied by hooks**, which settles the question this decision left open, and six things it did not say were settled by measuring:
+
+- **A hook that fails takes the jail down with it.** An `exec.poststart` command exiting non-zero makes jail(8) destroy the jail it has just created — measured with a deliberately invalid rule — so a jail whose limits could not be applied never runs. That is "refusing beats running unlimited" enforced by jail(8) itself, on every start, including the ones Jail Deck knows nothing about. `service jail start` still exits 0 throughout; the `jls` confirmation from JD-030 is what notices.
+- **Rules outlive the jail.** A jail removed without `rctl -r` leaves its rules in the kernel, keyed to the name, and the next jail of that name silently inherits them — a rule can even be added for a jail that does not exist. So a create refuses a name that already carries rules, naming them and the command that clears them, and a destroy sweeps whatever is left the way it sweeps a leftover epair.
+- **A start that fails part way through `exec.poststart` keeps the rules it had already added**, and `exec.prestop` does not run. Jail Deck removes them itself, as it does the epair.
+- **`rctl -l jail:<name>` does not work** — "Operation not supported". The listing form for a jail subject is the bare filter, `rctl jail:<name>`, which exits 0 with no output when there are none and matches the name exactly rather than as a prefix. `rctl -r` on a name with no rules exits 1, "No such process", so the removal is only asked for when the listing found something.
+- **`pcpu` takes `deny`, not `throttle`**, which is the reverse of what rctl(8)'s description of `throttle` suggests: `throttle` on a jail subject is "Operation not supported".
+- **A `devfs_ruleset` the kernel has not loaded gives the jail the host's whole `/dev`** — `ada0`, `mem`, `kmem`, `io`, `bpf` — silently, while `jls` reports the ruleset number that was asked for. An unloaded number names an empty ruleset, and an empty ruleset hides nothing; a stanza with no `devfs_ruleset` at all gets the restricted set. The number is therefore checked against `devfs rule showsets` before anything is created. It is the one check here that exists for confinement rather than for accuracy.
+
+The allowlist as built is nine parameters: `devfs_ruleset`, `securelevel`, `enforce_statfs`, `children.max` (`0` only, which is what "never above 0" comes to in practice), `sysvmsg`, `sysvsem`, `sysvshm`, `allow.chflags` and `allow.set_hostname`. Each carries its own rule — a range, an enumeration or a boolean — so a value out of range is refused as precisely as an unknown name. `allow.sysvipc` is deliberately *not* on it: the three `sysv*` parameters set to `new` give a jail its own IPC namespaces, which is the same capability without the host's.
+
+Parameters Jail Deck writes itself — `path`, `host.hostname`, `ip4`, `vnet`, the `exec.*` hooks — are refused with a different message, naming the spec field that sets them instead. An operator writing `"params": {"path": …}` has made a different mistake from one writing `"params": {"allow.mount": true}`.
+
+Two values are validated here rather than left to the host (JD-012), because the host's own refusal says nothing useful: a size like `640X` and a cpu list like `abc`. `cpuset` answers the second with "Resource deadlock avoided".
+
 ### Rationale
 
 **The allowlist is the API's security boundary.** A token holder can already do anything root can (JD-003), but the API should not make it *easy* to create a jail that can escape its own confinement. A denylist fails open the day jail(8) gains a parameter; an allowlist fails closed.
 
 **Refusing beats running unlimited.** A jail that was asked for a 640M memory limit and silently got none is worse than an error: the operator believes something that is false.
 
+### Settled
+
+- **Limits are applied by `exec.poststart` and removed by `exec.prestop`**, as this decision leaned. Measuring made the case stronger than the original reason: a jail started from a shell gets the same limits, *and* a jail whose limits cannot be applied does not start at all. The adapter would have had to re-implement both, and could only have managed the second by stopping a jail it had just started.
+
 ### Still open
 
-- Whether limits are applied by `exec.poststart`/`exec.prestop` hooks in the stanza or by the adapter. Leaning hooks, for the same reason as the epair in JD-017: the jail behaves the same however it is started.
+- `allow.raw_sockets` is refused for every jail. That is right for one sharing the host's network stack and arguably too strict for a VNET jail with its own. Revisit when something actually needs `ping` inside a jail.
 
 ---
 
@@ -681,6 +789,18 @@ Jail Deck writes two kinds of ZFS property, and the difference decides everythin
 The two kinds of property are not two flavours of the same thing. A native property changes how the filesystem behaves and is Jail Deck's responsibility; a user property is a string the consumer owns and Jail Deck is merely a courier for. Treating them alike would mean either validating tags nobody has the right to validate, or letting `sharenfs` through because it arrived in the same map.
 
 **Verified on isengard, not only in tests.** Creating `tank/jails/containers/ottermq/data` with `refquota=2G` through the API put the quota where JD-007 says it belongs: `df` **inside the running jail** reports 2.0G rather than the pool's 897G, with the mount point shown as `[restricted]` by `enforce_statfs`. That is the behaviour the whole arrangement exists for.
+
+### What is reported back — added 2026-10-23 (#55)
+
+The read side is the same allowlist pointed the other way. Each dataset in a jail's listing carries the four native properties **it sets locally**, as the strings `zfs` prints, so a `refquota` reads `2G` and a client can send that same value back.
+
+**Not the value in effect — the value this dataset sets.** A property inherited from the dataset above is absent. ZFS reports it on a `zfs get` without `-s local`, and showing it would be friendlier right up to the moment someone edits it: the write would create a *local override* on the child rather than change the setting they were looking at, and the parent would go on applying its value to every other dataset beneath it. An absent property is an honest "this dataset does not decide that".
+
+It costs nothing to read. `Inventory` already runs one `zfs get -H -r -o name,property,value,source -s local all` for the tags; the native properties were in that output all along and were being discarded.
+
+**Not every native property, the same four.** `canmount` is set locally on real datasets and is outside the list for the reason it is outside the write list: it would stop a jail's dataset mounting. Reporting the set Jail Deck is willing to write keeps one answer to "what can I change here".
+
+`mountpoint` is the exception on both sides — reported as its own column, and never written to an existing dataset.
 
 ---
 
@@ -829,6 +949,12 @@ after promote:   containers/ottermq       <- templates/ottermq-base@base
 After it the jail is a clone of the template instead, which is also the right way round: a template should outlive the jail it came from. The lineage then reads release template → this one → the jail, which is exactly JD-007's model, so the new template lists like any other with no special case anywhere.
 
 **The jail must be stopped**, and Jail Deck refuses rather than stopping it. "Stop the jail before snapshotting so the image is consistent" is the Handbook's instruction; unlike a re-clone, nothing here *requires* the jail to be down — a snapshot of a running jail succeeds, it is just an image of a system caught mid-stride. Taking a service down is the operator's call, and it is one call they already have.
+
+**Nothing is ever built on top of a template that already has a dataset and no `@base`.** Added 2026-10-23, when preparing a release template landed its extract stage.
+
+A dataset holding half a userland looks exactly like one holding a whole userland — the filesystem cannot tell them apart, so JD-008's derived state machine cannot either, and both report `extracted`. Unpacking a second `base.txz` over the first would merge two trees into something nothing can describe afterwards.
+
+So the rule that `Derive` already followed is now the rule for every path: a template with a dataset and no `@base` is a stage that stopped, it is a `409` naming itself, and the operator destroys it. That is also why a failed extract is left exactly where it stopped rather than cleaned up — the dataset is the evidence, and removing it is a decision with the operator's name on it (JD-026's stance, one domain over).
 
 **A jail already carrying `@base` is refused.** `CreateSnapshot` is idempotent by design (JD-024), so an existing one would be silently reused — and the template would then capture whenever *that* was taken rather than the jail as it is now. The name is a template's convention; a jail wearing it is worth stopping for.
 
@@ -1003,7 +1129,85 @@ A successful removal on `/templates/{name}` navigates back to the list, because 
 
 ### What is not here
 
-Setting a native property on a dataset that already exists — growing a `refquota`, say — is possible in the API but absent from the page, because the jail endpoint does not report native properties and a form that edits a value it cannot show would be guessing. That is an API gap, filed as [#55](https://github.com/ottermq/jaildeck/issues/55), not a UI decision.
+A jail's **own** dataset can be read but not written. Its native properties show beside it like any other dataset's, and there is no Properties button, because `PUT /api/jails/{name}/datasets/{child}` writes to a child and there is no route to the dataset the jail runs from. Offering the form anyway would be offering a request that cannot be made.
+
+*(Until [#55](https://github.com/ottermq/jaildeck/issues/55) the properties were not reported at all, so no dataset could be edited from the page. That gap is closed; this narrower one is what is left of it.)*
+
+---
+
+## JD-030 — Creating and Destroying a Jail
+
+**Status:** Locked — 2026-10-24
+
+JD-005 decided that lifecycle goes through `service jail`. JD-007 decided that a jail is a clone of a template's `@base`. This is the order those steps run in, which package owns each one, and what happens when the middle of it fails.
+
+Everything measured here was measured on isengard, 15.1-RELEASE-p5, on 2026-10-24.
+
+### The jail is configured by a file of its own
+
+`/etc/jail.conf.d/<name>.conf`, rendered with `text/template`. Jail Deck does not create or write `/etc/jail.conf`.
+
+`rc.d/jail` reads a per-jail file directly as long as `/etc/jail.conf` carries no `.include` of the directory — and if it does carry one, it prefers the shared file instead, so that a jail is never defined twice. A tool that wrote the shared file would be rewriting something that belongs to the operator, on a host that may already have jails in it. One file per jail is also one file to delete.
+
+### Autostart is membership of `jail_list`
+
+`sysrc jail_list+=<name>` to enable it, `sysrc jail_list-=<name>` to disable it. Both are idempotent: adding a name twice and removing one that was never there each change nothing and exit 0.
+
+The alternative is an `/etc/jail.conf` holding `.include "/etc/jail.conf.d/*.conf";` with `jail_list` left empty, which makes `service jail start` start everything in the directory. It is rejected because it removes the distinction: every jail that exists would boot, and "this jail exists but should not start" becomes inexpressible. Autostart is a property of a jail, and `jail_list` is where FreeBSD keeps it.
+
+The cost accepted is that Jail Deck writes to `/etc/rc.conf`. It does so through `sysrc` rather than by editing the file, so the operator's comments and ordering survive.
+
+### `service jail start` exits 0 whether or not the jail started
+
+`rc.d/jail` prints `jail(8)`'s error and returns success anyway. Measured for a jail that failed to start, and for one that was already running — both print a message and both exit 0. `jail(8)` run directly exits 1; the exit status is lost in between.
+
+So a jail is started and then **confirmed with `jls -j <name>`**. The exit code is not evidence, and neither is the absence of output.
+
+This is the second tool in this project whose exit status does not answer the question being asked of it; `freebsd-update fetch install` was the first. Both were found by measuring rather than by reading, and the lesson is recorded here rather than in a comment: when a step's success matters, Jail Deck reads the state back.
+
+### A failed start leaves the epair behind, and only Jail Deck will clean it up
+
+When a start fails after `exec.prestart` has already run, `jail(8)` does **not** run `exec.poststop`. The epair survives, still a member of the bridge. This holds whether `exec.start` failed or `prestart` itself failed partway through.
+
+Nothing else will take it away afterwards. `service jail stop <name>` does nothing and `jail -r <name>` answers `not found`, both for the same reason: the jail does not exist, so there is nothing to remove and the hook never runs. With a per-jail epair name the orphan then blocks every retry at the stanza's first line, `ifconfig epair<N> create` → `already exists`.
+
+The resolution keeps both halves where they belong:
+
+- **The stanza keeps `exec.prestart` and `exec.poststop`.** An operator who never runs Jail Deck gets a jail that starts and stops correctly, including its networking. That is the "integrate, do not replace" principle, and a generated file that only works when the generator is present would quietly break it.
+- **Jail Deck adds the step only it can take.** After a start it could not confirm, it destroys the epair that stanza would have created. *Built 2026-10-24 and exercised end to end: a create whose `exec.start` failed on an unreachable gateway reported `failed_at: start` with the failing command in the message, and left no interface behind.*
+
+The orphan is found by the description the stanza writes, `descr jail:<name>`, not by the interface name alone. A sweep that matched on name could take an interface belonging to something else on the host.
+
+The cleanup is itself a command that can fail, and when it does the orphan is **named in the error** rather than swallowed. A leaked epair someone has been told about is a minute's work; a silent one is a jail that will never start again and no clue as to why.
+
+### Destroy stops, unconfigures, and then lets ZFS have the last word
+
+In order: stop the jail, remove it from `jail_list`, delete its configuration file, destroy the dataset.
+
+Measured: `devfs` is unmounted when the jail stops, and `zfs destroy` then succeeds immediately with no busy error. Measured also: `zfs destroy` *while* the jail runs exits 1 with `pool or dataset is busy`.
+
+That refusal is kept as the last line of defence rather than replaced by a check of Jail Deck's own. A check reads the state and then acts on what it read; the mount is held for as long as the jail is up. Only one of those can lose a race.
+
+Destruction takes `DELETE /api/jails/{name}?confirm=<name>` — the same typed confirmation JD-024 asks for before a snapshot goes and JD-027 before a template does, for the same reason.
+
+A jail whose dataset has snapshots or clones is **refused**, with the dependents named, as JD-024 already refuses. `zfs destroy -R` is never passed.
+
+Two details settled while building it, 2026-10-24:
+
+- **`-r` only when the jail has children.** A jail's child datasets go with it (JD-007), and that needs `-r`. A jail with none is destroyed without it, so that a snapshot taken between the check and the destroy makes ZFS refuse rather than being swept up silently. The check is not the guard; it is the explanation given before the guard runs.
+- **A jail with no file of its own in `jail.conf.d` is refused.** Its block is in `/etc/jail.conf`, which belongs to the operator and which Jail Deck never writes — so Jail Deck also cannot take the jail out of it. Destroying the dataset anyway would leave the jail still declared, still listed, and pointing at a path that no longer exists. Refusing names the file instead.
+
+### Orchestration lives in `jails`; the primitives stay in `storage`
+
+The `jails` context owns the order of the steps, because the order is a rule about jails: confirm the template's `@base`, clone it, render the configuration, set autostart, start, confirm. Cloning a snapshot, creating a child dataset and destroying a root belong to `storage`, reached through ports that `jails` defines — the direction JD-010 set, and the one `storage.JailSource` already implements for the storage writes.
+
+The alternative, a single `storage` method that creates a jail end to end, would put the knowledge that a jail is "clone, then configure, then start" inside the package whose subject is datasets.
+
+### A half-created jail is reported, not rolled back
+
+If the configuration write fails after the clone succeeded, the clone stays. The response names the step that stopped and what exists, and nothing is undone — the same position JD-026 takes for a re-clone, and for the same reason: an automatic rollback is a second destructive operation running at the moment least is known about the state.
+
+The epair is the one exception, and it is an exception precisely because it is not recoverable state. Everything else a half-created jail leaves behind can be looked at, kept or removed deliberately. A leftover epair can only block the retry.
 
 ---
 

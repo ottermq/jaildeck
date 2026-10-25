@@ -31,6 +31,15 @@ type Dataset struct {
 	Used       int64 `json:"used"`
 	Referenced int64 `json:"referenced"`
 	Available  int64 `json:"available"`
+	// Properties are the native ZFS properties this dataset sets locally, out
+	// of the four an existing one may be given (JD-023). Absent rather than
+	// empty when it sets none, and a property it merely inherits is not here:
+	// that value belongs to the parent, and setting it here would create a
+	// local override rather than change what is in effect.
+	//
+	// The jail's *user* properties stay at the jail level, where JD-004 put
+	// them -- a client tags the jail, not each of its datasets.
+	Properties map[string]string `json:"properties,omitempty"`
 }
 
 // JailStorage is the storage half of one jail's listing.
@@ -212,4 +221,218 @@ type Recloner interface {
 // job, because whether a jail is running is this domain's to know.
 type TemplateMaker interface {
 	MakeTemplate(ctx context.Context, jailPath, templateName string) (string, error)
+}
+
+// Root is a jail's own dataset, as the storage domain created it.
+type Root struct {
+	Dataset    string
+	Mountpoint string
+}
+
+// RootCloner creates a jail's root by cloning a ready template's snapshot
+// (JD-007). The jails domain defines it and the storage domain implements it,
+// which is the direction JD-010 fixed.
+type RootCloner interface {
+	// CheckTemplate refuses a template that cannot be cloned, before anything
+	// has been created. Asked first so a mistyped snapshot name costs an
+	// error rather than a dataset nobody wanted.
+	CheckTemplate(ctx context.Context, templateSnapshot string) error
+	// CloneRoot clones templateSnapshot into the conventional root for a jail
+	// of this name, <pool>/jails/containers/<name> (JD-021), and reports
+	// where it ended up mounted. A root that already exists is refused by ZFS
+	// rather than by a check here, because only ZFS can answer without racing.
+	CloneRoot(ctx context.Context, templateSnapshot, name string) (Root, error)
+}
+
+// ConfigWriter puts a jail's generated stanza on disk as its own file in
+// jail.conf.d (JD-030). The content is rendered in this package; the adapter
+// only persists it and says where it went.
+type ConfigWriter interface {
+	// WriteConfig refuses to overwrite a file that is already there. A
+	// configuration Jail Deck did not write this moment belongs to whoever
+	// did write it.
+	WriteConfig(ctx context.Context, name, content string) (string, error)
+}
+
+// Autostarter is rc.conf's jail_list. Membership means "start at boot" and
+// nothing else: a jail is startable by name whether or not it is listed
+// (JD-030).
+type Autostarter interface {
+	// SetAutostart returns the command it ran, for the audit log.
+	SetAutostart(ctx context.Context, name string, enabled bool) (string, error)
+}
+
+// ConfigRemover deletes the file a jail was configured by, and says whether
+// it is there at all.
+//
+// Kept apart from ConfigWriter for the reason DatasetSource and DatasetWriter
+// are kept apart: creating a jail must not need the ability to delete another
+// jail's configuration. One adapter implements both, which costs nothing.
+type ConfigRemover interface {
+	// ConfigFile reports where this jail's own file would be and whether it
+	// exists. A jail declared in /etc/jail.conf has none, because Jail Deck
+	// never writes that file (JD-030) -- so it also cannot take a jail out of
+	// it, which is a destroy that has to be refused rather than half done.
+	ConfigFile(ctx context.Context, name string) (path string, exists bool, err error)
+	// RemoveConfig deletes the file and returns the path it deleted.
+	RemoveConfig(ctx context.Context, name string) (string, error)
+}
+
+// RootDependents is what destroying a jail's root would take with it, and
+// what would stop it.
+//
+// The two halves are deliberately separate. Children go with the jail by
+// design (JD-007): a dataset worth keeping is moved out with retain before
+// the jail is destroyed. Snapshots, clones and holds stop the destroy, because
+// each is something somebody kept on purpose.
+type RootDependents struct {
+	// Root is the jail's own dataset.
+	Root string `json:"root"`
+	// Children are the datasets mounted beneath it, which are destroyed with
+	// it. Named in the response because they go silently otherwise.
+	Children []string `json:"children,omitempty"`
+	// Snapshots are of the root or of a child, and each one blocks.
+	Snapshots []string `json:"snapshots,omitempty"`
+	// Clones are datasets made from one of those snapshots -- a template
+	// cloned from this jail, or another jail re-cloned off it.
+	Clones []string `json:"clones,omitempty"`
+	Holds  []string `json:"holds,omitempty"`
+}
+
+// Blocking reports whether anything here stops the destroy.
+func (d RootDependents) Blocking() bool {
+	return len(d.Snapshots) > 0 || len(d.Clones) > 0 || len(d.Holds) > 0
+}
+
+// RootDestroyer destroys a jail's own dataset and everything mounted beneath
+// it. Which zfs flags that takes is the storage domain's business (JD-030);
+// this names the act.
+type RootDestroyer interface {
+	// CheckDestroy answers what a destroy would take and what would stop it,
+	// touching nothing. Asked before the jail is stopped, so a jail that
+	// cannot be destroyed is not left shut down to no purpose.
+	CheckDestroy(ctx context.Context, jailPath string) (RootDependents, error)
+	// DestroyRoot destroys the jail's root and returns the dataset it
+	// destroyed. It is called last and checks nothing itself: by then the
+	// jail is stopped and unconfigured, and ZFS refusing a dataset that is
+	// still busy is the guard that cannot race (JD-030).
+	DestroyRoot(ctx context.Context, jailPath string) (string, error)
+}
+
+// BridgeSource names the bridges the host has.
+//
+// Asked before a VNET jail is created, so a mistyped bridge name costs an
+// error rather than a jail whose start fails after its epair already exists.
+// The same list Host Setup reports (JD-017); Jail Deck never creates one.
+type BridgeSource interface {
+	Bridges(ctx context.Context) ([]string, error)
+}
+
+// EpairAllocator picks the epair unit a VNET jail's stanza is written
+// against.
+//
+// The unit is fixed in the file rather than allocated at start time, because
+// both ends have to be named before the jail runs: vnet.interface names the
+// jail end, and exec.poststop names the host end. Measured: `ifconfig epair
+// create` allocates a unit and prints only the "a" end, so the peer's name
+// is not knowable in advance without choosing the unit.
+type EpairAllocator interface {
+	// FreeEpairUnit returns a unit as "epair7": one no interface currently
+	// uses and no jail configuration already names. Two creates racing can
+	// still be handed the same unit; the loser's start fails at `ifconfig
+	// epair7 create: already exists` and is cleaned up like any other failed
+	// start, which is a refusal rather than a wrong jail.
+	FreeEpairUnit(ctx context.Context) (string, error)
+}
+
+// EpairCleaner destroys the epair a failed start left behind.
+//
+// This is the one piece of a half-created jail Jail Deck undoes (JD-030).
+// When a start fails after exec.prestart has run, jail(8) does not run
+// exec.poststop, and nothing afterwards will: `service jail stop` and
+// `jail -r` both answer "no such jail" and so never run the hook. The orphan
+// then blocks every retry at `ifconfig epair7 create: already exists`.
+type EpairCleaner interface {
+	// RemoveJailEpair destroys the interface described as "jail:<name>" and
+	// returns what it destroyed, or "" when there was nothing to destroy.
+	//
+	// Found by the description rather than by the interface name, because a
+	// sweep matching on name could take an interface belonging to something
+	// else on the host. Destroying the host end takes the jail end and the
+	// bridge membership with it -- measured, so no bridge name is needed
+	// here and no second command can fail halfway.
+	RemoveJailEpair(ctx context.Context, name string) (string, error)
+}
+
+// RctlSystem is the kernel's resource-limit facility: whether it is turned
+// on, and what rules are keyed to a jail's name (JD-018).
+//
+// One port rather than three, because it is one facility with one switch.
+// Nothing here *applies* a limit -- the generated stanza does that -- so
+// every method is either a refusal's evidence or a cleanup.
+type RctlSystem interface {
+	// RacctEnabled reports kern.racct.enable. A kernel built without RACCT
+	// has no such oid, which is false rather than an error: it is an
+	// answer about the host, not a failure to ask.
+	RacctEnabled(ctx context.Context) (bool, error)
+	// JailRules lists the rules keyed to this jail's name, which is not the
+	// same as the rules of a jail that is running: a rule can be added for a
+	// name no jail answers to, and a jail removed without `rctl -r` leaves
+	// its rules behind. Measured, both. No rules is an empty list, not an
+	// error.
+	JailRules(ctx context.Context, name string) ([]string, error)
+	// RemoveJailRules clears them and returns the command that did it. A
+	// name with no rules is not an error here, though rctl itself exits 1
+	// for one -- the caller's question is whether any are left, not whether
+	// this particular invocation found work.
+	RemoveJailRules(ctx context.Context, name string) (string, error)
+}
+
+// DevfsRulesetSource lists the devfs rulesets the kernel has loaded.
+//
+// Asked before a jail that names one is created, and the one check in a
+// create that exists for confinement rather than accuracy: measured on
+// 15.1-RELEASE-p5, a devfs_ruleset the kernel does not have gives the jail
+// the host's entire /dev -- disks, mem, kmem, io, bpf -- silently, while jls
+// reports the number that was asked for (JD-018).
+type DevfsRulesetSource interface {
+	DevfsRulesetNumbers(ctx context.Context) ([]int, error)
+}
+
+// ConfigReader hands back a jail's stanza as it is on disk.
+//
+// Read rather than remembered, and compared rather than trusted: the
+// idempotent PUT answers "does this jail already match the spec?" by
+// rendering what the spec would write and holding it against this (JD-016).
+type ConfigReader interface {
+	// ConfigFile is ConfigRemover's, repeated here because a comparison has
+	// to tell "no file of its own" from "a file that differs" before it
+	// reads anything: the first is a refusal, the second is a diff.
+	ConfigFile(ctx context.Context, name string) (path string, exists bool, err error)
+	// ReadConfig returns the content of that file.
+	ReadConfig(ctx context.Context, name string) (string, error)
+}
+
+// AutostartSource reads what Autostarter writes.
+//
+// Separate from Autostarter because they are asked at different times and
+// by different callers -- a create and a destroy only ever set it, and only
+// the comparison needs to read it back.
+type AutostartSource interface {
+	// Autostarts reports whether rc.conf's jail_list names this jail. A host
+	// that has never set jail_list has an empty list, not an error.
+	Autostarts(ctx context.Context, name string) (bool, error)
+}
+
+// CloneOrigin answers what a jail's root was cloned from, which is the one
+// part of a spec that is neither in the jail's configuration nor in jls.
+type CloneOrigin interface {
+	// RootOrigin names the dataset mounted at the jail's path and the
+	// snapshot it was cloned from.
+	//
+	// A root that is not a clone reports an empty origin, which is a fact
+	// about the dataset rather than a failure -- a jail whose root was made
+	// by hand has no template. A path no dataset is mounted at is
+	// ErrJailNotOnZFS, as it is everywhere else here.
+	RootOrigin(ctx context.Context, jailPath string) (dataset string, origin string, err error)
 }

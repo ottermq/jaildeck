@@ -152,6 +152,12 @@ func isengardTank() *stubSystem {
 			{Dataset: "tank/jails", Name: "compression", Value: "on"},
 			{Dataset: "tank/jails/containers/ottermq", Name: "otter:instance", Value: "mq-01"},
 			{Dataset: "tank/jails/containers/ottermq", Name: "com.sun:auto-snapshot", Value: "false"},
+			{Dataset: "tank/jails/containers/ottermq", Name: "atime", Value: "off"},
+			{Dataset: "tank/jails/containers/ottermq", Name: "refquota", Value: "2G"},
+			// Locally set, native, and outside the allowlist. A real host has
+			// several of these; canmount is the one JD-023 names as a reason
+			// the allowlist exists at all.
+			{Dataset: "tank/jails/containers/ottermq", Name: "canmount", Value: "off"},
 		},
 	}
 }
@@ -176,6 +182,44 @@ func TestInventoryKeepsOnlyUserProperties(t *testing.T) {
 	// mountpoint property is noise here, but the column it mirrors is not.
 	if len(inventory.Datasets) != 3 {
 		t.Errorf("Datasets = %d, want 3", len(inventory.Datasets))
+	}
+}
+
+// The native half of the same listing. The allowlist is the rule here, for the
+// reason JD-023 gives for the write side: what ZFS happens to permit includes
+// canmount, which would stop a jail's dataset mounting, so the set Jail Deck
+// reports is the set it is willing to write.
+func TestInventoryReportsOnlyAllowlistedNativeProperties(t *testing.T) {
+	system := isengardTank()
+	inventory, err := NewService(system, &fakeLogger{}, "tank").Inventory(context.Background())
+	if err != nil {
+		t.Fatalf("Inventory() error = %v", err)
+	}
+
+	want := map[string]map[string]string{
+		// mountpoint is locally set on tank/jails and deliberately absent: it
+		// is already a column of its own, and JD-023 will not write it to an
+		// existing dataset anyway.
+		"tank/jails": {"compression": "on"},
+		// compression is *in effect* on the jail, inherited from the parent
+		// above, and is not reported here. That is the line this draws: these
+		// are the properties a dataset sets, not the ones it has. Reporting an
+		// inherited value would invite an edit that silently creates a local
+		// override instead of changing what is in effect.
+		"tank/jails/containers/ottermq": {"atime": "off", "refquota": "2G"},
+	}
+	if !reflect.DeepEqual(inventory.Native, want) {
+		t.Errorf("Native = %+v, want %+v", inventory.Native, want)
+	}
+
+	// Neither map may hold the other's. A user property among the native ones
+	// would make every tag look like a setting to change.
+	for dataset, properties := range inventory.Native {
+		for name := range properties {
+			if strings.Contains(name, ":") {
+				t.Errorf("%s reports the user property %q as native", dataset, name)
+			}
+		}
 	}
 }
 
@@ -494,18 +538,25 @@ func (s *stubSystem) DestroyDataset(_ context.Context, dataset string, recursive
 	if s.writeErr != nil {
 		return Result{Dataset: dataset, Command: command}, s.writeErr
 	}
-	// zfs refuses a bare destroy of anything with snapshots. Modelled,
+	// zfs refuses a bare destroy of anything with snapshots or child
+	// datasets, and says "filesystem has children" for both. Modelled,
 	// because whether to pass -r is the code under test's decision.
 	if !recursive {
-		for _, snapshot := range s.snapshots {
-			if snapshot.Dataset == dataset {
-				return Result{Dataset: dataset, Command: command},
-					errors.New("cannot destroy '" + dataset + "': filesystem has children")
-			}
+		hasChildren := slices.ContainsFunc(s.snapshots, func(x Snapshot) bool {
+			return x.Dataset == dataset
+		}) || slices.ContainsFunc(s.datasets, func(d Dataset) bool {
+			return strings.HasPrefix(d.Name, dataset+"/")
+		})
+		if hasChildren {
+			return Result{Dataset: dataset, Command: command},
+				errors.New("cannot destroy '" + dataset + "': filesystem has children")
 		}
 	}
-	s.datasets = slices.DeleteFunc(s.datasets, func(d Dataset) bool { return d.Name == dataset })
-	s.snapshots = slices.DeleteFunc(s.snapshots, func(x Snapshot) bool { return x.Dataset == dataset })
+	under := func(name string) bool {
+		return name == dataset || (recursive && strings.HasPrefix(name, dataset+"/"))
+	}
+	s.datasets = slices.DeleteFunc(s.datasets, func(d Dataset) bool { return under(d.Name) })
+	s.snapshots = slices.DeleteFunc(s.snapshots, func(x Snapshot) bool { return under(x.Dataset) })
 	delete(s.origins, dataset)
 	return Result{Dataset: dataset, Command: command}, nil
 }

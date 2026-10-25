@@ -92,9 +92,14 @@ const labels: Record<Operation, string> = {
 }
 </script>
 
-<header class="page-head">
-    <h1>Jails</h1>
-    <p class="page-sub">Every jail this host knows about, configured or running.</p>
+<header class="page-head page-head--action">
+    <div>
+        <h1>Jails</h1>
+        <p class="page-sub">Every jail this host knows about, configured or running.</p>
+    </div>
+    <a class="btn btn--primary" href="/jails/new" onclick={(e) => onNavClick(e, '/jails/new')}>
+        Create a jail
+    </a>
 </header>
 
 {#if loadError}
@@ -203,10 +208,22 @@ const labels: Record<Operation, string> = {
 {:else if jails === null && !loadError}
     <p class="notice">Loading jails…</p>
 {:else if !loadError}
-    <p class="notice">No jails are configured on this host.</p>
+    <p class="notice">
+        No jails are configured on this host.
+        <a href="/jails/new" onclick={(e) => onNavClick(e, '/jails/new')}>Create one</a>
+        from a ready template.
+    </p>
 {/if}
 
 <style>
+.page-head--action {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+}
+
 .props {
     display: flex;
     flex-wrap: wrap;

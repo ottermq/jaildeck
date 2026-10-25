@@ -12,11 +12,12 @@ type apiJail struct {
 	Status   string `json:"status"`
 	Path     string `json:"path"`
 	Datasets []struct {
-		Name       string `json:"name"`
-		Mountpoint string `json:"mountpoint"`
-		Used       int64  `json:"used"`
-		Referenced int64  `json:"referenced"`
-		Available  int64  `json:"available"`
+		Name       string            `json:"name"`
+		Mountpoint string            `json:"mountpoint"`
+		Used       int64             `json:"used"`
+		Referenced int64             `json:"referenced"`
+		Available  int64             `json:"available"`
+		Properties map[string]string `json:"properties"`
 	} `json:"datasets"`
 	Properties map[string]string `json:"properties"`
 }
@@ -133,4 +134,64 @@ func TestGetOneJail(t *testing.T) {
 			t.Errorf("unauthenticated GET /api/jails/nginx returned %d, want 401", rec.Code)
 		}
 	})
+}
+
+// The acceptance criterion of #55, through the router: a quota set on a child
+// comes back on the listing, read from ZFS rather than remembered from the
+// request that set it (JD-011).
+func TestDatasetsCarryTheirNativeProperties(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatalf("create test app: %v", err)
+	}
+	router := a.Routes(testAssets())
+	cookies := login(t, router)
+
+	if rec := send(t, router, http.MethodPut, "/api/jails/nginx/datasets/data", cookies,
+		`{"properties":{"refquota":"2G","compression":"zstd"}}`); rec.Code != http.StatusCreated {
+		t.Fatalf("PUT returned %d, want 201: %s", rec.Code, rec.Body)
+	}
+
+	jails := listJails(t, router, cookies)
+	var child, root *struct {
+		Name       string            `json:"name"`
+		Mountpoint string            `json:"mountpoint"`
+		Used       int64             `json:"used"`
+		Referenced int64             `json:"referenced"`
+		Available  int64             `json:"available"`
+		Properties map[string]string `json:"properties"`
+	}
+	for i, dataset := range jails["nginx"].Datasets {
+		switch dataset.Name {
+		case "zroot/jails/nginx/data":
+			child = &jails["nginx"].Datasets[i]
+		case "zroot/jails/nginx":
+			root = &jails["nginx"].Datasets[i]
+		}
+	}
+	if child == nil || root == nil {
+		t.Fatalf("datasets = %+v, want the jail's own and the new child", jails["nginx"].Datasets)
+	}
+
+	for name, want := range map[string]string{"refquota": "2G", "compression": "zstd"} {
+		if got := child.Properties[name]; got != want {
+			t.Errorf("child %s = %q, want %q (all: %v)", name, got, want, child.Properties)
+		}
+	}
+
+	// The jail's own dataset sets none of them, and says so by carrying
+	// nothing rather than a set of ZFS defaults. A default here would read as
+	// a value someone chose.
+	if len(root.Properties) != 0 {
+		t.Errorf("the jail's own dataset reports %v, want nothing: it sets no native property", root.Properties)
+	}
+
+	// The jail's tags are still the jail's, not the child's: #55 adds a map
+	// beside each dataset and moves nothing (JD-004).
+	if jails["nginx"].Properties["otter:instance"] != "web-01" {
+		t.Errorf("jail properties = %v, want the tags untouched", jails["nginx"].Properties)
+	}
+	if _, leaked := child.Properties["otter:instance"]; leaked {
+		t.Error("a user property reached a dataset's native map")
+	}
 }

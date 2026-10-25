@@ -31,6 +31,13 @@ func NewJailHandler(jailService *JailService) *JailHandler {
 // @Description  it, and the user properties of its own dataset. Sizes are bytes, not the
 // @Description  1.41G zfs prints, so they can be compared and totalled.
 // @Description
+// @Description  Each dataset also carries the native properties it sets **locally**, out of
+// @Description  the four an existing dataset may be given (JD-023) — as the strings zfs
+// @Description  prints, so `refquota` reads `2G` rather than a byte count, and a client can
+// @Description  send the same value back. One a dataset merely *inherits* is absent: that
+// @Description  value is the parent's, and writing it here would create a local override
+// @Description  instead of changing what is in effect.
+// @Description
 // @Description  Both keys are absent for a jail with no dataset — and also when the pool
 // @Description  could not be read, which is logged at WARN rather than failing the
 // @Description  request, so an unreadable pool never costs you the list (JD-022).
@@ -737,7 +744,7 @@ func (h *JailHandler) Reclone(w http.ResponseWriter, r *http.Request) {
 		// A failure after the datasets started moving carries the recovery
 		// information, and an error message alone would throw it away.
 		if result.FailedAt != "" {
-			common.WriteJSON(w, statusForReclone(err), result)
+			common.WriteJSON(w, statusForPartial(err), result)
 			return
 		}
 		common.HandlerError(w, err)
@@ -746,9 +753,10 @@ func (h *JailHandler) Reclone(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, result)
 }
 
-// statusForReclone keeps a refusal a refusal. A template that does not exist
-// is a 404 whether or not anything had started.
-func statusForReclone(err error) int {
+// statusForPartial keeps a refusal a refusal when the response carries a
+// partly-done operation. A template that does not exist is a 404 whether or
+// not anything had started.
+func statusForPartial(err error) int {
 	var appErr *common.AppError
 	if errors.As(err, &appErr) {
 		return appErr.Code
@@ -822,4 +830,335 @@ func (h *JailHandler) MakeTemplate(w http.ResponseWriter, r *http.Request) {
 type Template struct {
 	Name    string `json:"name"`
 	Dataset string `json:"dataset"`
+}
+
+// Create builds a jail from a ready template.
+//
+// @Summary      Create a jail
+// @Description  Clones a ready template's snapshot into the jail's own dataset, writes
+// @Description  its stanza to /etc/jail.conf.d/<name>.conf, optionally adds it to
+// @Description  rc.conf's jail_list, and starts it (JD-007, JD-030).
+// @Description
+// @Description  **The start is confirmed, not assumed.** `service jail start` exits 0
+// @Description  whether or not the jail came up, so the jail is read back from jls before
+// @Description  this reports it running.
+// @Description
+// @Description  **If a step fails, nothing is undone.** The response names the step and
+// @Description  says what exists — a dataset that was cloned stays cloned, a stanza that
+// @Description  was written stays written. Rolling back automatically is a second
+// @Description  destructive operation run at the moment least is known about the state.
+// @Description
+// @Description  The template is the full dataset@snapshot of a template that is ready;
+// @Description  GET /api/templates lists them with the snapshot each one offers. The
+// @Description  jail's root is cloned into <pool>/jails/containers/<name>, in the
+// @Description  template's own pool, because a clone cannot cross one.
+// @Description
+// @Description  Network modes: `alias` (one address on a host interface, needs ip4 and
+// @Description  interface), `inherit` (the host's addresses and its stack), `disable`
+// @Description  (no network, the default), and `vnet`.
+// @Description
+// @Description  **`vnet`** gives the jail its own network stack on an epair, with the host
+// @Description  end on `bridge` — which must already exist, because **Jail Deck never
+// @Description  creates a bridge** (JD-017); `GET /api/host` reports the ones that do.
+// @Description  `private: true` makes the host end a private bridge member. Measured: two
+// @Description  **private** members cannot reach each other at layer 2, but a private
+// @Description  member still reaches non-private ones and the bridge itself — so the
+// @Description  isolation only holds where every jail on the bridge asks for it.
+// @Description  `ip4` and `gateway`
+// @Description  are set inside the jail and are both optional — a VNET jail may instead
+// @Description  get its address from DHCP of its own.
+// @Description
+// @Description  The epair is created in `exec.prestart` and destroyed in `exec.poststop`,
+// @Description  so the jail gets the same network started from a shell as from here. The
+// @Description  unit is chosen when the stanza is written, from what no interface uses and
+// @Description  no jail configuration claims.
+// @Description
+// @Description  **A VNET jail reports no `ip` in the listing.** It sets no `ip4.addr`, so
+// @Description  neither `jls` nor its configuration carries one — the address is in the
+// @Description  jail's own stack. This response carries the one that was asked for.
+// @Description
+// @Description  If the start of a VNET jail cannot be confirmed, Jail Deck destroys the
+// @Description  epair, because `jail(8)` does not run `exec.poststop` for a start that
+// @Description  failed and the orphan would block every retry (JD-030). That is the only
+// @Description  thing a failed create undoes. If the cleanup itself fails, the interface
+// @Description  is named in the error rather than left silent.
+// @Description
+// @Description  **`limits`** are rctl rules — `memoryuse`, `vmemoryuse`, `maxproc`,
+// @Description  `openfiles`, `pcpu` — plus a `cpuset`. They are applied by the stanza's
+// @Description  `exec.poststart` and removed by its `exec.prestop`, so a jail started
+// @Description  from a shell is limited the same way, and a jail whose limits cannot be
+// @Description  applied does not start at all: `jail(8)` destroys a jail whose poststart
+// @Description  fails (JD-018). Sizes take a K, M, G or T suffix; `pcpu` is percent of
+// @Description  one core.
+// @Description
+// @Description  rctl rules need `kern.racct.enable=1`, which `GET /api/host/readiness`
+// @Description  reports; a spec asking for them on a host without it is refused rather
+// @Description  than built. `cpuset` needs no accounting and is allowed either way.
+// @Description
+// @Description  **rctl rules are keyed to the jail's name, not to the jail**, and outlive
+// @Description  it. A create is refused when rules are still keyed to the name it was
+// @Description  given — otherwise the new jail would silently run under them — and the
+// @Description  refusal lists them and the one command that clears them. A start that
+// @Description  could not be confirmed has whatever rules it managed to apply taken back
+// @Description  here, and says so in `rules_removed`.
+// @Description
+// @Description  **`params`** are jail(8) parameters, and only these:
+// @Description  `devfs_ruleset`, `securelevel` (-1..3), `enforce_statfs` (0..2),
+// @Description  `children.max` (0 only), `sysvmsg`, `sysvsem`, `sysvshm`
+// @Description  (`"disable"` or `"new"`), `allow.chflags` and `allow.set_hostname`.
+// @Description  Anything else is refused with the parameter named — an allowlist, because
+// @Description  a denylist fails open the day jail(8) gains a parameter (JD-018).
+// @Description
+// @Description  `devfs_ruleset` is checked against the rulesets the kernel has loaded.
+// @Description  Measured on 15.1-RELEASE-p5: a number it does not have gives the jail the
+// @Description  host's **whole /dev** — disks, mem, kmem, bpf — silently, while `jls`
+// @Description  reports the number that was asked for. Rulesets live in
+// @Description  /etc/devfs.rules and are yours; Jail Deck never writes them.
+// @Description
+// @Description  **`datasets`** are child datasets made beneath the jail's own, one level
+// @Description  down, before the stanza is written and long before the jail starts — a
+// @Description  jail whose `/etc/rc` expects its data mounted should find it there, and a
+// @Description  quota that arrives after the first write was not in force when it
+// @Description  mattered. Each carries native ZFS properties from JD-023's allowlist:
+// @Description  `mountpoint`, `refquota`, `recordsize`, `compression`, `atime`. A quota
+// @Description  belongs on a child rather than on the jail's root, because a clone's
+// @Description  `referenced` space includes the template's blocks (JD-007).
+// @Description
+// @Description  `mountpoint` is a path on the **host** and defaults to the one the child
+// @Description  inherits — `<jail path>/<name>`, which is `/<name>` seen from inside the
+// @Description  jail. A dataset wanted at `/var/db/postgres` inside a jail at
+// @Description  `/usr/local/jails/containers/db1` asks for
+// @Description  `/usr/local/jails/containers/db1/var/db/postgres`.
+// @Description
+// @Description  **A mountpoint outside the jail is refused.** Measured: ZFS makes such a
+// @Description  dataset without complaint, the jail cannot see it, and `zfs destroy -r`
+// @Description  on the jail destroys it anyway — so the jail's destroy would take a
+// @Description  dataset living elsewhere on the host. Data meant to outlive the jail goes
+// @Description  through `POST /api/jails/{name}/datasets/{child}/retain` instead.
+// @Description
+// @Description  **`properties`** are ZFS user properties set on the jail's own dataset —
+// @Description  the tags a client finds its jails by. They are merged, never replaced, so
+// @Description  a tag another tool set is left alone (JD-004, JD-023).
+// @Tags         jails
+// @Accept       json
+// @Produce      json
+// @Param        spec  body      Spec  true  "The jail to create"
+// @Success      201   {object}  Created
+// @Failure      400   {object}  common.ErrorResponse  "A malformed spec, a parameter that is not allowed, a devfs ruleset the kernel has not loaded, or rctl limits on a host that is not accounting"
+// @Failure      401   {object}  common.ErrorResponse
+// @Failure      404   {object}  common.ErrorResponse  "No such template snapshot"
+// @Failure      409   {object}  common.ErrorResponse  "A jail of that name already exists, its configuration file does, rctl rules are still keyed to the name, or a child dataset is somewhere else"
+// @Failure      500   {object}  Created               "A step failed; the body says which and what exists"
+// @Failure      501   {object}  common.ErrorResponse  "This Jail Deck has no storage wired"
+// @Security     BearerAuth
+// @Router       /jails [post]
+func (h *JailHandler) Create(w http.ResponseWriter, r *http.Request) {
+	var spec Spec
+	if err := decodeJSON(r, &spec); err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+
+	result, err := h.service.Create(r.Context(), spec)
+	if err != nil {
+		// Once the root exists there is something the caller has to know
+		// about, and an error message on its own would throw it away. Before
+		// that -- a name already taken, a template that is not there, a clone
+		// that failed -- nothing was created, so the plain error is the whole
+		// answer and the empty result would only bury it.
+		if result.Root != "" {
+			result.Error = err.Error()
+			common.WriteJSON(w, statusForPartial(err), result)
+			return
+		}
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusCreated, result)
+}
+
+// Ensure makes a jail exist exactly as the spec describes it, or says why not.
+//
+// @Summary      Create a jail if it is not there (idempotent)
+// @Description  The same spec as POST /api/jails, by the verb an automation client
+// @Description  wants: absent → created, `201`; already what the spec describes →
+// @Description  `200` with `changed: false`; there but different → `409` with the
+// @Description  differences. **Nothing is ever reconciled** — a jail that differs is
+// @Description  left exactly as it is and the client decides (JD-016).
+// @Description
+// @Description  Safe to repeat. A client that lost its answer to a timeout sends the
+// @Description  same request again and the reply says where it stands, derived from the
+// @Description  host rather than from anything Jail Deck remembers (JD-011).
+// @Description
+// @Description  **How "matching" is decided.** Jail Deck renders the stanza this spec
+// @Description  would write — against the path the jail's dataset reports and the epair
+// @Description  its existing stanza already claims — and compares it with the stanza on
+// @Description  disk, setting by setting. So the comparison covers every field the
+// @Description  generator writes, including ones added after this endpoint was built.
+// @Description  Comments, blank lines, line order and the quoting of a value are not
+// @Description  differences; anything else is, including a setting only one side has.
+// @Description
+// @Description  `template` and `autostart` are not in that file and are read where they
+// @Description  live: the root's clone origin, and rc.conf's `jail_list`. A jail whose
+// @Description  root was re-cloned reports the template it actually came from.
+// @Description
+// @Description  **Child datasets and tags** are compared against ZFS. A child the spec
+// @Description  asks for and the jail does not have is a difference, and so is one the
+// @Description  jail has and the spec does not name — a child takes space and `zfs
+// @Description  destroy -r` on the jail takes it along, so it is part of the jail in a
+// @Description  way a tag is not. Only direct children: the spec describes one level, so
+// @Description  a deeper dataset is one it could neither ask for nor disown.
+// @Description
+// @Description  Properties are compared as a subset, both kinds. A native property a
+// @Description  dataset sets and the spec does not mention is not a difference, because
+// @Description  the write side applies rather than replaces; nor is a user property
+// @Description  another tool set, because the write side merges (JD-023). Values compare
+// @Description  as text, so a `refquota` written `2048M` against one ZFS prints as `2G`
+// @Description  reads as a difference — parsing a size here would be the second opinion
+// @Description  JD-023 refuses to add.
+// @Description
+// @Description  **`start` is not compared.** It says whether to start the jail once it
+// @Description  has been configured, which is an instruction about the create rather
+// @Description  than a property of the jail — comparing it would make a jail stopped for
+// @Description  maintenance refuse every PUT, and acting on it would be the
+// @Description  reconciliation this endpoint refuses to do. The response says whether
+// @Description  the jail is running and the client decides.
+// @Description
+// @Description  `field` in a difference is the jail.conf(5) setting, because that is
+// @Description  where the difference is and what an operator would edit; the ones that
+// @Description  live elsewhere are named for the spec field — `template`, `autostart`,
+// @Description  `datasets.<child>[.<property>]` and `properties.<tag>`. They are reported
+// @Description  in that order: template, the configuration's settings as they sort,
+// @Description  datasets, tags, autostart.
+// @Description
+// @Description  The body may leave `name` out — the URL has already said it. A body that
+// @Description  names a different jail is refused.
+// @Tags         jails
+// @Accept       json
+// @Produce      json
+// @Param        name  path      string  true  "The jail to ensure"
+// @Param        spec  body      Spec    true  "The jail it should be"
+// @Success      200   {object}  Ensured  "Already what the spec describes; nothing changed"
+// @Success      201   {object}  Ensured  "Created"
+// @Failure      400   {object}  common.ErrorResponse  "A malformed spec, or one naming a different jail"
+// @Failure      401   {object}  common.ErrorResponse
+// @Failure      404   {object}  common.ErrorResponse  "No such template snapshot"
+// @Failure      409   {object}  Ensured               "It is there and different; `differences` says how"
+// @Failure      500   {object}  Ensured               "A step of the create failed; the body says which and what exists"
+// @Failure      501   {object}  common.ErrorResponse  "This Jail Deck cannot read a jail back"
+// @Security     BearerAuth
+// @Router       /jails/{name} [put]
+func (h *JailHandler) Ensure(w http.ResponseWriter, r *http.Request) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	var spec Spec
+	if err := decodeJSON(r, &spec); err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+
+	result, err := h.service.Ensure(r.Context(), name, spec)
+	if err != nil {
+		// As with POST: once the root exists there is something the caller
+		// has to know about, and an error message alone would throw it away.
+		if result.Root != "" && result.Changed {
+			result.Error = err.Error()
+			common.WriteJSON(w, statusForPartial(err), result)
+			return
+		}
+		common.HandlerError(w, err)
+		return
+	}
+	switch {
+	case len(result.Differences) > 0:
+		common.WriteJSON(w, http.StatusConflict, result)
+	case result.Changed:
+		common.WriteJSON(w, http.StatusCreated, result)
+	default:
+		common.WriteJSON(w, http.StatusOK, result)
+	}
+}
+
+// Destroy removes a jail, its configuration and its filesystem.
+//
+// @Summary      Destroy a jail
+// @Description  Stops the jail, takes it out of rc.conf's `jail_list`, deletes
+// @Description  /etc/jail.conf.d/<name>.conf, and destroys its dataset — in that order
+// @Description  (JD-030).
+// @Description
+// @Description  A VNET jail's epair goes when it stops, through its own `exec.poststop`.
+// @Description  One left behind by an earlier failed start is destroyed here too, and
+// @Description  named in `epair` — otherwise it would outlive the jail it belongs to.
+// @Description
+// @Description  **rctl rules are cleared on the same terms**, and named in `rules`. A
+// @Description  jail stopped cleanly has had them removed by its own `exec.prestop`, so
+// @Description  normally there are none; one left behind matters more than a stranded
+// @Description  interface, because rules are keyed to the name and the next jail called
+// @Description  this would inherit them (JD-018). Neither sweep can fail the destroy:
+// @Description  what could not be cleared is reported in `epair_error` or `rules_error`.
+// @Description
+// @Description  **Child datasets go with it** (JD-007). They are listed in `taken`. A
+// @Description  dataset worth keeping has to stop being a child first: `POST
+// @Description  /api/jails/{name}/datasets/{child}/retain` moves it out.
+// @Description
+// @Description  **Snapshots, clones and holds refuse the destroy**, with each one named
+// @Description  and nothing touched. Each was kept on purpose, so each goes first — and
+// @Description  `zfs destroy -R` is never passed, which is what would make this check
+// @Description  decorative.
+// @Description
+// @Description  **The last word is ZFS's.** Nothing here re-checks that the jail is down
+// @Description  before destroying its dataset: `zfs destroy` refuses one whose jail is
+// @Description  running with `pool or dataset is busy`, and a check of our own would read
+// @Description  the state and then act on what it read, while the mount is held the whole
+// @Description  time. Only one of those can lose a race.
+// @Description
+// @Description  A jail with no file of its own in jail.conf.d is refused: its block is in
+// @Description  /etc/jail.conf, which belongs to you and which Jail Deck never writes, so
+// @Description  destroying the dataset would leave the jail declared and pointing nowhere.
+// @Description
+// @Description  **If a step fails, nothing is undone.** The body names the step and says
+// @Description  what was already done — a stopped jail stays stopped.
+// @Tags         jails
+// @Produce      json
+// @Param        name     path      string  true  "The jail to destroy"
+// @Param        confirm  query     string  true  "The jail's name again"
+// @Success      200      {object}  Destroyed
+// @Failure      400      {object}  common.ErrorResponse  "Missing or mismatched confirm"
+// @Failure      401      {object}  common.ErrorResponse
+// @Failure      404      {object}  common.ErrorResponse  "No such jail, or it has no dataset of its own"
+// @Failure      409      {object}  Destroyed             "Snapshots, clones or holds are in the way, or the jail is configured in /etc/jail.conf"
+// @Failure      500      {object}  Destroyed             "A step failed; the body says which and what was done"
+// @Failure      501      {object}  common.ErrorResponse  "This Jail Deck has no storage wired"
+// @Security     BearerAuth
+// @Router       /jails/{name} [delete]
+func (h *JailHandler) Destroy(w http.ResponseWriter, r *http.Request) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+
+	result, err := h.service.Destroy(r.Context(), name, r.URL.Query().Get("confirm"))
+	if err != nil {
+		// Once a step has run there is something the caller has to know
+		// about, and an error message on its own would throw it away. Before
+		// that -- a mismatched confirm, no such jail, a configuration file
+		// Jail Deck cannot remove -- nothing happened, so the plain error is
+		// the whole answer and an empty body would only bury it.
+		if result.Stopped || result.Unlisted || result.Config != "" {
+			result.Error = err.Error()
+			common.WriteJSON(w, statusForPartial(err), result)
+			return
+		}
+		common.HandlerError(w, err)
+		return
+	}
+	if result.Blocked != nil {
+		common.WriteJSON(w, http.StatusConflict, result)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, result)
 }

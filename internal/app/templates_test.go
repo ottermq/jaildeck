@@ -3,7 +3,9 @@ package app
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
+	"time"
 )
 
 type apiTemplate struct {
@@ -13,6 +15,11 @@ type apiTemplate struct {
 	Ready      bool   `json:"ready"`
 	Parent     string `json:"parent"`
 	Snapshot   string `json:"snapshot"`
+	State      string `json:"state"`
+	Running    *struct {
+		Step  string `json:"step"`
+		Since string `json:"since"`
+	} `json:"running"`
 }
 
 func templateList(t *testing.T, router http.Handler, cookies []*http.Cookie) map[string]apiTemplate {
@@ -350,5 +357,126 @@ func TestRemoveAHalfBuiltTemplate(t *testing.T) {
 	if rec := send(t, router, http.MethodPut, "/api/templates/broken", cookies,
 		`{"from":"15.1-RELEASE","packages":[]}`); rec.Code != http.StatusCreated {
 		t.Errorf("retrying after cleanup returned %d, want 201: %s", rec.Code, rec.Body)
+	}
+}
+
+// JD-008 through the router: the call answers 202 without waiting, and the
+// template is in the listing from that moment, because it is the resource the
+// client was told to watch. There is no job to ask about.
+func TestPrepareAReleaseAnswersAtOnce(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatalf("create test app: %v", err)
+	}
+	router := a.Routes(testAssets())
+	cookies := login(t, router)
+
+	rec := send(t, router, http.MethodPut, "/api/templates/14.3-RELEASE", cookies,
+		`{"release":"14.3-RELEASE"}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("PUT returned %d, want 202: %s", rec.Code, rec.Body)
+	}
+
+	var started apiTemplate
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode: %v\n%s", err, rec.Body)
+	}
+	if started.Name != "14.3-RELEASE" {
+		t.Errorf("name = %q, want the template that was asked for", started.Name)
+	}
+	if started.State != "fetching" && started.State != "fetched" {
+		t.Errorf("state = %q, want it under way or done", started.State)
+	}
+
+	// Polling the template is the whole mechanism. It reaches fetched and
+	// stops running, with no dataset: extracting it is a later stage.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		rec := do(t, router, http.MethodGet, "/api/templates/14.3-RELEASE", cookies, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET returned %d: %s", rec.Code, rec.Body)
+		}
+		var polled apiTemplate
+		if err := json.Unmarshal(rec.Body.Bytes(), &polled); err != nil {
+			t.Fatalf("decode: %v\n%s", err, rec.Body)
+		}
+		if polled.State == "ready" {
+			if polled.Running != nil {
+				t.Errorf("running = %+v, want nothing once it is done", polled.Running)
+			}
+			if polled.Dataset == "" {
+				t.Error("dataset is empty, want the one the extract created")
+			}
+			// Ready is the @base snapshot and nothing else: a jail can be
+			// cloned from this now (JD-007).
+			if !polled.Ready || polled.Snapshot == "" {
+				t.Errorf("ready=%v snapshot=%q, want a sealed template", polled.Ready, polled.Snapshot)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("state stuck at %q, want ready", polled.State)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// A release the mirror does not have leaves the template where it stopped, and
+// the audit log is what says why (JD-008). Nothing is retried, nothing cleaned.
+func TestPrepareAMissingReleaseLeavesNothingBehind(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatalf("create test app: %v", err)
+	}
+	router := a.Routes(testAssets())
+	cookies := login(t, router)
+
+	if rec := send(t, router, http.MethodPut, "/api/templates/15.0-RELEASE", cookies,
+		`{"release":"15.0-RELEASE"}`); rec.Code != http.StatusAccepted {
+		t.Fatalf("PUT returned %d, want 202: %s", rec.Code, rec.Body)
+	}
+
+	// The audit log is what says why, so it is what the test waits for: the
+	// template itself goes quiet either way (JD-008).
+	deadline := time.Now().Add(2 * time.Second)
+	var audited string
+	for {
+		rec := do(t, router, http.MethodGet, "/api/audit?operation=fetch-base", cookies, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /api/audit returned %d: %s", rec.Code, rec.Body)
+		}
+		audited = rec.Body.String()
+		if strings.Contains(audited, "15.0-RELEASE") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the audit log never mentioned the failed fetch: %s", audited)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if strings.Contains(audited, `"success":true`) {
+		t.Errorf("the failed fetch is recorded as a success: %s", audited)
+	}
+
+	// And it left nothing: a release that was never fetched is not a template.
+	rec := do(t, router, http.MethodGet, "/api/templates/15.0-RELEASE", cookies, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("GET returned %d, want 404 after a fetch that produced nothing: %s", rec.Code, rec.Body)
+	}
+}
+
+// Naming both ways to build a template is a request that cannot be honoured,
+// and saying so beats picking one.
+func TestDeriveRefusesBothFromAndRelease(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatalf("create test app: %v", err)
+	}
+	router := a.Routes(testAssets())
+	cookies := login(t, router)
+
+	if rec := send(t, router, http.MethodPut, "/api/templates/both", cookies,
+		`{"from":"15.1-RELEASE","release":"14.3-RELEASE"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("PUT returned %d, want 400: %s", rec.Code, rec.Body)
 	}
 }

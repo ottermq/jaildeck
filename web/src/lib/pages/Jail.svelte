@@ -3,14 +3,15 @@ import { onMount } from 'svelte'
 import {
     getJail, listSnapshots, setTags, ensureDataset, retainDataset,
     createSnapshot, destroySnapshot, rollbackSnapshot, makeTemplate, recloneJail,
+    destroyJail,
 } from '../stores/jails.svelte'
 import type {
-    JailData, Snapshot, Dataset, PropertyConflict, SnapshotBlock, Reclone,
+    JailData, Snapshot, Dataset, PropertyConflict, SnapshotBlock, Reclone, Destroyed,
 } from '../stores/jails.svelte'
 import { listTemplates } from '../stores/templates.svelte'
 import type { Template } from '../stores/templates.svelte'
 import { ApiError } from '../services/api'
-import { onNavClick } from '../router.svelte'
+import { onNavClick, navigate } from '../router.svelte'
 import { ask } from '../stores/confirm.svelte'
 import { formatBytes, normalizeEmptyValue } from '../utils'
 
@@ -214,6 +215,34 @@ function conflictMessage(err: unknown): string | null {
         + `${conflict.want}. Jail Deck will not move a mounted dataset.`
 }
 
+let editingDataset = $state('')
+let editedProperties = $state<Record<string, string>>({})
+
+function startEditDataset(dataset: Dataset) {
+    editingDataset = dataset.name
+    // Prefilled with what the dataset actually sets, so an untouched field
+    // sends the value back unchanged rather than silently dropping it.
+    editedProperties = { ...(dataset.properties ?? {}) }
+    delete actionError[`properties-${dataset.name}`]
+}
+
+async function saveDataset(event: Event, dataset: Dataset) {
+    event.preventDefault()
+    const properties: Record<string, string> = {}
+    for (const [property, value] of Object.entries(editedProperties)) {
+        if (value.trim() !== '') properties[property] = value.trim()
+    }
+    const ok = await run(`properties-${dataset.name}`, () =>
+        ensureDataset(name, childOf(dataset), properties))
+    if (ok) editingDataset = ''
+}
+
+// Sorted so the same dataset always reads the same way, rather than in
+// whatever order the map came back in.
+function propertyEntries(dataset: Dataset): [string, string][] {
+    return Object.entries(dataset.properties ?? {}).sort(([a], [b]) => a.localeCompare(b))
+}
+
 let retaining = $state('')
 let retainAs = $state('')
 
@@ -252,6 +281,59 @@ function startReclone() {
     jailNote = ''
     recloneFailure = null
     delete actionError['reclone']
+}
+
+// What a destroy refused over, or got as far as doing. Kept on the page
+// rather than shown once and lost: a blocked destroy names things that have
+// to be dealt with one at a time, and a partial one is the only record of
+// where the jail got to (JD-030).
+let destroyResult = $state<Destroyed | null>(null)
+
+async function destroyThisJail() {
+    const running = jail?.status === 'running'
+    const children = (jail?.datasets ?? []).filter(d => d.mountpoint !== jail?.path)
+    const confirmed = await ask({
+        title: `Destroy ${name}?`,
+        lines: [
+            running
+                ? 'The jail is stopped first, taken out of rc.conf’s jail_list, its configuration file deleted, and its dataset destroyed.'
+                : 'The jail is taken out of rc.conf’s jail_list, its configuration file deleted, and its dataset destroyed.',
+            children.length > 0
+                ? 'Its child datasets go with it. They are listed below — anything worth keeping has to be retained first.'
+                : 'Its dataset and everything in it go. Nothing here can be undone.',
+            'A snapshot, a clone of one, or a hold refuses the whole thing and nothing is touched.',
+        ],
+        items: children.map(d => d.name),
+        verb: 'Destroy',
+        typed: name,
+    })
+    if (!confirmed) return
+
+    if (busy) return
+    busy = 'destroy'
+    delete actionError['destroy']
+    destroyResult = null
+    try {
+        const result = await destroyJail(name, name)
+        if (result.destroyed) {
+            // Nothing left to show on this page: the jail it describes is
+            // gone, and the list is where the operator goes next.
+            navigate('/jails')
+            return
+        }
+        // Refused, with nothing done. The body says what stood in the way.
+        destroyResult = result
+    } catch (err) {
+        destroyResult = (err instanceof ApiError && isPartialDestroy(err.body)) ? err.body : null
+        actionError['destroy'] = describe(err, `Could not destroy ${name}`)
+    } finally {
+        busy = ''
+        await load()
+    }
+}
+
+function isPartialDestroy(body: unknown): body is Destroyed {
+    return typeof body === 'object' && body !== null && 'destroyed' in body
 }
 
 async function reclone(event: Event) {
@@ -632,7 +714,16 @@ async function retain(event: Event, dataset: Dataset) {
                     <tbody>
                         {#if root}
                             <tr>
-                                <td class="name"><code>{root.name}</code> <span class="note">the jail's own</span></td>
+                                <td class="name">
+                                    <code>{root.name}</code> <span class="note">the jail's own</span>
+                                    {#if propertyEntries(root).length > 0}
+                                        <div class="props">
+                                            {#each propertyEntries(root) as [property, value] (property)}
+                                                <span class="prop">{property}={value}</span>
+                                            {/each}
+                                        </div>
+                                    {/if}
+                                </td>
                                 <td><code>{root.mountpoint}</code></td>
                                 <td class="num">{formatBytes(root.used)}</td>
                                 <td class="num">{formatBytes(root.referenced)}</td>
@@ -642,20 +733,80 @@ async function retain(event: Event, dataset: Dataset) {
                         {/if}
                         {#each children as child (child.name)}
                             <tr>
-                                <td class="name"><code>{child.name}</code></td>
+                                <td class="name">
+                                    <code>{child.name}</code>
+                                    {#if propertyEntries(child).length > 0}
+                                        <div class="props">
+                                            {#each propertyEntries(child) as [property, value] (property)}
+                                                <span class="prop">{property}={value}</span>
+                                            {/each}
+                                        </div>
+                                    {/if}
+                                </td>
                                 <td><code>{child.mountpoint}</code></td>
                                 <td class="num">{formatBytes(child.used)}</td>
                                 <td class="num">{formatBytes(child.referenced)}</td>
                                 <td class="num">{formatBytes(child.available)}</td>
                                 <td class="actions-col">
-                                    <button
-                                        type="button"
-                                        class="btn btn--small"
-                                        disabled={!!busy || retaining === child.name}
-                                        onclick={() => startRetain(child)}
-                                    >Retain</button>
+                                    <div class="actions">
+                                        <button
+                                            type="button"
+                                            class="btn btn--small"
+                                            disabled={!!busy || editingDataset === child.name}
+                                            onclick={() => startEditDataset(child)}
+                                        >Properties</button>
+                                        <button
+                                            type="button"
+                                            class="btn btn--small"
+                                            disabled={!!busy || retaining === child.name}
+                                            onclick={() => startRetain(child)}
+                                        >Retain</button>
+                                    </div>
                                 </td>
                             </tr>
+                            {#if editingDataset === child.name}
+                                <tr class="row-form">
+                                    <td colspan="6">
+                                        <form class="form" onsubmit={(e) => saveDataset(e, child)}>
+                                            <div class="form__row">
+                                                {#each datasetProperties as property (property.name)}
+                                                    <div class="field">
+                                                        <label for={`edit-${property.name}`}>{property.name}</label>
+                                                        <input
+                                                            id={`edit-${property.name}`}
+                                                            bind:value={editedProperties[property.name]}
+                                                            autocomplete="off"
+                                                            spellcheck="false"
+                                                            placeholder="unset"
+                                                            title={property.hint}
+                                                        />
+                                                    </div>
+                                                {/each}
+                                            </div>
+                                            <p class="hint">
+                                                These are what the dataset sets itself. An empty box leaves the
+                                                property alone rather than removing it — there is no route here
+                                                that makes a dataset inherit one again. Values go to ZFS
+                                                unchecked, so <code>recordsize=7K</code> comes back as zfs's
+                                                own complaint.
+                                            </p>
+                                            {#if actionError[`properties-${child.name}`]}
+                                                <p class="notice notice--error" role="alert">
+                                                    {actionError[`properties-${child.name}`]}
+                                                </p>
+                                            {/if}
+                                            <div class="form__actions">
+                                                <button type="button" class="btn btn--small"
+                                                        onclick={() => (editingDataset = '')}>Cancel</button>
+                                                <button type="submit" class="btn btn--small btn--primary"
+                                                        disabled={busy === `properties-${child.name}`}>
+                                                    {busy === `properties-${child.name}` ? 'Saving…' : 'Save'}
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </td>
+                                </tr>
+                            {/if}
                             {#if retaining === child.name}
                                 <tr class="row-form">
                                     <td colspan="6">
@@ -696,6 +847,12 @@ async function retain(event: Event, dataset: Dataset) {
                     dataset rather than here.
                 </p>
             {/if}
+            <p class="hint">
+                A dataset's properties are the ones it sets itself; one it inherits from the
+                dataset above belongs to that one. Only a child's can be changed here — the
+                API writes properties to a jail's children, not to the dataset the jail runs
+                from.
+            </p>
         {/if}
     </section>
 
@@ -949,9 +1106,96 @@ async function retain(event: Event, dataset: Dataset) {
             </p>
         {/if}
     </section>
+
+    <section class="panel panel--danger">
+        <div class="panel__head">
+            <h2>Destroy</h2>
+            <button
+                type="button"
+                class="btn btn--small btn--danger"
+                onclick={destroyThisJail}
+                disabled={!!busy || !jail.path}
+                title={jail.path ? undefined : 'This jail has no dataset of its own'}
+            >{busy === 'destroy' ? 'Destroying…' : `Destroy ${jail.name}`}</button>
+        </div>
+
+        {#if !jail.path}
+            <p class="hint">
+                This jail has no dataset of its own, so there is nothing here to destroy.
+                Its block has to be removed from the configuration by hand.
+            </p>
+        {/if}
+
+        <p class="hint">
+            Stops the jail, takes it out of <code>jail_list</code>, deletes its file in
+            <code>/etc/jail.conf.d</code>, and destroys its dataset — in that order, and
+            nothing is undone if a step fails. <strong>Its child datasets go with it.</strong>
+            A dataset worth keeping is retained first, which moves it out of the jail.
+        </p>
+
+        {#if actionError['destroy']}
+            <p class="notice notice--error" role="alert">{actionError['destroy']}</p>
+        {/if}
+
+        {#if destroyResult?.blocked}
+            <div class="notice notice--error blocked" role="alert">
+                <p>{destroyResult.blocked.reason}</p>
+                {#each [
+                    { label: 'Snapshots', items: destroyResult.blocked.snapshots },
+                    { label: 'Clones', items: destroyResult.blocked.clones },
+                    { label: 'Holds', items: destroyResult.blocked.holds },
+                ] as group (group.label)}
+                    {#if group.items?.length}
+                        <p class="blocked__group">
+                            <strong>{group.label}</strong>
+                            {#each group.items as item (item)}<code>{item}</code>{/each}
+                        </p>
+                    {/if}
+                {/each}
+            </div>
+        {:else if destroyResult && !destroyResult.destroyed}
+            <div class="notice notice--error" role="alert">
+                <p>
+                    Stopped at <strong>{destroyResult.failed_at}</strong>. Nothing was undone:
+                    {destroyResult.stopped ? 'the jail was stopped' : 'the jail was not stopped'}{destroyResult.unlisted ? ', taken out of jail_list' : ''}{destroyResult.config ? `, and ${destroyResult.config} was deleted` : ''}.
+                    {#if destroyResult.root}Its dataset is still <code>{destroyResult.root}</code>.{/if}
+                </p>
+            </div>
+        {/if}
+    </section>
 {/if}
 
 <style>
+/* The one section on this page that destroys something. Marked rather than
+   hidden: an operator looking for it should find it, and should not reach it
+   by accident. */
+.panel--danger {
+    margin-top: var(--space-6);
+    padding: var(--space-4);
+    border: 1px solid var(--danger);
+    border-radius: var(--radius);
+    background: var(--danger-soft);
+}
+
+.panel--danger .panel__head {
+    margin-bottom: var(--space-2);
+}
+
+.blocked {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: flex-start;
+}
+
+.blocked__group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: baseline;
+    font-size: 0.85rem;
+}
+
 .crumbs {
     display: flex;
     gap: var(--space-2);
@@ -1023,6 +1267,24 @@ async function retain(event: Event, dataset: Dataset) {
 .note {
     font-weight: 400;
     font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.props {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
+}
+
+.prop {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    font-weight: 400;
+    padding: 0 0.35em;
+    border-radius: var(--radius-sm);
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
     color: var(--text-muted);
 }
 

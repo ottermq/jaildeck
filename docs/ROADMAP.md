@@ -13,7 +13,9 @@ Jail Deck is a single-host operations dashboard and host agent for FreeBSD jails
 
 Not multi-host. Not OCI. Never the author of `pf.conf`.
 
-Milestones marked **★ Otter** are needed by Otter Labs Cloud, which drives Jail Deck through its API (JD-016); the note on each says for what. They are ordered first where that does not fight the dependency chain.
+Milestones marked **★ Otter Cloud** are needed by Otter Labs Cloud, which drives Jail Deck through its API (JD-016); the note on each says for what. They are ordered first where that does not fight the dependency chain.
+
+*Called **★ Otter** until 2026-10-23.* "Otter" on its own is the umbrella the sibling projects share, and `otter:instance` is the ZFS tag namespace any consumer writes — so a marker that also meant "the cloud asked for this" was carrying three jobs. The tracker's label moved with it, from `otter` to `otter-cloud`.
 
 ## Roadmap philosophy
 
@@ -116,7 +118,7 @@ Jails and operations are usable in a browser, served by the single binary.
 
 **Status:** done in v0.7.0. Kept for the record of what it set out to do, with two readiness bullets reworded: they named a *configured* bridge and devfs ruleset, and neither is a global setting — both are named per jail spec (JD-017, JD-018), so there is nothing to validate a configured value against. The report answers the host-level question instead.
 
-**Depends on:** nothing. **Precondition for:** Templates, Jail Provisioning. **★ Otter:** node preparation — a node is not usable until these checks pass.
+**Depends on:** nothing. **Precondition for:** Templates, Jail Provisioning. **★ Otter Cloud:** node preparation — a node is not usable until these checks pass.
 
 Goal: Jail Deck establishes the dataset layout its own jail and template work depends on, instead of assuming an operator followed a runbook first, and reports whether the host is ready for VNET jails, resource limits and VMs.
 
@@ -176,7 +178,7 @@ Dataset and snapshot state is visible through the API and the UI. Read-only; cre
 
 **Status:** done in v0.8.0. Kept for the record of what it set out to do. Every capability below is reachable from the API and from the interface, each destructive one behind the `confirm=<exact name>` the API already required (JD-029).
 
-**Depends on:** Storage Visibility. **★ Otter:** per-instance data datasets with quotas, on-demand snapshots, and keeping data when a jail is destroyed or its root replaced.
+**Depends on:** Storage Visibility. **★ Otter Cloud:** per-instance data datasets with quotas, on-demand snapshots, and keeping data when a jail is destroyed or its root replaced.
 
 Goal: the ZFS write operations jail creation, upgrades and safe deletion need — moved out of Deferred because a real consumer now needs them.
 
@@ -204,9 +206,15 @@ A child dataset can be created with a quota, snapshotted, moved out of a jail an
 
 ## Milestone: Templates
 
-**Status:** partly done in v0.8.0 — **not finished**. Listing with lineage and readiness, deriving one from another with packages, cloning a configured jail as a template, and removing one (refusing while anything is cloned from it) all landed, through the API and the interface (JD-027, JD-028, JD-029). **Preparing a release template end to end has not**: fetching `base.txz`, extracting it and running `freebsd-update` is minutes of work behind one request, which is JD-008's problem and the completion criterion below still names it.
+**Status:** done — 2026-10-23. Kept for the record of what it set out to do.
 
-**Depends on:** Host Setup, Storage Visibility. **★ Otter:** the release template every service template derives from.
+Listing with lineage and readiness, deriving one template from another with packages, cloning a configured jail as a template, and removing one (refusing while anything is cloned from it) landed in v0.8.0 (JD-027, JD-028, JD-029).
+
+**Preparing a release template end to end** followed once JD-008 was settled the same day. `PUT /api/templates/{name}` with a `release` answers `202` and runs four audited stages — fetch `base.txz` verified against the release's own MANIFEST, `tar -xpf` it into a new dataset with the host's `resolv.conf` and `localtime`, `freebsd-update` to the current patch level, then the `@base` snapshot. The template reports a `state` read off the filesystem throughout, with the running step beside it, so the completion criterion's "with progress visible" is satisfied by polling the template rather than by a job object.
+
+What the milestone asked for and did **not** get: a release picker sourced from `download.freebsd.org`. The release is typed, validated against the shape the mirror publishes, and defaults to the host's own — which is also the ceiling. Whether to offer a list is the open "which releases are supported" question in `docs/SPEC.md`, not something this milestone settled.
+
+**Depends on:** Host Setup, Storage Visibility. **★ Otter Cloud:** the release template every service template derives from.
 
 Goal: automate the template-preparation workflow described in `docs/SPEC.md`. **Template preparation is an explicit, operator-initiated step** — not part of setup, and not folded into jail creation.
 
@@ -223,7 +231,7 @@ Goal: automate the template-preparation workflow described in `docs/SPEC.md`. **
 - **release identifier normalization:** use the release, never the patch level. `freebsd-version -u | sed -E 's/-p[0-9]+$//'`. The mirror publishes no `-pN` directories — `.../15.1-RELEASE-p3/base.txz` returns 404 while `.../15.1-RELEASE/base.txz` returns 200. `freebsd-update --currently-running` is the deliberate exception and wants the full `-pN` form
 - **version ceiling:** a jail's userland must be the same as or older than the host kernel, so the host's own release is both the default and the upper bound. Any release picker may offer versions at or below the host only; cross-version support goes downward
 - note that `freebsd-update -b` requires `--currently-running` alongside it
-- resolve JD-008 for this domain — a progress mechanism for a handful of endpoints, not a general async strategy
+- ~~resolve JD-008 for this domain~~ **done 2026-10-23**: the prepare call returns `202`, the template's own resource carries a `state` read off the filesystem and a `running` step held in memory, and there is no job object
 - ~~removal must refuse while any jail is still cloned from the template's snapshot~~ **done** (JD-027): `DELETE /api/templates/{name}` asks `zfs get clones` first and names what is in the way
 
 ### Completion criteria
@@ -234,14 +242,16 @@ A template can be prepared end to end from the UI, ending in a usable `@base` sn
 
 ## Milestone: Jail Provisioning
 
-**Depends on:** Templates, Storage Writes. **★ Otter:** the critical path — every managed instance is a jail created here.
+**Status:** done in v0.9.0. Kept for the record of what it set out to do. Everything below is reachable from the API and from the interface, except the idempotent `PUT`, which deliberately has none: it answers a question automation asks after a timeout, not one an operator does.
+
+**Depends on:** Templates, Storage Writes. **★ Otter Cloud:** the critical path — every managed instance is a jail created here.
 
 Goal: create and destroy jails, including VNET jails with resource limits, from a full spec.
 
 ### Capabilities
 
 - create a jail from a ready template, from a spec covering network, limits, jail parameters, child datasets, user properties and autostart (JD-017, JD-018)
-- **idempotent create:** `PUT /api/jails/{name}` with the full spec creates the jail if absent, returns `200` unchanged if present and matching, and `409` with a diff if present and different (JD-016). `POST /api/jails` stays for the UI
+- **idempotent create:** `PUT /api/jails/{name}` with the full spec creates the jail if absent, returns `200` unchanged if present and matching, and `409` with a diff if present and different (JD-016). `POST /api/jails` stays for the UI. *Built 2026-10-24: "matching" is decided by rendering the stanza the spec would write and holding it against the one on disk, setting by setting, so the comparison covers every field the generator writes rather than a list somebody has to keep up to date. `template` comes from the root's clone origin and `autostart` from `jail_list`; `start` is deliberately not compared (JD-016).*
 - destroy a jail: `DELETE /api/jails/{name}?confirm=<name>`
 - autostart via rc.conf `jail_list`
 
@@ -249,24 +259,31 @@ Goal: create and destroy jails, including VNET jails with resource limits, from 
 
 - confirm the template's `@base` snapshot exists (precondition), then clone it into the jail's own dataset
 - generate `jail.conf.d/<name>.conf` with `text/template`, not string concatenation
-- **VNET:** the stanza creates the epair in `exec.prestart` and destroys it in `exec.poststop`, adds the host end to the configured bridge as a `private` member, and sets the address and default route inside the jail. The bridge itself is the operator's (Host Setup reports it)
-- **limits:** rctl rules and cpuset applied when the jail starts and removed when it stops — by `exec.*` hooks or by the adapter, see the open questions
-- **parameters:** only from the allowlist in JD-018; anything else is rejected with the parameter named
-- child datasets and user properties created through the Storage Writes primitives
+- **VNET:** the stanza creates the epair in `exec.prestart` and destroys it in `exec.poststop`, adds the host end to the configured bridge as a `private` member, and sets the address and default route inside the jail. The bridge itself is the operator's (Host Setup reports it). *Built 2026-10-24: the unit is chosen from what no interface uses and no stanza claims, `lo0` and the address come up before `/etc/rc`, and a start that cannot be confirmed has its epair destroyed (JD-017, JD-030).*
+- **limits:** rctl rules and cpuset applied when the jail starts and removed when it stops — by `exec.*` hooks or by the adapter, see the open questions. *Built 2026-10-24 with hooks: `exec.poststart` applies them and `exec.prestop` takes the rules back, so a jail started from a shell is limited the same way and a jail whose limits cannot be applied does not start at all. Rules are keyed to the name and outlive the jail, so a create refuses a name that still carries them and a destroy sweeps what is left (JD-018).*
+- **parameters:** only from the allowlist in JD-018; anything else is rejected with the parameter named. *Built 2026-10-24: nine parameters, each with its own range or enumeration, and `devfs_ruleset` checked against the kernel's loaded sets — an unloaded number gives the jail the host's whole `/dev` (JD-018).*
+- child datasets and user properties created through the Storage Writes primitives. *Built 2026-10-24: `datasets` and `properties` in the spec, applied after the clone and before the stanza, and compared by the idempotent `PUT`. A child mounted outside its jail is refused everywhere a child can be asked for — measured, `zfs destroy -r` on the jail takes it anyway (JD-007).*
 - start the jail; surface clear step-by-step failure state — a failed config write after a successful clone must not leave an undiagnosable half-created jail
-- destruction: stop, remove config, destroy the dataset. The sharpest edge in the tool — explicit confirmation, a clear audit entry, and a refusal or warning when the dataset has dependent snapshots or clones
-- decide orchestration ownership across the `jails`/`storage` boundary
-- verify how `jail_enable`/`jail_list` interact with `jail.conf.d` on 15.1, and how `service jail` behaves with VNET stanzas (JD-005)
+- destruction: stop, remove config, destroy the dataset. The sharpest edge in the tool — explicit confirmation, a clear audit entry, and a refusal or warning when the dataset has dependent snapshots or clones. *Built 2026-10-24: `DELETE /api/jails/{name}?confirm=<name>` — children go with it and are named, snapshots and clones refuse it, and `zfs destroy` refusing a busy dataset is the guard rather than a check of our own (JD-030).*
+- **start is confirmed, not assumed:** `service jail start` exits 0 whether or not the jail came up, so every start is followed by `jls -j <name>` (JD-030)
+- **a failed start leaks its epair:** `exec.poststop` does not run when the start fails, and nothing afterwards will run it, so Jail Deck destroys the orphan itself — found by the `descr jail:<name>` the stanza writes (JD-030)
+- autostart is `sysrc jail_list+=<name>`; Jail Deck writes no `/etc/jail.conf` (JD-030)
+- **a failed start leaves its rctl rules too:** `exec.prestop` does not run either, so whatever `exec.poststart` had already applied stays in the kernel and Jail Deck takes it back — the same cleanup as the epair, for a leftover that would otherwise be inherited by the next jail of that name (JD-018)
+- **neither sweep is audited.** The audit log records the steps a create or a destroy is made of; the two cleanups of things that should not have been there are reported in the response instead. Worth revisiting — they are host mutations
+
+*Settled 2026-10-24: orchestration ownership across the `jails`/`storage` boundary, and both of the behaviours JD-005 left to verify — all measured on 15.1-RELEASE-p5 and recorded in JD-030.*
 
 ### Completion criteria
 
 A VNET jail with limits and a quota'd child dataset can be created end to end (clone → configure → start) from one `PUT`, a repeated `PUT` changes nothing, and the jail can be destroyed again — without manually touching `zfs`, `rctl` or `jail.conf.d`.
 
+*Met 2026-10-24, verified on isengard: a jail with child datasets, quotas, tags, limits and parameters is created from one `PUT`, a repeated `PUT` changes nothing, and the destroy takes its children and names them. The web interface followed the same day — a create form at `/jails/new` that renders the server's own step-by-step report, and a destroy section on the jail's page (`docs/UI.md`). The idempotent `PUT` has no interface of its own and wants none: it answers a question automation asks, not one an operator does.*
+
 ---
 
 ## Milestone: Exec and Automation Contract
 
-**Depends on:** Jail Provisioning for exec to have something to run in; the listener and correlation work can land earlier. **★ Otter:** in-jail bootstrap (e.g. `initdb`) and the worker's connection to Jail Deck.
+**Depends on:** Jail Provisioning for exec to have something to run in; the listener and correlation work can land earlier. **★ Otter Cloud:** in-jail bootstrap (e.g. `initdb`) and the worker's connection to Jail Deck.
 
 Goal: make the API safe and predictable for a program, not only for the SPA (JD-016).
 
@@ -292,7 +309,7 @@ A local program can create a jail, run a command in it and destroy it over the u
 
 ## Milestone: Metrics
 
-**Depends on:** Web UI. **★ Otter:** monitoring before the beta.
+**Depends on:** Web UI. **★ Otter Cloud:** monitoring before the beta.
 
 Goal: the observability half of the stated scope — see load and memory, for the host and per jail.
 
@@ -340,7 +357,7 @@ The loaded PF policy and its counters are visible in the API and the UI, and not
 
 ## Milestone: Packaging and Distribution
 
-**Depends on:** nothing functionally; most useful once the above is worth installing. **★ Otter:** before the beta — each node runs Jail Deck as an rc.d service.
+**Depends on:** nothing functionally; most useful once the above is worth installing. **★ Otter Cloud:** before the beta — each node runs Jail Deck as an rc.d service.
 
 Goal: make Jail Deck feel native to install and operate on FreeBSD.
 
@@ -367,7 +384,7 @@ Jail Deck can be installed on FreeBSD in a repeatable way and run as a service.
 
 ## Milestone: Virtual Machines
 
-**Depends on:** Host Setup (UG check), Storage Writes (zvols), Jail Provisioning (the patterns VMs mirror). **★ Otter:** Linux VMs, after its first beta.
+**Depends on:** Host Setup (UG check), Storage Writes (zvols), Jail Provisioning (the patterns VMs mirror). **★ Otter Cloud:** Linux VMs, after its first beta.
 
 Goal: a `vms` domain mirroring jails (JD-019).
 
@@ -431,7 +448,7 @@ Applies across every milestone: keep docs current as domains land, keep parser/f
 
 Added 2026-10-21 with the host-agent scope:
 
-- Should rctl rules be applied by jail.conf `exec.*` hooks or by the adapter? Leaning **hooks**: they survive a Jail Deck outage and behave the same when a jail is started with `service jail start` from a shell
+- ~~Should rctl rules be applied by jail.conf `exec.*` hooks or by the adapter?~~ **Answered 2026-10-24 (JD-018): hooks.** Measuring added a second reason to the first: jail(8) destroys a jail whose `exec.poststart` fails, so a jail that could not be limited never runs — which an adapter could only have achieved by stopping a jail it had just started
 - What are the exec timeout cap and output size cap?
 - Does `/metrics` share auth with the API, or bind a separate loopback/socket listener?
 - Are derived templates (release + packages) owned by the template domain, or are they exec + snapshot from the caller's point of view?
@@ -440,7 +457,7 @@ Added 2026-10-21 with the host-agent scope:
 Earlier:
 
 1. Who orchestrates the multi-step jail-creation flow across the `jails`/`storage` boundary?
-2. How should long-running template operations be represented — synchronous with a long timeout, polling, or SSE? (JD-008, now scoped to the Templates milestone alone)
+2. ~~How should long-running template operations be represented — synchronous with a long timeout, polling, or SSE?~~ **Answered 2026-10-23 (JD-008):** detached, `202`, and the client polls the template. SSE is not excluded; it sits on top rather than replacing it.
 3. How is per-jail resource accounting sourced when `kern.racct.enable` is off?
 4. How does Host Setup establish the dataset layout — an `init` subcommand, or a guided first-run screen?
 5. Is the default template prepared on demand only, or offered proactively once the host release is known?

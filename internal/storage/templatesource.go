@@ -79,6 +79,34 @@ func (s *TemplateSource) Templates(ctx context.Context) ([]templates.Template, e
 	return found, nil
 }
 
+// Create makes an empty template dataset and returns where it is mounted,
+// which is where a release archive is extracted.
+//
+// Unlike Derive it clones nothing: a release template starts as an empty
+// dataset and becomes a userland by having base.txz unpacked into it. The pool
+// is the configured one, because there is no parent snapshot to take it from.
+func (s *TemplateSource) Create(ctx context.Context, name string) (string, error) {
+	roots, err := s.service.roots(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(roots) != 1 {
+		return "", common.NewAppError(http.StatusConflict,
+			"which pool a new template belongs on is not a guess Jail Deck makes; set JAILDECK_ZFS_POOL")
+	}
+	target := templateParent(roots[0]) + "/" + name
+
+	if _, err := s.service.EnsureDataset(ctx, target, nil); err != nil {
+		return "", err
+	}
+	dataset, err := s.service.datasetNamed(ctx, target)
+	if err != nil || dataset == nil {
+		return "", common.NewAppError(http.StatusInternalServerError,
+			"created "+target+" but cannot find where it is mounted")
+	}
+	return dataset.Mountpoint, nil
+}
+
 func (s *TemplateSource) Derive(ctx context.Context, parentSnapshot, name string) (string, error) {
 	pool, _, _ := strings.Cut(parentSnapshot, "/")
 	target := templateParent(pool) + "/" + name

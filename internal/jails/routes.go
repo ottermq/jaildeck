@@ -6,9 +6,20 @@ func RegisterJailRoutes(r chi.Router, h *JailHandler) {
 	r.Route("/jails", func(r chi.Router) {
 
 		r.Get("/", h.List)
+		// POST creates a jail, which is the UI's verb: it has no name until
+		// the form is submitted. PUT /api/jails/{name} below is the same
+		// spec for a client that knows the name already (JD-016).
+		r.Post("/", h.Create)
 
 		r.Route("/{name}", func(r chi.Router) {
 			r.Get("/", h.Get)
+			// PUT is the idempotent create: absent -> created, already
+			// matching -> nothing, different -> refused with the
+			// differences. It never reconciles (JD-016).
+			r.Put("/", h.Ensure)
+			// DELETE takes the jail, its configuration and its filesystem.
+			// Its children go with it (JD-007); anything else is refused.
+			r.Delete("/", h.Destroy)
 			r.Post("/start", h.Start)
 			r.Post("/stop", h.Stop)
 			r.Post("/restart", h.Restart)

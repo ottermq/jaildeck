@@ -20,15 +20,60 @@ const OperationInstallPackages = "install-packages"
 type Service struct {
 	storage         TemplateStorage
 	packages        PackageSystem
+	releases        ReleaseSource
 	operationLogger audit.Logger
+	// running is what this process is doing right now, which is the one part
+	// of a template's state that cannot be read off the disk (JD-008).
+	running *operations
 }
 
-func NewService(storage TemplateStorage, packages PackageSystem, operationLogger audit.Logger) *Service {
-	return &Service{storage: storage, packages: packages, operationLogger: operationLogger}
+func NewService(storage TemplateStorage, packages PackageSystem, releases ReleaseSource, operationLogger audit.Logger) *Service {
+	return &Service{
+		storage:         storage,
+		packages:        packages,
+		releases:        releases,
+		operationLogger: operationLogger,
+		running:         newOperations(),
+	}
 }
 
+// List reports every template, including one that exists only as a fetched
+// archive or as work in flight: the resource a client was told to watch has to
+// be there from the moment it starts (JD-008).
 func (s *Service) List(ctx context.Context) ([]Template, error) {
-	return s.storage.Templates(ctx)
+	found, err := s.storage.Templates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// A failure here costs the fetched-but-not-extracted ones and nothing
+	// else. The datasets are the answer to most of this question.
+	fetched, err := s.releases.Fetched(ctx)
+	if err != nil {
+		common.Logger(ctx, "templates").Warn("could not read the media directory",
+			slog.Any("err", err))
+		fetched = nil
+	}
+
+	for i := range found {
+		found[i].State = s.stateOf(found[i], fetched)
+		if running, ok := s.running.of(found[i].Name); ok {
+			found[i].Running = &running
+		}
+	}
+
+	// Anything with no dataset yet: fetched, or being fetched right now.
+	for _, name := range append(fetched, s.running.names()...) {
+		if _, ok := byName(found, name); ok {
+			continue
+		}
+		template := Template{Name: name}
+		template.State = s.stateOf(template, fetched)
+		if running, ok := s.running.of(name); ok {
+			template.Running = &running
+		}
+		found = append(found, template)
+	}
+	return found, nil
 }
 
 // Derive builds a template from another one plus packages: clone the parent's
@@ -163,11 +208,18 @@ func isAlphanumeric(c byte) bool {
 }
 
 func (s *Service) logInstall(ctx context.Context, result Result, opErr error) {
+	s.logOperation(ctx, OperationInstallPackages, result.Root, result.Command, opErr)
+}
+
+// logOperation writes one audit line. Every stage of a detached operation uses
+// it, which is what makes "what happened to that prepare" answerable from the
+// operations log rather than from a status field nothing stores (JD-008).
+func (s *Service) logOperation(ctx context.Context, operation, target, command string, opErr error) {
 	entry := audit.Entry{
 		Timestamp: time.Now(),
-		Operation: OperationInstallPackages,
-		Target:    result.Root,
-		Command:   result.Command,
+		Operation: operation,
+		Target:    target,
+		Command:   command,
 		Success:   opErr == nil,
 	}
 	if opErr != nil {
@@ -183,7 +235,7 @@ func (s *Service) logInstall(ctx context.Context, result Result, opErr error) {
 	}
 	if err := s.operationLogger.Log(ctx, entry); err != nil {
 		common.Logger(ctx, "templates").Error("failed to write operation log",
-			slog.String("target", result.Root), slog.Any("err", err))
+			slog.String("target", target), slog.Any("err", err))
 	}
 }
 
@@ -311,9 +363,15 @@ func (s *Service) Get(ctx context.Context, name string) (Detail, error) {
 		return Detail{}, common.NewAppError(http.StatusNotFound, "no template named "+name)
 	}
 
-	dependents, err := s.storage.Dependents(ctx, name)
-	if err != nil {
-		return Detail{}, err
+	// A template with no dataset yet -- fetched, or being fetched -- has
+	// nothing cloned from it by definition, and asking storage about a dataset
+	// that does not exist is a 404 for a template that demonstrably does.
+	dependents := Dependents{}
+	if template.Dataset != "" {
+		dependents, err = s.storage.Dependents(ctx, name)
+		if err != nil {
+			return Detail{}, err
+		}
 	}
 	// Never null: a client rendering a list of what depends on this should not
 	// have to check for it first.

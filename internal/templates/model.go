@@ -25,7 +25,17 @@ type Template struct {
 	// Snapshot is the full dataset@base once it exists, which is what a jail
 	// is cloned from.
 	Snapshot string `json:"snapshot,omitempty"`
-	Used     int64  `json:"used"`
+	// State is where this template has got to, read off the filesystem except
+	// for the -ing forms, which come from what this process is doing (JD-008).
+	// A template that has only been fetched has no dataset and still has a
+	// state, because the resource a client watches has to exist from the
+	// moment the work starts.
+	State string `json:"state"`
+	// Running is the step executing right now, absent when nothing is. Held in
+	// memory and never written down: a restart kills the work, so a marker
+	// that survived it would be claiming something false.
+	Running *Running `json:"running,omitempty"`
+	Used    int64    `json:"used"`
 	// Referenced is the whole userland; for a derived template most of it is
 	// still shared with its parent, so Used is what the packages cost.
 	Referenced int64 `json:"referenced"`

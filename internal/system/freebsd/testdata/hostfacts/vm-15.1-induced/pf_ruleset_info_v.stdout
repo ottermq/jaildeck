@@ -1,0 +1,48 @@
+Status: Enabled for 0 days 00:00:04           Debug: Urgent
+
+Hostid:   0xb619299e
+Checksum: 0x8cfdc58eb61d0d57ba9f8a096b4031dc
+
+State Table                          Total             Rate
+  current entries                        2               
+  searches                               8            2.0/s
+  inserts                                2            0.5/s
+  removals                               0            0.0/s
+Source Tracking Table
+  current entries                        0               
+  searches                               0            0.0/s
+  inserts                                0            0.0/s
+  removals                               0            0.0/s
+Counters
+  match                                  2            0.5/s
+  bad-offset                             0            0.0/s
+  fragment                               0            0.0/s
+  short                                  0            0.0/s
+  normalize                              0            0.0/s
+  memory                                 0            0.0/s
+  bad-timestamp                          0            0.0/s
+  congestion                             0            0.0/s
+  ip-option                              0            0.0/s
+  proto-cksum                            0            0.0/s
+  state-mismatch                         0            0.0/s
+  state-insert                           0            0.0/s
+  state-limit                            0            0.0/s
+  src-limit                              0            0.0/s
+  synproxy                               0            0.0/s
+  map-failed                             0            0.0/s
+  translate                              0            0.0/s
+Limit Counters
+  max states per rule                    0            0.0/s
+  max-src-states                         0            0.0/s
+  max-src-nodes                          0            0.0/s
+  max-src-conn                           0            0.0/s
+  max-src-conn-rate                      0            0.0/s
+  overload table insertion               0            0.0/s
+  overload flush states                  0            0.0/s
+  synfloods detected                     0            0.0/s
+  syncookies sent                        0            0.0/s
+  syncookies validated                   0            0.0/s
+Syncookies
+  mode                      never
+  active                    inactive
+Reassemble                       no 

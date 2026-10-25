@@ -1,0 +1,7 @@
+pass in quick proto tcp from any to any port = ssh flags S/SA keep state label "ssh"
+block drop in log quick from <jaildeck_test_blocked> to any label "blocked-sources"
+pass out log quick proto icmp all keep state label "icmp-out-logged"
+pass out all flags S/SA keep state label "outbound"
+pass in all flags S/SA keep state
+anchor "jaildeck/*" all
+anchor "operator" all

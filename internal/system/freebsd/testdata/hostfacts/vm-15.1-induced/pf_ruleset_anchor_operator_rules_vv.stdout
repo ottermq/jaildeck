@@ -1,0 +1,5 @@
+@0 pass in proto icmp all keep state label "icmp-inline-anchor"
+  [ Evaluations: 0         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]
+  [ Last Active Time: N/A ]

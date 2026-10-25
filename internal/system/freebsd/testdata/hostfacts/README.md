@@ -306,6 +306,64 @@ The write path is a different matter: still unwritten rather than unavailable, e
 loaded is still missing. (`pfctl -s rules` with PF enabled
 and no `pf.conf` is **exit 0 and empty stdout** — the no-rules case, not an error.)
 
+## Firewall visibility (#16)
+
+`capture-pf-induced.sh`, run 2026-10-25 on the VM (15.1-RELEASE-p3), into
+`vm-15.1-induced/` with the prefixes `pf_off_`, `pf_ruleset_` and `pflog_`. It loads `pf`
+and `pflog`, loads a test ruleset **from a temporary file** — `/etc/pf.conf` is never read,
+written or created (JD-020) — enables PF, sends a few packets, captures, and restores. It
+refuses to run on a host where PF is already loaded, because flushing someone's policy to
+load ours is exactly what this project never does.
+
+The VM, not isengard: the output's shape does not depend on hardware, and a firewall
+experiment on the deployment target risks the SSH session running it. **Neither isengard
+nor rohan has PF loaded**, so on the real hosts this feature mostly has to say so clearly.
+
+The test ruleset carries every shape the view has to render: a table with addresses and
+one without, labels, a logged rule, a NAT rule, a wildcard anchor with rules loaded into
+it, and an inline anchor. Nothing it blocks is a real host (RFC 5737 ranges).
+
+**What the bytes said that the plan did not:**
+
+- **`pfctl -s rules` does not show NAT.** The `nat` rule is in `pf_ruleset_nat`
+  (`-s nat`) and nowhere in `pf_ruleset_rules`. JD-020's command list omits `-s nat`, so a
+  view built on it would hide every translation rule.
+- **An anchor's rules are not in the main listing.** `-s rules` shows
+  `anchor "jaildeck/*" all` and stops; the contents need `-a <anchor> -s rules` per anchor.
+  `-s Anchors` lists all of them flat, wildcard parents and inline anchors included.
+- **A nonexistent anchor exits 0** (`pf_ruleset_anchor_absent`). The only sign of it is
+  `pfctl: Anchor does not exist.` on stderr. A nonexistent table exits **255**
+  (`pf_ruleset_table_absent`). Neither exit status is a reliable answer on its own.
+- **`-v` prints `No ALTQ support in kernel` to stderr on every call, with exit 0.** A
+  reader that treats stderr as failure fails on every host without ALTQ.
+- **`-s Tables -vv` is wrong about tables.** `pf_ruleset_tables_vv` reports
+  `Addresses: 1` for a table `pf_ruleset_table_show` lists two entries in, and
+  `References: Rules: 0` for a table a rule uses — while the same rule under
+  `-s rules -vv` reads `<jaildeck_test_blocked:2>`. Reproduced by hand with three entries:
+  still `Addresses: 1`. Its flags (`-pa-r--` from `-s Tables -v`) are consistent with
+  everything else; its statistics are not used.
+- **pfctl's "Disabled for" is time since boot when PF has never been enabled.**
+  `pf_ruleset_disabled_info` says `Disabled for 0 days 00:10:19` for a PF loaded seconds
+  before; checked by hand, the figure equals the host's uptime. The clock restarts at every
+  `pfctl -e` and `pfctl -d`, so it is "since the last switch, or since boot".
+- **PF is last-match-wins, and it emptied the first capture's pflog.** A logged rule
+  without `quick`, followed by `pass out all`, never fires: the later rule matches too and
+  wins. The script's logged rules are `quick` for that reason.
+- **`log` records the packet that creates a state, not the traffic.** Six packets matched
+  the logged ICMP rule; one line was logged. `log (all)` would log every packet.
+- **pflog lags.** `pflogd` buffers and flushes every 60 seconds by default
+  (`pflogd(8)`, `-d delay`), or on `SIGALRM`. `pflog_tcpdump_unflushed` is the file read
+  straight after the packets — empty — and `pflog_tcpdump` the same file after a flush.
+- **`-ttt` prints the time since the previous packet**, so the first line of any read is
+  `00:00:00`. `-tttt` is the flag that gives a date and time.
+- **pflog names a rule by number and an anchor by its last component.** The ICMP line says
+  `rule 2/0` — the `@2` that only `-s rules -vv` prints — and the line from inside
+  `jaildeck/web` says `rule 5.web.1/0`: main rule 5, anchor `web`, rule 1 inside it. Two
+  anchors named `a/web` and `b/web` are indistinguishable in the log.
+- **`/var/log/pflog` is rotated at 1000 KB** by `/etc/newsyslog.conf.d/pf.conf` on all
+  three hosts — not by `newsyslog.conf` itself, which is where a first look finds
+  nothing.
+
 ## Storage visibility (#2, #3)
 
 The Storage Visibility milestone fixes the batched read as

@@ -275,7 +275,7 @@ Goal: create and destroy jails, including VNET jails with resource limits, from 
 
 A VNET jail with limits and a quota'd child dataset can be created end to end (clone → configure → start) from one `PUT`, a repeated `PUT` changes nothing, and the jail can be destroyed again — without manually touching `zfs`, `rctl` or `jail.conf.d`.
 
-*Met 2026-10-24, verified on isengard: a jail with child datasets, quotas, tags, limits and parameters is created from one `PUT`, a repeated `PUT` changes nothing, and the destroy takes its children and names them. A UI for any of it is still missing — every path in this milestone is API-only.*
+*Met 2026-10-24, verified on isengard: a jail with child datasets, quotas, tags, limits and parameters is created from one `PUT`, a repeated `PUT` changes nothing, and the destroy takes its children and names them. The web interface followed the same day — a create form at `/jails/new` that renders the server's own step-by-step report, and a destroy section on the jail's page (`docs/UI.md`). The idempotent `PUT` has no interface of its own and wants none: it answers a question automation asks, not one an operator does.*
 
 ---
 

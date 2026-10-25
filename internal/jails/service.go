@@ -303,3 +303,21 @@ func toAppError(name string, op Operation, err error) error {
 	}
 	return common.NewAppError(http.StatusInternalServerError, fmt.Sprintf("failed to %s jail %q: %s", op, name, msg))
 }
+
+// JailStates names every jail the host has and says which are running.
+//
+// The narrowest thing the metrics domain needs, in types that domain already
+// has: it defines the port and this satisfies it without either package
+// importing the other (JD-010). A map rather than the Jail model, because
+// usage is read per name and nothing else about a jail belongs in it.
+func (s *JailService) JailStates(ctx context.Context) (map[string]bool, error) {
+	jails, err := s.system.List(ctx)
+	if err != nil {
+		return nil, toListError(err)
+	}
+	states := make(map[string]bool, len(jails))
+	for _, jail := range jails {
+		states[jail.Name] = jail.Status == JailStatusRunning
+	}
+	return states, nil
+}

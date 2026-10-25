@@ -1827,6 +1827,49 @@
                 }
             }
         },
+        "/metrics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Load average, CPU, memory and pools for the host, and CPU, memory and a\nprocess count for every jail that is **running** — a stopped jail has no\nusage to read (JD-031).\n\nOne request, because the dashboard is one page. It costs one `rctl -u` per\nrunning jail: there is no form that answers for every subject at once.\nThat is also why usage is not part of `GET /api/jails` — a listing is what\nan operator opens to start a jail, and it should not pay for the page that\nwatches them.\n\n**`cpu.percent` is absent on the first call after a restart.** `kern.cp_time`\nis cumulative and there is no kernel-maintained utilisation figure, so a\npercentage exists only between two readings. The raw `cpu.ticks` are always\nthere, and `cpu.over_seconds` says how long the interval behind the\npercentage actually was — so a reading five seconds after the last one and\none five minutes after are told apart rather than read as the same word.\n\nA jail's `source` is `rctl` where `kern.racct.enable` is on and `ps` where\nit is not. Measured on three jails: the `ps` resident sums land within 1% of\nrctl's `memoryuse` and the process counts are identical, because racct's\n`memoryuse` **is** the sum of the same per-process resident sizes. `rctl`\nadditionally answers `vmemoryuse`, `openfiles` and `cputime`; `ps` does not,\nwhich is what `source` is for.\n\n`pcpu` is percent of **one core**, so a jail using two whole cores reads 200.\n\nMemory is a breakdown rather than one \"used\" figure: on a ZFS host most of\n`wired` is the ARC, which is reclaimable, and a single number would read as\npressure that is not there.\n\n**Nothing is stored.** There is no history and no sampler; a chart over time\nis Prometheus's job (JD-011).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Host and per-jail resource usage",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/metrics.Report"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "The host could not be read",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "This Jail Deck has no host access wired",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/retained": {
             "get": {
                 "security": [
@@ -3093,6 +3136,176 @@
             "properties": {
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "metrics.CPU": {
+            "type": "object",
+            "properties": {
+                "cpus": {
+                    "type": "integer"
+                },
+                "over_seconds": {
+                    "description": "OverSeconds is how long that interval was, so a reading taken five\nseconds after the last one and one taken five minutes after are told\napart rather than read as the same word.",
+                    "type": "number"
+                },
+                "percent": {
+                    "description": "Percent is busy time as a share of the interval since the last\nreading. Absent on the first call after a restart -- there is nothing\nto measure against, and zero would be a lie (JD-031).",
+                    "type": "number"
+                },
+                "ticks": {
+                    "$ref": "#/definitions/metrics.Ticks"
+                }
+            }
+        },
+        "metrics.Host": {
+            "type": "object",
+            "properties": {
+                "cpu": {
+                    "$ref": "#/definitions/metrics.CPU"
+                },
+                "load": {
+                    "$ref": "#/definitions/metrics.LoadAverage"
+                },
+                "memory": {
+                    "$ref": "#/definitions/metrics.Memory"
+                },
+                "pools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.Pool"
+                    }
+                }
+            }
+        },
+        "metrics.JailUsage": {
+            "type": "object",
+            "properties": {
+                "cputime": {
+                    "type": "integer"
+                },
+                "error": {
+                    "description": "Error says this one jail could not be read. The rest of the report is\nstill worth having, so a jail that fails is reported rather than\nfailing the request.",
+                    "type": "string"
+                },
+                "jail": {
+                    "type": "string"
+                },
+                "memoryuse": {
+                    "type": "integer"
+                },
+                "openfiles": {
+                    "type": "integer"
+                },
+                "pcpu": {
+                    "description": "PCPU is percent of one core, so a jail using two whole cores reads\n200. From racct, which maintains it as a decaying average, or summed\nfrom ps.",
+                    "type": "number"
+                },
+                "processes": {
+                    "type": "integer"
+                },
+                "source": {
+                    "description": "Source is \"rctl\" or \"ps\".",
+                    "type": "string"
+                },
+                "vmemoryuse": {
+                    "description": "rctl answers these and ps does not.",
+                    "type": "integer"
+                }
+            }
+        },
+        "metrics.LoadAverage": {
+            "type": "object",
+            "properties": {
+                "fifteen": {
+                    "type": "number"
+                },
+                "five": {
+                    "type": "number"
+                },
+                "one": {
+                    "type": "number"
+                }
+            }
+        },
+        "metrics.Memory": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "integer"
+                },
+                "free": {
+                    "type": "integer"
+                },
+                "inactive": {
+                    "type": "integer"
+                },
+                "physical": {
+                    "type": "integer"
+                },
+                "wired": {
+                    "type": "integer"
+                }
+            }
+        },
+        "metrics.Pool": {
+            "type": "object",
+            "properties": {
+                "allocated": {
+                    "type": "integer"
+                },
+                "capacity": {
+                    "type": "integer"
+                },
+                "free": {
+                    "type": "integer"
+                },
+                "health": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                }
+            }
+        },
+        "metrics.Report": {
+            "type": "object",
+            "properties": {
+                "configured": {
+                    "description": "Configured is how many jails the host has in total, running or not,\nso the dashboard can say \"3 of 5\" without a second request.",
+                    "type": "integer"
+                },
+                "host": {
+                    "$ref": "#/definitions/metrics.Host"
+                },
+                "jails": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.JailUsage"
+                    }
+                }
+            }
+        },
+        "metrics.Ticks": {
+            "type": "object",
+            "properties": {
+                "idle": {
+                    "type": "integer"
+                },
+                "interrupt": {
+                    "type": "integer"
+                },
+                "nice": {
+                    "type": "integer"
+                },
+                "system": {
+                    "type": "integer"
+                },
+                "user": {
+                    "type": "integer"
                 }
             }
         },

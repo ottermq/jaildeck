@@ -11,6 +11,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/config"
 	"github.com/ottermq/jaildeck/internal/host"
 	"github.com/ottermq/jaildeck/internal/jails"
+	"github.com/ottermq/jaildeck/internal/metrics"
 	"github.com/ottermq/jaildeck/internal/state"
 	"github.com/ottermq/jaildeck/internal/storage"
 	"github.com/ottermq/jaildeck/internal/system"
@@ -28,6 +29,7 @@ type App struct {
 	auditHandler    *audit.AuditHandler
 	storageHandler  *storage.StorageHandler
 	templateHandler *templates.TemplateHandler
+	metricsHandler  *metrics.Handler
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -108,6 +110,16 @@ func New(cfg *config.Config) (*App, error) {
 	auditService := audit.NewAuditService(auditLogger)
 	auditHandler := audit.NewAuditHandler(auditService)
 
+	// The host half and the per-jail half come from the same FreeBSD
+	// adapter; the jail listing comes from the jails service, which
+	// satisfies the port without importing it (JD-010, JD-031).
+	hostMetrics, err := newHostMetrics(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	metricsHandler := metrics.NewHandler(
+		metrics.NewService(hostMetrics, jailAdapter.usage, jailService))
+
 	return &App{
 		authHandler:     authHandler,
 		jailHandler:     jailHandler,
@@ -115,7 +127,22 @@ func New(cfg *config.Config) (*App, error) {
 		auditHandler:    auditHandler,
 		storageHandler:  storageHandler,
 		templateHandler: templateHandler,
+		metricsHandler:  metricsHandler,
 	}, nil
+}
+
+// newHostMetrics selects the host-metrics implementation, with the same
+// refusal to guess as every other adapter choice here.
+func newHostMetrics(adapter string) (metrics.HostMetrics, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewHostMetrics(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
 }
 
 func requireCredential(store *state.Store) error {
@@ -165,6 +192,7 @@ type jailAdapters struct {
 	epair           jails.EpairCleaner
 	rctl            jails.RctlSystem
 	devfsRulesets   jails.DevfsRulesetSource
+	usage           metrics.JailUsageSource
 	configReader    jails.ConfigReader
 	autostartSource jails.AutostartSource
 }
@@ -178,12 +206,12 @@ func newJailAdapters(adapter string) (jailAdapters, error) {
 		a := freebsd.NewAdapter(system.NewExecCommandRunner())
 		return jailAdapters{system: a, config: a, remover: a, autostart: a,
 			bridges: a, epairs: a, epair: a, rctl: a, devfsRulesets: a,
-			configReader: a, autostartSource: a}, nil
+			configReader: a, autostartSource: a, usage: a}, nil
 	case config.AdapterFake:
 		f := fake.NewJailSystem()
 		return jailAdapters{system: f, config: f, remover: f, autostart: f,
 			bridges: f, epairs: f, epair: f, rctl: f, devfsRulesets: f,
-			configReader: f, autostartSource: f}, nil
+			configReader: f, autostartSource: f, usage: f}, nil
 	default:
 		return jailAdapters{}, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

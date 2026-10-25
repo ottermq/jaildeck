@@ -48,15 +48,30 @@ Keep the sidebar simple — avoid too many sections before the features justify 
 
 ## Navigation
 
-Built: **Jails**, **Templates**, **Operations**, **Host**. A section stays highlighted on its detail pages, so `/jails/ottermq` keeps Jails lit.
+Built: **Dashboard**, **Jails**, **Templates**, **Operations**, **Host**. A section stays highlighted on its detail pages, so `/jails/ottermq` keeps Jails lit.
 
-Still on the sketch above: Dashboard, Storage, Logs, Settings. Possible later: Snapshots (if it earns a page separate from a jail's), Tasks (once long-running operations exist), Services, Packages, System.
+Still on the sketch above: Storage, Logs, Settings. Possible later: Snapshots (if it earns a page separate from a jail's), Tasks (once long-running operations exist), Services, Packages, System.
 
 ## Page specifications
 
 ### Dashboard
 
-Purpose: quick operational overview. Possible content: host name, FreeBSD version, running/stopped jail counts, storage summary, recent operations/errors, quick links. Can stay minimal — Jails and jail creation are the more important flows.
+Purpose: quick operational overview. Built at `/dashboard`, and it is where `/` now lands — "what is this host doing" is the question someone opens the page with, and the jail list is one click away.
+
+Four cards, then two tables:
+
+- **Load**, with the five- and fifteen-minute averages under it and the CPU count, because a load of 4 means something different on 2 cores than on 16
+- **CPU**, as a percentage with the window it was measured over. **It reads `—` on the first poll after a restart** rather than `0`: `kern.cp_time` is cumulative and a percentage exists only between two readings (JD-031), and the card says so where the number would be
+- **Memory**, used against physical, with wired, active and inactive spelled out underneath and a note that most of wired is the ZFS ARC — a single "used" figure on a ZFS host reads as pressure that is not there
+- **Jails**, running of configured
+- **Pools** — health, used, free, size and a capacity meter
+- **Jails** — busiest first, with a CPU meter, memory, process count and open files
+
+**A jail's CPU is shown in cores, not in `pcpu`'s own unit.** The API reports percent of *one* core, so a jail on two whole cores reads 200 — which beside a meter that is a share of all sixteen is the same number twice on two different bases. The table says `1.75 cores` and keeps the raw figure in the row's tooltip.
+
+The page polls every five seconds, which is also the window the host's CPU percentage is measured over, and the header carries a **Keep refreshing** checkbox — an operator reading a row should be able to stop it moving.
+
+A jail that could not be read shows its reason in place of its figures; the rest of the page still renders. Nothing on this page is stored, and the footnote says where a chart over time will come from instead.
 
 ### Jails page
 

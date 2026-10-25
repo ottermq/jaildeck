@@ -309,6 +309,8 @@ A local program can create a jail, run a command in it and destroy it over the u
 
 ## Milestone: Metrics
 
+**Status:** the dashboard half is done — host and per-jail usage through `GET /api/metrics` and a Dashboard page (JD-031). The **Prometheus `/metrics` endpoint is the remaining half**, along with the question of whether it shares the API's token auth or binds a listener of its own.
+
 **Depends on:** Web UI. **★ Otter Cloud:** monitoring before the beta.
 
 Goal: the observability half of the stated scope — see load and memory, for the host and per jail.
@@ -321,8 +323,8 @@ Goal: the observability half of the stated scope — see load and memory, for th
 
 ### Technical tasks
 
-- data source: `rctl -u jail:<name>` where `kern.racct.enable` is on; a fallback via `jls` + `ps --libxo` where it is off
-- decide sampling: on request, or a background sampler with a short retention window
+- data source: `rctl -u jail:<name>` where `kern.racct.enable` is on; a fallback via `jls` + `ps --libxo` where it is off. *Built 2026-10-25, and the fallback is trustworthy: measured on three jails, the `ps` resident sums land within 1% of rctl's `memoryuse` and the process counts are identical, because racct's `memoryuse` is the sum of the same per-process resident sizes (JD-031).*
+- decide sampling: on request, or a background sampler with a short retention window. *Decided 2026-10-25: neither. The previous CPU reading is kept in memory and the response carries the window it was measured over; the first call after a restart reports no percentage rather than a zero.*
 - decide whether `/metrics` shares the API's token auth or binds a separate listener (open question below)
 
 ### Completion criteria
@@ -458,7 +460,7 @@ Earlier:
 
 1. Who orchestrates the multi-step jail-creation flow across the `jails`/`storage` boundary?
 2. ~~How should long-running template operations be represented — synchronous with a long timeout, polling, or SSE?~~ **Answered 2026-10-23 (JD-008):** detached, `202`, and the client polls the template. SSE is not excluded; it sits on top rather than replacing it.
-3. How is per-jail resource accounting sourced when `kern.racct.enable` is off?
+3. ~~How is per-jail resource accounting sourced when `kern.racct.enable` is off?~~ **Answered 2026-10-25 (JD-031):** by summing `ps -J <name>`, which reads the same quantity another way rather than a different quantity under the same name — measured within 1% of rctl's. The response says which source it used, because `rctl` additionally answers `vmemoryuse`, `openfiles` and `cputime` and `ps` does not.
 4. How does Host Setup establish the dataset layout — an `init` subcommand, or a guided first-run screen?
 5. Is the default template prepared on demand only, or offered proactively once the host release is known?
 6. ~~How is the first operator credential established?~~ **Resolved 2026-09-05: a `jaildeck passwd` subcommand.** An unauthenticated first-run setup screen is a race for the account; a token printed at startup lands in a log file nobody is watching, because Jail Deck is a service rather than an interactive program. A CLI subcommand is the convention for this (`htpasswd`, `initdb`) and keeps credential setup out of band from the daemon's lifecycle. See JD-003.

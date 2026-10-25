@@ -2,6 +2,7 @@
 import { onMount } from 'svelte'
 import { route, navigate, onNavClick, match } from '../router.svelte'
 import { auth, logout } from '../stores/auth.svelte'
+import Dashboard from './Dashboard.svelte'
 import Jails from './Jails.svelte'
 import Jail from './Jail.svelte'
 import NewJail from './NewJail.svelte'
@@ -19,6 +20,7 @@ let sessionExpiry = $derived(
 )
 
 const menu = [
+    { label: 'Dashboard', href: '/dashboard' },
     { label: 'Jails', href: '/jails' },
     { label: 'Templates', href: '/templates' },
     { label: 'Operations', href: '/operations' },
@@ -38,8 +40,12 @@ let template = $derived(match('/templates/:name'))
 
 // The landing path is replaced rather than pushed: a push would make Back
 // return to '/', which redirects forward again and traps the user.
+//
+// It lands on the dashboard now rather than on Jails: "what is this host
+// doing" is the question someone opens the page with, and the jail list is
+// one click from it.
 onMount(() => {
-    if (route.path === '/') navigate('/jails', true)
+    if (route.path === '/') navigate('/dashboard', true)
 })
 </script>
 
@@ -77,7 +83,9 @@ onMount(() => {
     <ConfirmDialog />
 
     <main class="main">
-        {#if route.path === '/jails'}
+        {#if route.path === '/dashboard'}
+            <Dashboard />
+        {:else if route.path === '/jails'}
             <Jails />
         <!-- Before the :name match, so /jails/new is the form. A jail really
              called "new" would be shadowed by it; nothing stops one being

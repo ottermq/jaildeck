@@ -1,0 +1,33 @@
+name: "jaildeck"
+version: "%%VERSION%%"
+origin: "sysutils/jaildeck"
+comment: "FreeBSD jail operations dashboard and host agent"
+desc: "Jail Deck manages FreeBSD jails through native system tools, with a JSON API and an embedded Svelte web interface. Configuration, credentials, audit history and ZFS resources remain operator-owned."
+maintainer: "andreluiscunha81@gmail.com"
+www: "https://github.com/ottermq/jaildeck"
+prefix: "/usr/local"
+abi: "%%ABI%%"
+licenselogic: "single"
+licenses: ["MIT"]
+categories: ["sysutils"]
+messages: [{
+    type: "install"
+    message: <<EOD
+Jail Deck has not been configured, initialized, enabled or started.
+
+As root, for a new installation only:
+  cp -n /usr/local/etc/jaildeck/jaildeck.env.sample /usr/local/etc/jaildeck/jaildeck.env
+  vi /usr/local/etc/jaildeck/jaildeck.env
+  set -a; . /usr/local/etc/jaildeck/jaildeck.env; set +a
+  jaildeck passwd
+  sysrc jaildeck_enable=YES
+  service jaildeck start
+
+Review host readiness before explicitly running jaildeck init. The package
+does not create ZFS datasets or change networking. Credentials, tokens, logs,
+live configuration and jail datasets are never package-owned.
+
+Build and lifecycle documentation:
+  https://github.com/ottermq/jaildeck/blob/dev/docs/PACKAGING.md
+EOD
+}]

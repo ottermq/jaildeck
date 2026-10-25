@@ -364,6 +364,11 @@ The loaded PF policy and its counters are visible in the API and the UI, and not
 
 ## Milestone: Packaging and Distribution
 
+**Local native packaging:** `make package VERSION=X.Y.Z` builds and verifies a FreeBSD 15
+amd64 package through `pkg create`, reusing `make install` staging. See
+[the packaging workflow](PACKAGING.md) and [local validation](PACKAGING-VALIDATION.md).
+Package repositories, Ports and automated publishing remain separate follow-up work.
+
 **Depends on:** nothing functionally; most useful once the above is worth installing. **★ Otter Cloud:** before the beta — each node runs Jail Deck as an rc.d service.
 
 Goal: make Jail Deck feel native to install and operate on FreeBSD.

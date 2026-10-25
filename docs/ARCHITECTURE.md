@@ -143,6 +143,17 @@ rc.d/
   jaildeck                        # rc.d service script; runs the binary under daemon(8) -S,
                                    # installed to $PREFIX/etc/rc.d by `make install`
 
+packaging/
+  freebsd/                        # `make package`: a native pkg(8) archive (docs/PACKAGING.md)
+    package.sh                     # build, stage, verify the inventory and modes, then pkg create
+    manifest.ucl.in, plist         # the package's metadata and its exact file list
+    test-build.sh                  # every failure path exits nonzero and publishes nothing
+    test-lifecycle.sh              # install, upgrade, remove — disposable VMs only
+
+tools/
+  checkfrontend/                  # build tool, not shipped: fails a release binary that does
+                                   # not carry the frontend it was built with
+
 web/                             # Svelte frontend, part of the same Go module (JD-015)
   embed.go                        # //go:embed all:dist + Assets() — the only Go file here
   src/

@@ -31,6 +31,8 @@ container.
 | [Decisions](./DECISIONS) | Every locked decision, with its reasoning and the costs accepted |
 | [Roadmap](./ROADMAP) | The milestones, what each delivers, and what it depends on |
 | [Interface](./UI) | What the web interface shows |
+| [Packaging](./PACKAGING) | Building, installing, upgrading and removing the FreeBSD package |
+| [Packaging validation](./PACKAGING-VALIDATION) | What the package was tested against, and how |
 
 ## Where the project is
 

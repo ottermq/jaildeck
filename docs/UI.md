@@ -185,6 +185,19 @@ Not designed yet:
 
 These should be settled together when Phase 1b (`docs/ROADMAP.md`) actually starts, not decided piecemeal ahead of time.
 
+## Checking a frontend change
+
+**A frontend change is not verified until someone has looked at it**, in a browser, in the states it can be in. Two of the four bugs v0.9.0's interface shipped were layout — a `<legend>` drawn through its own fieldset's border, a section `gap` that did nothing — and had no textual symptom at all: the markup and the CSS were each correct on their own. No test here would have caught them, and visual-regression tooling is not worth its upkeep at this size. Looking is the check, and the fake adapter (`make run-fake`) exists so it can be done on any machine.
+
+What *can* be checked by a program is, and `make web-check` runs it — the type check and the tests together, because the type check alone passed every bug that release shipped (#77):
+
+- **Vitest, with `@testing-library/svelte` in jsdom.** A test renders the real component, uses it the way a person does — types into a field, adds rows, removes one — and asserts what it sends. jsdom rather than a browser, because what these check is what a control binds and what a form submits, which needs no layout.
+- **`buildSpec` is a module, not a component's private function** (`src/lib/jailSpec.ts`). It is the one place a control's value becomes what the API takes, and v0.9.0's `NaN`-to-unlimited bug lived there.
+- **What a binding gives is the thing TypeScript cannot see.** A number input binds a number, and an emptied one binds `null`; `svelte-check` accepts a `Record<string, string>` bound to it. The tests put each v0.9.0 bug back and fail on it.
+- **Keyed rows: what index keys break is element identity, not values.** Measured: with every field in a row bound, keying by index still shows and sends the right values — Svelte 5 re-points a reused element's binding at the row now in its place. What moves is the element: remove the first of three rows and the input that held row b holds row c, so a person's focus, caret or half-typed word jumps rows. The test asserts identity, because that is what breaks.
+
+A page whose meaning depends on the server's state — the Firewall page's three PF states — gets a test per state, against a mocked store, for what each state *says*. How it looks is still checked by looking.
+
 ## States
 
 Every major section should handle loading, empty, success, warning, error, unsupported. This applies to multi-step flows (jail creation, template preparation) at the step level, not just the page level.

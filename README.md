@@ -53,6 +53,20 @@ make build    # the binary alone, with Go only
 `make build` deliberately does not depend on the frontend, so a clone without Node still
 compiles and runs. It then serves a page saying the frontend has not been built.
 
+### Native FreeBSD package
+
+On FreeBSD 15 amd64, with Go, Node.js/npm and `pkg` installed:
+
+```sh
+make package VERSION=0.10.0   # -> bin/packages/jaildeck-0.10.0.pkg
+```
+
+The package contains the versioned executable with its built frontend, the existing
+service script and the sample configuration. It does not configure or start Jail Deck,
+and does not own live configuration, credentials, logs or jail datasets. The destination
+host needs neither Go nor Node.js. See [native packaging](docs/PACKAGING.md) for building,
+inspection, installation, upgrades, removal and migration from `make install`.
+
 ## First run
 
 Jail Deck refuses to start without an operator credential, so setting one comes first:

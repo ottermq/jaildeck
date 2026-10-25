@@ -44,14 +44,18 @@ func (r *ExecCommandRunner) Run(ctx context.Context, cmd Command) (CommandResult
 	}
 	c.WaitDelay = commandWaitDelay
 
-	var stdout, stderr bytes.Buffer
-	c.Stdout = &stdout
-	c.Stderr = &stderr
+	stdout := newCappedBuffer(cmd.MaxOutput)
+	stderr := newCappedBuffer(cmd.MaxOutput)
+	c.Stdout = stdout
+	c.Stderr = stderr
 
 	start := time.Now()
 	err := c.Run()
 	elapsed := time.Since(start)
-	result := CommandResult{Stdout: stdout.String(), Stderr: stderr.String()}
+	result := CommandResult{
+		Stdout: stdout.String(), Stderr: stderr.String(),
+		StdoutTruncated: stdout.truncated, StderrTruncated: stderr.truncated,
+	}
 
 	// Deferred because the branches below are what set ExitCode: logging here
 	// directly would report 0 for every command, including the failures this
@@ -79,4 +83,48 @@ func (r *ExecCommandRunner) Run(ctx context.Context, cmd Command) (CommandResult
 	}
 
 	return result, nil
+}
+
+// cappedBuffer keeps at most limit bytes and remembers that it dropped some.
+//
+// A writer rather than a truncation after the fact: a command that produces
+// a gigabyte would otherwise be held in memory in full before anyone decided
+// it was too much, which is the failure the cap exists to prevent. Writes
+// past the limit are reported as accepted, so the command is not killed by a
+// short write -- it is allowed to finish and its output is simply no longer
+// being kept.
+//
+// The buffer is a field and not embedded, which matters more than it looks.
+// exec.Cmd copies a non-*os.File writer with io.Copy, and io.Copy prefers a
+// destination's ReadFrom -- which an embedded bytes.Buffer would promote,
+// taking the whole stream straight past the Write below.
+type cappedBuffer struct {
+	buf       bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func newCappedBuffer(limit int) *cappedBuffer {
+	return &cappedBuffer{limit: limit}
+}
+
+func (b *cappedBuffer) String() string { return b.buf.String() }
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	if b.limit <= 0 {
+		return b.buf.Write(p)
+	}
+	room := b.limit - b.buf.Len()
+	if room <= 0 {
+		b.truncated = true
+		return len(p), nil
+	}
+	if len(p) > room {
+		b.truncated = true
+		if _, err := b.buf.Write(p[:room]); err != nil {
+			return 0, err
+		}
+		return len(p), nil
+	}
+	return b.buf.Write(p)
 }

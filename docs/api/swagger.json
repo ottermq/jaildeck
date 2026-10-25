@@ -1174,6 +1174,88 @@
                 }
             }
         },
+        "/jails/{name}/exec": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Runs `argv` inside the jail as root and returns its stdout, stderr and\nexit code. This is JD-007's \"hand off to in-jail provisioning\" made\ncallable, and it is root in the jail — no more than this API already\nimplies (JD-001, JD-016).\n\n**A non-zero exit is still a `200`.** The exec succeeded; the thing it ran\nfailed, and `exit_code` is the answer. A client that reads the HTTP status\ninstead is reading the wrong field. `exit_code` is `-1` when the command\nnever ran or was stopped by the timeout.\n\n**`argv` is an array and there is no shell.** Nothing splits a string here,\nso a quote or a semicolon in an argument is just a character. A caller who\nwants a shell asks for one — `[\"sh\", \"-c\", \"…\"]` — and has chosen it. There\nis no stdin: a command that needs input writes a file in the jail first.\n\n**The environment is clean.** The command runs under `jexec -l`, which gives\nit `HOME`, `PATH`, `SHELL`, `USER` and `LANG` and nothing of the host's —\nmeasured, plain `jexec` hands the jail everything the Jail Deck process was\nstarted with, `jaildeck.env` included. `env` adds variables on top of that.\n\nA request that sets `env` and whose `argv[0]` contains an `=` is refused:\n`env(1)` has no way to end its assignments — measured, `env -- cmd` fails —\nso it would read that argument as one more and run nothing.\n\n**`timeout`** is a duration like `\"30s\"` or `\"2m\"`, 60s by default and five\nminutes at most (JD-014). Longer is refused rather than clamped, because a\ncommand silently given less time than asked for looks like one that failed.\nWork that needs longer belongs in a template, which is prepared in the\nbackground and polled (JD-008). A timed-out command is **killed inside the\njail**, along with anything it forked, and whatever it printed first is\nstill returned with `timed_out: true`.\n\nEach stream is capped at 1 MiB and says so with `stdout_truncated` /\n`stderr_truncated` — output that stops exactly at the cap is otherwise\nindistinguishable from output that happened to end there.\n\nEvery call is audited with the command line it became, which includes any\nenvironment values: a secret passed this way is written to the audit log,\nwhich is `0700` and root-owned for that kind of reason.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jails"
+                ],
+                "summary": "Run a command in a jail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The command to run",
+                        "name": "exec",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/jails.ExecRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "It ran; read exit_code for what it did",
+                        "schema": {
+                            "$ref": "#/definitions/jails.ExecResult"
+                        }
+                    },
+                    "400": {
+                        "description": "No argv, a timeout past the cap, or a bad env name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "The jail is not running",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "The command could not be run at all",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "This Jail Deck cannot run commands in a jail",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/jails/{name}/properties": {
             "patch": {
                 "security": [
@@ -2768,6 +2850,71 @@
                 },
                 "running": {
                     "type": "boolean"
+                }
+            }
+        },
+        "jails.ExecRequest": {
+            "type": "object",
+            "properties": {
+                "argv": {
+                    "description": "Argv is the command and its arguments. An array, never a string:\nthere is no shell here to split it, and nothing for a quote or a\nsemicolon in an argument to mean. A caller who wants a shell asks for\none -- [\"sh\", \"-c\", \"...\"] -- and has chosen it deliberately.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "env": {
+                    "description": "Env are variables for the command, on top of the clean login\nenvironment jexec -l gives it. The host's own environment is never\npassed in: measured, jexec hands the jail everything the Jail Deck\nprocess was started with, jaildeck.env included (JD-016).",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "timeout": {
+                    "description": "Timeout is a Go duration: \"30s\", \"2m\". Absent means 60s; longer than\nfive minutes is refused rather than clamped, because silently running\nfor less time than asked is how a caller concludes their command\nfailed when it was cut off.",
+                    "type": "string"
+                }
+            }
+        },
+        "jails.ExecResult": {
+            "type": "object",
+            "properties": {
+                "argv": {
+                    "description": "Argv as it was asked for, so a caller reading a log sees what it sent\nrather than the jexec line it became.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "exit_code": {
+                    "description": "ExitCode is the command's own. **A non-zero one is still a 200**: the\nexec succeeded and the thing it ran failed, and that distinction is\nthe whole point of this endpoint (JD-016). It is -1 when the command\nnever ran or was stopped by the timeout.",
+                    "type": "integer"
+                },
+                "jail": {
+                    "type": "string"
+                },
+                "stderr": {
+                    "type": "string"
+                },
+                "stderr_truncated": {
+                    "type": "boolean"
+                },
+                "stdout": {
+                    "type": "string"
+                },
+                "stdout_truncated": {
+                    "description": "Set when a stream was cut off at the cap. Reported rather than left to\nbe inferred from a length, because output ending exactly at the cap is\nindistinguishable from output that happened to end there.",
+                    "type": "boolean"
+                },
+                "timed_out": {
+                    "description": "TimedOut says the command was stopped rather than finished. The\nprocess was killed inside the jail -- jexec does not fork, so the\nprocess is the command -- along with anything it had forked.",
+                    "type": "boolean"
+                },
+                "timeout": {
+                    "type": "string"
                 }
             }
         },

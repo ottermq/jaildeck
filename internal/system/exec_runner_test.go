@@ -121,3 +121,73 @@ func TestExecCommandRunner_Run_LogsToContextLogger(t *testing.T) {
 		}
 	}
 }
+
+// --- the output cap ----------------------------------------------------
+
+// A command that produces more than MaxOutput is allowed to finish; only
+// what is kept is bounded. The alternative -- failing the write -- would
+// kill a command for being chatty.
+func TestExecCommandRunner_Run_CapsOutput(t *testing.T) {
+	runner := NewExecCommandRunner()
+
+	result, err := runner.Run(context.Background(), Command{
+		Name:      "sh",
+		Args:      []string{"-c", "printf 'y%.0s' $(seq 1 5000); printf 'e%.0s' $(seq 1 5000) >&2"},
+		Timeout:   10 * time.Second,
+		MaxOutput: 1000,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(result.Stdout) != 1000 {
+		t.Errorf("kept %d bytes of stdout, want 1000", len(result.Stdout))
+	}
+	if len(result.Stderr) != 1000 {
+		t.Errorf("kept %d bytes of stderr, want 1000", len(result.Stderr))
+	}
+	// Said, not inferred: output ending exactly at the cap is otherwise
+	// indistinguishable from output that happened to end there.
+	if !result.StdoutTruncated || !result.StderrTruncated {
+		t.Errorf("truncation not reported: %+v", result)
+	}
+	if result.ExitCode != 0 {
+		t.Errorf("exit code = %d — the command should have been allowed to finish",
+			result.ExitCode)
+	}
+}
+
+// Zero is what every command Jail Deck composes itself uses: their output is
+// bounded by what they are, and a cap there would be a limit nobody chose.
+func TestExecCommandRunner_Run_KeepsEverythingByDefault(t *testing.T) {
+	runner := NewExecCommandRunner()
+
+	result, err := runner.Run(context.Background(), Command{
+		Name: "sh", Args: []string{"-c", "printf 'y%.0s' $(seq 1 5000)"},
+		Timeout: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(result.Stdout) != 5000 {
+		t.Errorf("kept %d bytes, want all 5000", len(result.Stdout))
+	}
+	if result.StdoutTruncated {
+		t.Error("reported truncation with no cap set")
+	}
+}
+
+// Exactly at the cap is not truncation: nothing was dropped.
+func TestExecCommandRunner_Run_OutputExactlyAtTheCap(t *testing.T) {
+	runner := NewExecCommandRunner()
+
+	result, err := runner.Run(context.Background(), Command{
+		Name: "sh", Args: []string{"-c", "printf 'yyyy'"},
+		Timeout: 10 * time.Second, MaxOutput: 4,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.StdoutTruncated {
+		t.Error("output that fit exactly was reported as truncated")
+	}
+}

@@ -20,6 +20,62 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+### API
+
+- **Run a command inside a jail.** `POST /api/jails/{name}/exec` takes
+  `{"argv": [...], "timeout": "60s", "env": {...}}` and returns the command's stdout,
+  stderr and exit code — JD-007's "hand off to in-jail provisioning" made callable
+  (#12, JD-016). It is root in the jail, which is no more than this API already implies.
+
+  **A non-zero exit is still a `200`.** The exec succeeded; the thing it ran failed, and
+  `exit_code` is the answer. A client reading the HTTP status instead is reading the wrong
+  field. `exit_code` is `-1` when the command never ran or was stopped by the timeout.
+
+  **The environment is clean.** The command runs under `jexec -l`. Measured on
+  15.1-RELEASE-p5: plain `jexec` hands the jail the caller's entire environment, so
+  everything the Jail Deck process was started with — `jaildeck.env` included — would be
+  readable by anything run through this endpoint. `-l` replaces it with `HOME`, `PATH`,
+  `SHELL`, `USER` and `LANG`, and `env` puts the caller's own variables on top.
+
+  `argv` is an array and there is no shell: nothing splits a string, so a quote or a
+  semicolon in an argument is just a character. A caller who wants a shell asks for one.
+  There is no stdin.
+
+  **`timeout`** is 60s by default and five minutes at most (JD-014); longer is refused
+  rather than clamped, because a command silently given less time than asked for looks
+  like one that failed. A timed-out command is killed **inside the jail**, along with
+  anything it forked, and whatever it printed first is still returned.
+
+  Each stream is capped at 1 MiB and says so with `stdout_truncated` / `stderr_truncated`.
+  Every call is audited with the command line it became.
+
+- **`system.Command` gained `MaxOutput`**, honoured by the command runner as a bounded
+  writer rather than a truncation afterwards — a command that prints a gigabyte would
+  otherwise be held in memory in full before anyone decided it was too much. Zero, which
+  every command Jail Deck composes itself uses, keeps everything as before.
+
+### Added
+
+- **Host and per-jail resource usage.** `GET /api/metrics` answers the host — load
+  average, CPU, memory and pools — and every running jail's CPU, memory and process count,
+  in one request. A **Dashboard** page renders it, and `/` now lands there (JD-031).
+
+  Per-jail usage comes from `rctl -u` where `kern.racct.enable` is on and from summing
+  `ps -J <name>` where it is not, and the response says which. Measured on three jails: the
+  `ps` resident sums land within 1% of rctl's `memoryuse` and the process counts are
+  identical, because racct's `memoryuse` **is** the sum of the same per-process resident
+  sizes.
+
+  **`cpu.percent` is absent on the first call after a restart.** `kern.cp_time` is
+  cumulative and there is no kernel-maintained utilisation figure, so a percentage exists
+  only between two readings; `cpu.over_seconds` says how long the interval behind it was.
+  The raw counters are always there. Nothing is stored — a chart over time is what a
+  Prometheus endpoint will be for.
+
+---
+
 ## v0.9.0 — 2026-10-24
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.9.0)

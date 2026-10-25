@@ -87,6 +87,10 @@ type Dependencies struct {
 	Rctl          RctlSystem
 	DevfsRulesets DevfsRulesetSource
 
+	// Running a command inside a jail (JD-016). Absent, only that call is
+	// refused; nothing else needs it.
+	Exec JailExecutor
+
 	// The three the idempotent PUT needs to read a jail back and tell
 	// whether it already matches (JD-016). Absent, only that call is
 	// refused, with 501; every other operation is unaffected. Required
@@ -119,6 +123,7 @@ type JailService struct {
 	configReader    ConfigReader
 	autostartSource AutostartSource
 	cloneOrigin     CloneOrigin
+	exec            JailExecutor
 }
 
 func NewJailService(deps Dependencies) *JailService {
@@ -144,6 +149,7 @@ func NewJailService(deps Dependencies) *JailService {
 		configReader:    deps.ConfigReader,
 		autostartSource: deps.AutostartSource,
 		cloneOrigin:     deps.CloneOrigin,
+		exec:            deps.Exec,
 	}
 }
 

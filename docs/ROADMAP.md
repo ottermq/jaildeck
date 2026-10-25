@@ -242,6 +242,8 @@ A template can be prepared end to end from the UI, ending in a usable `@base` sn
 
 ## Milestone: Jail Provisioning
 
+**Status:** done in v0.9.0. Kept for the record of what it set out to do. Everything below is reachable from the API and from the interface, except the idempotent `PUT`, which deliberately has none: it answers a question automation asks after a timeout, not one an operator does.
+
 **Depends on:** Templates, Storage Writes. **★ Otter Cloud:** the critical path — every managed instance is a jail created here.
 
 Goal: create and destroy jails, including VNET jails with resource limits, from a full spec.

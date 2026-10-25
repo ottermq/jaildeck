@@ -115,15 +115,16 @@ var (
 // TYPE, every name declared once, every value a number, every label quoted
 // and escaped.
 //
-// Written here because a format nobody validates is a format that drifts, and
-// promtool could not be had: `go install .../cmd/promtool@latest` is refused
-// because Prometheus's go.mod carries replace directives, and the alternatives
-// are a release binary to download or prometheus/common/expfmt as a test
-// dependency, which this project does not take.
+// A parser of our own, because the alternatives are a dependency this project
+// does not take: `go install .../cmd/promtool@latest` is refused (Prometheus's
+// go.mod carries replace directives) and prometheus/common/expfmt would be a
+// test dependency.
 //
-// So this is a parser of our own, and that is weaker evidence than Prometheus
-// reading the body. It holds the grammar; it cannot say the scraper is happy.
-// The one check that settles it is still a real scrape.
+// It is weaker evidence than Prometheus reading the body, so that was done
+// separately rather than skipped: `promtool check metrics` from
+// prometheus3-3.15.0 exits 0 on a live body from isengard, and a real
+// Prometheus scrapes it with health "up" (JD-033). This guards the format
+// between those runs, where a unit test can.
 func checkFormat(t *testing.T, body string) {
 	t.Helper()
 	declared := map[string]string{}

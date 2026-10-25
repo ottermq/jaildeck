@@ -1412,7 +1412,14 @@ Jail Deck already has a socket listener (JD-002), mode 0660 with an optional gro
 
 The blocker is the scraper. Prometheus only learned to scrape a Unix socket in **v3.15.0, released 2026-09-25** — one month before this was written ([#12024](https://github.com/prometheus/prometheus/issues/12024), [#18091](https://github.com/prometheus/prometheus/pull/18091)). A socket-only endpoint is unscrapeable by any older Prometheus without `socat` or nginx in front of it, which is a bridge the operator has to run and keep running.
 
-So the socket is not the *only* path — but it costs nothing to keep. The socket serves the same mux, so `/metrics` is already reachable over it, and an operator on 3.15.0 or newer can scrape the socket with no token and no extra code in Jail Deck. Both work; neither is special-cased.
+So the socket is not the *only* path — but it costs nothing to keep. The socket serves the same mux, so `/metrics` is already reachable over it, and an operator on 3.15.0 or newer can scrape it. Both work; neither is special-cased.
+
+**Corrected 2026-10-25, by scraping it.** This record first said the socket could be scraped *without* a token. It cannot, and the mistake was reading JD-002 carelessly: the socket's `0660` group is a first access check and explicitly **not the only one**, because `RequireAuth` runs on that listener exactly as on TCP. Measured: `curl --unix-socket … /metrics` with no token is `401`, and `200` with one. The scrape config needs `credentials_file` either way, which makes the two paths more alike rather than less.
+
+Two more things only a real scrape could say:
+
+- The socket path goes in the `__unix_socket__` **label**, not in `targets` — `promtool check config` rejects a path there with *“is not a valid hostname”*. The address stays an ordinary `host:port` that nothing dials.
+- **FreeBSD packages two Prometheus versions under different names.** `pkg install prometheus` gets **2.55.1**, which predates socket scraping entirely; **3.15.0 is the `prometheus3` package.** An operator who installs the obvious one cannot scrape a socket at all, which is the strongest form of the argument above for not making it the only path.
 
 ### The token is the same token
 
@@ -1458,3 +1465,12 @@ Prometheus conventions win over matching the JSON field names, because the audie
 **No alerting, no thresholds, no `up`-style verdict on a disk.** Jail Deck reports; Prometheus and Alertmanager already know how to wake someone, and this endpoint exists so that they can. A `jaildeck_disk_failing_attributes` of `1` is the fact; deciding it is worth a phone call at 3am is the operator's, expressed in a rule file that Jail Deck never sees. The same position JD-032 takes against a health score, for the same reason.
 
 **No history, no sampler.** Unchanged from JD-011 and JD-031: the scraper holds the history, which is the entire argument for having this endpoint rather than a database.
+
+### Settled against a real Prometheus
+
+Verified on isengard, 2026-10-25, against `prometheus3-3.15.0` scraping a build of this branch running beside the live service:
+
+- `promtool check metrics` on the live body: **exit 0**, no complaints. That is Prometheus's own parser *and* its naming linter, not a parser of ours.
+- Both scrape jobs — TCP with a bearer token, and the Unix socket — report `health: "up"` with an empty `lastError`. 218 `jaildeck_*` series landed.
+- `jaildeck_disk_failing_attributes > 0` selects exactly `ada3`, the drive this host has been complaining about since 20 October, while `jaildeck_disk_passed{device="ada3"}` is `1`. The disagreement JD-032 exists to preserve is queryable, which was the point.
+- The `stathz` conversion checks out against physical reality rather than against itself: idle divided by `stathz` is 6,192,862 CPU-seconds against 6,203,520 of capacity for a 16-CPU host up 4 days 11:42 — 99.8% idle, which is what this host is. Dividing by `hz` would have claimed it was 87% busy for four days.

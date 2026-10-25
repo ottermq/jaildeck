@@ -405,11 +405,19 @@ metrics port would publish the host's memory, every jail's resource usage and ev
 disk's serial number to any jail on the box (JD-033).
 
 The socket listener works too, and costs nothing extra — it serves the same router, so
-`/metrics` is already there. Prometheus can scrape a Unix socket only from **v3.15.0**
-(2026-09-25); anything older needs a TCP target.
+`/metrics` is already there. Two things to know, both found by actually scraping it:
+
+- **Prometheus can scrape a Unix socket only from v3.15.0** (2026-09-25). On FreeBSD that
+  is the `prometheus3` package; plain `pkg install prometheus` gets **2.55.1**, which
+  cannot, and needs a TCP target.
+- **The token is still required.** The socket's `0660` group is a first access check and
+  not the only one — `RequireAuth` runs on this listener exactly as on TCP (JD-002).
+
+The socket path goes in the label, not in `targets`: an address that is not a hostname is
+rejected by `promtool check config`.
 
 ```yaml
-      - targets: ['/var/run/jaildeck.sock']
+      - targets: ['localhost:80']
         labels:
           __unix_socket__: /var/run/jaildeck.sock
 ```

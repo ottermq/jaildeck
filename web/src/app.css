@@ -328,6 +328,7 @@ tbody tr:hover td {
   border-color: var(--border-strong);
 }
 
+.badge--warn,
 .badge--timed-out {
   color: var(--warn);
   background: var(--warn-soft);

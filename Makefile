@@ -4,6 +4,8 @@ BUILD_DIR=bin
 COVER_PROFILE=$(BUILD_DIR)/coverage.out
 
 GO?=go
+LDFLAGS?=
+VERSION?=
 
 # Where the API annotations live. swag is pinned in go.mod as a tool
 # dependency, so `go tool swag` needs no global install and every machine runs
@@ -17,12 +19,19 @@ SPEC=docs/api/swagger.json
 PREFIX?=/usr/local
 DESTDIR?=
 
-.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check all install doc doc-check
+# The make that package.sh calls back into. Passed through this name rather
+# than written as $(MAKE) in the recipe, because GNU make runs any recipe line
+# that mentions $(MAKE) even under -n, -t and -q -- right for a sub-make, which
+# inherits -n and only prints, and wrong for a shell script, which does not.
+# `gmake -n package` would otherwise build, stage and overwrite a real archive.
+PACKAGE_MAKE=$(MAKE)
+
+.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check all install package doc doc-check
 
 ## build: compile the binary into bin/
 build:
-	@mkdir -p $(BUILD_DIR)
-	@$(GO) build -o ./$(BUILD_DIR)/$(BINARY_NAME) ./$(MAIN_PATH)
+	@mkdir -p "$(BUILD_DIR)"
+	@$(GO) build -ldflags "$(LDFLAGS)" -o "$(BUILD_DIR)/$(BINARY_NAME)" ./$(MAIN_PATH)
 
 ## run: build and run against the real FreeBSD adapter (requires FreeBSD)
 run: build
@@ -83,16 +92,20 @@ check: fmt-check vet build doc-check test
 
 ## install: install the binary, rc.d script and sample env under PREFIX (run on the FreeBSD host, or stage with DESTDIR)
 install: build
-	@install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/etc/rc.d $(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)
-	@install -m 0555 ./$(BUILD_DIR)/$(BINARY_NAME) $(DESTDIR)$(PREFIX)/bin/$(BINARY_NAME)
-	@install -m 0555 ./rc.d/$(BINARY_NAME) $(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)
+	@install -d "$(DESTDIR)$(PREFIX)/bin" "$(DESTDIR)$(PREFIX)/etc/rc.d" "$(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)"
+	@install -m 0555 "$(BUILD_DIR)/$(BINARY_NAME)" "$(DESTDIR)$(PREFIX)/bin/$(BINARY_NAME)"
+	@install -m 0555 ./rc.d/$(BINARY_NAME) "$(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)"
 	@# The sample only. A live jaildeck.env is the operator's and is never overwritten.
-	@install -m 0644 ./.env.sample $(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)/$(BINARY_NAME).env.sample
+	@install -m 0644 ./.env.sample "$(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)/$(BINARY_NAME).env.sample"
 	@echo "installed:"
 	@echo "  $(DESTDIR)$(PREFIX)/bin/$(BINARY_NAME)"
 	@echo "  $(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)"
 	@echo "  $(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)/$(BINARY_NAME).env.sample"
 	@echo "copy the sample to $(PREFIX)/etc/$(BINARY_NAME)/$(BINARY_NAME).env and edit it"
+
+## package: build and verify bin/packages/jaildeck-VERSION.pkg (native FreeBSD 15 amd64)
+package:
+	@sh packaging/freebsd/package.sh "$(VERSION)" "$(PREFIX)" "$(GO)" "$(PACKAGE_MAKE)"
 
 ## clean: remove build artifacts
 clean:
@@ -100,11 +113,13 @@ clean:
 
 ## help: list available targets
 help:
-	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/^## /  /'
+	@# Named, not $(MAKEFILE_LIST): that is GNU-only, and under FreeBSD's base
+	@# make it expands to nothing and grep sits waiting on stdin.
+	@grep -E '^## ' Makefile | sed 's/^## /  /'
 
 ## web: build the web frontend
 web:
-	@cd web && npm ci && npm run build
+	@(cd web && npm ci && npm run build)
 	@touch web/dist/.gitkeep			# Vite emties dist/; the placeholder keeps //go:embed working
 
 ## web-dev: run the web frontend in development mode (requires Node.js)
@@ -116,7 +131,14 @@ web-check:
 	@cd web && npm run check
 
 ## all: build the backend and frontend
-all: web build
+# In order, never as prerequisites: `all: web build` lets make -j start the Go
+# build while Vite has emptied dist/, and measured on isengard `gmake -j4 all`
+# then exits 0 with a binary that carries no frontend. A sub-make is right
+# here in a way it is not for package: it inherits -n and only prints.
+all:
+	@$(MAKE) web
+	@$(MAKE) build
+
 ## doc: regenerate the OpenAPI spec from the handler annotations
 doc:
 	@mkdir -p $(dir $(SPEC))

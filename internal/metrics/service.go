@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"sort"
 	"sync"
@@ -26,6 +27,7 @@ type Service struct {
 	host  HostMetrics
 	usage JailUsageSource
 	jails JailSource
+	disks DiskSource
 
 	mu       sync.Mutex
 	previous *reading
@@ -36,8 +38,8 @@ type reading struct {
 	at    time.Time
 }
 
-func NewService(host HostMetrics, usage JailUsageSource, jails JailSource) *Service {
-	return &Service{host: host, usage: usage, jails: jails}
+func NewService(host HostMetrics, usage JailUsageSource, jails JailSource, disks DiskSource) *Service {
+	return &Service{host: host, usage: usage, jails: jails, disks: disks}
 }
 
 // Report reads the host and every running jail.
@@ -55,7 +57,20 @@ func (s *Service) Report(ctx context.Context) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	report := Report{Host: host, Jail: make([]JailUsage, 0)}
+	report := Report{Host: host, Jail: make([]JailUsage, 0), Disks: make([]Disk, 0)}
+
+	// Disks are read before the jails and never fail the report. A host
+	// without smartmontools has none to read, and a smartctl unhappy about
+	// one device should not cost the operator the rest of the page (JD-032).
+	if s.disks != nil {
+		disks, err := s.disks.Disks(ctx)
+		if err != nil {
+			common.Logger(ctx, "metrics").Warn("reporting without disk health",
+				slog.Any("err", err))
+		} else {
+			report.Disks = disks
+		}
+	}
 
 	if s.jails == nil || s.usage == nil {
 		return report, nil
@@ -127,6 +142,17 @@ func (s *Service) readHost(ctx context.Context) (Host, error) {
 
 	host := Host{Load: load, Memory: memory, Pools: pools,
 		CPU: CPU{CPUs: cpus, Ticks: ticks}}
+
+	// A rate that cannot be read costs the seconds and nothing else, so it is
+	// not worth failing a report over: the ticks are still true, and saying
+	// nothing about their unit is better than guessing at it (JD-033).
+	if rate, err := s.host.TickRate(ctx); err != nil {
+		common.Logger(ctx, "metrics").Warn("reporting ticks without their rate",
+			slog.Any("err", err))
+	} else {
+		host.CPU.TicksPerSecond = rate
+	}
+
 	if percent, over, ok := s.rate(ticks); ok {
 		host.CPU.Percent, host.CPU.OverSeconds = &percent, &over
 	}

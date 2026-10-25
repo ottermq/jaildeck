@@ -1,0 +1,8 @@
+            Name  Status  Components
+    gpt/efiboot0     N/A  nda0p1
+    gpt/gptboot0     N/A  nda0p2
+gpt/old-efiboot0     N/A  ada0p1
+    gpt/efiboot1     N/A  ada1p1
+       gpt/swap1     N/A  ada1p2
+     gpt/backup0     N/A  ada2p1
+     gpt/backup1     N/A  ada3p1

@@ -10,3 +10,13 @@ import "github.com/go-chi/chi/v5"
 func RegisterMetricsRoutes(r chi.Router, h *Handler) {
 	r.Get("/metrics", h.Report)
 }
+
+// RegisterPrometheusRoute mounts the exposition format at a bare /metrics,
+// where every scraper expects to find it.
+//
+// Registered at the root rather than under /api, and by the caller rather
+// than here, because it is the one route outside the JSON API: it must still
+// be wrapped in the same RequireAuth, which is the caller's to apply (JD-033).
+func RegisterPrometheusRoute(r chi.Router, h *Handler) {
+	r.Get("/metrics", h.Prometheus)
+}

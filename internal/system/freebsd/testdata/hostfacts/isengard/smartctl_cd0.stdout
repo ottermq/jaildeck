@@ -1,0 +1,67 @@
+{
+  "json_format_version": [
+    1,
+    0
+  ],
+  "smartctl": {
+    "version": [
+      7,
+      5
+    ],
+    "pre_release": false,
+    "svn_revision": "5714",
+    "platform_info": "FreeBSD 15.1-RELEASE-p5 amd64",
+    "build_info": "(local build)",
+    "argv": [
+      "smartctl",
+      "--json",
+      "-i",
+      "-H",
+      "-A",
+      "-l",
+      "selftest",
+      "/dev/cd0"
+    ],
+    "drive_database_version": {
+      "string": "7.5/5706"
+    },
+    "exit_status": 4
+  },
+  "local_time": {
+    "time_t": 1792910463,
+    "asctime": "Sun Oct 25 03:41:03 2026 -03"
+  },
+  "device": {
+    "name": "/dev/cd0",
+    "info_name": "/dev/cd0",
+    "type": "atacam",
+    "protocol": "ATA"
+  },
+  "model_name": "HL-DT-ST DVD-RW GH61N",
+  "serial_number": "S04XXXXXXXX",
+  "firmware_version": "PA03",
+  "trim": {
+    "supported": false
+  },
+  "in_smartctl_database": false,
+  "ata_version": {
+    "string": "ATA/ATAPI-7 T13/1532D revision 4a",
+    "major_value": 248,
+    "minor_value": 33
+  },
+  "sata_version": {
+    "string": "SATA 2.6",
+    "value": 31
+  },
+  "interface_speed": {
+    "max": {
+      "sata_value": 2,
+      "string": "1.5 Gb/s",
+      "units_per_second": 15,
+      "bits_per_unit": 100000000
+    }
+  },
+  "smart_support": {
+    "available": false
+  }
+}

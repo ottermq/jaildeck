@@ -1916,7 +1916,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Load average, CPU, memory and pools for the host, and CPU, memory and a\nprocess count for every jail that is **running** — a stopped jail has no\nusage to read (JD-031).\n\nOne request, because the dashboard is one page. It costs one `rctl -u` per\nrunning jail: there is no form that answers for every subject at once.\nThat is also why usage is not part of `GET /api/jails` — a listing is what\nan operator opens to start a jail, and it should not pay for the page that\nwatches them.\n\n**`cpu.percent` is absent on the first call after a restart.** `kern.cp_time`\nis cumulative and there is no kernel-maintained utilisation figure, so a\npercentage exists only between two readings. The raw `cpu.ticks` are always\nthere, and `cpu.over_seconds` says how long the interval behind the\npercentage actually was — so a reading five seconds after the last one and\none five minutes after are told apart rather than read as the same word.\n\nA jail's `source` is `rctl` where `kern.racct.enable` is on and `ps` where\nit is not. Measured on three jails: the `ps` resident sums land within 1% of\nrctl's `memoryuse` and the process counts are identical, because racct's\n`memoryuse` **is** the sum of the same per-process resident sizes. `rctl`\nadditionally answers `vmemoryuse`, `openfiles` and `cputime`; `ps` does not,\nwhich is what `source` is for.\n\n`pcpu` is percent of **one core**, so a jail using two whole cores reads 200.\n\nMemory is a breakdown rather than one \"used\" figure: on a ZFS host most of\n`wired` is the ARC, which is reclaimable, and a single number would read as\npressure that is not there.\n\n**Nothing is stored.** There is no history and no sampler; a chart over time\nis Prometheus's job (JD-011).",
+                "description": "Load average, CPU, memory and pools for the host, and CPU, memory and a\nprocess count for every jail that is **running** — a stopped jail has no\nusage to read (JD-031).\n\nOne request, because the dashboard is one page. It costs one `rctl -u` per\nrunning jail: there is no form that answers for every subject at once.\nThat is also why usage is not part of `GET /api/jails` — a listing is what\nan operator opens to start a jail, and it should not pay for the page that\nwatches them.\n\n**`cpu.percent` is absent on the first call after a restart.** `kern.cp_time`\nis cumulative and there is no kernel-maintained utilisation figure, so a\npercentage exists only between two readings. The raw `cpu.ticks` are always\nthere, and `cpu.over_seconds` says how long the interval behind the\npercentage actually was — so a reading five seconds after the last one and\none five minutes after are told apart rather than read as the same word.\n\nA jail's `source` is `rctl` where `kern.racct.enable` is on and `ps` where\nit is not. Measured on three jails: the `ps` resident sums land within 1% of\nrctl's `memoryuse` and the process counts are identical, because racct's\n`memoryuse` **is** the sum of the same per-process resident sizes. `rctl`\nadditionally answers `vmemoryuse`, `openfiles` and `cputime`; `ps` does not,\nwhich is what `source` is for.\n\n`pcpu` is percent of **one core**, so a jail using two whole cores reads 200.\n\nMemory is a breakdown rather than one \"used\" figure: on a ZFS host most of\n`wired` is the ARC, which is reclaimable, and a single number would read as\npressure that is not there.\n\n`disks` is every physical device that answers, pooled or not — a spare or a\nscratch disk can fail too. It is **empty rather than an error** on a host\nwithout `smartmontools`, which is a package and not part of the base system,\nand a disk that cannot be read never fails the rest of the report (JD-032).\n\n**`passed` is the drive's own overall assessment, not a summary of\n`failing`.** The two routinely disagree: a drive can report `PASSED` while an\nattribute has been below threshold for days. `failing` is what smartctl says\nis below threshold now and `failed` what it says ever was — its judgment,\ncarried as given rather than re-derived from `value` against `threshold`.\nAn attribute's `raw` is the **string** smartctl printed, never a number to\nreason about: vendors pack several fields into that integer.\n\n`device` is the name the kernel and ZFS use. Where smartctl needs a different\npath for the same drive — an NVMe is `nda0` everywhere but `/dev/nvme0` to\nsmartctl, which refuses `/dev/nda0` — `smart_path` says so. An NVMe carries\nan `nvme` block instead of an attribute table, because it has none.\n\nSelf-test logs are **read, never started**: a long test costs hours of real\nI/O and choosing when to pay that is an operator's decision.\n\n**Nothing is stored.** There is no history and no sampler; a chart over time\nis Prometheus's job (JD-011).",
                 "produces": [
                     "application/json"
                 ],
@@ -3286,6 +3286,30 @@
                 }
             }
         },
+        "metrics.Attribute": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "raw": {
+                    "description": "Raw is the string smartctl printed, never a number to reason about.\nSeagate encodes several fields into one integer -- ada3's\nRaw_Read_Error_Rate reads 200021688 and is not a count of anything.",
+                    "type": "string"
+                },
+                "threshold": {
+                    "type": "integer"
+                },
+                "value": {
+                    "type": "integer"
+                },
+                "worst": {
+                    "type": "integer"
+                }
+            }
+        },
         "metrics.CPU": {
             "type": "object",
             "properties": {
@@ -3302,6 +3326,88 @@
                 },
                 "ticks": {
                     "$ref": "#/definitions/metrics.Ticks"
+                },
+                "ticks_per_second": {
+                    "description": "TicksPerSecond is what a tick above is worth -- kern.clockrate's\nstathz, which on this host is 127 while hz is 1000. Reported because\nhanding out cumulative counters without saying what they count invites\nevery consumer to make the same wrong guess (JD-033). Absent when the\nrate could not be read, which costs the seconds and nothing else.",
+                    "type": "integer"
+                }
+            }
+        },
+        "metrics.Disk": {
+            "type": "object",
+            "properties": {
+                "capacity": {
+                    "type": "integer"
+                },
+                "device": {
+                    "description": "Device is the name the host uses -- ada3, nda0, da0.",
+                    "type": "string"
+                },
+                "failed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.Attribute"
+                    }
+                },
+                "failing": {
+                    "description": "Failing are the attributes smartctl says are below threshold now, and\nFailed those it says were at some point. Its judgment, reported as\ngiven rather than re-derived from value against threshold.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.Attribute"
+                    }
+                },
+                "kind": {
+                    "description": "Kind is \"ata\" or \"nvme\", and says which of the two halves below to\nexpect.",
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "nvme": {
+                    "description": "NVMe carries what an NVMe says instead of an attribute table.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/metrics.NVMeHealth"
+                        }
+                    ]
+                },
+                "passed": {
+                    "description": "Passed is the drive's **own** overall assessment. It is not a summary\nof the attributes below and routinely disagrees with them: isengard's\nada3 reports true while attribute 184 has been failing for days\n(JD-032).",
+                    "type": "boolean"
+                },
+                "pool": {
+                    "description": "Pool is the pool this disk is part of, empty when none is. The join\nneither tool does alone: smartctl cannot say which pool a failing\ndisk holds up, and zpool status cannot say the disk is failing.",
+                    "type": "string"
+                },
+                "power_on_hours": {
+                    "type": "integer"
+                },
+                "rotation_rate": {
+                    "description": "RotationRate is 0 for an SSD and absent where the drive does not say.",
+                    "type": "integer"
+                },
+                "self_test": {
+                    "description": "SelfTest is the most recent self-test the drive logged. Read, never\nstarted: a long test costs hours of real I/O and choosing when to pay\nthat is an operator's decision (JD-032).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/metrics.SelfTest"
+                        }
+                    ]
+                },
+                "serial": {
+                    "description": "Serial is reported because the question after \"which disk is failing\"\nis \"which one do I unplug\", and on a four-disk box that otherwise\nmeans powering down to read labels.",
+                    "type": "string"
+                },
+                "smart_path": {
+                    "description": "SmartPath is the device path smartctl had to be given, present only\nwhen it is not /dev/\u003cDevice\u003e. An NVMe is nda0 to ZFS and to the kernel\nbut can only be read as /dev/nvme0 -- smartctl refuses /dev/nda0 -- so\nan operator told \"nda0 is failing\" who reaches for smartctl would\notherwise be refused with a message about namespace ids (JD-032).",
+                    "type": "string"
+                },
+                "temperature_c": {
+                    "type": "integer"
+                },
+                "vdev": {
+                    "description": "Vdev is the name the pool knows it by -- gpt/backup1, ada0p4 -- which\nis what `zpool status` prints and therefore what an operator reading\nthat output is looking for.",
+                    "type": "string"
                 }
             }
         },
@@ -3395,6 +3501,29 @@
                 }
             }
         },
+        "metrics.NVMeHealth": {
+            "type": "object",
+            "properties": {
+                "available_spare": {
+                    "type": "integer"
+                },
+                "critical_warning": {
+                    "type": "integer"
+                },
+                "error_log_entries": {
+                    "type": "integer"
+                },
+                "media_errors": {
+                    "type": "integer"
+                },
+                "percentage_used": {
+                    "type": "integer"
+                },
+                "spare_threshold": {
+                    "type": "integer"
+                }
+            }
+        },
         "metrics.Pool": {
             "type": "object",
             "properties": {
@@ -3425,6 +3554,13 @@
                     "description": "Configured is how many jails the host has in total, running or not,\nso the dashboard can say \"3 of 5\" without a second request.",
                     "type": "integer"
                 },
+                "disks": {
+                    "description": "Disks is every physical device that answers, pooled or not. Empty on\na host without smartmontools, which is a package rather than base\n(JD-032).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.Disk"
+                    }
+                },
                 "host": {
                     "$ref": "#/definitions/metrics.Host"
                 },
@@ -3433,6 +3569,24 @@
                     "items": {
                         "$ref": "#/definitions/metrics.JailUsage"
                     }
+                }
+            }
+        },
+        "metrics.SelfTest": {
+            "type": "object",
+            "properties": {
+                "hours": {
+                    "description": "Hours is the drive's power-on hour count when the test ran, which is\nhow a self-test log dates itself.",
+                    "type": "integer"
+                },
+                "passed": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
                 }
             }
         },

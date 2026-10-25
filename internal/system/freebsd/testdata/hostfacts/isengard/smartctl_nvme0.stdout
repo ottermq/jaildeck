@@ -1,0 +1,192 @@
+{
+  "json_format_version": [
+    1,
+    0
+  ],
+  "smartctl": {
+    "version": [
+      7,
+      5
+    ],
+    "pre_release": false,
+    "svn_revision": "5714",
+    "platform_info": "FreeBSD 15.1-RELEASE-p5 amd64",
+    "build_info": "(local build)",
+    "argv": [
+      "smartctl",
+      "--json",
+      "-i",
+      "-H",
+      "-A",
+      "-l",
+      "selftest",
+      "/dev/nvme0"
+    ],
+    "exit_status": 0
+  },
+  "local_time": {
+    "time_t": 1792910465,
+    "asctime": "Sun Oct 25 03:41:05 2026 -03"
+  },
+  "device": {
+    "name": "/dev/nvme0",
+    "info_name": "/dev/nvme0",
+    "type": "nvme",
+    "protocol": "NVMe"
+  },
+  "model_name": "Patriot M.2 P300 256GB",
+  "serial_number": "S01XXXXXXXXXXXXXXXXX",
+  "firmware_version": "GT365603",
+  "nvme_pci_vendor": {
+    "id": 7755,
+    "subsystem_id": 7755
+  },
+  "nvme_ieee_oui_identifier": 819925,
+  "nvme_total_capacity": 256060514304,
+  "nvme_unallocated_capacity": 0,
+  "nvme_controller_id": 0,
+  "nvme_version": {
+    "string": "1.4",
+    "value": 66560
+  },
+  "nvme_number_of_namespaces": 1,
+  "nvme_namespaces": [
+    {
+      "id": 1,
+      "size": {
+        "blocks": 500118192,
+        "bytes": 256060514304
+      },
+      "capacity": {
+        "blocks": 500118192,
+        "bytes": 256060514304
+      },
+      "utilization": {
+        "blocks": 500118192,
+        "bytes": 256060514304
+      },
+      "formatted_lba_size": 512,
+      "eui64": {
+        "oui": 819925,
+        "ext_id": 77930172708
+      }
+    }
+  ],
+  "user_capacity": {
+    "blocks": 500118192,
+    "bytes": 256060514304
+  },
+  "logical_block_size": 512,
+  "smart_support": {
+    "available": true,
+    "enabled": true
+  },
+  "smart_status": {
+    "passed": true,
+    "nvme": {
+      "value": 0
+    }
+  },
+  "nvme_smart_health_information_log": {
+    "nsid": -1,
+    "critical_warning": 0,
+    "temperature": 35,
+    "available_spare": 100,
+    "available_spare_threshold": 1,
+    "percentage_used": 0,
+    "data_units_read": 302616,
+    "data_units_written": 526701,
+    "host_reads": 2349727,
+    "host_writes": 4534577,
+    "controller_busy_time": 11,
+    "power_cycles": 30,
+    "power_on_hours": 116,
+    "unsafe_shutdowns": 10,
+    "media_errors": 0,
+    "num_err_log_entries": 0,
+    "warning_temp_time": 0,
+    "critical_comp_time": 0,
+    "temperature_sensors": [
+      35,
+      33
+    ]
+  },
+  "temperature": {
+    "current": 35
+  },
+  "spare_available": {
+    "current_percent": 100,
+    "threshold_percent": 1
+  },
+  "endurance_used": {
+    "current_percent": 0
+  },
+  "power_cycle_count": 30,
+  "power_on_time": {
+    "hours": 116
+  },
+  "nvme_self_test_log": {
+    "nsid": -1,
+    "current_self_test_operation": {
+      "value": 0,
+      "string": "No self-test in progress"
+    },
+    "table": [
+      {
+        "self_test_code": {
+          "value": 1,
+          "string": "Short"
+        },
+        "self_test_result": {
+          "value": 0,
+          "string": "Completed without error"
+        },
+        "power_on_hours": 116
+      },
+      {
+        "self_test_code": {
+          "value": 1,
+          "string": "Short"
+        },
+        "self_test_result": {
+          "value": 0,
+          "string": "Completed without error"
+        },
+        "power_on_hours": 92
+      },
+      {
+        "self_test_code": {
+          "value": 1,
+          "string": "Short"
+        },
+        "self_test_result": {
+          "value": 0,
+          "string": "Completed without error"
+        },
+        "power_on_hours": 68
+      },
+      {
+        "self_test_code": {
+          "value": 1,
+          "string": "Short"
+        },
+        "self_test_result": {
+          "value": 0,
+          "string": "Completed without error"
+        },
+        "power_on_hours": 44
+      },
+      {
+        "self_test_code": {
+          "value": 1,
+          "string": "Short"
+        },
+        "self_test_result": {
+          "value": 0,
+          "string": "Completed without error"
+        },
+        "power_on_hours": 20
+      }
+    ]
+  }
+}

@@ -1286,3 +1286,191 @@ This is the same position JD-008 took for a template's `running`: one thing cann
 ### Rationale
 
 The whole of this is derived state read on request, which is what JD-011 asks for, with exactly one exception argued above. The alternative — a sampler keeping a window of readings — would make Jail Deck own durable-ish state about something that can be re-read at any moment, and would answer "what was the CPU five minutes ago?" badly where Prometheus answers it well.
+
+---
+
+## JD-032 — Disk Health: What Is Reported, and What Is Not Judged
+
+**Status:** Locked — 2026-10-25. Measured on isengard and rohan, 15.1-RELEASE-p5 and -p2.
+
+`GET /api/metrics` reports every disk `smartctl --scan` finds, with the drive's own verdict, the attributes smartctl flags, and which pool the disk belongs to.
+
+### Why this exists at all
+
+ZFS reports **pool** health. An operator needs **disk** health, and on the night this was decided the two disagreed for five days: `zpool status` said `backup ONLINE, no known data errors` while one of that mirror's two members had been reporting a failed SMART attribute since Oct 20, to a console nobody reads. The dashboard shipped hours earlier said `ONLINE` too, and was right to. A pool is healthy until a disk actually fails; the question "is a disk about to fail?" is a different question and nothing in Jail Deck could answer it.
+
+### No health score. None.
+
+`isengard`'s `ada3` is, simultaneously and truthfully:
+
+- `"passed": true` on the drive's own overall assessment
+- `"when_failed": "now"` on attribute 184, End-to-End_Error, value 91 against a threshold of 99
+- zero reallocated sectors, zero pending, zero offline uncorrectable
+- passing an extended self-test that completed without error at 19,149 hours
+- carrying 1641 UDMA CRC errors, which is a cable fault rather than a platter one
+- having once reached 71°C
+
+No single number describes that drive. A grade, a percentage or a traffic light would be wrong in one direction or the other, and an operator who trusted it would either ignore a real warning or replace a working disk. So Jail Deck reports what smartctl says and does not add an opinion — the same position JD-012 takes about validating what the host already validates, and JD-023 about re-implementing `zfs`'s rules.
+
+**`when_failed` is smartctl's own judgment** — `"now"`, `"past"` or empty — and it is reported as given rather than re-derived from value against threshold. Deriving it would be a second opinion that can disagree with the first.
+
+**Raw values are reported as the strings smartctl prints, never as numbers to reason about.** Seagate's `Raw_Read_Error_Rate` raw value on `ada3` is `200021688`, which is not a count of anything: vendors encode several fields into that integer. A tool that showed it as "200 million read errors" would be lying, and one that did arithmetic on it would be lying twice.
+
+### The scan list is not a list of disks
+
+Measured on isengard, where `smartctl --scan` returns eight entries for five devices:
+
+| entry | exit | what it is |
+| --- | --- | --- |
+| `ada0`–`ada3` `-d atacam` | `0`, and `32` for `ada3` | the four disks |
+| `nvme0` `-d nvme` | `0` | the NVMe |
+| `nda0` `-d scsi` | **`2`** | the **same NVMe** under another driver, and it cannot be opened that way |
+| `cd0` `-d atacam` | **`4`** | a DVD drive |
+| `ses0` `-d atacam` | **`2`** | an enclosure |
+
+So the duplicate resolves itself, and the rule is: **the device that answers is the device to report.** An entry whose output carries no `smart_status` is not a disk Jail Deck has anything to say about, and is left out.
+
+### Amended 2026-10-25, while writing the test
+
+The rule above decides *which* devices to report. It does not decide what to **call** them, and that turned out to be the harder half.
+
+`zroot` stands on `nda0`. `smartctl` refuses `/dev/nda0` outright — *"NVMe controller controller/namespace ids must begin with `/dev/nvme`"*, including under `-d nvme`, which was measured rather than assumed — and answers only as `/dev/nvme0`. So the single disk holding the root pool is the single disk that nothing joins to its pool by name. Reporting it as `nvme0` would also be reporting it under a name that `zpool status`, `gpart` and the operator never use.
+
+Guessing that `nvmeN` is `ndaN` would be a convention, not a fact, and JD-032 does not trade in conventions. `geom disk list` supplies the fact: base system, no privilege, and it prints the kernel's name beside the drive's serial — the same serial `smartctl` prints.
+
+**The join is by name first, by serial second**, and each host proves one half:
+
+- **by serial** for `isengard`'s NVMe, where nothing matches by name;
+- **by name** for `rohan`'s `da0`, a bare drive in a USB enclosure where the two sources report *different* serials: `geom` gives the enclosure's and `smartctl` the drive's own. A serial-first rule would fail to place a disk whose name already matched.
+
+Neither host has a disk whose smartctl serial is another disk's `geom` ident, so nothing captured says which lookup should win when they point at different disks. The order is a judgment — a name is identity, a matching string is evidence — and the test that fixes it says it is constructed.
+
+Where the two names differ, `smart_path` carries the one smartctl needs, because an operator told "`nda0` is failing" who reaches for `smartctl -a /dev/nda0` gets a message about namespace ids instead of an answer.
+
+This also corrects a claim made above before the code existed: that deduplicating by serial "would wrongly collapse two identical drives from the same batch". It would not — two drives from one batch share a model and never a serial. The serial is exactly the right key, and it is now what collapses the duplicate when both drivers answer. The exit status alone was enough only because, on this host, one of the two does not.
+
+**Exit status is information, not failure.** `ada3` exits `32` — bit 5, "an attribute has been below threshold in the past" — on a completely successful read. An adapter that treated non-zero as an error would report nothing about the one disk that matters. The same dialect translation the adapter already makes for `rctl -r`, `sysctl`'s unknown oid, `ps`'s invalid jail id and `zpool list` on a host without ZFS.
+
+### Disks with no pool are reported
+
+A spare, a scratch disk, a disk being wiped: each can fail, and an operator watching disks wants all of them. `pool` is simply empty for those. The alternative — reporting only what the pools stand on — would answer a narrower question than the one being asked.
+
+### The part that is Jail Deck's
+
+Neither tool answers the operator's real question alone. `smartctl` cannot say which pool a failing disk holds up; `zpool status` cannot say the disk is failing. Joining them is the whole feature:
+
+```
+gpt/backup1  ->  ada3p1  ->  ada3  ->  184 End-to-End_Error, failing now
+```
+
+That took three commands and a `glabel status` to work out by hand. It is one field in the response.
+
+A pool names its members however it was created — `isengard`'s `backup` says `gpt/backup1` and its `tank` says `ada0p4` — so resolving a GEOM label and stripping a partition are both ordinary paths rather than one being a special case. Anything that resolves to no device at all (`mirror-0`, `indirect-1`, a file-backed vdev) is ignored without the join having to enumerate what a vdev type can be called.
+
+**Model and serial are reported**, because the operator's next question after "which disk is failing" is "which one do I unplug", and on a four-disk box that otherwise means powering down to read labels.
+
+### Read-only, always
+
+Jail Deck never starts a self-test. `smartctl -t long` takes hours and costs real I/O on a live host, and choosing when to pay that is an operator's decision, not an API's. The **self-test log is read**, because "the drive scanned itself three days ago and found nothing" was the single most reassuring fact on the night this was written, and it comes free in the same call.
+
+### smartmontools is a package, not base
+
+`sysutils/smartmontools`, at `/usr/local/sbin/smartctl`. A host without it reports no disks and says why, rather than failing the request — the position JD-021 takes for an unreadable pool and JD-011 takes generally. The rest of the metrics report is unaffected.
+
+### NVMe is a different drive, and is reported as one
+
+There is no attribute table. `nvme_smart_health_information_log` carries `critical_warning`, `percentage_used`, `available_spare` and `media_errors`, and a non-zero `critical_warning` is the equivalent of a failed attribute. Reporting an NVMe as though it had ATA attributes would be inventing data; reporting it with its own fields and none of theirs is the honest shape.
+
+### Rationale
+
+The whole of this is read on request and stored nowhere, like every other metric (JD-011, JD-031). Alerting is deliberately absent: Jail Deck reports, and something that already knows how to wake people decides to. The Prometheus endpoint is the path for that.
+
+---
+
+## JD-033 — The Prometheus Endpoint: Auth, Units and Names
+
+**Status:** Locked — 2026-10-25. Measured on isengard, 15.1-RELEASE-p5, against Prometheus 3.15.1.
+
+`GET /metrics` serves the same report as `GET /api/metrics` in Prometheus exposition format, behind the same authentication as every other endpoint. It answers the open question carried since 2026-10-21: **it shares the API's auth and does not bind a listener of its own.**
+
+### Why not an unauthenticated loopback port
+
+This was the obvious answer — it is what `node_exporter` does, and binding `127.0.0.1` feels like a boundary. On FreeBSD with jails, it is not one. Measured on isengard, where Jail Deck listens on `127.0.0.1:8888`:
+
+| jail | `ip4` | reaching the host's `127.0.0.1:8888` |
+| --- | --- | --- |
+| `postgres` | `disable`, with its own address | connection refused |
+| `ottermq` | `inherit`, no address of its own | **served Jail Deck's page** |
+
+A jail configured with `ip4=inherit` — which is what a jail without an address gets, and two of the three jails on that host — shares the host's network stack *including its loopback*. An unauthenticated metrics port would publish the host's memory, every jail's resource usage and every disk's serial number to any jail on the box, including ones Jail Deck itself created.
+
+So the loopback is not a boundary here, and "it is only on localhost" is not an argument on this platform. The endpoint is authenticated.
+
+### Why not a Unix socket only
+
+Jail Deck already has a socket listener (JD-002), mode 0660 with an optional group, and a jail cannot reach a host socket outside its root. File permissions are the more FreeBSD-shaped answer and were seriously considered.
+
+The blocker is the scraper. Prometheus only learned to scrape a Unix socket in **v3.15.0, released 2026-09-25** — one month before this was written ([#12024](https://github.com/prometheus/prometheus/issues/12024), [#18091](https://github.com/prometheus/prometheus/pull/18091)). A socket-only endpoint is unscrapeable by any older Prometheus without `socat` or nginx in front of it, which is a bridge the operator has to run and keep running.
+
+So the socket is not the *only* path — but it costs nothing to keep. The socket serves the same mux, so `/metrics` is already reachable over it, and an operator on 3.15.0 or newer can scrape it. Both work; neither is special-cased.
+
+**Corrected 2026-10-25, by scraping it.** This record first said the socket could be scraped *without* a token. It cannot, and the mistake was reading JD-002 carelessly: the socket's `0660` group is a first access check and explicitly **not the only one**, because `RequireAuth` runs on that listener exactly as on TCP. Measured: `curl --unix-socket … /metrics` with no token is `401`, and `200` with one. The scrape config needs `credentials_file` either way, which makes the two paths more alike rather than less.
+
+Two more things only a real scrape could say:
+
+- The socket path goes in the `__unix_socket__` **label**, not in `targets` — `promtool check config` rejects a path there with *“is not a valid hostname”*. The address stays an ordinary `host:port` that nothing dials.
+- **FreeBSD packages two Prometheus versions under different names.** `pkg install prometheus` gets **2.55.1**, which predates socket scraping entirely; **3.15.0 is the `prometheus3` package.** An operator who installs the obvious one cannot scrape a socket at all, which is the strongest form of the argument above for not making it the only path.
+
+### The token is the same token
+
+`jaildeck token add prometheus` produces a bearer token, and Prometheus scrapes with `authorization.credentials_file`. No second credential system, no second store, no anonymous mode behind a setting whose wrong value is the leak measured above. A scraper is an automation client, and JD-003 already decided what automation clients present.
+
+```yaml
+scrape_configs:
+  - job_name: jaildeck
+    static_configs:
+      - targets: ['isengard:8888']
+    authorization:
+      credentials_file: /usr/local/etc/jaildeck.token
+```
+
+### `kern.cp_time` is in `stathz`, not `hz`
+
+Measured, because the obvious reading is wrong. `kern.clockrate` on isengard:
+
+```
+{ hz = 1000, tick = 1000, profhz = 8128, stathz = 127 }
+```
+
+Over two seconds the five `kern.cp_time` counters advanced 3995 ticks across 16 CPUs — 125 per second per CPU, which is `stathz`, not `hz`. An implementation that divided by `hz` would report CPU seconds **eight times too small**, and nothing about the number would look wrong.
+
+So `/metrics` exposes `jaildeck_host_cpu_seconds_total` converted with `stathz`, and `kern.clockrate` is read for it. Where `stathz` is zero — permitted, and it means the statistics clock is the main one — `hz` is used instead.
+
+This exposed a real gap in JD-031's JSON as well: it hands out `cpu.ticks` and never says what a tick is, leaving every consumer to make the same wrong guess. `cpu.ticks_per_second` is now part of the response.
+
+### Units and names
+
+Prometheus conventions win over matching the JSON field names, because the audience is different: a scraper's user writes `rate()` and expects base units.
+
+- **bytes**, not the API's already-exact byte counts renamed — those match already
+- **seconds** for anything the drive or kernel reports in hours or ticks. Both conversions are exact (`×3600`, `÷stathz`), so nothing is invented
+- **ratios** 0–1 rather than percentages, for pool capacity and NVMe spare
+- `_total` on counters, and only on counters
+- `_info` metrics carrying identity as labels with a value of `1` — the disk's model and serial, the build version. Labels, not metric names, because they change and metric names should not
+
+**A jail's CPU is `jaildeck_jail_cpu_cores`**, not `pcpu`. The API reports percent of *one* core, so a jail on two whole cores reads 200, which JD-031 already found to be the confusing unit next to anything else. `cores` is the natural unit and the dashboard already says it. Where `rctl` is the source there is also `jaildeck_jail_cpu_seconds_total`, a genuine cumulative counter — a different quantity, not the same one renamed, and absent where `ps` is the source rather than zero.
+
+### What is deliberately not here
+
+**No alerting, no thresholds, no `up`-style verdict on a disk.** Jail Deck reports; Prometheus and Alertmanager already know how to wake someone, and this endpoint exists so that they can. A `jaildeck_disk_failing_attributes` of `1` is the fact; deciding it is worth a phone call at 3am is the operator's, expressed in a rule file that Jail Deck never sees. The same position JD-032 takes against a health score, for the same reason.
+
+**No history, no sampler.** Unchanged from JD-011 and JD-031: the scraper holds the history, which is the entire argument for having this endpoint rather than a database.
+
+### Settled against a real Prometheus
+
+Verified on isengard, 2026-10-25, against `prometheus3-3.15.0` scraping a build of this branch running beside the live service:
+
+- `promtool check metrics` on the live body: **exit 0**, no complaints. That is Prometheus's own parser *and* its naming linter, not a parser of ours.
+- Both scrape jobs — TCP with a bearer token, and the Unix socket — report `health: "up"` with an empty `lastError`. 218 `jaildeck_*` series landed.
+- `jaildeck_disk_failing_attributes > 0` selects exactly `ada3`, the drive this host has been complaining about since 20 October, while `jaildeck_disk_passed{device="ada3"}` is `1`. The disagreement JD-032 exists to preserve is queryable, which was the point.
+- The `stathz` conversion checks out against physical reality rather than against itself: idle divided by `stathz` is 6,192,862 CPU-seconds against 6,203,520 of capacity for a 16-CPU host up 4 days 11:42 — 99.8% idle, which is what this host is. Dividing by `hz` would have claimed it was 87% busy for four days.

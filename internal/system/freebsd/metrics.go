@@ -67,6 +67,54 @@ func (a *Adapter) CPUTicks(ctx context.Context) (metrics.Ticks, int, error) {
 	}, int(cpus), nil
 }
 
+// TickRate is how many kern.cp_time ticks make one second.
+//
+// It is kern.clockrate's **stathz**, not its hz, and the difference is not
+// cosmetic. Measured on isengard: `{ hz = 1000, tick = 1000, profhz = 8128,
+// stathz = 127 }`, and over two seconds the counters advanced 3995 ticks
+// across 16 CPUs -- 125 per CPU per second, which is stathz. Dividing by hz
+// would report CPU seconds eight times too small, and nothing about the
+// number would look wrong (JD-033).
+//
+// stathz may legitimately be 0, which means the statistics clock is the main
+// one; hz is the rate then.
+func (a *Adapter) TickRate(ctx context.Context) (int, error) {
+	value, err := a.Sysctl(ctx, "kern.clockrate")
+	if err != nil {
+		return 0, err
+	}
+	rates := clockRates(value)
+	if stathz := rates["stathz"]; stathz > 0 {
+		return stathz, nil
+	}
+	if hz := rates["hz"]; hz > 0 {
+		return hz, nil
+	}
+	return 0, fmt.Errorf("parse kern.clockrate: %q carries neither stathz nor hz", value)
+}
+
+// clockRates pulls the name = number pairs out of
+// "{ hz = 1000, tick = 1000, profhz = 8128, stathz = 127 }".
+//
+// Read as pairs rather than by position: the braces, the spacing and the set
+// of names are a printf in the kernel, and a release that adds a field would
+// silently shift any positional read onto the wrong number.
+func clockRates(value string) map[string]int {
+	rates := map[string]int{}
+	for _, pair := range strings.Split(strings.Trim(strings.TrimSpace(value), "{}"), ",") {
+		name, number, found := strings.Cut(pair, "=")
+		if !found {
+			continue
+		}
+		parsed, err := strconv.Atoi(strings.TrimSpace(number))
+		if err != nil {
+			continue
+		}
+		rates[strings.TrimSpace(name)] = parsed
+	}
+	return rates
+}
+
 // Memory reads the page counters and multiplies them by the page size.
 //
 // v_cache_count is not read: it exists on this release and is always 0, a

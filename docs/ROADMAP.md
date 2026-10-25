@@ -42,6 +42,9 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Web UI** (v0.6.0): embedded Svelte SPA with login, jails and operations views; API moved under `/api` (JD-015); audit log cursor paging
 - **Host Setup** (v0.7.0): host readiness report per capability, through the API and a Host page; ZFS pool discovery with `JAILDECK_ZFS_POOL`; `jaildeck init` and `PUT /api/host/layout` ensure the jails dataset layout, never clobbering one (JD-021)
 - **Storage Visibility** and **Storage Writes** (v0.8.0): a jail's datasets, ZFS user properties and snapshots, read and written through the API and the interface — create a child dataset with a quota, tag it, snapshot it, roll back, destroy, move a dataset out of a jail and back, and re-clone a jail's root from a newer template without losing its children (JD-022 … JD-026, JD-028, JD-029). Templates derive, list and remove in the same release (JD-027); preparing a release template is still ahead
+- **Templates** and **Jail Provisioning** (v0.9.0): prepare a release template, create a jail from a spec with VNET, rctl limits, allowlisted parameters and child datasets, ensure it idempotently with `PUT`, and destroy it — from the API and the interface (JD-017, JD-018, JD-030)
+- **Exec and Automation Contract** (v0.10.0): run a command inside a jail through the API with a clean environment, a capped timeout and capped output (JD-014, JD-016); host and per-jail resource usage on a Dashboard (JD-031)
+- **Metrics** (v0.11.0): disk health joined to the pools each disk holds up (JD-032), and a Prometheus endpoint behind the API's own token (JD-033). **Packaging** began in the same release: `make package` builds a verified native `.pkg`
 
 ---
 
@@ -311,7 +314,7 @@ A local program can create a jail, run a command in it and destroy it over the u
 
 ## Milestone: Metrics
 
-**Status:** the dashboard half is done — host and per-jail usage through `GET /api/metrics` and a Dashboard page (JD-031). The **Prometheus `/metrics` endpoint is the remaining half**, along with the question of whether it shares the API's token auth or binds a listener of its own.
+**Status:** done in v0.11.0. Host and per-jail usage through `GET /api/metrics` and a Dashboard page (JD-031), **disk health** in the same report with a Disks section beside Pools (#83, JD-032), and the **Prometheus endpoint** at a bare `/metrics` behind the same token auth (#15, JD-033).
 
 **Depends on:** Web UI. **★ Otter Cloud:** monitoring before the beta.
 
@@ -322,16 +325,19 @@ Goal: the observability half of the stated scope — see load and memory, for th
 - host summary: CPU, memory, load average, disk usage
 - per-jail: CPU, memory, disk, process count
 - a `/metrics` endpoint in Prometheus text format with the same values. Prometheus holds the history, so this satisfies "a chart over time that survives a restart" without a database (JD-011)
+- **disk health, not just pool health** (#83). *Built 2026-10-25: every device `smartctl` can read, with the drive's own verdict, the attributes smartctl flags, the self-test log, and the pool each disk belongs to. No health score — `isengard`'s `ada3` reports `PASSED` while attribute 184 has been below threshold for days, and no single number describes that (JD-032).*
 
 ### Technical tasks
 
 - data source: `rctl -u jail:<name>` where `kern.racct.enable` is on; a fallback via `jls` + `ps --libxo` where it is off. *Built 2026-10-24, and the fallback is trustworthy: measured on three jails, the `ps` resident sums land within 1% of rctl's `memoryuse` and the process counts are identical, because racct's `memoryuse` is the sum of the same per-process resident sizes (JD-031).*
 - decide sampling: on request, or a background sampler with a short retention window. *Decided 2026-10-24: neither. The previous CPU reading is kept in memory and the response carries the window it was measured over; the first call after a restart reports no percentage rather than a zero.*
-- decide whether `/metrics` shares the API's token auth or binds a separate listener (open question below)
+- ~~decide whether `/metrics` shares the API's token auth or binds a separate listener~~ *Answered 2026-10-25 (JD-033): it shares the auth. Measured first — a jail with `ip4=inherit` reaches the host's loopback, so an unauthenticated port there would publish every jail's usage and every disk's serial to any jail on the box. The socket listener serves it too and costs nothing, but Prometheus can only scrape a socket from v3.15.0, which is a month old.*
+- disk health reads `smartctl --json`, joined to pool members through `zpool list -v` and `glabel status`, and to the kernel's own device names through `geom disk list`. *Built 2026-10-25. The join is by name first and by serial second: `isengard`'s NVMe is `nda0` to ZFS and only ever `/dev/nvme0` to smartctl, while `rohan`'s USB-bridged `da0` has one name and two different serials (JD-032).*
+- ~~a disk that is failing is not yet surfaced anywhere but the dashboard.~~ *Closed 2026-10-25: `jaildeck_disk_failing_attributes` and `jaildeck_disk_passed` are both published, so a rule can catch the case where they disagree. Jail Deck still raises nothing itself, which is the position JD-032 takes and not a gap.*
 
 ### Completion criteria
 
-Host and per-jail resource usage are visible in the dashboard and scrapeable by Prometheus.
+Host and per-jail resource usage are visible in the dashboard and scrapeable by Prometheus, and a disk that is about to fail is visible before the pool notices. *Met 2026-10-25.*
 
 ---
 
@@ -360,6 +366,14 @@ The loaded PF policy and its counters are visible in the API and the UI, and not
 ---
 
 ## Milestone: Packaging and Distribution
+
+**Status:** the first half is done in v0.11.0 (#84). Package repositories, a port and
+automated publishing are what remain.
+
+**Local native packaging:** `make package VERSION=X.Y.Z` builds and verifies a FreeBSD 15
+amd64 package through `pkg create`, reusing `make install` staging. See
+[the packaging workflow](PACKAGING.md) and [local validation](PACKAGING-VALIDATION.md).
+Package repositories, Ports and automated publishing remain separate follow-up work.
 
 **Depends on:** nothing functionally; most useful once the above is worth installing. **★ Otter Cloud:** before the beta — each node runs Jail Deck as an rc.d service.
 
@@ -454,7 +468,7 @@ Added 2026-10-21 with the host-agent scope:
 
 - ~~Should rctl rules be applied by jail.conf `exec.*` hooks or by the adapter?~~ **Answered 2026-10-24 (JD-018): hooks.** Measuring added a second reason to the first: jail(8) destroys a jail whose `exec.poststart` fails, so a jail that could not be limited never runs — which an adapter could only have achieved by stopping a jail it had just started
 - ~~What are the exec timeout cap and output size cap?~~ **Answered 2026-10-24 (JD-014):** 60s by default, 5 minutes at most, 1 MiB per stream. Sized from what commands actually produce in a jail — `ps auxww` 1.4 KB against `find / -type f` at 2.85 MB.
-- Does `/metrics` share auth with the API, or bind a separate loopback/socket listener?
+- ~~Does `/metrics` share auth with the API, or bind a separate loopback/socket listener?~~ **Answered 2026-10-25 (JD-033): it shares the API's auth.** The loopback was the obvious boundary and is not one here — measured on isengard, a jail with `ip4=inherit` reached the host's `127.0.0.1:8888` and was served, while the jail with its own address was refused. A Unix socket is the better-shaped answer and stays available, but Prometheus only learned to scrape one in v3.15.0 (2026-09-25), so it cannot be the only path.
 - Are derived templates (release + packages) owned by the template domain, or are they exec + snapshot from the caller's point of view?
 - `vm-bhyve` or direct bhyve — settled by the spike in Virtual Machines (JD-019)
 

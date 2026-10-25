@@ -20,6 +20,75 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.11.0 — 2026-10-25
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.11.0)
+
+Finishes the **Metrics** milestone and delivers the first half of **Packaging**. Nothing
+to act on when upgrading: no setting, credential or file changes shape.
+
+### API
+
+- **Disk health in the metrics report.** `GET /api/metrics` gained `disks`: every
+  physical device `smartctl` can read, pooled or not, with the drive's own verdict, the
+  attributes smartctl flags, the most recent self-test, and the pool and vdev it holds up
+  (#83, JD-032).
+
+  **There is no health score.** `passed` is the drive's own overall assessment and
+  `failing` / `failed` are what smartctl says is below threshold now and ever — and they
+  routinely disagree. The disk that prompted this reports `passed: true` with attribute
+  184 below threshold. Both are reported; neither is summarised into the other.
+
+  An attribute's `raw` is the **string** smartctl printed, never a number: vendors pack
+  several fields into it. An NVMe carries an `nvme` block instead of an attribute table,
+  because it has none. Where smartctl must be given a different path than
+  `/dev/<device>` — an NVMe is `nda0` to ZFS and the kernel but readable only as
+  `/dev/nvme0` — `smart_path` says so. Self-tests are read, never started.
+
+  `disks` is an empty list, not an error, on a host without `smartmontools`, which is a
+  package rather than part of base. A disk that cannot be read never fails the report.
+
+- **`cpu.ticks_per_second`** says what a `cpu.ticks` counter is worth: `kern.clockrate`'s
+  `stathz`, which is not its `hz`. On the reference host they are 127 and 1000, so a client
+  converting ticks with `hz` reported CPU time eight times too small (JD-033).
+
+- **`GET /metrics`** serves the same report in the Prometheus text exposition format, at
+  the bare path a scraper expects (#15, JD-033). **It requires the same token as the rest
+  of the API**, over TCP and the Unix socket alike — on FreeBSD a jail with `ip4=inherit`
+  shares the host's loopback, so binding `127.0.0.1` is not a boundary. Scrape it with
+  `authorization.credentials_file` and a token from `jaildeck token add`.
+
+  Names follow Prometheus conventions — bytes, seconds, ratios — rather than the JSON
+  field names. A jail's CPU is `jaildeck_jail_cpu_cores`, not `pcpu`. Verified against
+  Prometheus 3.15.0: `promtool check metrics` passes, and both a TCP and a socket scrape
+  come up healthy. Not part of the Swagger spec, which describes the JSON API.
+
+  Until now `/metrics` fell through to the web interface and answered `200` with an HTML
+  page; it now answers `401` without a token.
+
+### Added
+
+- **A Disks section on the Dashboard**, worst first: the pool each disk holds up, model,
+  serial, size, temperature, age and a badge that takes the worse of the drive's verdict
+  and its flagged attributes. A flagged disk says why, directly under its row.
+
+- **Native FreeBSD packages.** `make package VERSION=X.Y.Z` builds and verifies
+  `bin/packages/jaildeck-X.Y.Z.pkg` on FreeBSD 15 amd64 — binary, rc.d script and sample
+  configuration, nothing else — refusing any build whose inventory, modes or embedded
+  frontend do not match what was declared (#84). Installing it creates no credential,
+  dataset or configuration and starts nothing. See `docs/PACKAGING.md`.
+
+  A packaged binary reports `jaildeck version` as `vX.Y.Z`, the same shape as one built
+  from a tag; the package name and manifest carry the bare `X.Y.Z` that `pkg` expects.
+
+### Fixed
+
+- **`make -j all` could ship a binary without the web interface**, exiting `0`: the Go
+  build started while Vite had emptied `web/dist`. The two now run in order.
+- **`make help` hung under FreeBSD's base make**, which has no `MAKEFILE_LIST`.
+
+---
+
 ## v0.10.0 — 2026-10-24
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.10.0)

@@ -1,0 +1,14 @@
+smartctl 7.5 2025-04-30 r5714 [FreeBSD 15.1-RELEASE-p5 amd64] (local build)
+Copyright (C) 2002-25, Bruce Allen, Christian Franke, www.smartmontools.org
+
+smartctl comes with ABSOLUTELY NO WARRANTY. This is free
+software, and you are welcome to redistribute it under
+the terms of the GNU General Public License; either
+version 2, or (at your option) any later version.
+See https://www.gnu.org for further details.
+
+smartmontools release 7.5 dated 2025-04-30 at 07:42:55 UTC
+smartmontools SVN rev 5714 dated 2025-04-30 at 07:43:44
+smartmontools build host: amd64-portbld-freebsd15.1
+smartmontools build with: C++11, GCC FreeBSD Clang 19.1.7 (https://github.com/llvm/llvm-project.git llvmorg-19.1.7-0-gcd708029e0b2)
+smartmontools configure arguments: '--disable-dependency-tracking' '--enable-sample' '--with-gnupg=yes' '--with-initscriptdir=/usr/local/etc/rc.d' '--with-nvme-devicescan=yes' '--prefix=/usr/local' '--localstatedir=/var' '--mandir=/usr/local/share/man' '--disable-silent-rules' '--infodir=/usr/local/share/info/' '--build=amd64-portbld-freebsd15.1' 'build_alias=amd64-portbld-freebsd15.1' 'CXX=c++' 'CXXFLAGS=-O2 -pipe -fstack-protector-strong -fno-strict-aliasing   ' 'LDFLAGS= ' 'LIBS=' 'CPPFLAGS=' 'CC=cc' 'CFLAGS=-O2 -pipe  -fstack-protector-strong -fno-strict-aliasing ' 'PKG_CONFIG_LIBDIR=/wrkdirs/usr/ports/sysutils/smartmontools/work/.pkgconfig:/usr/local/libdata/pkgconfig:/usr/local/share/pkgconfig:/usr/libdata/pkgconfig'

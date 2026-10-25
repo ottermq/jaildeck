@@ -1,0 +1,26 @@
+Geom name: ada0
+Providers:
+1. Name: ada0
+   Mediasize: 120034123776 (112G)
+   Sectorsize: 512
+   Mode: r3w3e6
+   descr: Patriot Burst Elite 120GB
+   lunid: 0000000000000000
+   ident: S01XXXXXXXXXXXXXXX
+   rotationrate: 0
+   fwsectors: 63
+   fwheads: 16
+
+Geom name: da0
+Providers:
+1. Name: da0
+   Mediasize: 1000204885504 (932G)
+   Sectorsize: 512
+   Mode: r1w1e3
+   descr: Seagate Expansion Desk
+   lunid: 5000000000000001
+   ident: S03XXXXX
+   rotationrate: unknown
+   fwsectors: 63
+   fwheads: 255
+

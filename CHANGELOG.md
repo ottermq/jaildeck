@@ -20,7 +20,9 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.10.0 — 2026-10-24
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.10.0)
 
 ### API
 

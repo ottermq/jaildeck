@@ -1082,6 +1082,82 @@ func (h *JailHandler) Ensure(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Exec runs a command inside a running jail.
+//
+// @Summary      Run a command in a jail
+// @Description  Runs `argv` inside the jail as root and returns its stdout, stderr and
+// @Description  exit code. This is JD-007's "hand off to in-jail provisioning" made
+// @Description  callable, and it is root in the jail — no more than this API already
+// @Description  implies (JD-001, JD-016).
+// @Description
+// @Description  **A non-zero exit is still a `200`.** The exec succeeded; the thing it ran
+// @Description  failed, and `exit_code` is the answer. A client that reads the HTTP status
+// @Description  instead is reading the wrong field. `exit_code` is `-1` when the command
+// @Description  never ran or was stopped by the timeout.
+// @Description
+// @Description  **`argv` is an array and there is no shell.** Nothing splits a string here,
+// @Description  so a quote or a semicolon in an argument is just a character. A caller who
+// @Description  wants a shell asks for one — `["sh", "-c", "…"]` — and has chosen it. There
+// @Description  is no stdin: a command that needs input writes a file in the jail first.
+// @Description
+// @Description  **The environment is clean.** The command runs under `jexec -l`, which gives
+// @Description  it `HOME`, `PATH`, `SHELL`, `USER` and `LANG` and nothing of the host's —
+// @Description  measured, plain `jexec` hands the jail everything the Jail Deck process was
+// @Description  started with, `jaildeck.env` included. `env` adds variables on top of that.
+// @Description
+// @Description  A request that sets `env` and whose `argv[0]` contains an `=` is refused:
+// @Description  `env(1)` has no way to end its assignments — measured, `env -- cmd` fails —
+// @Description  so it would read that argument as one more and run nothing.
+// @Description
+// @Description  **`timeout`** is a duration like `"30s"` or `"2m"`, 60s by default and five
+// @Description  minutes at most (JD-014). Longer is refused rather than clamped, because a
+// @Description  command silently given less time than asked for looks like one that failed.
+// @Description  Work that needs longer belongs in a template, which is prepared in the
+// @Description  background and polled (JD-008). A timed-out command is **killed inside the
+// @Description  jail**, along with anything it forked, and whatever it printed first is
+// @Description  still returned with `timed_out: true`.
+// @Description
+// @Description  Each stream is capped at 1 MiB and says so with `stdout_truncated` /
+// @Description  `stderr_truncated` — output that stops exactly at the cap is otherwise
+// @Description  indistinguishable from output that happened to end there.
+// @Description
+// @Description  Every call is audited with the command line it became, which includes any
+// @Description  environment values: a secret passed this way is written to the audit log,
+// @Description  which is `0700` and root-owned for that kind of reason.
+// @Tags         jails
+// @Accept       json
+// @Produce      json
+// @Param        name  path      string       true  "Jail name"
+// @Param        exec  body      ExecRequest  true  "The command to run"
+// @Success      200   {object}  ExecResult   "It ran; read exit_code for what it did"
+// @Failure      400   {object}  common.ErrorResponse  "No argv, a timeout past the cap, or a bad env name"
+// @Failure      401   {object}  common.ErrorResponse
+// @Failure      404   {object}  common.ErrorResponse  "No such jail"
+// @Failure      409   {object}  common.ErrorResponse  "The jail is not running"
+// @Failure      500   {object}  common.ErrorResponse  "The command could not be run at all"
+// @Failure      501   {object}  common.ErrorResponse  "This Jail Deck cannot run commands in a jail"
+// @Security     BearerAuth
+// @Router       /jails/{name}/exec [post]
+func (h *JailHandler) Exec(w http.ResponseWriter, r *http.Request) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	var request ExecRequest
+	if err := decodeJSON(r, &request); err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+
+	result, err := h.service.Exec(r.Context(), name, request)
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, result)
+}
+
 // Destroy removes a jail, its configuration and its filesystem.
 //
 // @Summary      Destroy a jail

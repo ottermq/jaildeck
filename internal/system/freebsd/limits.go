@@ -88,17 +88,30 @@ func (a *Adapter) RemoveJailRules(ctx context.Context, name string) (string, err
 	return cmd.String(), err
 }
 
-// rctlSubject builds the filter, and is the one place a jail name becomes
-// part of one.
+// checkJailName is the one guard a jail name passes before it becomes part
+// of a command here.
 //
-// An empty name would make the filter "jail:", which matches every jail on
-// the host -- and `rctl -r jail:` would clear every rule on it. A colon
-// would end the subject and start a resource. Neither can name a real jail,
-// so neither is worth anything but a refusal.
+// An empty name would make an rctl filter of "jail:", which matches every
+// jail on the host -- and `rctl -r jail:` would clear every rule on it. A
+// colon would end the subject and start a resource. A leading dash is not a
+// hazard for rctl, where the name is concatenated into one argument, but it
+// is the shape of a flag for every command that takes the name bare, and one
+// guard both readers share is worth more than two that disagree.
+//
+// None of the three can name a jail Jail Deck would create (JD-030), so a
+// jail that somehow carries one is refused rather than read wrongly.
+func checkJailName(name string) error {
+	if name == "" || strings.ContainsAny(name, ": \t\n") || strings.HasPrefix(name, "-") {
+		return common.NewAppError(http.StatusBadRequest, fmt.Sprintf(
+			"%q cannot name a jail here", name))
+	}
+	return nil
+}
+
+// rctlSubject builds the filter a rule or a usage reading is asked for.
 func rctlSubject(name string) (string, error) {
-	if name == "" || strings.ContainsAny(name, ": \t\n") {
-		return "", common.NewAppError(http.StatusBadRequest, fmt.Sprintf(
-			"%q cannot name a jail in an rctl rule", name))
+	if err := checkJailName(name); err != nil {
+		return "", err
 	}
 	return "jail:" + name, nil
 }

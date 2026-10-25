@@ -20,6 +20,9 @@ func RegisterJailRoutes(r chi.Router, h *JailHandler) {
 			// DELETE takes the jail, its configuration and its filesystem.
 			// Its children go with it (JD-007); anything else is refused.
 			r.Delete("/", h.Destroy)
+			// Root inside the jail, bounded by a timeout the caller may
+			// shorten and never remove (JD-014, JD-016).
+			r.Post("/exec", h.Exec)
 			r.Post("/start", h.Start)
 			r.Post("/stop", h.Stop)
 			r.Post("/restart", h.Restart)

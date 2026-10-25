@@ -436,3 +436,20 @@ type CloneOrigin interface {
 	// ErrJailNotOnZFS, as it is everywhere else here.
 	RootOrigin(ctx context.Context, jailPath string) (dataset string, origin string, err error)
 }
+
+// JailExecutor runs a command inside a running jail (JD-016).
+//
+// The domain decides what may be asked for -- the argv, the caps, the
+// refusals -- and this runs it. The adapter's job is the shape of the
+// command line and the dialect of its failures, which is why the timeout
+// arrives as a duration rather than as something already baked in.
+type JailExecutor interface {
+	// ExecInJail runs argv in the jail, with env on top of a clean login
+	// environment, bounded by timeout.
+	//
+	// A command that ran and exited non-zero is **not** an error here: its
+	// exit code is the answer. An error means the command could not be run
+	// at all, or was stopped by the timeout.
+	ExecInJail(ctx context.Context, name string, argv []string, env map[string]string,
+		timeout time.Duration) (ExecResult, error)
+}

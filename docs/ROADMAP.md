@@ -283,6 +283,8 @@ A VNET jail with limits and a quota'd child dataset can be created end to end (c
 
 ## Milestone: Exec and Automation Contract
 
+**Status:** done — 2026-10-24. The listener and correlation work landed in v0.8.0; exec finished it. Verified end to end on isengard: a program created a jail, ran commands in it and destroyed it over the unix socket with a token, and every audit entry carried its request id.
+
 **Depends on:** Jail Provisioning for exec to have something to run in; the listener and correlation work can land earlier. **★ Otter Cloud:** in-jail bootstrap (e.g. `initdb`) and the worker's connection to Jail Deck.
 
 Goal: make the API safe and predictable for a program, not only for the SPA (JD-016).
@@ -296,8 +298,8 @@ Goal: make the API safe and predictable for a program, not only for the SPA (JD-
 
 ### Technical tasks
 
-- exec runs `jexec <name> argv...` through the existing `CommandRunner` — an argument array, no shell, audited
-- the caller's timeout is capped by a server-side maximum, and output is capped in size (JD-014); a truncated output says so
+- exec runs `jexec <name> argv...` through the existing `CommandRunner` — an argument array, no shell, audited. *Built 2026-10-24 as `jexec -l`: measured, plain `jexec` hands the jail the caller's entire environment, so everything the Jail Deck process was started with would be readable by anything run through this endpoint (JD-016).*
+- the caller's timeout is capped by a server-side maximum, and output is capped in size (JD-014); a truncated output says so. *Built 2026-10-24: 60s by default, 5 minutes at most and 1 MiB of each stream. The cap is a writer rather than a truncation afterwards — a command that prints a gigabyte would otherwise be held in memory in full before anyone decided it was too much.*
 - socket mode `0660`, owned by a configurable group; the token is still required
 - request ids are validated (length, charset) before they reach the audit log
 
@@ -308,6 +310,8 @@ A local program can create a jail, run a command in it and destroy it over the u
 ---
 
 ## Milestone: Metrics
+
+**Status:** the dashboard half is done — host and per-jail usage through `GET /api/metrics` and a Dashboard page (JD-031). The **Prometheus `/metrics` endpoint is the remaining half**, along with the question of whether it shares the API's token auth or binds a listener of its own.
 
 **Depends on:** Web UI. **★ Otter Cloud:** monitoring before the beta.
 
@@ -321,8 +325,8 @@ Goal: the observability half of the stated scope — see load and memory, for th
 
 ### Technical tasks
 
-- data source: `rctl -u jail:<name>` where `kern.racct.enable` is on; a fallback via `jls` + `ps --libxo` where it is off
-- decide sampling: on request, or a background sampler with a short retention window
+- data source: `rctl -u jail:<name>` where `kern.racct.enable` is on; a fallback via `jls` + `ps --libxo` where it is off. *Built 2026-10-24, and the fallback is trustworthy: measured on three jails, the `ps` resident sums land within 1% of rctl's `memoryuse` and the process counts are identical, because racct's `memoryuse` is the sum of the same per-process resident sizes (JD-031).*
+- decide sampling: on request, or a background sampler with a short retention window. *Decided 2026-10-24: neither. The previous CPU reading is kept in memory and the response carries the window it was measured over; the first call after a restart reports no percentage rather than a zero.*
 - decide whether `/metrics` shares the API's token auth or binds a separate listener (open question below)
 
 ### Completion criteria
@@ -449,7 +453,7 @@ Applies across every milestone: keep docs current as domains land, keep parser/f
 Added 2026-10-21 with the host-agent scope:
 
 - ~~Should rctl rules be applied by jail.conf `exec.*` hooks or by the adapter?~~ **Answered 2026-10-24 (JD-018): hooks.** Measuring added a second reason to the first: jail(8) destroys a jail whose `exec.poststart` fails, so a jail that could not be limited never runs — which an adapter could only have achieved by stopping a jail it had just started
-- What are the exec timeout cap and output size cap?
+- ~~What are the exec timeout cap and output size cap?~~ **Answered 2026-10-24 (JD-014):** 60s by default, 5 minutes at most, 1 MiB per stream. Sized from what commands actually produce in a jail — `ps auxww` 1.4 KB against `find / -type f` at 2.85 MB.
 - Does `/metrics` share auth with the API, or bind a separate loopback/socket listener?
 - Are derived templates (release + packages) owned by the template domain, or are they exec + snapshot from the caller's point of view?
 - `vm-bhyve` or direct bhyve — settled by the spike in Virtual Machines (JD-019)
@@ -458,7 +462,7 @@ Earlier:
 
 1. Who orchestrates the multi-step jail-creation flow across the `jails`/`storage` boundary?
 2. ~~How should long-running template operations be represented — synchronous with a long timeout, polling, or SSE?~~ **Answered 2026-10-23 (JD-008):** detached, `202`, and the client polls the template. SSE is not excluded; it sits on top rather than replacing it.
-3. How is per-jail resource accounting sourced when `kern.racct.enable` is off?
+3. ~~How is per-jail resource accounting sourced when `kern.racct.enable` is off?~~ **Answered 2026-10-24 (JD-031):** by summing `ps -J <name>`, which reads the same quantity another way rather than a different quantity under the same name — measured within 1% of rctl's. The response says which source it used, because `rctl` additionally answers `vmemoryuse`, `openfiles` and `cputime` and `ps` does not.
 4. How does Host Setup establish the dataset layout — an `init` subcommand, or a guided first-run screen?
 5. Is the default template prepared on demand only, or offered proactively once the host release is known?
 6. ~~How is the first operator credential established?~~ **Resolved 2026-09-05: a `jaildeck passwd` subcommand.** An unauthenticated first-run setup screen is a race for the account; a token printed at startup lands in a log file nobody is watching, because Jail Deck is a service rather than an interactive program. A CLI subcommand is the convention for this (`htpasswd`, `initdb`) and keeps credential setup out of band from the daemon's lifecycle. See JD-003.

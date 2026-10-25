@@ -506,7 +506,13 @@ Every part of this exists because the obvious version does not work.
 
 This decision is about bounding individual commands. How a legitimately slow flow is represented to the operator is JD-008's, and it is settled: the call returns `202` and the operator polls the template. The two meet at one point — a detached stage still runs under a timeout, just a much larger one than `jls` gets.
 
-**Amended 2026-10-21 — exec.** The exec endpoint (JD-016) is the one place a caller supplies a command's timeout. It is capped by a server-side maximum, so a caller can shorten the bound but never remove it, and the output kept is capped in size. The cap values are still open.
+**Amended 2026-10-21 — exec.** The exec endpoint (JD-016) is the one place a caller supplies a command's timeout. It is capped by a server-side maximum, so a caller can shorten the bound but never remove it, and the output kept is capped in size.
+
+**The caps, settled 2026-10-24: 60 seconds by default, 5 minutes at most, and 1 MiB of each stream.**
+
+Five minutes because the thing exec is for is an in-jail bootstrap — `initdb`, a service enable, a config written — and those are seconds. The minutes-long work is building a *template*, which is detached and polled precisely so that nothing holds a connection open for it (JD-008). A cap exists to stop a caller removing the bound, not to second-guess a legitimate install; when five minutes is genuinely not enough, the answer is that the work belongs in a template or behind something the caller polls, not a longer HTTP request.
+
+1 MiB because of what commands actually produce, measured in a real jail: `ps auxww` 1.4 KB, `pkg info` 1.3 KB, `pkg help install` 10 KB — and `find / -type f` **2.85 MB**, which is the shape of the mistake the cap is for. Anything above a mebibyte of text is not something a caller reads out of a JSON response; it is a file to write in the jail and fetch deliberately. Each stream is capped separately, and a truncated one says so rather than quietly ending early.
 
 ---
 
@@ -550,6 +556,17 @@ Jail Deck has a second kind of API consumer: a program on the same host, driving
 - **Exec.** `POST /api/jails/{name}/exec` with `{ "argv": [...], "timeout": "60s", "env": {...} }` returns stdout, stderr and exit code. It runs `jexec <name> argv...` through `CommandRunner`: an argument array, no shell, audited, bounded by JD-014. This is root inside the jail, which is no more than the API already implies (JD-001) — it is JD-007's "hand off to in-jail provisioning" made callable.
 - **Correlation.** An `X-Request-Id` header is recorded in every audit entry the request produces, so the client's own job id links both audit trails.
 - **Transport.** A unix socket listener (JD-002) with token auth (JD-003).
+
+**Exec was built 2026-10-24**, measured on isengard, 15.1-RELEASE-p5. Four things the decision did not say:
+
+- **`jexec` hands the jail the caller's entire environment.** Measured: a variable set on the Jail Deck process appears inside the jail, which means `/usr/local/etc/jaildeck/jaildeck.env` and whatever else the service was started with are readable by anything run through this endpoint. So every exec runs **`jexec -l`**, which replaces it with a clean login environment — `HOME`, `PATH`, `SHELL`, `USER`, `LANG` and nothing of the host's. The caller's own variables go on top.
+- **A caller's variables are applied with `/usr/bin/env`, and `env` has no `--`.** Measured: `env FOO=bar -- cmd` fails with "No such file or directory", so there is no separator to end the assignments with. `env` instead treats *any* leading argument containing `=` as another assignment — so a command whose first argument held one would silently become `env` printing the environment rather than the program the caller asked for. That combination is refused, naming it, rather than run.
+- **The timeout is real, not advisory.** `jexec` does not fork: the process *is* the command, inside the jail, so killing it kills the command. The runner already signals the whole process group (`Setpgid`), so a command that forked goes with it.
+- **Exec is root in the jail and takes no user.** `jexec -l -U <user>` needs that user to have a home directory in the jail — measured: `-U nobody` fails at `chdir: /nonexistent` — and nothing in scope needs it. Root is what this API already implies (JD-001, JD-003).
+
+**A non-zero exit is a `200`.** The exec succeeded; the thing it ran failed, and its exit code is the answer. That is the opposite of JD-023's rule for Jail Deck's *own* commands, where a non-zero exit is the API's failure to report — here the exit code is the payload, and a client that reads the HTTP status instead of `exit_code` is reading the wrong field.
+
+**There is no stdin, and no shell.** Jail Deck runs an argument array; a caller who wants a shell passes `["sh", "-c", "…"]` and has chosen it deliberately, which is a different thing from Jail Deck interposing one. A command that needs input writes a file in the jail first.
 - **Change policy.** Breaking changes are allowed before 1.0 but each is recorded under an **API** heading in the changelog. A client pins a Jail Deck version and runs contract tests before upgrading.
 
 **The idempotent `PUT` was built 2026-10-24.** What was left to decide was the hard half: what "matching" means.
@@ -1214,3 +1231,58 @@ The epair is the one exception, and it is an exception precisely because it is n
 ## Decision Policy
 
 Once a decision is marked as **Locked**, it should not be revisited without a clear technical or product justification. Architectural evolution is expected, but changes should be deliberate and documented rather than occurring through incremental drift.
+
+---
+
+## JD-031 — Metrics: Where the Numbers Come From, and What Is Not Kept
+
+**Status:** Locked — 2026-10-24. Measured on isengard, 15.1-RELEASE-p5.
+
+`GET /api/metrics` answers the host and every jail in one request: load average, CPU, memory and pools for the host; CPU, memory and process count per jail.
+
+**One request, because the dashboard is one page.** Per-jail usage costs **one `rctl -u` per jail** — measured: `rctl -u jail:` is refused with "Invalid argument", and there is no form that reports every subject at once. That cost is the reason usage is *not* folded into `GET /api/jails`: a listing is the page an operator opens to start a jail, and making it run a command per jail would make the cheap page pay for the expensive one.
+
+### Per-jail: rctl where it is on, ps where it is not
+
+The roadmap asked for a `ps` fallback where `kern.racct.enable` is off and left open whether one could be trusted. It can, and the measurement is the reason:
+
+| jail | `rctl` memoryuse | sum of `ps -o rss` | processes |
+| --- | --- | --- | --- |
+| postgres | 290 263 040 | 290 476 032 | 13 / 13 |
+| ottermq | 20 684 800 | 20 979 712 | 6 / 6 |
+| goodiesdb | 12 197 888 | 12 263 424 | 4 / 4 |
+
+Within 1%, and the process counts identical. They are not two opinions about memory that happen to be close: racct's `memoryuse` **is** the sum of the same per-process resident sizes, so the two differ only by the moment each was sampled. A fallback that reads the same quantity another way is worth having; one that reads a different quantity and calls it the same name would not be.
+
+**The response says which source it used**, because the two are not equally complete. `rctl` additionally gives `vmemoryuse`, `openfiles`, `cputime`, swap and the I/O counters; `ps` gives CPU, memory and a process count and nothing else. A consumer that needs the rest can read `source` and know why it is absent rather than guess.
+
+**`rctl -u` answers for a name no jail has, with every field zero and exit 0.** So the jail listing is what says which jails exist, and `rctl` is only ever asked about a name that came from it. A metrics endpoint that trusted `rctl` alone would report a typo as a jail with no usage.
+
+### Host CPU is a rate, and a rate needs two readings
+
+`kern.cp_time` is five cumulative tick counters. There is no kernel-maintained host CPU percentage — `vm.loadavg` is load, not utilisation — so a percentage exists only between two readings.
+
+Three ways to get one, and the costs:
+
+| | |
+| --- | --- |
+| Sleep inside the request | A second of latency on every poll, to measure a second that has already passed |
+| Background sampler with a retention window | The in-memory database JD-011 refuses, and a restart silently changes what the numbers mean |
+| **Keep the previous reading and report the delta** | One sample's worth of memory, and the first call after a restart has no percentage to report |
+
+The third. The response carries the raw counters **and** `cpu.over_seconds` — the window the percentage was actually measured over — so a reading taken five seconds after the last one and one taken five minutes after are told apart by the consumer rather than averaged into the same word. On the first call after a restart the percentage is absent, not zero.
+
+This is the same position JD-008 took for a template's `running`: one thing cannot be derived from a single look at the system, it is held in memory, and losing it on a restart is the truthful outcome rather than a limitation.
+
+**Per-jail CPU needs none of this.** racct maintains `pcpu` as a decaying average per subject, so it is a number the kernel already has — which is why the host reports a percentage only after two polls while a jail reports one immediately. The asymmetry is the kernel's, not an inconsistency to be smoothed over.
+
+### What is reported, and what is left out
+
+- **Memory** is the page counters — free, active, inactive, wired — times the page size, against `hw.physmem`. Reported as a breakdown rather than one "used" figure, because **wired is mostly ZFS ARC on a host like this** and a single number would read as pressure that is not there. `v_cache_count` exists and is always 0 on this release; it is not reported.
+- **Pools** come from `zpool list -Hp` in exact bytes, as everything else in this API does (JD-022).
+- **No disk I/O for the host**, and no network counters. Neither is in the stated scope, and `/metrics` for Prometheus is where a consumer who wants the long tail should be served.
+- **Nothing is stored.** There is no history, no retention and no sampler goroutine: a chart over time is Prometheus's job, which is what the `/metrics` endpoint is for (JD-011).
+
+### Rationale
+
+The whole of this is derived state read on request, which is what JD-011 asks for, with exactly one exception argued above. The alternative — a sampler keeping a window of readings — would make Jail Deck own durable-ish state about something that can be re-read at any moment, and would answer "what was the CPU five minutes ago?" badly where Prometheus answers it well.

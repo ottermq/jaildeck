@@ -382,3 +382,52 @@ var (
 	_ jails.EpairAllocator = (*JailSystem)(nil)
 	_ jails.EpairCleaner   = (*JailSystem)(nil)
 )
+
+// ExecInJail answers a few commands the dev server can usefully show and
+// echoes the rest. Not a shell: the point of the fake here is that the
+// request shape, the refusals and the response shape can be exercised
+// without a FreeBSD host, not that commands actually run.
+func (s *JailSystem) ExecInJail(_ context.Context, name string, argv []string,
+	env map[string]string, timeout time.Duration) (jails.ExecResult, error) {
+
+	s.mu.Lock()
+	_, known := s.jails[name]
+	s.mu.Unlock()
+	if !known {
+		return jails.ExecResult{ExitCode: -1}, jails.ErrJailNotFound
+	}
+
+	result := jails.ExecResult{DurationMS: 12}
+	switch {
+	case argv[0] == "false":
+		result.ExitCode = 1
+		result.Stderr = "false: exit 1\n"
+	case argv[0] == "sleep":
+		// Long enough to be stopped by any sensible timeout, so the
+		// timed-out path is reachable from the dev server.
+		result.ExitCode = -1
+		result.TimedOut = true
+		result.DurationMS = timeout.Milliseconds()
+	case argv[0] == "env":
+		for _, variable := range sortedEnvNames(env) {
+			result.Stdout += variable + "=" + env[variable] + "\n"
+		}
+		result.Stdout += "HOME=/root\nPATH=/sbin:/bin:/usr/sbin:/usr/bin\nUSER=root\n"
+	case argv[0] == "yes":
+		// Past the cap, so a truncated answer can be seen.
+		result.Stdout = strings.Repeat("y\n", jails.MaxExecOutput/2+16)[:jails.MaxExecOutput]
+		result.StdoutTruncated = true
+	default:
+		result.Stdout = strings.Join(argv, " ") + "\n"
+	}
+	return result, nil
+}
+
+func sortedEnvNames(env map[string]string) []string {
+	names := make([]string, 0, len(env))
+	for name := range env {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}

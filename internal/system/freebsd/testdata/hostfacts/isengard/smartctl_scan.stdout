@@ -1,0 +1,8 @@
+/dev/cd0 -d atacam # /dev/cd0, ATA device
+/dev/ada0 -d atacam # /dev/ada0, ATA device
+/dev/ada1 -d atacam # /dev/ada1, ATA device
+/dev/ada2 -d atacam # /dev/ada2, ATA device
+/dev/ada3 -d atacam # /dev/ada3, ATA device
+/dev/ses0 -d atacam # /dev/ses0, ATA device
+/dev/nda0 -d scsi # /dev/nda0, SCSI device
+/dev/nvme0 -d nvme # /dev/nvme0, NVMe device

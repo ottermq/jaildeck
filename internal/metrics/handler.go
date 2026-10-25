@@ -47,6 +47,27 @@ func NewHandler(service *Service) *Handler {
 // @Description  `wired` is the ARC, which is reclaimable, and a single number would read as
 // @Description  pressure that is not there.
 // @Description
+// @Description  `disks` is every physical device that answers, pooled or not — a spare or a
+// @Description  scratch disk can fail too. It is **empty rather than an error** on a host
+// @Description  without `smartmontools`, which is a package and not part of the base system,
+// @Description  and a disk that cannot be read never fails the rest of the report (JD-032).
+// @Description
+// @Description  **`passed` is the drive's own overall assessment, not a summary of
+// @Description  `failing`.** The two routinely disagree: a drive can report `PASSED` while an
+// @Description  attribute has been below threshold for days. `failing` is what smartctl says
+// @Description  is below threshold now and `failed` what it says ever was — its judgment,
+// @Description  carried as given rather than re-derived from `value` against `threshold`.
+// @Description  An attribute's `raw` is the **string** smartctl printed, never a number to
+// @Description  reason about: vendors pack several fields into that integer.
+// @Description
+// @Description  `device` is the name the kernel and ZFS use. Where smartctl needs a different
+// @Description  path for the same drive — an NVMe is `nda0` everywhere but `/dev/nvme0` to
+// @Description  smartctl, which refuses `/dev/nda0` — `smart_path` says so. An NVMe carries
+// @Description  an `nvme` block instead of an attribute table, because it has none.
+// @Description
+// @Description  Self-test logs are **read, never started**: a long test costs hours of real
+// @Description  I/O and choosing when to pay that is an operator's decision.
+// @Description
 // @Description  **Nothing is stored.** There is no history and no sampler; a chart over time
 // @Description  is Prometheus's job (JD-011).
 // @Tags         metrics

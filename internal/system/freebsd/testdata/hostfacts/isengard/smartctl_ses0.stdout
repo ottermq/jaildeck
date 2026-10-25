@@ -1,0 +1,37 @@
+{
+  "json_format_version": [
+    1,
+    0
+  ],
+  "smartctl": {
+    "version": [
+      7,
+      5
+    ],
+    "pre_release": false,
+    "svn_revision": "5714",
+    "platform_info": "FreeBSD 15.1-RELEASE-p5 amd64",
+    "build_info": "(local build)",
+    "argv": [
+      "smartctl",
+      "--json",
+      "-i",
+      "-H",
+      "-A",
+      "-l",
+      "selftest",
+      "/dev/ses0"
+    ],
+    "exit_status": 2
+  },
+  "local_time": {
+    "time_t": 1792910465,
+    "asctime": "Sun Oct 25 03:41:05 2026 -03"
+  },
+  "device": {
+    "name": "/dev/ses0",
+    "info_name": "/dev/ses0",
+    "type": "atacam",
+    "protocol": "ATA"
+  }
+}

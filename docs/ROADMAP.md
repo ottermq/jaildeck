@@ -311,7 +311,7 @@ A local program can create a jail, run a command in it and destroy it over the u
 
 ## Milestone: Metrics
 
-**Status:** the dashboard half is done — host and per-jail usage through `GET /api/metrics` and a Dashboard page (JD-031). The **Prometheus `/metrics` endpoint is the remaining half**, along with the question of whether it shares the API's token auth or binds a listener of its own.
+**Status:** the dashboard half is done — host and per-jail usage through `GET /api/metrics` and a Dashboard page (JD-031), with **disk health** in the same report and a Disks section beside Pools (#83, JD-032). The **Prometheus `/metrics` endpoint is the remaining half**, along with the question of whether it shares the API's token auth or binds a listener of its own.
 
 **Depends on:** Web UI. **★ Otter Cloud:** monitoring before the beta.
 
@@ -322,16 +322,19 @@ Goal: the observability half of the stated scope — see load and memory, for th
 - host summary: CPU, memory, load average, disk usage
 - per-jail: CPU, memory, disk, process count
 - a `/metrics` endpoint in Prometheus text format with the same values. Prometheus holds the history, so this satisfies "a chart over time that survives a restart" without a database (JD-011)
+- **disk health, not just pool health** (#83). *Built 2026-10-25: every device `smartctl` can read, with the drive's own verdict, the attributes smartctl flags, the self-test log, and the pool each disk belongs to. No health score — `isengard`'s `ada3` reports `PASSED` while attribute 184 has been below threshold for days, and no single number describes that (JD-032).*
 
 ### Technical tasks
 
 - data source: `rctl -u jail:<name>` where `kern.racct.enable` is on; a fallback via `jls` + `ps --libxo` where it is off. *Built 2026-10-24, and the fallback is trustworthy: measured on three jails, the `ps` resident sums land within 1% of rctl's `memoryuse` and the process counts are identical, because racct's `memoryuse` is the sum of the same per-process resident sizes (JD-031).*
 - decide sampling: on request, or a background sampler with a short retention window. *Decided 2026-10-24: neither. The previous CPU reading is kept in memory and the response carries the window it was measured over; the first call after a restart reports no percentage rather than a zero.*
 - decide whether `/metrics` shares the API's token auth or binds a separate listener (open question below)
+- disk health reads `smartctl --json`, joined to pool members through `zpool list -v` and `glabel status`, and to the kernel's own device names through `geom disk list`. *Built 2026-10-25. The join is by name first and by serial second: `isengard`'s NVMe is `nda0` to ZFS and only ever `/dev/nvme0` to smartctl, while `rohan`'s USB-bridged `da0` has one name and two different serials (JD-032).*
+- **a disk that is failing is not yet surfaced anywhere but the dashboard.** There is no alert, no audit entry and no Prometheus series for it, so an operator who does not open the page still learns nothing. A deliberate gap for now, recorded here rather than left implied.
 
 ### Completion criteria
 
-Host and per-jail resource usage are visible in the dashboard and scrapeable by Prometheus.
+Host and per-jail resource usage are visible in the dashboard and scrapeable by Prometheus, and a disk that is about to fail is visible before the pool notices.
 
 ---
 

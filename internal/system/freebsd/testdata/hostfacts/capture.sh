@@ -262,6 +262,59 @@ if [ -n "$PROBE_JAIL" ]; then
 	cap zfs_list_snapshots_txg "zfs list -H -p -t snapshot -o name,used,refer,creation,createtxg -r $PROBE_JAIL"
 fi
 
+# --- which disk a pool stands on (#83) ------------------------------------
+# zpool status is laid out for a person; this prints the same tree tab-indented
+# with one name per line, which is the only form a parser should be given.
+# A leaf is whatever resolves to a real device -- mirror-0 and indirect-1 do
+# not, and the join simply ignores them rather than enumerating vdev types.
+cap zpool_list_vdevs 'zpool list -v -H -o name'
+
+# Pools name labels as often as partitions: gpt/backup1 is ada3p1 is ada3.
+cap glabel_status 'glabel status'
+
+# The disk inventory, and the only authoritative join between the name the
+# kernel uses and the name smartctl answers to. On this host ZFS stands on
+# nda0 while smartctl will only open the same device as /dev/nvme0 -- it
+# refuses /dev/nda0 outright -- so nothing matches those two by name. geom
+# prints both the kernel name and the drive's serial, and smartctl prints the
+# same serial, which closes the loop. Base system, and it needs no privilege.
+cap geom_disk_list 'geom disk list'
+
+# --- disk health (#83) ----------------------------------------------------
+# smartctl is a PACKAGE, not base (sysutils/smartmontools). A host without it is
+# a real state the report has to describe, so a missing binary here is a capture
+# too, not a reason to stop.
+#
+# One call per device gets everything a disk report needs -- identity, the
+# drive's own verdict, the attribute table and the self-test log -- and --json
+# means there is nothing to parse by hand for once.
+#
+# Every device --scan lists is captured, not just the disks. The list is not a
+# list of disks: it carries a DVD drive, an enclosure, and on this host the same
+# NVMe twice under two drivers. What each of those answers with is the whole
+# reason a parser can tell them apart.
+if command -v smartctl >/dev/null 2>&1; then
+	cap smartctl_version 'smartctl --version'
+	# The scan needs privilege too. Unprivileged it prints
+	# "# scan_smart_devices: Permission denied" and exits 0, and a loop that
+	# believed it would go on to capture a device named "#".
+	cap smartctl_scan "$PRIV smartctl --scan"
+
+	for dev in $($PRIV smartctl --scan | awk '$1 !~ /^#/ { print $1 }'); do
+		cap "smartctl_$(basename "$dev")" \
+			"$PRIV smartctl --json -i -H -A -l selftest $dev"
+	done
+
+	# A device that is not there, and a caller that is not root: both are
+	# ordinary states, and both have their own exit status.
+	cap smartctl_absent "$PRIV smartctl --json -i -H -A /dev/ada9"
+	if [ -n "$PRIV" ]; then
+		cap smartctl_unpriv 'smartctl --json -i -H -A /dev/ada3'
+	fi
+else
+	cap smartctl_version 'smartctl --version'
+fi
+
 # --- redaction ------------------------------------------------------------
 # dmesg names every NIC's MAC address. Nothing any parser reads is affected, and these
 # fixtures live in a public repository, so mask them. This is the only edit the script
@@ -269,6 +322,66 @@ fi
 for f in "$OUT"/*.stdout; do
 	sed -E 's/([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}/xx:xx:xx:xx:xx:xx/g' "$f" >"$f.masked" &&
 		mv "$f.masked" "$f"
+done
+
+# Drive serial numbers. Same reasoning as the MACs, with one constraint the MACs
+# did not have: the report JOINS smartctl's serial_number to geom's ident to
+# learn which kernel device a drive is, so the two have to mask to the SAME
+# placeholder -- and two drives must mask to DIFFERENT ones, or a fixture would
+# assert a join that could never happen. Blanking each serial to a run of X
+# would do exactly that: isengard's ada2 and ada3 both have eight-character
+# serials.
+#
+# So: collect every serial the capture holds, give each a distinct placeholder
+# of its own length, and substitute them everywhere. Longest first, so a serial
+# that is a prefix of another cannot eat it.
+serials="$OUT/.serials"
+script="$OUT/.serials.sed"
+: >"$serials"
+for f in "$OUT"/smartctl_*.stdout; do
+	[ -f "$f" ] || continue
+	sed -n 's/.*"serial_number": *"\([^"]*\)".*/\1/p' "$f" >>"$serials"
+done
+if [ -f "$OUT/geom_disk_list.stdout" ]; then
+	sed -n 's/^[[:space:]]*ident:[[:space:]]*\(..*\)$/\1/p' "$OUT/geom_disk_list.stdout" >>"$serials"
+fi
+sort -u "$serials" | awk '
+	# At least four characters and no whitespace. A real serial is neither
+	# short nor spaced, and the DVD drive on isengard has an ident of one
+	# single space -- masking that would rewrite every space in every file.
+	{ if (length($0) >= 4 && $0 !~ /[[:space:]]/) keep[n++] = $0 }
+	END {
+		# longest first
+		for (i = 0; i < n; i++)
+			for (j = i + 1; j < n; j++)
+				if (length(keep[j]) > length(keep[i])) { t = keep[i]; keep[i] = keep[j]; keep[j] = t }
+		for (i = 0; i < n; i++) {
+			p = sprintf("S%02d", i + 1)
+			while (length(p) < length(keep[i])) p = p "X"
+			printf "s|%s|%s|g\n", keep[i], substr(p, 1, length(keep[i]))
+		}
+	}
+' >"$script"
+if [ -s "$script" ]; then
+	for f in "$OUT"/*.stdout; do
+		sed -f "$script" "$f" >"$f.masked" && mv "$f.masked" "$f"
+	done
+fi
+rm -f "$serials" "$script"
+
+# smartctl also prints each drive's unit-unique WWN, which identifies it just as
+# well as the serial does.
+for f in "$OUT"/smartctl_*.stdout; do
+	[ -f "$f" ] || continue
+	awk '
+		{
+			# The WWN block only. Every SMART attribute carries an "id" too,
+			# and masking those would turn attribute 184 into attribute 0.
+			if ($0 ~ /"wwn"/) in_wwn = 1
+			if (in_wwn && $0 ~ /"id":/) { sub(/"id": [0-9]+/, "\"id\": 0"); in_wwn = 0 }
+			print
+		}
+	' "$f" >"$f.masked" && mv "$f.masked" "$f"
 done
 
 printf '\n=== captured to %s ===\n' "$OUT"

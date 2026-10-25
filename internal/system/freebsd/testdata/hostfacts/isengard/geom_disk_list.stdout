@@ -1,0 +1,83 @@
+Geom name: nda0
+Providers:
+1. Name: nda0
+   Mediasize: 256060514304 (238G)
+   Sectorsize: 512
+   Mode: r3w3e6
+   descr: Patriot M.2 P300 256GB
+   lunid: 00000000000000000c82d51225001124
+   ident: S01XXXXXXXXXXXXXXXXX
+   rotationrate: 0
+   fwsectors: 0
+   fwheads: 0
+
+Geom name: ada0
+Providers:
+1. Name: ada0
+   Mediasize: 1000204886016 (932G)
+   Sectorsize: 512
+   Stripesize: 4096
+   Stripeoffset: 0
+   Mode: r1w1e2
+   descr: ST1000LM024 HN-M101MBB
+   lunid: 50004cf4011ca7be
+   ident: S03XXXXXXXXXXX
+   rotationrate: 5400
+   fwsectors: 63
+   fwheads: 16
+
+Geom name: ada1
+Providers:
+1. Name: ada1
+   Mediasize: 1000204886016 (932G)
+   Sectorsize: 512
+   Stripesize: 4096
+   Stripeoffset: 0
+   Mode: r1w1e2
+   descr: APPLE HDD HTS541010A9E662
+   lunid: 5000cca82bcb2d83
+   ident: S02XXXXXXXXXXX
+   rotationrate: 5400
+   fwsectors: 63
+   fwheads: 16
+
+Geom name: ada2
+Providers:
+1. Name: ada2
+   Mediasize: 500107862016 (466G)
+   Sectorsize: 512
+   Mode: r1w1e3
+   descr: ST9500325AS
+   lunid: 5000c50051d36007
+   ident: S05XXXXX
+   rotationrate: 5400
+   fwsectors: 63
+   fwheads: 16
+
+Geom name: ada3
+Providers:
+1. Name: ada3
+   Mediasize: 500107862016 (466G)
+   Sectorsize: 512
+   Stripesize: 4096
+   Stripeoffset: 0
+   Mode: r1w1e3
+   descr: ST500LM000-1EJ162
+   lunid: 5000c5007345751f
+   ident: S06XXXXX
+   rotationrate: 5400
+   fwsectors: 63
+   fwheads: 16
+
+Geom name: cd0
+Providers:
+1. Name: cd0
+   Mediasize: 0 (0B)
+   Sectorsize: 2048
+   Mode: r0w0e0
+   descr: HL-DT-ST DVD-RW GH61N
+   ident: 
+   rotationrate: unknown
+   fwsectors: 0
+   fwheads: 0
+

@@ -176,6 +176,104 @@ scp '<host>:/tmp/jd-capture-layout-induced/layout_*' ./<hostname>-induced/
 | `zfs_pool` | one pool, `zroot` | **three pools** — cannot be guessed | two pools, one named `media` | **no ZFS at all** | |
 | `zfs_layout` | **pass** | **pass** on `tank`; `backup` holds a decoy | **nothing provisioned** | **n/a** | **partial**, **misplaced** |
 
+## Disk health (#83)
+
+Captured 2026-10-25, on `isengard` and `rohan` only. `rivendell` and the VM were not
+captured: the Pi has no SMART-reporting storage worth the trip, and the VM's virtio
+disks answer nothing a parser could learn from.
+
+**`smartctl` is a package, not base** — `sysutils/smartmontools`, at
+`/usr/local/sbin/smartctl`. A host without it is a state the report has to describe, so
+`smartctl_version` is captured even when the binary is missing.
+
+**The scan list is not a list of disks**, and `isengard` proves it three ways:
+
+| device | `--scan` says | exit | what it is |
+| --- | --- | --- | --- |
+| `ada0`–`ada3` | `-d atacam` | `0`, and `32` for `ada3` | the four spinning disks |
+| `nvme0` | `-d nvme` | `0` | the NVMe, answering properly |
+| `nda0` | `-d scsi` | **`2`** | **the same NVMe**, listed a second time under another driver, and it cannot be opened that way |
+| `cd0` | `-d atacam` | **`4`** | a DVD drive |
+| `ses0` | `-d atacam` | **`2`** | an enclosure |
+
+So the duplicate resolves itself: the device that answers is the device to report.
+
+**But the device that answers is not the device ZFS names.** `zroot` stands on `nda0`,
+and `smartctl` refuses `/dev/nda0` outright:
+
+```
+Smartctl open device: /dev/nda0 failed: NVMe controller controller/namespace ids
+must begin with '/dev/nvme'
+```
+
+It will only answer as `/dev/nvme0` — including under `-d nvme`, which was measured
+rather than assumed. So the one disk that holds the root pool is the one disk nothing
+joins to a pool by name. Guessing that `nvmeN` is `ndaN` would be a convention; the
+serial is a fact, and `geom disk list` prints it beside the kernel's own name:
+
+| source | name | serial |
+| --- | --- | --- |
+| `geom disk list` | `nda0` | `P300MDCB…` |
+| `smartctl /dev/nvme0` | `/dev/nvme0` | `P300MDCB…` |
+
+`geom_disk_list` is captured for that join. It is base system and needs no privilege,
+which makes it both cheaper and more authoritative than the scan.
+
+**The join is by name first and by serial second, and both halves are load-bearing** —
+one host proves each:
+
+- **by serial**, for `isengard`'s NVMe above, where nothing matches by name;
+- **by name**, for `rohan`'s `da0`, a bare drive in a USB enclosure where the two
+  sources report *different* serials — `geom` gives the enclosure's (`2HC015KJ`) and
+  `smartctl` the drive's own (`5VP6Q01R`). A serial-first rule would fail to place a
+  disk whose name already matched perfectly.
+
+Neither host has a disk whose smartctl serial is another disk's `geom` ident, so the
+captures alone do not say which lookup should win; the unit test that fixes the order
+says it is constructed.
+
+`zpool_list_vdevs` and `glabel_status` carry the rest of the join. A pool names its
+members however it was created: `isengard`'s `backup` says `gpt/backup1` and its `tank`
+says `ada0p4`, so resolving a label and stripping a partition are both ordinary paths
+rather than one being a special case.
+
+`rohan` adds the two shapes `isengard` has none of: an **SSD** (`rotation_rate: 0`,
+where `isengard`'s disks report 5400 and 7200) and a **`-d sat`** device at `/dev/da0`,
+which is how a USB bridge presents an ATA disk.
+
+**`isengard/smartctl_ada3` is the specimen this whole feature exists for.** It is
+simultaneously `"passed": true` on the drive's own assessment and `"when_failed": "now"`
+on attribute 184, with zero reallocated sectors and an extended self-test that completed
+without error at 19,149 hours. No single number describes that drive, which is the
+argument against inventing one.
+
+Two more states carry their own exit status and are captured: a device that is not there
+(`smartctl_absent`, exit `1`) and a caller who is not root (`smartctl_unpriv`, exit `1`
+with `Permission denied` on stderr).
+
+**Exit status is information here, not failure.** `ada3` exits `32` — bit 5, "an
+attribute has been below threshold in the past" — on a perfectly successful read. A
+parser that treats non-zero as an error reports nothing about the one disk that matters.
+
+Serial numbers and the unit-unique half of each WWN are masked, on the same reasoning as
+the MAC addresses in `dmesg`: the repository is public, and nothing a parser reads is
+affected.
+
+The serials have one constraint the MACs did not, and it is the reason `capture.sh`
+masks them the way it does. Because the report **joins** `smartctl`'s `serial_number` to
+`geom`'s `ident`, the two have to mask to the *same* placeholder — and two disks have to
+mask to *different* ones. Blanking each serial to a run of `X` would do neither:
+`isengard`'s `ada2` and `ada3` both have eight-character serials and would collide, and a
+fixture asserting a join that could never happen is worse than no fixture. So each
+distinct serial gets a distinct placeholder of its own length (`S01XXXXX`, `S02XXXXX`),
+substituted across every captured file at once.
+
+Two bugs in that masking were caught by looking at the bytes before committing them:
+an `"id":` regex that matched SMART attribute ids and turned attribute `184` into `0`,
+and a collected "serial" of a single space — the DVD drive's empty `ident` — which
+rewrote every space in every file. The filter now takes only idents of four or more
+characters with no whitespace.
+
 ### Not covered, by decision
 
 Two states have no capture and are not going to get one, because both need hardware that

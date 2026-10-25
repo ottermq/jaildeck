@@ -114,12 +114,12 @@ func New(cfg *config.Config) (*App, error) {
 	// The host half and the per-jail half come from the same FreeBSD
 	// adapter; the jail listing comes from the jails service, which
 	// satisfies the port without importing it (JD-010, JD-031).
-	hostMetrics, err := newHostMetrics(cfg.Adapter)
+	hostMetrics, disks, err := newHostMetrics(cfg.Adapter)
 	if err != nil {
 		return nil, err
 	}
 	metricsHandler := metrics.NewHandler(
-		metrics.NewService(hostMetrics, jailAdapter.usage, jailService))
+		metrics.NewService(hostMetrics, jailAdapter.usage, jailService, disks))
 
 	return &App{
 		authHandler:     authHandler,
@@ -132,16 +132,20 @@ func New(cfg *config.Config) (*App, error) {
 	}, nil
 }
 
-// newHostMetrics selects the host-metrics implementation, with the same
-// refusal to guess as every other adapter choice here.
-func newHostMetrics(adapter string) (metrics.HostMetrics, error) {
+// newHostMetrics selects the host-metrics and disk implementations, with the
+// same refusal to guess as every other adapter choice here. One object
+// satisfies both ports: the host's numbers and its disks come from the same
+// machine.
+func newHostMetrics(adapter string) (metrics.HostMetrics, metrics.DiskSource, error) {
 	switch adapter {
 	case config.AdapterFreeBSD:
-		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+		a := freebsd.NewAdapter(system.NewExecCommandRunner())
+		return a, a, nil
 	case config.AdapterFake:
-		return fake.NewHostMetrics(), nil
+		f := fake.NewHostMetrics()
+		return f, f, nil
 	default:
-		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+		return nil, nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)
 	}
 }

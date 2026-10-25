@@ -1,7 +1,9 @@
 package metrics
 
 import (
+	"bytes"
 	"net/http"
+	"strconv"
 
 	"github.com/ottermq/jaildeck/internal/common"
 )
@@ -85,4 +87,38 @@ func (h *Handler) Report(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, report)
+}
+
+// Prometheus answers the same report in the text exposition format.
+//
+// Behind the same authentication as everything else: on FreeBSD a jail with
+// ip4=inherit shares the host's loopback, so "it only listens on 127.0.0.1"
+// is not a boundary and an unauthenticated endpoint would publish every
+// jail's usage and every disk's serial to any jail on the box (JD-033).
+//
+// Not in the OpenAPI spec, deliberately. The spec describes the JSON API and
+// this is not JSON; the exposition format documents itself in its own HELP
+// lines, which is what a scraper's user reads.
+func (h *Handler) Prometheus(w http.ResponseWriter, r *http.Request) {
+	report, err := h.service.Report(r.Context())
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+
+	// Rendered whole before anything is sent. A write that fails halfway
+	// through would already have sent 200 and a truncated body, which a
+	// scraper reads as a successful scrape of a host that lost half its
+	// disks.
+	var body bytes.Buffer
+	if err := WriteExposition(&body, report); err != nil {
+		common.HandlerError(w, common.NewAppError(http.StatusInternalServerError,
+			"could not render the metrics: "+err.Error()))
+		return
+	}
+
+	w.Header().Set("Content-Type", ExpositionContentType)
+	w.Header().Set("Content-Length", strconv.Itoa(body.Len()))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body.Bytes())
 }

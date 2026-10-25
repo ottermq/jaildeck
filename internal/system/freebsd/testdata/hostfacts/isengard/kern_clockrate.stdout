@@ -1,0 +1,1 @@
+{ hz = 1000, tick = 1000, profhz = 8128, stathz = 127 }

@@ -38,6 +38,15 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 		})
 	})
 
+	// The Prometheus endpoint, at the bare /metrics every scraper expects.
+	// Outside /api because that is where scrapers look, and inside the same
+	// RequireAuth because the loopback is not a boundary on a host with jails
+	// (JD-033).
+	r.Group(func(r chi.Router) {
+		r.Use(a.authHandler.RequireAuth)
+		metrics.RegisterPrometheusRoute(r, a.metricsHandler)
+	})
+
 	// Serve SPA fallback handler for any unmatched paths (handles frontend routing)
 	r.NotFound(staticHandler(assets))
 

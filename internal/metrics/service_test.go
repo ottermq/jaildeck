@@ -18,10 +18,13 @@ type stubHost struct {
 	memory Memory
 	pools  []Pool
 
-	loadErr  error
-	ticksErr error
-	poolErr  error
-	reads    int
+	tickRate int
+
+	loadErr     error
+	ticksErr    error
+	poolErr     error
+	tickRateErr error
+	reads       int
 }
 
 func (s *stubHost) LoadAverage(context.Context) (LoadAverage, error) {
@@ -31,6 +34,10 @@ func (s *stubHost) LoadAverage(context.Context) (LoadAverage, error) {
 func (s *stubHost) CPUTicks(context.Context) (Ticks, int, error) {
 	s.reads++
 	return s.ticks, s.cpus, s.ticksErr
+}
+
+func (s *stubHost) TickRate(context.Context) (int, error) {
+	return s.tickRate, s.tickRateErr
 }
 
 func (s *stubHost) Memory(context.Context) (Memory, error)    { return s.memory, nil }
@@ -89,6 +96,8 @@ func aHost() *stubHost {
 		cpus:   16,
 		memory: Memory{Physical: 1 << 34, Free: 1 << 33},
 		pools:  []Pool{{Name: "tank", Health: "ONLINE"}},
+		// isengard's real stathz, not a round number (JD-033).
+		tickRate: 127,
 	}
 }
 

@@ -445,6 +445,14 @@ before the captures existed:
   hypervisor. It reads `none` on both bare-metal hosts and `kvm` on the VM, which is a
   reliable fact and a useful one for JD-019, but it says nothing about whether a host can
   *run* guests.
+- **`kern.cp_time` counts in `stathz`, not `hz`.** `kern_clockrate` reads
+  `{ hz = 1000, tick = 1000, profhz = 8128, stathz = 127 }` on both bare-metal hosts, and
+  over two seconds the five `kern.cp_time` counters advanced 3995 ticks across 16 CPUs —
+  125 per CPU per second, which is `stathz`. Dividing by `hz` to turn ticks into seconds
+  would be an eightfold error, and nothing about the result would look wrong. The capture
+  exists so the two numbers are visible side by side rather than one being assumed
+  (JD-033). The pairs are read by name, never by position: the braces and the field list
+  are a `printf` in the kernel.
 - **The `VT-x:` line is indented two spaces.** `strings.HasPrefix(line, "VT-x:")` finds
   nothing on either host. Trim first.
 - **Its feature list varies by CPU**, so features must be split on `,` and compared as

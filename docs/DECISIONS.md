@@ -508,7 +508,7 @@ This decision is about bounding individual commands. How a legitimately slow flo
 
 **Amended 2026-10-21 — exec.** The exec endpoint (JD-016) is the one place a caller supplies a command's timeout. It is capped by a server-side maximum, so a caller can shorten the bound but never remove it, and the output kept is capped in size.
 
-**The caps, settled 2026-10-25: 60 seconds by default, 5 minutes at most, and 1 MiB of each stream.**
+**The caps, settled 2026-10-24: 60 seconds by default, 5 minutes at most, and 1 MiB of each stream.**
 
 Five minutes because the thing exec is for is an in-jail bootstrap — `initdb`, a service enable, a config written — and those are seconds. The minutes-long work is building a *template*, which is detached and polled precisely so that nothing holds a connection open for it (JD-008). A cap exists to stop a caller removing the bound, not to second-guess a legitimate install; when five minutes is genuinely not enough, the answer is that the work belongs in a template or behind something the caller polls, not a longer HTTP request.
 
@@ -557,7 +557,7 @@ Jail Deck has a second kind of API consumer: a program on the same host, driving
 - **Correlation.** An `X-Request-Id` header is recorded in every audit entry the request produces, so the client's own job id links both audit trails.
 - **Transport.** A unix socket listener (JD-002) with token auth (JD-003).
 
-**Exec was built 2026-10-25**, measured on isengard, 15.1-RELEASE-p5. Four things the decision did not say:
+**Exec was built 2026-10-24**, measured on isengard, 15.1-RELEASE-p5. Four things the decision did not say:
 
 - **`jexec` hands the jail the caller's entire environment.** Measured: a variable set on the Jail Deck process appears inside the jail, which means `/usr/local/etc/jaildeck/jaildeck.env` and whatever else the service was started with are readable by anything run through this endpoint. So every exec runs **`jexec -l`**, which replaces it with a clean login environment — `HOME`, `PATH`, `SHELL`, `USER`, `LANG` and nothing of the host's. The caller's own variables go on top.
 - **A caller's variables are applied with `/usr/bin/env`, and `env` has no `--`.** Measured: `env FOO=bar -- cmd` fails with "No such file or directory", so there is no separator to end the assignments with. `env` instead treats *any* leading argument containing `=` as another assignment — so a command whose first argument held one would silently become `env` printing the environment rather than the program the caller asked for. That combination is refused, naming it, rather than run.
@@ -1236,7 +1236,7 @@ Once a decision is marked as **Locked**, it should not be revisited without a cl
 
 ## JD-031 — Metrics: Where the Numbers Come From, and What Is Not Kept
 
-**Status:** Locked — 2026-10-25. Measured on isengard, 15.1-RELEASE-p5.
+**Status:** Locked — 2026-10-24. Measured on isengard, 15.1-RELEASE-p5.
 
 `GET /api/metrics` answers the host and every jail in one request: load average, CPU, memory and pools for the host; CPU, memory and process count per jail.
 

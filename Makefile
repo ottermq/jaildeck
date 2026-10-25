@@ -19,6 +19,13 @@ SPEC=docs/api/swagger.json
 PREFIX?=/usr/local
 DESTDIR?=
 
+# The make that package.sh calls back into. Passed through this name rather
+# than written as $(MAKE) in the recipe, because GNU make runs any recipe line
+# that mentions $(MAKE) even under -n, -t and -q -- right for a sub-make, which
+# inherits -n and only prints, and wrong for a shell script, which does not.
+# `gmake -n package` would otherwise build, stage and overwrite a real archive.
+PACKAGE_MAKE=$(MAKE)
+
 .PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check all install package doc doc-check
 
 ## build: compile the binary into bin/
@@ -98,7 +105,7 @@ install: build
 
 ## package: build and verify bin/packages/jaildeck-VERSION.pkg (native FreeBSD 15 amd64)
 package:
-	@sh packaging/freebsd/package.sh "$(VERSION)" "$(PREFIX)" "$(GO)" "$(MAKE)"
+	@sh packaging/freebsd/package.sh "$(VERSION)" "$(PREFIX)" "$(GO)" "$(PACKAGE_MAKE)"
 
 ## clean: remove build artifacts
 clean:
@@ -106,7 +113,9 @@ clean:
 
 ## help: list available targets
 help:
-	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/^## /  /'
+	@# Named, not $(MAKEFILE_LIST): that is GNU-only, and under FreeBSD's base
+	@# make it expands to nothing and grep sits waiting on stdin.
+	@grep -E '^## ' Makefile | sed 's/^## /  /'
 
 ## web: build the web frontend
 web:
@@ -122,7 +131,14 @@ web-check:
 	@cd web && npm run check
 
 ## all: build the backend and frontend
-all: web build
+# In order, never as prerequisites: `all: web build` lets make -j start the Go
+# build while Vite has emptied dist/, and measured on isengard `gmake -j4 all`
+# then exits 0 with a binary that carries no frontend. A sub-make is right
+# here in a way it is not for package: it inherits -n and only prints.
+all:
+	@$(MAKE) web
+	@$(MAKE) build
+
 ## doc: regenerate the OpenAPI spec from the handler annotations
 doc:
 	@mkdir -p $(dir $(SPEC))

@@ -39,11 +39,19 @@ mkdir -p web/dist
 touch web/dist/.gitkeep
 "$make" web
 [ -s web/dist/index.html ] || fail 'frontend build did not produce web/dist/index.html.'
+# BINARY_NAME and MAIN_PATH restate the Makefile's defaults on purpose. A
+# `make package BINARY_NAME=x` hands that override to this sub-make through
+# MAKEFLAGS, and only an explicit argument here outranks it -- without one the
+# staged binary would stop matching the packing list.
+#
+# The binary reports vX.Y.Z, as buildinfo documents and as a tag-built binary
+# does; only the package name and manifest take the bare number, because pkg
+# versions carry no v. One `jaildeck version` shape whichever way it was built.
 "$make" install PREFIX=/usr/local DESTDIR="$work/stage" \
     BUILD_DIR="$work/build" BINARY_NAME=jaildeck MAIN_PATH=cmd/jaildeck \
-    GO="$go" LDFLAGS="-X github.com/ottermq/jaildeck/internal/buildinfo.version=$version"
+    GO="$go" LDFLAGS="-X github.com/ottermq/jaildeck/internal/buildinfo.version=v$version"
 binary="$work/stage/usr/local/bin/jaildeck"
-[ "$("$binary" version)" = "$version" ] || fail 'binary version does not match VERSION.'
+[ "$("$binary" version)" = "v$version" ] || fail 'binary version does not match VERSION.'
 "$go" run ./tools/checkfrontend web/dist "$binary"
 
 # Fail closed if install ever starts staging anything outside the packing list.
@@ -71,7 +79,6 @@ diff -u "$work/expected-modes" "$work/packaged-modes" || fail 'unexpected packag
 # executable too. A valid manifest alone is not proof of a complete archive.
 mkdir "$work/extracted"
 tar -xf "$archive" -C "$work/extracted"
-cmp "$binary" "$work/extracted/usr/local/bin/jaildeck"
 for file in bin/jaildeck etc/rc.d/jaildeck etc/jaildeck/jaildeck.env.sample; do
     cmp "$work/stage/usr/local/$file" "$work/extracted/usr/local/$file"
 done

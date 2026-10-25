@@ -34,7 +34,9 @@ make package VERSION=0.10.0
 ```
 
 The version is required and must have the form `X.Y.Z`, without a leading `v`.
-The same value is used in the manifest, archive filename and `jaildeck version`.
+The same value is used in the manifest and the archive filename, which is how
+`pkg` spells versions. `jaildeck version` reports it as `vX.Y.Z`, the same shape
+as a binary built from a tag, so the two never disagree about what they are.
 The target supports only `/usr/local`; a different `PREFIX` is rejected. It
 checks the native OS and architecture, the Go target, and `pkg config ABI`
 (`FreeBSD:15:amd64`) before building. Cross-packaging is deliberately unsupported.
@@ -126,7 +128,7 @@ Host preparation remains an explicit operator action. Review readiness and
 the selected pool before running `jaildeck init`. Package installation never
 initializes ZFS, changes networking, creates credentials, enables the service
 or starts it. The default UI bind remains `127.0.0.1:8888`; reach it remotely
-with the SSH forwarding described in [the README](../README.md#first-run).
+with the SSH forwarding described in [the README](https://github.com/ottermq/jaildeck/blob/dev/README.md#first-run).
 
 ## Upgrade or replace a local package
 

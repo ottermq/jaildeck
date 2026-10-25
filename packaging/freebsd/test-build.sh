@@ -52,11 +52,32 @@ printf '#!/bin/sh\necho intentional-npm-failure >&2\nexit 42\n' > "$work/bin/npm
 chmod +x "$work/bin/npm"
 expect_failure 'intentional-npm-failure' env PATH="$work/bin:$original_path" make package VERSION="$version"
 
-# A stale index must not rescue a successful-but-empty frontend build.
+# A stale index must not rescue a successful-but-empty frontend build. Each
+# case sets up what it needs rather than inheriting it from the one before:
+# dist/ need not survive the failed run above, and the fake npm is made
+# executable here, not by the earlier case that happens to share its path.
+mkdir -p web/dist
 printf 'stale frontend\n' > web/dist/index.html
 printf '#!/bin/sh\nexit 0\n' > "$work/bin/npm"
+chmod +x "$work/bin/npm"
 expect_failure 'did not produce web/dist/index.html' env PATH="$work/bin:$original_path" make package VERSION="$version"
+
+# The three cases below inject a failure after the frontend step, so its result
+# is all they need from it. Build it for real once and replay that build,
+# rather than paying for npm ci and Vite -- and the network -- three times.
 rm "$work/bin/npm"
+"$real_make" web
+cp -R web/dist "$work/dist"
+cat > "$work/bin/npm" <<EOF
+#!/bin/sh
+# Run from web/ by make web: ci is a no-op, run build replays the real build.
+case "\$1" in
+ci) exit 0 ;;
+run) rm -rf dist && cp -R "$work/dist" dist ;;
+*) exit 1 ;;
+esac
+EOF
+chmod +x "$work/bin/npm"
 
 cat > "$work/bin/go" <<EOF
 #!/bin/sh
@@ -72,7 +93,8 @@ if [ "\$1" = install ]; then echo intentional-staging-failure >&2; exit 42; fi
 exec "$real_make" "\$@"
 EOF
 chmod +x "$work/bin/make"
-expect_failure 'intentional-staging-failure' sh packaging/freebsd/package.sh "$version" /usr/local go "$work/bin/make"
+expect_failure 'intentional-staging-failure' env PATH="$work/bin:$original_path" \
+    sh packaging/freebsd/package.sh "$version" /usr/local go "$work/bin/make"
 cat > "$work/bin/pkg" <<EOF
 #!/bin/sh
 if [ "\$1" = create ]; then echo intentional-pkg-create-failure >&2; exit 42; fi
@@ -81,4 +103,5 @@ EOF
 chmod +x "$work/bin/pkg"
 rm "$work/bin/make"
 expect_failure 'intentional-pkg-create-failure' env PATH="$work/bin:$original_path" make package VERSION="$version"
+rm "$work/bin/npm" "$work/bin/pkg"
 echo 'test-build: all failure paths returned nonzero without publishing a partial package'

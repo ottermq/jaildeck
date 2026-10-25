@@ -48,7 +48,8 @@ pkg query '%Fp' jaildeck | sort > "$work/files"
 printf '%s\n' /usr/local/bin/jaildeck /usr/local/etc/jaildeck/jaildeck.env.sample \
     /usr/local/etc/rc.d/jaildeck | sort > "$work/expected-files"
 diff -u "$work/expected-files" "$work/files"
-[ "$(jaildeck version)" = "$oldversion" ] || fail 'installed version mismatch.'
+# The binary reports vX.Y.Z; pkg's version has no v (see package.sh).
+[ "$(jaildeck version)" = "v$oldversion" ] || fail 'installed version mismatch.'
 [ "$(stat -f '%Su:%Sg:%Lp' /usr/local/bin/jaildeck)" = root:wheel:555 ] || fail 'binary permissions.'
 [ "$(stat -f '%Su:%Sg:%Lp' /usr/local/etc/rc.d/jaildeck)" = root:wheel:555 ] || fail 'service permissions.'
 [ "$(stat -f '%Su:%Sg:%Lp' /usr/local/etc/jaildeck/jaildeck.env.sample)" = root:wheel:644 ] || fail 'sample permissions.'
@@ -70,8 +71,17 @@ cat >> /usr/local/etc/jaildeck/jaildeck.env <<'EOF'
 JAILDECK_ADAPTER=fake
 JAILDECK_PORT=18884
 EOF
-openssl rand -hex 24 | jaildeck passwd --stdin
-jaildeck token add package-test > "$work/token"
+# Credential setup reads the same env the service does, as PACKAGING.md tells
+# an operator to. Without it, a JAILDECK_STATE_DIR set in jaildeck.env would
+# send the credential to the default directory while the service reads the
+# configured one, and the service would refuse to start for want of it.
+envfile=/usr/local/etc/jaildeck/jaildeck.env
+with_env() { (set -a; . "$envfile"; set +a; "$@"); }
+openssl rand -hex 24 | with_env jaildeck passwd --stdin
+with_env jaildeck token add package-test > "$work/token"
+# And the preservation checks below hash the directories it actually uses.
+state_dir=$(with_env sh -c 'echo "${JAILDECK_STATE_DIR:-/var/db/jaildeck}"')
+audit_log=$(with_env sh -c 'echo "${JAILDECK_AUDIT_LOG:-/var/log/jaildeck/audit.log}"')
 service jaildeck onestart
 running=YES
 attempt=0
@@ -90,12 +100,12 @@ running=NO
 
 # Verify the real credential/token store, live config, logs and ZFS resources
 # remain byte-for-byte intact during both replacement and removal.
-printf '%s\n' 'operator-owned audit fixture' >> /var/log/jaildeck/audit.log
+printf '%s\n' 'operator-owned audit fixture' >> "$audit_log"
 zfs create -o mountpoint=/usr/local/jails/package-test "$dataset"
 printf '%s\n' 'operator-owned jail data' > /usr/local/jails/package-test/sentinel
 zfs snapshot "$dataset@preserve"
 inventory() {
-    find /usr/local/etc/jaildeck/jaildeck.env /var/db/jaildeck /var/log/jaildeck \
+    find "$envfile" "$state_dir" "$(dirname "$audit_log")" \
         /usr/local/jails/package-test -type f -exec sha256 {} \; | sort
 }
 inventory > "$work/operator.before"
@@ -103,7 +113,7 @@ guid=$(zfs get -H -o value guid "$dataset@preserve")
 pkg add -f "$new"
 pkg info jaildeck
 pkg check -s jaildeck
-[ "$(jaildeck version)" = "$newversion" ] || fail 'upgrade version mismatch.'
+[ "$(jaildeck version)" = "v$newversion" ] || fail 'upgrade version mismatch.'
 inventory > "$work/operator.after-upgrade"
 diff -u "$work/operator.before" "$work/operator.after-upgrade"
 [ "$(zfs get -H -o value guid "$dataset@preserve")" = "$guid" ] || fail 'upgrade changed the ZFS snapshot.'

@@ -38,7 +38,7 @@ Go 1.26.10, Node.js 24.21.0, npm 12.0.2. `pkg config ABI` reports
 
 ## Lifecycle verification
 
-The opt-in [lifecycle test](../packaging/freebsd/test-lifecycle.sh) **passed**,
+The opt-in [lifecycle test](https://github.com/ottermq/jaildeck/blob/dev/packaging/freebsd/test-lifecycle.sh) **passed**,
 with both Go and Node.js/npm uninstalled before the run:
 
 1. `pkg add jaildeck-0.10.0.pkg` registered the application. `pkg info`,

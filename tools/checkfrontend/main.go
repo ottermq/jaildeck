@@ -33,8 +33,13 @@ func main() {
 
 func verify(dist fs.FS, binary []byte) error {
 	index, err := fs.ReadFile(dist, "index.html")
-	if err != nil || len(index) == 0 {
-		return fmt.Errorf("missing or empty dist/index.html; build the frontend first")
+	if err != nil {
+		// The cause, not advice: a mistyped DIST and an unreadable file are
+		// not fixed by building a frontend that may already be built.
+		return fmt.Errorf("reading dist/index.html: %w", err)
+	}
+	if len(index) == 0 {
+		return fmt.Errorf("dist/index.html is empty; build the frontend first")
 	}
 	hasJS := false
 	for _, match := range assetReference.FindAllSubmatch(index, -1) {
@@ -61,6 +66,12 @@ func verify(dist fs.FS, binary []byte) error {
 		data, err := fs.ReadFile(dist, name)
 		if err != nil {
 			return err
+		}
+		// Every executable contains the empty string, so an empty asset
+		// would pass against any binary at all, including a stale one. It
+		// cannot be shown to be embedded, and this check fails closed.
+		if len(data) == 0 {
+			return fmt.Errorf("empty frontend asset %s: its embedding cannot be verified", name)
 		}
 		if !bytes.Contains(binary, data) {
 			return fmt.Errorf("executable does not contain frontend asset %s", name)

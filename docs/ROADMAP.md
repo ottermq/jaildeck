@@ -343,6 +343,8 @@ Host and per-jail resource usage are visible in the dashboard and scrapeable by 
 
 ## Milestone: Firewall Visibility
 
+**Status:** done — 2026-10-25 (#16, JD-034). `GET /api/firewall`, `/api/firewall/tables/{name}` and `/api/firewall/log`, and a Firewall page. Measured on the VM with a test ruleset loaded and removed again; on isengard and rohan, PF is not loaded, and the view says so as an answer.
+
 **Depends on:** Web UI. Needed by: operator insight; an isolation-check script can read it.
 
 Goal: PF phase 1 (JD-020) — show what the firewall is doing, change nothing.
@@ -356,8 +358,8 @@ Goal: PF phase 1 (JD-020) — show what the firewall is doing, change nothing.
 
 ### Technical tasks
 
-- a `firewall` domain package with a read-only port (JD-010)
-- parser/fixture tests for each `pfctl` output
+- a `firewall` domain package with a read-only port (JD-010). *Built 2026-10-25. The port has no method that writes, and a test checks every command the adapter runs for a flag that would (JD-034).*
+- parser/fixture tests for each `pfctl` output. *Built 2026-10-25 from `capture-pf-induced.sh`, which also found what JD-020's command list missed: `-s rules` hides NAT, an anchor's rules are not in the main listing, a missing anchor exits 0, `-s Tables -vv` miscounts, and pfctl's "Disabled for" is time since boot when PF has never been enabled.*
 
 ### Completion criteria
 

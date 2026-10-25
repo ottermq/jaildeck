@@ -31,6 +31,9 @@ Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com
   and pages backwards with a cursor.
 - **Authentication** — mandatory. argon2id for the operator password, named API tokens
   for scripts. There is no unauthenticated mode and no flag to disable it.
+- **Firewall** — what PF is doing, read-only: whether it is loaded and enabled, the rules
+  with their counters, NAT, every anchor's rules, tables and their addresses, and recent
+  pflog lines. Nothing in Jail Deck can change PF (JD-020).
 - **Web interface** — an embedded Svelte application for all of the above, light and dark.
 
 ## Requirements

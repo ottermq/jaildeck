@@ -1,0 +1,28 @@
+pass in quick proto tcp from any to any port = ssh flags S/SA keep state label "ssh"
+  [ Evaluations: 0         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]
+block drop in log quick from <jaildeck_test_blocked> to any label "blocked-sources"
+  [ Evaluations: 0         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]
+pass out log quick proto icmp all keep state label "icmp-out-logged"
+  [ Evaluations: 0         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]
+pass out all flags S/SA keep state label "outbound"
+  [ Evaluations: 0         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]
+pass in all flags S/SA keep state
+  [ Evaluations: 0         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]
+anchor "jaildeck/*" all
+  [ Evaluations: 0         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]
+anchor "operator" all
+  [ Evaluations: 0         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]

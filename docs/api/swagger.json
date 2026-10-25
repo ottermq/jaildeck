@@ -209,6 +209,171 @@
                 }
             }
         },
+        "/firewall": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "What the firewall is doing, read-only (JD-020, JD-034). Nothing reachable from\nthis API can change PF.\n\n**`state` is `not_loaded`, `disabled` or `enabled`, and none of them is an\nerror.** Not loaded is the common case: the reference hosts do not load PF, and\nthat answer is a `200` with nothing else in it. **Disabled with rules** is a\npolicy that is loaded and not being applied — the rules read exactly as they\nwould if they were, which is why `state` is the field to look at first.\n\n`for_seconds` is pfctl's own count: the time since PF was last enabled or\ndisabled — **or since boot when neither has happened**. A PF loaded and never\nenabled reports the host's uptime as its time disabled.\n\n`rules` and `nat` are separate because `pfctl` keeps them separate: `-s rules`\ndoes not show a single NAT rule. An anchor's own rules are not in the main\nlisting either — the main ruleset shows `anchor \"jaildeck/*\" all` — so every\nanchor is listed in `anchors` with its rules and NAT. An anchor that could not\nbe read carries an `error` and the rest of the report stands.\n\n**A rule's `text` is pfctl's own rendering**, normalised by pfctl and not\nre-parsed. Only what has to be a number is taken out of it: `number` (the `@N`\nthat pflog refers to), the counters, `last_active`, `label`, and the first word\nas `action`.\n\n**Tables carry no address count.** `pfctl -s Tables -vv` reports one, and on\n15.1 it is wrong — `Addresses: 1` for a table holding three. The count is the\nlength of `GET /api/firewall/tables/{name}`.\n\n`notices` are anything pfctl printed to stderr while succeeding, other than the\nALTQ notice it prints on every verbose call.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "firewall"
+                ],
+                "summary": "PF's state, rules, NAT, anchors and tables",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/firewall.Report"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "PF is loaded and could not be read",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "This Jail Deck has no host access wired",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/firewall/log": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "`tcpdump -n -e -tttt -r \u003cpflog_logfile\u003e`, the last `lines` of it (100 by default,\n1000 at most).\n\n**The file lags the packets.** pflogd buffers and flushes every\n`flush_delay_seconds` — 60 unless `pflog_flags` sets `-d` — and Jail Deck does\nnot signal it to flush sooner: that would be acting on a daemon it does not own\n(JD-034). **`log` records the packet that creates a state**, not every packet,\nso a rule whose counters say thousands may have one line here.\n\nA line is always in `raw`. Where it has the measured shape it is also taken\napart: `rule_number` is the main-ruleset number, which is unambiguous;\n`anchor` is only the **last component** of an anchor's name, because that is all\ntcpdump prints — `jaildeck/web` logs as `web`.\n\n`found: false` means there is no file: nothing has been logged, or pflogd is not\nrunning. **`truncated: true` comes with no lines**: the log was too large to\nread to its end, and the lines that were read are the oldest, not the most\nrecent.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "firewall"
+                ],
+                "summary": "The most recent pflog lines",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "How many lines, 1 to 1000",
+                        "name": "lines",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/firewall.LogReport"
+                        }
+                    },
+                    "400": {
+                        "description": "lines out of range",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "The log could not be read",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "This Jail Deck has no host access wired",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/firewall/tables/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "`pfctl -t \u003cname\u003e -T show`. The name must be one `GET /api/firewall` lists;\nany other is a `404` decided before PF is asked. Read when a table is opened\nrather than with the report, because a blocklist table can hold a hundred\nthousand entries.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "firewall"
+                ],
+                "summary": "One PF table's addresses",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Table name, as listed",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/firewall.TableContents"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a PF table name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "PF has no table by that name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "PF is not loaded",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "This Jail Deck has no host access wired",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/host/layout": {
             "get": {
                 "security": [
@@ -2297,6 +2462,232 @@
             "type": "object",
             "properties": {
                 "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "firewall.Anchor": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "description": "Error says this one anchor could not be read -- it was listed and then\ngone, most likely. The rest of the report still stands.",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nat": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/firewall.Rule"
+                    }
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/firewall.Rule"
+                    }
+                }
+            }
+        },
+        "firewall.LogLine": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "anchor": {
+                    "type": "string"
+                },
+                "direction": {
+                    "type": "string"
+                },
+                "interface": {
+                    "type": "string"
+                },
+                "packet": {
+                    "type": "string"
+                },
+                "raw": {
+                    "type": "string"
+                },
+                "rule": {
+                    "description": "Rule is as tcpdump printed it: 2/0, or 5.web.1/0 for a rule inside an\nanchor. RuleNumber is the main-ruleset number before the first dot or\nslash, which is unambiguous; Anchor is only the anchor's last name\ncomponent, which is not (JD-034).",
+                    "type": "string"
+                },
+                "rule_number": {
+                    "type": "integer"
+                },
+                "time": {
+                    "type": "string"
+                }
+            }
+        },
+        "firewall.LogReport": {
+            "type": "object",
+            "properties": {
+                "file": {
+                    "type": "string"
+                },
+                "flush_delay_seconds": {
+                    "description": "FlushDelaySeconds is how far behind the packets the file may be.\npflogd buffers, and Jail Deck does not signal it to flush (JD-034).",
+                    "type": "integer"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/firewall.LogLine"
+                    }
+                },
+                "truncated": {
+                    "description": "Truncated means the log could not be read to its end, and so no lines\nare given: the ones that were read are the oldest, not the most recent.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "firewall.Report": {
+            "type": "object",
+            "properties": {
+                "anchors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/firewall.Anchor"
+                    }
+                },
+                "counters": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                },
+                "for_seconds": {
+                    "description": "ForSeconds is pfctl's own \"Enabled for 4 days 17:02:03\", in seconds:\nthe time since PF was last enabled or disabled -- or since boot, when\nneither has happened. Measured: a PF loaded and never enabled reports\nthe host's uptime as \"Disabled for\", which is not how long it has been\ndisabled in any sense an operator means (JD-034). Absent when not loaded.",
+                    "type": "integer"
+                },
+                "nat": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/firewall.Rule"
+                    }
+                },
+                "notices": {
+                    "description": "Notices are anything pfctl printed to stderr while succeeding, other\nthan the ALTQ notice every -v call prints. Reported rather than\nswallowed, and rather than failing the page over.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "rules": {
+                    "description": "Rules is the main filter ruleset. NAT is separate because pfctl keeps\nit separate: -s rules does not show a single NAT rule (JD-034).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/firewall.Rule"
+                    }
+                },
+                "state": {
+                    "type": "string"
+                },
+                "state_table": {
+                    "$ref": "#/definitions/firewall.StateTable"
+                },
+                "tables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/firewall.Table"
+                    }
+                }
+            }
+        },
+        "firewall.Rule": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "description": "Action is the first word -- pass, block, match, anchor, nat, rdr -- for\nthe interface to colour by, and nothing cleverer.",
+                    "type": "string"
+                },
+                "bytes": {
+                    "type": "integer"
+                },
+                "evaluations": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "last_active": {
+                    "description": "LastActive is pfctl's timestamp as printed, absent where it says N/A.",
+                    "type": "string"
+                },
+                "number": {
+                    "description": "Number is the @N from -vv. pflog names a rule by it and nothing else\nprints it, which is why the ruleset is read with -vv at all.",
+                    "type": "integer"
+                },
+                "packets": {
+                    "type": "integer"
+                },
+                "state_creations": {
+                    "type": "integer"
+                },
+                "states": {
+                    "type": "integer"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "firewall.StateTable": {
+            "type": "object",
+            "properties": {
+                "current": {
+                    "type": "integer"
+                },
+                "inserts": {
+                    "type": "integer"
+                },
+                "removals": {
+                    "type": "integer"
+                },
+                "searches": {
+                    "type": "integer"
+                }
+            }
+        },
+        "firewall.Table": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "flags": {
+                    "description": "Flags is the column as pfctl printed it, -pa-r-- and the like.",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "persistent": {
+                    "type": "boolean"
+                },
+                "referenced": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "firewall.TableContents": {
+            "type": "object",
+            "properties": {
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
                     "type": "string"
                 }
             }

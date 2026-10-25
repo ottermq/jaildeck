@@ -42,6 +42,9 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Web UI** (v0.6.0): embedded Svelte SPA with login, jails and operations views; API moved under `/api` (JD-015); audit log cursor paging
 - **Host Setup** (v0.7.0): host readiness report per capability, through the API and a Host page; ZFS pool discovery with `JAILDECK_ZFS_POOL`; `jaildeck init` and `PUT /api/host/layout` ensure the jails dataset layout, never clobbering one (JD-021)
 - **Storage Visibility** and **Storage Writes** (v0.8.0): a jail's datasets, ZFS user properties and snapshots, read and written through the API and the interface — create a child dataset with a quota, tag it, snapshot it, roll back, destroy, move a dataset out of a jail and back, and re-clone a jail's root from a newer template without losing its children (JD-022 … JD-026, JD-028, JD-029). Templates derive, list and remove in the same release (JD-027); preparing a release template is still ahead
+- **Templates** and **Jail Provisioning** (v0.9.0): prepare a release template, create a jail from a spec with VNET, rctl limits, allowlisted parameters and child datasets, ensure it idempotently with `PUT`, and destroy it — from the API and the interface (JD-017, JD-018, JD-030)
+- **Exec and Automation Contract** (v0.10.0): run a command inside a jail through the API with a clean environment, a capped timeout and capped output (JD-014, JD-016); host and per-jail resource usage on a Dashboard (JD-031)
+- **Metrics** (v0.11.0): disk health joined to the pools each disk holds up (JD-032), and a Prometheus endpoint behind the API's own token (JD-033). **Packaging** began in the same release: `make package` builds a verified native `.pkg`
 
 ---
 
@@ -311,7 +314,7 @@ A local program can create a jail, run a command in it and destroy it over the u
 
 ## Milestone: Metrics
 
-**Status:** done. Host and per-jail usage through `GET /api/metrics` and a Dashboard page (JD-031), **disk health** in the same report with a Disks section beside Pools (#83, JD-032), and the **Prometheus endpoint** at a bare `/metrics` behind the same token auth (#15, JD-033).
+**Status:** done in v0.11.0. Host and per-jail usage through `GET /api/metrics` and a Dashboard page (JD-031), **disk health** in the same report with a Disks section beside Pools (#83, JD-032), and the **Prometheus endpoint** at a bare `/metrics` behind the same token auth (#15, JD-033).
 
 **Depends on:** Web UI. **★ Otter Cloud:** monitoring before the beta.
 
@@ -363,6 +366,9 @@ The loaded PF policy and its counters are visible in the API and the UI, and not
 ---
 
 ## Milestone: Packaging and Distribution
+
+**Status:** the first half is done in v0.11.0 (#84). Package repositories, a port and
+automated publishing are what remain.
 
 **Local native packaging:** `make package VERSION=X.Y.Z` builds and verifies a FreeBSD 15
 amd64 package through `pkg create`, reusing `make install` staging. See

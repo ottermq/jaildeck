@@ -142,6 +142,17 @@ func (s *Service) readHost(ctx context.Context) (Host, error) {
 
 	host := Host{Load: load, Memory: memory, Pools: pools,
 		CPU: CPU{CPUs: cpus, Ticks: ticks}}
+
+	// A rate that cannot be read costs the seconds and nothing else, so it is
+	// not worth failing a report over: the ticks are still true, and saying
+	// nothing about their unit is better than guessing at it (JD-033).
+	if rate, err := s.host.TickRate(ctx); err != nil {
+		common.Logger(ctx, "metrics").Warn("reporting ticks without their rate",
+			slog.Any("err", err))
+	} else {
+		host.CPU.TicksPerSecond = rate
+	}
+
 	if percent, over, ok := s.rate(ticks); ok {
 		host.CPU.Percent, host.CPU.OverSeconds = &percent, &over
 	}

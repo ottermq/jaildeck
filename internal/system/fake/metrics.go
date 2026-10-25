@@ -34,6 +34,11 @@ func (h *HostMetrics) CPUTicks(context.Context) (metrics.Ticks, int, error) {
 	return h.ticks, 16, nil
 }
 
+// 127 rather than a round number on purpose: it is isengard's real stathz,
+// and anything written against this fake that quietly assumes 100 or 1000
+// breaks here rather than on the host (JD-033).
+func (h *HostMetrics) TickRate(context.Context) (int, error) { return 127, nil }
+
 func (h *HostMetrics) Memory(context.Context) (metrics.Memory, error) {
 	const page = 4096
 	return metrics.Memory{

@@ -43,6 +43,10 @@ cap uname 'uname -a'
 cap hw_model 'sysctl -n hw.model'
 cap hw_machine_arch 'sysctl -n hw.machine_arch'
 cap hw_ncpu 'sysctl -n hw.ncpu'
+# What a kern.cp_time tick is worth. stathz, not hz -- they differ by eight
+# times on isengard, and a metrics endpoint dividing by the wrong one reports
+# CPU seconds that look entirely plausible (JD-033).
+cap kern_clockrate 'sysctl -n kern.clockrate'
 cap kern_vm_guest 'sysctl -n kern.vm_guest'
 # Uptime, because it explains whether the live dmesg buffer has had time to wrap.
 cap uptime 'uptime'

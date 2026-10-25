@@ -294,3 +294,63 @@ func TestJailMetricsRefuseANameThatIsNotOne(t *testing.T) {
 		}
 	}
 }
+
+// --- the tick rate (JD-033) --------------------------------------------
+
+// The exact line isengard prints. stathz is 127 and hz is 1000, and
+// kern.cp_time counts in the first: measured, the counters advance about 127
+// times a second per CPU. Dividing by hz would report CPU seconds eight times
+// too small, and nothing about the number would look wrong.
+func TestTickRateIsStathzAndNotHz(t *testing.T) {
+	adapter := newMetricsAdapter(t)
+	adapter.sysctl("kern.clockrate", "{ hz = 1000, tick = 1000, profhz = 8128, stathz = 127 }")
+
+	rate, err := adapter.TickRate(context.Background())
+	if err != nil {
+		t.Fatalf("TickRate: %v", err)
+	}
+	if rate != 127 {
+		t.Errorf("rate = %d, want 127 (stathz); 1000 would be hz", rate)
+	}
+}
+
+// stathz may legitimately be zero, which means the statistics clock is the
+// main one. hz is the rate then, rather than an error or a zero that would
+// divide by nothing.
+func TestTickRateFallsBackToHzWhenStathzIsZero(t *testing.T) {
+	adapter := newMetricsAdapter(t)
+	adapter.sysctl("kern.clockrate", "{ hz = 100, tick = 10000, profhz = 8128, stathz = 0 }")
+
+	rate, err := adapter.TickRate(context.Background())
+	if err != nil {
+		t.Fatalf("TickRate: %v", err)
+	}
+	if rate != 100 {
+		t.Errorf("rate = %d, want 100 (hz, because stathz is 0)", rate)
+	}
+}
+
+func TestTickRateRefusesALineWithNeither(t *testing.T) {
+	for _, value := range []string{"", "{ }", "{ tick = 1000 }", "nonsense"} {
+		adapter := newMetricsAdapter(t)
+		adapter.sysctl("kern.clockrate", value)
+		if _, err := adapter.TickRate(context.Background()); err == nil {
+			t.Errorf("TickRate(%q) returned no error", value)
+		}
+	}
+}
+
+// Read as name = number pairs, never by position. The braces, the spacing and
+// the set of fields are a printf in the kernel, and a release that adds one
+// would silently shift a positional read onto the wrong number.
+func TestClockRatesReadsPairsNotPositions(t *testing.T) {
+	// Same four values, reordered, with a new field in front.
+	rates := clockRates("{ newfield = 7, stathz = 127, hz = 1000, tick = 1000, profhz = 8128 }")
+	for name, want := range map[string]int{
+		"newfield": 7, "stathz": 127, "hz": 1000, "tick": 1000, "profhz": 8128,
+	} {
+		if rates[name] != want {
+			t.Errorf("%s = %d, want %d", name, rates[name], want)
+		}
+	}
+}

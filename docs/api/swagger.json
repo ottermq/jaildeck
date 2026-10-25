@@ -3326,6 +3326,10 @@
                 },
                 "ticks": {
                     "$ref": "#/definitions/metrics.Ticks"
+                },
+                "ticks_per_second": {
+                    "description": "TicksPerSecond is what a tick above is worth -- kern.clockrate's\nstathz, which on this host is 127 while hz is 1000. Reported because\nhanding out cumulative counters without saying what they count invites\nevery consumer to make the same wrong guess (JD-033). Absent when the\nrate could not be read, which costs the seconds and nothing else.",
+                    "type": "integer"
                 }
             }
         },

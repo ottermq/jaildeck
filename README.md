@@ -376,6 +376,71 @@ A jail operation can legitimately run to its 150-second backstop, so an API clie
 a generous timeout. A `504` means Jail Deck stopped waiting — not that the jail failed to
 start, and not that it will not finish.
 
+### Prometheus
+
+`GET /metrics` serves the same report as `GET /api/metrics` in the Prometheus text
+exposition format — at the bare path a scraper expects, and **behind the same
+authentication as everything else**:
+
+```sh
+jaildeck token add prometheus > /usr/local/etc/jaildeck.token
+chmod 600 /usr/local/etc/jaildeck.token
+```
+
+```yaml
+scrape_configs:
+  - job_name: jaildeck
+    static_configs:
+      - targets: ['isengard:8888']
+    authorization:
+      credentials_file: /usr/local/etc/jaildeck.token
+```
+
+**There is no anonymous mode, and binding to loopback is not a substitute for one.** On
+FreeBSD a jail configured with `ip4=inherit` — which is what a jail without an address of
+its own gets — shares the host's network stack *including its loopback*. Measured on a
+host with three jails: the one with its own address was refused, and the two with
+`ip4=inherit` reached the host's `127.0.0.1:8888` and were served. An unauthenticated
+metrics port would publish the host's memory, every jail's resource usage and every
+disk's serial number to any jail on the box (JD-033).
+
+The socket listener works too, and costs nothing extra — it serves the same router, so
+`/metrics` is already there. Prometheus can scrape a Unix socket only from **v3.15.0**
+(2026-09-25); anything older needs a TCP target.
+
+```yaml
+      - targets: ['/var/run/jaildeck.sock']
+        labels:
+          __unix_socket__: /var/run/jaildeck.sock
+```
+
+Names follow Prometheus conventions rather than the JSON field names, because the reader
+here writes `rate()`: bytes, seconds and ratios. Two that are worth knowing:
+
+- **`jaildeck_jail_cpu_cores`** is cores, not `pcpu`'s percent-of-one-core — a jail on two
+  whole cores reads `2` here and `200` in the JSON.
+- **`jaildeck_host_cpu_seconds_total`** is converted with `kern.clockrate`'s **`stathz`**,
+  not its `hz`. On this hardware those are 127 and 1000, so dividing by the wrong one is
+  an eightfold error. The raw `jaildeck_host_cpu_ticks_total` is published alongside it,
+  and a ratio of two of those is correct whatever a tick is worth.
+
+A disk is published both ways on purpose: `jaildeck_disk_passed` is the drive's own
+verdict and `jaildeck_disk_failing_attributes` is what smartctl flags, and they routinely
+disagree. A rule that catches the disagreement is the point:
+
+```yaml
+- alert: DiskAttributeFailing
+  expr: jaildeck_disk_failing_attributes > 0
+  annotations:
+    summary: '{{ $labels.device }} has a SMART attribute below threshold'
+```
+
+Jail Deck does no alerting of its own and holds no history. The scraper keeps the series;
+something that already knows how to wake people decides when to (JD-011, JD-033).
+
+This endpoint is not in the Swagger spec, deliberately: the spec describes the JSON API,
+and the exposition format documents itself in its own `HELP` lines.
+
 ### The API reference
 
 [`docs/api/swagger.json`](docs/api/swagger.json) describes every endpoint, generated from

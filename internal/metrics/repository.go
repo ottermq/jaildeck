@@ -13,6 +13,11 @@ type HostMetrics interface {
 	// CPUTicks is kern.cp_time, cumulative since boot, with the number of
 	// CPUs the counters are aggregated across.
 	CPUTicks(ctx context.Context) (Ticks, int, error)
+	// TickRate is how many CPUTicks make a second -- kern.clockrate's stathz,
+	// which is not its hz. Its own method rather than another return from
+	// CPUTicks because it is a property of the kernel's clock rather than of
+	// a reading, and it does not change between two of them (JD-033).
+	TickRate(ctx context.Context) (int, error)
 	// Memory is the page counters times the page size.
 	Memory(ctx context.Context) (Memory, error)
 	// PoolUsage is `zpool list -Hp`. A host without ZFS has none, which is

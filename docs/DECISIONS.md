@@ -1384,3 +1384,77 @@ There is no attribute table. `nvme_smart_health_information_log` carries `critic
 ### Rationale
 
 The whole of this is read on request and stored nowhere, like every other metric (JD-011, JD-031). Alerting is deliberately absent: Jail Deck reports, and something that already knows how to wake people decides to. The Prometheus endpoint is the path for that.
+
+---
+
+## JD-033 — The Prometheus Endpoint: Auth, Units and Names
+
+**Status:** Locked — 2026-10-25. Measured on isengard, 15.1-RELEASE-p5, against Prometheus 3.15.1.
+
+`GET /metrics` serves the same report as `GET /api/metrics` in Prometheus exposition format, behind the same authentication as every other endpoint. It answers the open question carried since 2026-10-21: **it shares the API's auth and does not bind a listener of its own.**
+
+### Why not an unauthenticated loopback port
+
+This was the obvious answer — it is what `node_exporter` does, and binding `127.0.0.1` feels like a boundary. On FreeBSD with jails, it is not one. Measured on isengard, where Jail Deck listens on `127.0.0.1:8888`:
+
+| jail | `ip4` | reaching the host's `127.0.0.1:8888` |
+| --- | --- | --- |
+| `postgres` | `disable`, with its own address | connection refused |
+| `ottermq` | `inherit`, no address of its own | **served Jail Deck's page** |
+
+A jail configured with `ip4=inherit` — which is what a jail without an address gets, and two of the three jails on that host — shares the host's network stack *including its loopback*. An unauthenticated metrics port would publish the host's memory, every jail's resource usage and every disk's serial number to any jail on the box, including ones Jail Deck itself created.
+
+So the loopback is not a boundary here, and "it is only on localhost" is not an argument on this platform. The endpoint is authenticated.
+
+### Why not a Unix socket only
+
+Jail Deck already has a socket listener (JD-002), mode 0660 with an optional group, and a jail cannot reach a host socket outside its root. File permissions are the more FreeBSD-shaped answer and were seriously considered.
+
+The blocker is the scraper. Prometheus only learned to scrape a Unix socket in **v3.15.0, released 2026-09-25** — one month before this was written ([#12024](https://github.com/prometheus/prometheus/issues/12024), [#18091](https://github.com/prometheus/prometheus/pull/18091)). A socket-only endpoint is unscrapeable by any older Prometheus without `socat` or nginx in front of it, which is a bridge the operator has to run and keep running.
+
+So the socket is not the *only* path — but it costs nothing to keep. The socket serves the same mux, so `/metrics` is already reachable over it, and an operator on 3.15.0 or newer can scrape the socket with no token and no extra code in Jail Deck. Both work; neither is special-cased.
+
+### The token is the same token
+
+`jaildeck token add prometheus` produces a bearer token, and Prometheus scrapes with `authorization.credentials_file`. No second credential system, no second store, no anonymous mode behind a setting whose wrong value is the leak measured above. A scraper is an automation client, and JD-003 already decided what automation clients present.
+
+```yaml
+scrape_configs:
+  - job_name: jaildeck
+    static_configs:
+      - targets: ['isengard:8888']
+    authorization:
+      credentials_file: /usr/local/etc/jaildeck.token
+```
+
+### `kern.cp_time` is in `stathz`, not `hz`
+
+Measured, because the obvious reading is wrong. `kern.clockrate` on isengard:
+
+```
+{ hz = 1000, tick = 1000, profhz = 8128, stathz = 127 }
+```
+
+Over two seconds the five `kern.cp_time` counters advanced 3995 ticks across 16 CPUs — 125 per second per CPU, which is `stathz`, not `hz`. An implementation that divided by `hz` would report CPU seconds **eight times too small**, and nothing about the number would look wrong.
+
+So `/metrics` exposes `jaildeck_host_cpu_seconds_total` converted with `stathz`, and `kern.clockrate` is read for it. Where `stathz` is zero — permitted, and it means the statistics clock is the main one — `hz` is used instead.
+
+This exposed a real gap in JD-031's JSON as well: it hands out `cpu.ticks` and never says what a tick is, leaving every consumer to make the same wrong guess. `cpu.ticks_per_second` is now part of the response.
+
+### Units and names
+
+Prometheus conventions win over matching the JSON field names, because the audience is different: a scraper's user writes `rate()` and expects base units.
+
+- **bytes**, not the API's already-exact byte counts renamed — those match already
+- **seconds** for anything the drive or kernel reports in hours or ticks. Both conversions are exact (`×3600`, `÷stathz`), so nothing is invented
+- **ratios** 0–1 rather than percentages, for pool capacity and NVMe spare
+- `_total` on counters, and only on counters
+- `_info` metrics carrying identity as labels with a value of `1` — the disk's model and serial, the build version. Labels, not metric names, because they change and metric names should not
+
+**A jail's CPU is `jaildeck_jail_cpu_cores`**, not `pcpu`. The API reports percent of *one* core, so a jail on two whole cores reads 200, which JD-031 already found to be the confusing unit next to anything else. `cores` is the natural unit and the dashboard already says it. Where `rctl` is the source there is also `jaildeck_jail_cpu_seconds_total`, a genuine cumulative counter — a different quantity, not the same one renamed, and absent where `ps` is the source rather than zero.
+
+### What is deliberately not here
+
+**No alerting, no thresholds, no `up`-style verdict on a disk.** Jail Deck reports; Prometheus and Alertmanager already know how to wake someone, and this endpoint exists so that they can. A `jaildeck_disk_failing_attributes` of `1` is the fact; deciding it is worth a phone call at 3am is the operator's, expressed in a rule file that Jail Deck never sees. The same position JD-032 takes against a health score, for the same reason.
+
+**No history, no sampler.** Unchanged from JD-011 and JD-031: the scraper holds the history, which is the entire argument for having this endpoint rather than a database.

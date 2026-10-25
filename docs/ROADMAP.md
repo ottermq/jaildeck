@@ -311,7 +311,7 @@ A local program can create a jail, run a command in it and destroy it over the u
 
 ## Milestone: Metrics
 
-**Status:** the dashboard half is done — host and per-jail usage through `GET /api/metrics` and a Dashboard page (JD-031), with **disk health** in the same report and a Disks section beside Pools (#83, JD-032). The **Prometheus `/metrics` endpoint is the remaining half**, along with the question of whether it shares the API's token auth or binds a listener of its own.
+**Status:** done. Host and per-jail usage through `GET /api/metrics` and a Dashboard page (JD-031), **disk health** in the same report with a Disks section beside Pools (#83, JD-032), and the **Prometheus endpoint** at a bare `/metrics` behind the same token auth (#15, JD-033).
 
 **Depends on:** Web UI. **★ Otter Cloud:** monitoring before the beta.
 
@@ -328,13 +328,13 @@ Goal: the observability half of the stated scope — see load and memory, for th
 
 - data source: `rctl -u jail:<name>` where `kern.racct.enable` is on; a fallback via `jls` + `ps --libxo` where it is off. *Built 2026-10-24, and the fallback is trustworthy: measured on three jails, the `ps` resident sums land within 1% of rctl's `memoryuse` and the process counts are identical, because racct's `memoryuse` is the sum of the same per-process resident sizes (JD-031).*
 - decide sampling: on request, or a background sampler with a short retention window. *Decided 2026-10-24: neither. The previous CPU reading is kept in memory and the response carries the window it was measured over; the first call after a restart reports no percentage rather than a zero.*
-- decide whether `/metrics` shares the API's token auth or binds a separate listener (open question below)
+- ~~decide whether `/metrics` shares the API's token auth or binds a separate listener~~ *Answered 2026-10-25 (JD-033): it shares the auth. Measured first — a jail with `ip4=inherit` reaches the host's loopback, so an unauthenticated port there would publish every jail's usage and every disk's serial to any jail on the box. The socket listener serves it too and costs nothing, but Prometheus can only scrape a socket from v3.15.0, which is a month old.*
 - disk health reads `smartctl --json`, joined to pool members through `zpool list -v` and `glabel status`, and to the kernel's own device names through `geom disk list`. *Built 2026-10-25. The join is by name first and by serial second: `isengard`'s NVMe is `nda0` to ZFS and only ever `/dev/nvme0` to smartctl, while `rohan`'s USB-bridged `da0` has one name and two different serials (JD-032).*
-- **a disk that is failing is not yet surfaced anywhere but the dashboard.** There is no alert, no audit entry and no Prometheus series for it, so an operator who does not open the page still learns nothing. A deliberate gap for now, recorded here rather than left implied.
+- ~~a disk that is failing is not yet surfaced anywhere but the dashboard.~~ *Closed 2026-10-25: `jaildeck_disk_failing_attributes` and `jaildeck_disk_passed` are both published, so a rule can catch the case where they disagree. Jail Deck still raises nothing itself, which is the position JD-032 takes and not a gap.*
 
 ### Completion criteria
 
-Host and per-jail resource usage are visible in the dashboard and scrapeable by Prometheus, and a disk that is about to fail is visible before the pool notices.
+Host and per-jail resource usage are visible in the dashboard and scrapeable by Prometheus, and a disk that is about to fail is visible before the pool notices. *Met 2026-10-25.*
 
 ---
 
@@ -457,7 +457,7 @@ Added 2026-10-21 with the host-agent scope:
 
 - ~~Should rctl rules be applied by jail.conf `exec.*` hooks or by the adapter?~~ **Answered 2026-10-24 (JD-018): hooks.** Measuring added a second reason to the first: jail(8) destroys a jail whose `exec.poststart` fails, so a jail that could not be limited never runs — which an adapter could only have achieved by stopping a jail it had just started
 - ~~What are the exec timeout cap and output size cap?~~ **Answered 2026-10-24 (JD-014):** 60s by default, 5 minutes at most, 1 MiB per stream. Sized from what commands actually produce in a jail — `ps auxww` 1.4 KB against `find / -type f` at 2.85 MB.
-- Does `/metrics` share auth with the API, or bind a separate loopback/socket listener?
+- ~~Does `/metrics` share auth with the API, or bind a separate loopback/socket listener?~~ **Answered 2026-10-25 (JD-033): it shares the API's auth.** The loopback was the obvious boundary and is not one here — measured on isengard, a jail with `ip4=inherit` reached the host's `127.0.0.1:8888` and was served, while the jail with its own address was refused. A Unix socket is the better-shaped answer and stays available, but Prometheus only learned to scrape one in v3.15.0 (2026-09-25), so it cannot be the only path.
 - Are derived templates (release + packages) owned by the template domain, or are they exec + snapshot from the caller's point of view?
 - `vm-bhyve` or direct bhyve — settled by the spike in Virtual Machines (JD-019)
 

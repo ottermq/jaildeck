@@ -66,6 +66,12 @@ type CPU struct {
 	// seconds after the last one and one taken five minutes after are told
 	// apart rather than read as the same word.
 	OverSeconds *float64 `json:"over_seconds,omitempty"`
+	// TicksPerSecond is what a tick above is worth -- kern.clockrate's
+	// stathz, which on this host is 127 while hz is 1000. Reported because
+	// handing out cumulative counters without saying what they count invites
+	// every consumer to make the same wrong guess (JD-033). Absent when the
+	// rate could not be read, which costs the seconds and nothing else.
+	TicksPerSecond int `json:"ticks_per_second,omitempty"`
 }
 
 // Memory is the page counters times the page size, against hw.physmem.

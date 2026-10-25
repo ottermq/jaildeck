@@ -20,6 +20,51 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+### API
+
+- **Firewall visibility, read-only** (#16, JD-034). `GET /api/firewall` answers PF's state,
+  counters, the rules with per-rule counters, NAT, every anchor's rules and the tables;
+  `GET /api/firewall/tables/{name}` one table's addresses; `GET /api/firewall/log` the most
+  recent pflog lines. Nothing reachable from the API can change PF (JD-020).
+
+  **`state` is `not_loaded`, `disabled` or `enabled`, and none is an error.** Not loaded is
+  a `200` with nothing else in it — the reference hosts do not load PF. Disabled with rules
+  is a policy loaded and not applied, and the rules read exactly as enforced ones would, so
+  `state` is the field to read first.
+
+  `nat` is separate because `pfctl -s rules` does not show NAT at all, and each anchor's
+  rules are listed under `anchors` because the main listing does not include them. A rule's
+  `text` is pfctl's own rendering, not re-parsed. **Tables carry no address count**:
+  pfctl's own is wrong on 15.1, so the count is the table's contents.
+
+  **`for_seconds` is pfctl's clock, which restarts at every enable and disable and counts
+  from boot otherwise** — a PF loaded and never enabled reports the host's uptime as its
+  time disabled.
+
+  pflog lines may lag by pflogd's flush delay (60 s by default), which Jail Deck does not
+  trigger; `log` records the packet that creates a state, not every packet; and an anchor
+  is named in the log by its last component only. A log too large to read to its end comes
+  back with `truncated: true` and **no lines**, rather than its oldest lines.
+
+### Added
+
+- **A Firewall page** leading with PF's state — not loaded, disabled (an amber banner:
+  none of these rules is being applied), or enabled — then the rules, NAT, anchors, tables
+  opened on demand, and the recent log.
+
+### Development
+
+- **The frontend has tests** (#77). Vitest with `@testing-library/svelte` in jsdom renders
+  the real components and asserts what they send; `make web-check` runs them with the type
+  check, which on its own had passed every bug v0.9.0's interface shipped. The create
+  form's `buildSpec` is a module of its own, and the tests fail when each v0.9.0 bug is
+  put back. A frontend change is still not verified until someone has looked at it
+  (`docs/UI.md`).
+
+---
+
 ## v0.11.0 — 2026-10-25
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.11.0)

@@ -26,7 +26,7 @@ DESTDIR?=
 # `gmake -n package` would otherwise build, stage and overwrite a real archive.
 PACKAGE_MAKE=$(MAKE)
 
-.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check all install package doc doc-check
+.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check web-test all install package doc doc-check
 
 ## build: compile the binary into bin/
 build:
@@ -126,9 +126,17 @@ web:
 web-dev:
 	@cd web && npm install && npm run dev
 
-## web-check: typecheck the frontend (requires Node)
+## web-check: typecheck and test the frontend (requires Node)
+# Both, because the type check alone passed every bug v0.9.0's interface
+# shipped: a binding's value is invisible to TypeScript (#77). Run from a
+# subshell so make -j and BSD make's single-shell mode cannot run the two
+# halves in the wrong directory.
 web-check:
-	@cd web && npm run check
+	@(cd web && npm run check && npm test)
+
+## web-test: run the frontend tests alone (requires Node)
+web-test:
+	@(cd web && npm test)
 
 ## all: build the backend and frontend
 # In order, never as prerequisites: `all: web build` lets make -j start the Go

@@ -517,7 +517,7 @@ Before pushing:
 make check      # gofmt, go vet, build, tests — the full gate
 make test-race
 make cover
-make web-check  # svelte-check and tsc
+make web-check  # svelte-check, tsc and the frontend tests
 make help       # every target
 ```
 

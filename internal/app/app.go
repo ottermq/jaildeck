@@ -135,7 +135,7 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	vmHandler := vms.NewHandler(vms.NewService(vmSystem))
+	vmHandler := vms.NewHandler(vms.NewService(vmSystem, auditLogger))
 
 	return &App{
 		authHandler:     authHandler,

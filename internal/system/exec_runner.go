@@ -43,6 +43,15 @@ func (r *ExecCommandRunner) Run(ctx context.Context, cmd Command) (CommandResult
 	c.Cancel = func() error {
 		return syscall.Kill(-c.Process.Pid, syscall.SIGTERM)
 	}
+	if cmd.Detach {
+		// A new session, so nothing it leaves behind shares a process group
+		// or a session with Jail Deck, and a timeout that signals the
+		// command alone. What it leaves behind is what it was run for.
+		c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		c.Cancel = func() error {
+			return c.Process.Signal(syscall.SIGTERM)
+		}
+	}
 	c.WaitDelay = commandWaitDelay
 
 	stdout := newCappedBuffer(cmd.MaxOutput)

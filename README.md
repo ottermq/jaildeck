@@ -11,7 +11,7 @@ is a Linux container.
 stopped, restarted and destroyed from the browser or the API; their ZFS datasets,
 snapshots and resource usage are visible; host setup is checked; PF and bhyve VMs can be
 seen, read-only; every operation is audited, and nothing is reachable without a password
-or an API token. Starting and stopping VMs is next — see [the roadmap](docs/ROADMAP.md).
+or an API token. Creating VMs is next — see [the roadmap](docs/ROADMAP.md).
 
 Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com/jaildeck/)**.
 
@@ -34,9 +34,10 @@ Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com
 - **Firewall** — what PF is doing, read-only: whether it is loaded and enabled, the rules
   with their counters, NAT, every anchor's rules, tables and their addresses, and recent
   pflog lines. Nothing in Jail Deck can change PF (JD-020).
-- **Virtual machines** — vm-bhyve's guests, read-only: each one's state, CPU, memory and
-  whether it starts at boot, and for one guest its console, network interfaces and disks
-  (JD-035). Nothing in Jail Deck can start or change a guest yet.
+- **Virtual machines** — vm-bhyve's guests: each one's state, CPU, memory and whether it
+  starts at boot, and for one guest its console, network interfaces and disks (JD-035).
+  Start, stop and restart through the API, confirmed in vm-bhyve's listing; a guest that
+  ignores the power button for 60 seconds is powered off, and the answer says so (JD-036).
 - **Web interface** — an embedded Svelte application for all of the above, light and dark.
 
 ## Requirements
@@ -233,6 +234,9 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/audit` | operation history, newest first |
 | `GET /api/vms` | vm-bhyve's guests and their state, and whether vm-bhyve is ready |
 | `GET /api/vms/{name}` | one guest's console, network interfaces and disks |
+| `POST /api/vms/{name}/start` | start it and confirm it is running |
+| `POST /api/vms/{name}/stop` | the power button, then a poweroff after 60 seconds, reported as `forced` |
+| `POST /api/vms/{name}/restart` | stop, then start |
 
 A jail carries its storage: `datasets` is the dataset mounted at the jail's `path` plus
 everything under it, and `properties` is the ZFS *user* properties of the jail's own

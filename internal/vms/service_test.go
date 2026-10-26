@@ -22,6 +22,18 @@ func (s *stubSystem) VMList(context.Context) (Listing, error) {
 	return s.listing, s.listErr
 }
 
+func (s *stubSystem) VMStart(context.Context, string) (string, error) {
+	panic("the read-only tests start nothing")
+}
+
+func (s *stubSystem) VMStop(context.Context, string) (string, error) {
+	panic("the read-only tests stop nothing")
+}
+
+func (s *stubSystem) VMPoweroff(context.Context, string) (string, error) {
+	panic("the read-only tests power nothing off")
+}
+
 func (s *stubSystem) VMInfo(_ context.Context, name string) (Info, error) {
 	s.calls = append(s.calls, "info "+name)
 	if s.infoErr != nil {
@@ -48,7 +60,7 @@ func statusOf(t *testing.T, err error) int {
 }
 
 func TestListKeepsAnEmptyListAList(t *testing.T) {
-	s := NewService(&stubSystem{listing: Listing{VMBhyve: VMBhyveReady}})
+	s := NewService(&stubSystem{listing: Listing{VMBhyve: VMBhyveReady}}, nil)
 	listing, err := s.List(context.Background())
 	if err != nil || listing.VMs == nil {
 		t.Errorf("listing = %+v, err = %v; want an empty list, not null", listing, err)
@@ -59,7 +71,7 @@ func TestListKeepsAnEmptyListAList(t *testing.T) {
 func TestListPassesOnVMBhyvesState(t *testing.T) {
 	want := Listing{VMBhyve: VMBhyveNotConfigured, Problem: "$vm_enable is not enabled in /etc/rc.conf!",
 		VMs: []VM{}}
-	s := NewService(&stubSystem{listing: want})
+	s := NewService(&stubSystem{listing: want}, nil)
 	listing, err := s.List(context.Background())
 	if err != nil || listing.VMBhyve != want.VMBhyve || listing.Problem != want.Problem {
 		t.Errorf("listing = %+v, err = %v; want %+v", listing, err, want)
@@ -67,7 +79,7 @@ func TestListPassesOnVMBhyvesState(t *testing.T) {
 }
 
 func TestListReadErrorIs500(t *testing.T) {
-	s := NewService(&stubSystem{listErr: errors.New("vm: killed")})
+	s := NewService(&stubSystem{listErr: errors.New("vm: killed")}, nil)
 	_, err := s.List(context.Background())
 	if statusOf(t, err) != http.StatusInternalServerError {
 		t.Errorf("err = %v, want 500", err)
@@ -75,7 +87,7 @@ func TestListReadErrorIs500(t *testing.T) {
 }
 
 func TestWithoutHostAccessIs501(t *testing.T) {
-	s := NewService(nil)
+	s := NewService(nil, nil)
 	if _, err := s.List(context.Background()); statusOf(t, err) != http.StatusNotImplemented {
 		t.Errorf("List: %v, want 501", err)
 	}
@@ -90,7 +102,7 @@ func TestGetJoinsTheRowAndTheInfo(t *testing.T) {
 	listing := ready("web")
 	listing.VMs[0].Autostart, listing.VMs[0].AutostartOrder = true, 1
 	system := &stubSystem{listing: listing, info: map[string]Info{"web": {UUID: "abc"}}}
-	detail, err := NewService(system).Get(context.Background(), "web")
+	detail, err := NewService(system, nil).Get(context.Background(), "web")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -106,7 +118,7 @@ func TestGetJoinsTheRowAndTheInfo(t *testing.T) {
 func TestGetRefusesWhatCannotBeAGuestName(t *testing.T) {
 	for _, name := range []string{"", "a", "-web", "web-", "we b", "web/../x", "web;ls", "../etc"} {
 		system := &stubSystem{listing: ready("web")}
-		_, err := NewService(system).Get(context.Background(), name)
+		_, err := NewService(system, nil).Get(context.Background(), name)
 		if statusOf(t, err) != http.StatusBadRequest {
 			t.Errorf("%q: err = %v, want 400", name, err)
 		}
@@ -120,7 +132,7 @@ func TestGetRefusesWhatCannotBeAGuestName(t *testing.T) {
 // asked about it.
 func TestGetAnUnlistedNameIs404WithoutAskingVMInfo(t *testing.T) {
 	system := &stubSystem{listing: ready("web")}
-	_, err := NewService(system).Get(context.Background(), "db")
+	_, err := NewService(system, nil).Get(context.Background(), "db")
 	if statusOf(t, err) != http.StatusNotFound {
 		t.Errorf("err = %v, want 404", err)
 	}
@@ -132,7 +144,7 @@ func TestGetAnUnlistedNameIs404WithoutAskingVMInfo(t *testing.T) {
 // Destroyed between the listing and vm info.
 func TestGetAGuestThatVanishesIs404(t *testing.T) {
 	system := &stubSystem{listing: ready("web"), infoErr: ErrNoSuchVM}
-	_, err := NewService(system).Get(context.Background(), "web")
+	_, err := NewService(system, nil).Get(context.Background(), "web")
 	if statusOf(t, err) != http.StatusNotFound {
 		t.Errorf("err = %v, want 404", err)
 	}
@@ -143,7 +155,7 @@ func TestGetWhenVMBhyveCannotListIs409(t *testing.T) {
 		{VMBhyve: VMBhyveNotInstalled},
 		{VMBhyve: VMBhyveNotConfigured, Problem: "$vm_dir has not been configured"},
 	} {
-		_, err := NewService(&stubSystem{listing: listing}).Get(context.Background(), "web")
+		_, err := NewService(&stubSystem{listing: listing}, nil).Get(context.Background(), "web")
 		if statusOf(t, err) != http.StatusConflict {
 			t.Errorf("%s: err = %v, want 409", listing.VMBhyve, err)
 		}

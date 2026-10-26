@@ -2,6 +2,7 @@ package fake
 
 import (
 	"context"
+	"sync"
 
 	"github.com/ottermq/jaildeck/internal/vms"
 )
@@ -12,21 +13,81 @@ import (
 //
 // Ready, because a fake that showed vm-bhyve not installed -- the honest
 // default for most hosts -- would leave the rest of the page unbuildable.
-type VMs struct{}
-
-func NewVMs() *VMs { return &VMs{} }
-
-func (f *VMs) VMList(context.Context) (vms.Listing, error) {
-	pid := 16783
-	return vms.Listing{VMBhyve: vms.VMBhyveReady, VMs: []vms.VM{
-		{Name: "jd-cap-running", Datastore: "default", Loader: "uefi", CPU: "2", Memory: "512M",
-			State: vms.StateRunning, PID: &pid, Autostart: true, AutostartOrder: 1},
-		{Name: "jd-cap-stopped", Datastore: "default", Loader: "uefi", CPU: "1", Memory: "256M",
-			State: vms.StateStopped},
-	}}, nil
+//
+// Start and stop change what it lists, at once and always cleanly: the
+// timing and the guest that ignores the power button are the service tests'
+// to exercise, not the fake's.
+type VMs struct {
+	mu      sync.Mutex
+	running map[string]bool
+	nextPID int
+	pids    map[string]int
 }
 
-func (f *VMs) VMInfo(_ context.Context, name string) (vms.Info, error) {
+func NewVMs() *VMs {
+	return &VMs{
+		running: map[string]bool{"jd-cap-running": true},
+		pids:    map[string]int{"jd-cap-running": 16783},
+		nextPID: 20000,
+	}
+}
+
+func (f *VMs) VMList(context.Context) (vms.Listing, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	guests := []vms.VM{
+		{Name: "jd-cap-running", Datastore: "default", Loader: "uefi", CPU: "2", Memory: "512M",
+			Autostart: true, AutostartOrder: 1},
+		{Name: "jd-cap-stopped", Datastore: "default", Loader: "uefi", CPU: "1", Memory: "256M"},
+	}
+	for i := range guests {
+		guests[i].State = vms.StateStopped
+		if f.running[guests[i].Name] {
+			pid := f.pids[guests[i].Name]
+			guests[i].State, guests[i].PID = vms.StateRunning, &pid
+		}
+	}
+	return vms.Listing{VMBhyve: vms.VMBhyveReady, VMs: guests}, nil
+}
+
+func (f *VMs) VMStart(_ context.Context, name string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextPID++
+	f.running[name], f.pids[name] = true, f.nextPID
+	return "vm start " + name, nil
+}
+
+func (f *VMs) VMStop(_ context.Context, name string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.running, name)
+	return "vm stop " + name, nil
+}
+
+func (f *VMs) VMPoweroff(_ context.Context, name string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.running, name)
+	return "vm poweroff -f " + name, nil
+}
+
+func (f *VMs) VMInfo(ctx context.Context, name string) (vms.Info, error) {
+	info, err := f.info(name)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err == nil && !f.running[name] {
+		// What a guest has only while its bhyve instance exists.
+		info.MemoryResident, info.Consoles = nil, nil
+		for i := range info.Networks {
+			info.Networks[i].Device, info.Networks[i].Bridge = "", ""
+			info.Networks[i].BytesIn, info.Networks[i].BytesOut = nil, nil
+		}
+	}
+	return info, err
+}
+
+func (f *VMs) info(name string) (vms.Info, error) {
 	size, used := int64(1073741824), int64(57344)
 	switch name {
 	case "jd-cap-running":

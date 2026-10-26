@@ -45,6 +45,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Templates** and **Jail Provisioning** (v0.9.0): prepare a release template, create a jail from a spec with VNET, rctl limits, allowlisted parameters and child datasets, ensure it idempotently with `PUT`, and destroy it — from the API and the interface (JD-017, JD-018, JD-030)
 - **Exec and Automation Contract** (v0.10.0): run a command inside a jail through the API with a clean environment, a capped timeout and capped output (JD-014, JD-016); host and per-jail resource usage on a Dashboard (JD-031)
 - **Metrics** (v0.11.0): disk health joined to the pools each disk holds up (JD-032), and a Prometheus endpoint behind the API's own token (JD-033). **Packaging** began in the same release: `make package` builds a verified native `.pkg`
+- **Firewall Visibility** (v0.12.0): PF's state, rules with counters, NAT, anchors, tables and recent pflog lines, read-only — nothing reachable from the API can change PF (JD-020, JD-034). The interface gained a test suite in the same release (#77)
 
 ---
 
@@ -343,7 +344,7 @@ Host and per-jail resource usage are visible in the dashboard and scrapeable by 
 
 ## Milestone: Firewall Visibility
 
-**Status:** done — 2026-10-25 (#16, JD-034). `GET /api/firewall`, `/api/firewall/tables/{name}` and `/api/firewall/log`, and a Firewall page. Measured on the VM with a test ruleset loaded and removed again; on isengard and rohan, PF is not loaded, and the view says so as an answer.
+**Status:** done in v0.12.0 (#16, JD-034). `GET /api/firewall`, `/api/firewall/tables/{name}` and `/api/firewall/log`, and a Firewall page. Measured on the VM with a test ruleset loaded and removed again; on isengard and rohan, PF is not loaded, and the view says so as an answer.
 
 **Depends on:** Web UI. Needed by: operator insight; an isolation-check script can read it.
 

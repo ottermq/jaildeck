@@ -20,7 +20,13 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.12.0 — 2026-10-25
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.12.0)
+
+Closes the **Firewall Visibility** milestone, and gives the interface tests. Nothing to act
+on when upgrading: every endpoint from v0.11.0 answers as it did, and `rc.d/jaildeck`,
+`.env.sample` and the package's contents are unchanged apart from the binary.
 
 ### API
 

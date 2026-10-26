@@ -20,6 +20,44 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.15.0 — 2026-10-26
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.15.0)
+
+Jail Deck can start, stop and restart vm-bhyve's guests, from the VMs pages or the API
+(JD-036). These are the first VM operations that change the host.
+
+Nothing to act on when upgrading. Every endpoint from v0.14.0 answers as it did; there are
+three new ones.
+
+### Added
+
+- **Start, Stop and Restart on the VMs pages** (#104). A running guest offers Stop and
+  Restart, a stopped one Start, a suspended one Resume. One that is booting or held by
+  another host offers nothing and says why. Stop and Restart ask first, and the question
+  is the deadline: a minute for the power button, then a poweroff that loses whatever the
+  guest had not written.
+
+### API
+
+- **`POST /api/vms/{name}/start`, `/stop` and `/restart`** (#103, JD-036). Each step is
+  confirmed in `vm list`, because neither `vm start` nor `vm stop` waits for the guest.
+  A stop that the guest does not answer within 60 seconds becomes `vm poweroff -f`, and
+  the answer says `forced: true`. Starting a running guest or stopping a stopped one runs
+  nothing. A guest locked by another host is a `409`, and so is stopping one in its boot
+  loader, which vm-bhyve would silently decline. Audited as `vm-start`, `vm-stop` and
+  `vm-poweroff`.
+
+### Internal
+
+- **The command runner can detach a command** (#103). `vm start` leaves vm-bhyve's
+  supervisor in its caller's process group, measured, and the runner kills a whole group
+  on a timeout — which would have powered the guest off. A detached command gets a session
+  of its own, and a timeout signals it alone. Measured live: stopping Jail Deck left a
+  started guest running.
+
+---
+
 ## v0.14.0 — 2026-10-26
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.14.0)

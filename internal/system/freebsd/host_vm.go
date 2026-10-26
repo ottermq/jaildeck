@@ -62,16 +62,7 @@ func (a *Adapter) VMBhyve(ctx context.Context) (host.VMBhyve, error) {
 		// only ever going to be the observation beside the pass.
 		return vm, nil
 	}
-	// "NAME  TYPE  PATH  ZFS DATASET", then "default  zfs  /jd-vmcap  tank/jd-vmcap"
-	for _, line := range nonEmptyLines(stores.Stdout) {
-		fields := strings.Fields(line)
-		if len(fields) >= 3 && fields[0] == "default" {
-			vm.Datastore = fields[2]
-			if len(fields) >= 4 {
-				vm.Dataset = fields[3]
-			}
-		}
-	}
+	vm.Datastore, vm.Dataset = defaultDatastore(stores.Stdout)
 	return vm, nil
 }
 

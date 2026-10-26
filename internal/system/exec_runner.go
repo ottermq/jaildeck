@@ -58,6 +58,16 @@ func (r *ExecCommandRunner) Run(ctx context.Context, cmd Command) (CommandResult
 	stderr := newCappedBuffer(cmd.MaxOutput)
 	c.Stdout = stdout
 	c.Stderr = stderr
+	if cmd.StdoutFile != "" {
+		// An *os.File is handed to the command as its descriptor, so what it
+		// writes goes straight to the file rather than through a pipe here.
+		out, err := os.OpenFile(cmd.StdoutFile, os.O_WRONLY, 0)
+		if err != nil {
+			return CommandResult{ExitCode: -1}, fmt.Errorf("opening %s for the output of %s: %w", cmd.StdoutFile, cmd.Name, err)
+		}
+		defer out.Close()
+		c.Stdout = out
+	}
 
 	start := time.Now()
 	err := c.Run()

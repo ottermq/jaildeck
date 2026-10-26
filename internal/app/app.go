@@ -11,6 +11,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/config"
 	"github.com/ottermq/jaildeck/internal/firewall"
 	"github.com/ottermq/jaildeck/internal/host"
+	"github.com/ottermq/jaildeck/internal/images"
 	"github.com/ottermq/jaildeck/internal/jails"
 	"github.com/ottermq/jaildeck/internal/metrics"
 	"github.com/ottermq/jaildeck/internal/state"
@@ -34,6 +35,7 @@ type App struct {
 	metricsHandler  *metrics.Handler
 	firewallHandler *firewall.Handler
 	vmHandler       *vms.Handler
+	imageHandler    *images.Handler
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -137,6 +139,12 @@ func New(cfg *config.Config) (*App, error) {
 	}
 	vmHandler := vms.NewHandler(vms.NewService(vmSystem, auditLogger))
 
+	imageSystem, err := newImageSystem(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	imageHandler := images.NewHandler(images.NewService(imageSystem, auditLogger))
+
 	return &App{
 		authHandler:     authHandler,
 		jailHandler:     jailHandler,
@@ -147,6 +155,7 @@ func New(cfg *config.Config) (*App, error) {
 		metricsHandler:  metricsHandler,
 		firewallHandler: firewallHandler,
 		vmHandler:       vmHandler,
+		imageHandler:    imageHandler,
 	}, nil
 }
 
@@ -170,6 +179,19 @@ func newVMSystem(adapter string) (vms.VMSystem, error) {
 		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
 	case config.AdapterFake:
 		return fake.NewVMs(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
+}
+
+// newImageSystem selects the VM image implementation (JD-037).
+func newImageSystem(adapter string) (images.ImageSystem, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewImageAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewImages(), nil
 	default:
 		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

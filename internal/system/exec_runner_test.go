@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -306,5 +308,62 @@ func TestExecCommandRunner_Run_ATimeoutSignalsOnlyTheDetachedCommand(t *testing.
 	}
 	if !gone(pid) {
 		t.Error("a plain command's timeout left its child running")
+	}
+}
+
+// StdoutFile is how a VM image's disk reaches its zvol (JD-037): the command
+// writes the file itself, nothing is kept, and the file is written over in
+// place -- a device cannot be created or truncated, so neither is a file.
+func TestExecCommandRunner_Run_StdoutFileReceivesTheOutput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "disk")
+	if err := os.WriteFile(path, []byte("0123456789"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&ExecCommandRunner{}).Run(context.Background(), Command{
+		Name: "sh", Args: []string{"-c", "printf abc; printf err >&2"}, StdoutFile: path,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Stdout != "" {
+		t.Errorf("Stdout = %q, want nothing kept", result.Stdout)
+	}
+	if result.Stderr != "err" {
+		t.Errorf("Stderr = %q, want it kept as usual", result.Stderr)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "abc3456789" {
+		t.Errorf("file = %q, want the output written over the start and the rest untouched", got)
+	}
+}
+
+func TestExecCommandRunner_Run_StdoutFileMustExist(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran")
+	path := filepath.Join(dir, "absent")
+	result, err := (&ExecCommandRunner{}).Run(context.Background(), Command{
+		Name: "touch", Args: []string{marker}, StdoutFile: path,
+	})
+	if err == nil || !strings.Contains(err.Error(), path) {
+		t.Fatalf("err = %v, want one naming %s", err, path)
+	}
+	if result.ExitCode != -1 {
+		t.Errorf("ExitCode = %d, want -1", result.ExitCode)
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("%s was created", path)
+	}
+	if _, statErr := os.Stat(marker); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("the command ran although its output had nowhere to go")
+	}
+}
+
+func TestCommand_String_ShowsTheStdoutFile(t *testing.T) {
+	cmd := Command{Name: "tar", Args: []string{"-xOf", "a.tar.xz", "disk.raw"}, StdoutFile: "/dev/zvol/tank/vm/.images/d"}
+	if got, want := cmd.String(), "tar -xOf a.tar.xz disk.raw > /dev/zvol/tank/vm/.images/d"; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
 	}
 }

@@ -1,0 +1,6 @@
+tank/vm/jd-cap-img/disk0	origin	tank/vm/.images/jd-cap-debian13@base	-
+tank/vm/jd-cap-img/disk0	volsize	8589934592	local
+tank/vm/jd-cap-img/disk0	used	57344	-
+tank/vm/jd-cap-img/disk0	referenced	567738368	-
+tank/vm/jd-cap-img/disk0	refreservation	0	default
+tank/vm/jd-cap-img/disk0	volmode	dev	local

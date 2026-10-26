@@ -60,3 +60,58 @@ vm_life_poweroff	doas vm poweroff -f jd-cap-life	exit=0
 vm_life_after_poweroff	(state each second for 8s)	exit=0
 vm_life_stop_early	doas vm stop jd-cap-life	exit=0
 vm_life_after_stop_early	(state each second for 15s)	exit=0
+vm_img_fetch_sums	fetch -o /var/tmp/jd-capture-vm-images/SHA512SUMS https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS	exit=0	2s
+vm_img_fetch	fetch -o /var/tmp/jd-capture-vm-images/debian-13-genericcloud-amd64.tar.xz https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.tar.xz	exit=0	79s
+vm_img_sums_line	grep ' debian-13-genericcloud-amd64.tar.xz$' /var/tmp/jd-capture-vm-images/SHA512SUMS	exit=0	0s
+vm_img_sha512	sha512 -q /var/tmp/jd-capture-vm-images/debian-13-genericcloud-amd64.tar.xz	exit=0	1s
+vm_img_tar_list	tar -tvf /var/tmp/jd-capture-vm-images/debian-13-genericcloud-amd64.tar.xz	exit=0	13s
+vm_img_create_parent	doas zfs create -o volmode=dev tank/vm/.images	exit=0	2s
+vm_img_vm_list_with_parent	doas vm list	exit=0	0s
+vm_img_create_zvol	doas zfs create -s -V 3221225472 tank/vm/.images/jd-cap-debian13	exit=0	0s
+vm_img_write	tar -xOf /var/tmp/jd-capture-vm-images/debian-13-genericcloud-amd64.tar.xz disk.raw | doas dd of=/dev/zvol/tank/vm/.images/jd-cap-debian13 bs=1m	exit=0	18s
+vm_img_zvol_props	zfs get -H -p volsize,used,referenced,logicalreferenced,compression,volmode,refreservation tank/vm/.images/jd-cap-debian13	exit=0	0s
+vm_img_gpart	gpart show /dev/zvol/tank/vm/.images/jd-cap-debian13	exit=1	0s
+vm_img_gpt_header	doas sh -c 'dd if=/dev/zvol/tank/vm/.images/jd-cap-debian13 bs=512 skip=1 count=1 2>/dev/null | od -A d -t u8 -j 24 -N 16'	exit=0	1s
+vm_img_snapshot	doas zfs snapshot tank/vm/.images/jd-cap-debian13@base	exit=0	0s
+vm_img_vm_list_with_image	doas vm list	exit=0	0s
+vm_img_guest_create	doas vm create -t jd-capture -s 8G -C -u /var/tmp/jd-capture-vm-images/user-data jd-cap-img	exit=0	1s
+vm_img_guest_created	zfs list -H -p -o name,type,volsize,used,origin -r tank/vm/jd-cap-img; ls -la /vm/jd-cap-img; doas cat /vm/jd-cap-img/jd-cap-img.conf	exit=0	0s
+vm_img_geom_auto_resize	sysctl kern.geom.part.auto_resize	exit=0	0s
+vm_img_geom_clone	doas zfs clone -o volsize=8G tank/vm/.images/jd-cap-debian13@base tank/vm/jd-cap-geom	exit=0	1s
+vm_img_geom_clone_held	geom part list zvol/tank/vm/jd-cap-geom | grep -E '^Consumers|Mode|modified'; dmesg | grep 'jd-cap-geom' | tail -2	exit=0	0s
+vm_img_geom_destroy_held	doas zfs destroy tank/vm/jd-cap-geom	exit=1	0s
+vm_img_geom_undo	doas gpart undo zvol/tank/vm/jd-cap-geom	exit=0	0s
+vm_img_geom_destroy	doas zfs destroy tank/vm/jd-cap-geom	exit=0	0s
+vm_img_disk_destroy	doas zfs destroy tank/vm/jd-cap-img/disk0	exit=0	1s
+vm_img_clone	doas zfs clone -o volmode=dev -o volsize=8G tank/vm/.images/jd-cap-debian13@base tank/vm/jd-cap-img/disk0	exit=0	1s
+vm_img_clone_props	zfs get -H -p origin,volsize,used,referenced,refreservation,volmode tank/vm/jd-cap-img/disk0	exit=0	0s
+vm_img_clone_gpt_before	doas sh -c 'dd if=/dev/zvol/tank/vm/jd-cap-img/disk0 bs=512 skip=1 count=1 2>/dev/null | od -A d -t u8 -j 24 -N 16'	exit=0	0s
+vm_img_guest_info	doas vm info jd-cap-img	exit=0	0s
+vm_img_snapshot_clones	zfs get -H clones tank/vm/.images/jd-cap-debian13@base	exit=0	0s
+vm_img_destroy_snapshot_in_use	doas zfs destroy tank/vm/.images/jd-cap-debian13@base	exit=1	0s
+vm_img_destroy_image_in_use	doas zfs destroy tank/vm/.images/jd-cap-debian13	exit=1	0s
+vm_img_boot1	(state each second, up to 240s)	exit=0	147s
+vm_img_clone_gpt_after	doas sh -c 'dd if=/dev/zvol/tank/vm/jd-cap-img/disk0 bs=512 skip=1 count=1 2>/dev/null | od -A d -t u8 -j 24 -N 16'	exit=0	0s
+vm_img_clone_props_after	zfs get -H -p volsize,used,referenced tank/vm/jd-cap-img/disk0	exit=0	0s
+vm_img_boot1_log	doas cat /vm/jd-cap-img/vm-bhyve.log	exit=0	0s
+vm_img_stop_booting_3s	doas vm stop jd-cap-img	exit=0	1s
+vm_img_after_stop_booting_3s	(state each second, up to 70s)	exit=0	75s
+vm_img_stop_booting_10s	doas vm stop jd-cap-img	exit=0	1s
+vm_img_after_stop_booting_10s	(state each second, up to 70s)	exit=0	75s
+vm_img_stop_booted	doas vm stop jd-cap-img	exit=0	1s
+vm_img_after_stop_booted	(state each second, up to 70s)	exit=0	75s
+vm_img_guest_destroy	doas vm destroy -f jd-cap-img	exit=0	2s
+vm_img_after_guest_destroy	zfs list -H -o name -r tank/vm; zfs get -H clones tank/vm/.images/jd-cap-debian13@base	exit=0	0s
+vm_imgls_absent	zfs list -H -p -t volume,snapshot -o name,volsize,used,jaildeck:source,jaildeck:sha512,clones -r tank/vm/.images	exit=1
+vm_imgls_dataset_absent	zfs list -H -o name tank/vm/.images	exit=1
+vm_imgls_create_dataset	doas zfs create -o volmode=dev tank/vm/.images	exit=0
+vm_imgls_dataset_present	zfs list -H -o name tank/vm/.images	exit=0
+vm_imgls_empty	zfs list -H -p -t volume,snapshot -o name,volsize,used,jaildeck:source,jaildeck:sha512,clones -r tank/vm/.images	exit=0
+vm_imgls_create_ready	doas zfs create -s -V 64m -o volmode=dev -o jaildeck:source=debian-13 -o jaildeck:sha512=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef tank/vm/.images/jd-cap-ready	exit=0
+vm_imgls_seal	doas zfs snapshot tank/vm/.images/jd-cap-ready@base	exit=0
+vm_imgls_clone	doas zfs clone -o volmode=dev -o volsize=128m tank/vm/.images/jd-cap-ready@base tank/vm/jd-cap-g/disk0	exit=0
+vm_imgls_create_written	doas zfs create -s -V 64m -o volmode=dev -o jaildeck:source=debian-13 -o jaildeck:sha512=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef tank/vm/.images/jd-cap-written	exit=0
+vm_imgls_list	zfs list -H -p -t volume,snapshot -o name,volsize,used,jaildeck:source,jaildeck:sha512,clones -r tank/vm/.images	exit=0
+vm_imgls_vm_list	doas vm list	exit=0
+vm_imgls_destroy_in_use	doas zfs destroy -r tank/vm/.images/jd-cap-ready	exit=1
+vm_imgls_destroy_written	doas zfs destroy -r tank/vm/.images/jd-cap-written	exit=0

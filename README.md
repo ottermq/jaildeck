@@ -35,6 +35,10 @@ Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com
   with their counters, NAT, every anchor's rules, tables and their addresses, and recent
   pflog lines. Nothing in Jail Deck can change PF (JD-020).
 - **Web interface** — an embedded Svelte application for all of the above, light and dark.
+- **Virtual machines**, through the API only so far — vm-bhyve's guests, read-only: each
+  one's state, CPU, memory and whether it starts at boot, and for one guest its consoles,
+  network interfaces and disks (JD-035). Nothing in Jail Deck can start or change a guest
+  yet.
 
 ## Requirements
 

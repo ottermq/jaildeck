@@ -3,6 +3,7 @@ package freebsd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -35,10 +36,15 @@ var vdevPartitionRE = regexp.MustCompile(`(p\d+|s\d+[a-h]?)$`)
 func (a *Adapter) Disks(ctx context.Context) ([]metrics.Disk, error) {
 	devices, err := a.scanDevices(ctx)
 	if err != nil {
-		// smartmontools is a package, not base. A host without it has no
-		// disks to report, which is an answer rather than a failure -- the
-		// position JD-021 takes for an unreadable pool.
-		return []metrics.Disk{}, nil
+		// smartmontools is a package, not base, and it lives in
+		// /usr/local/sbin, which is not on the PATH rc gives a service. Either
+		// way the report gets the reason rather than an empty list that reads
+		// like a host with no disks (JD-032) -- the empty list is what hid
+		// disk health from the packaged service for two releases.
+		if errors.Is(err, system.ErrCommandNotFound) {
+			return nil, fmt.Errorf("%w: %v", metrics.ErrSmartctlUnavailable, err)
+		}
+		return nil, err
 	}
 
 	inventory := a.diskInventory(ctx)
@@ -103,12 +109,23 @@ func (a *Adapter) scanDevices(ctx context.Context) ([]string, error) {
 	}
 
 	devices := make([]string, 0)
+	complaint := ""
 	for _, line := range nonEmptyLines(result.Stdout) {
 		// "/dev/ada0 -d atacam # /dev/ada0, ATA device"
 		fields := strings.Fields(line)
 		if len(fields) > 0 && strings.HasPrefix(fields[0], "/dev/") {
 			devices = append(devices, fields[0])
+			continue
 		}
+		// Measured: run without privilege, the scan prints
+		// "# scan_smart_devices: Permission denied" and exits 0. A scan that
+		// found nothing and said something is that, not an empty host.
+		if strings.HasPrefix(strings.TrimSpace(line), "#") && complaint == "" {
+			complaint = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "#"))
+		}
+	}
+	if len(devices) == 0 && complaint != "" {
+		return nil, fmt.Errorf("smartctl --scan: %s", complaint)
 	}
 	return devices, nil
 }

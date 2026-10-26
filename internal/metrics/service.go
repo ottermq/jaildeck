@@ -67,7 +67,8 @@ func (s *Service) Report(ctx context.Context) (Report, error) {
 		if err != nil {
 			common.Logger(ctx, "metrics").Warn("reporting without disk health",
 				slog.Any("err", err))
-		} else {
+			report.DisksUnavailable = err.Error()
+		} else if disks != nil {
 			report.Disks = disks
 		}
 	}

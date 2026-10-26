@@ -3,6 +3,7 @@ package freebsd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path"
 	"strings"
@@ -285,21 +286,35 @@ func TestDisksReportsADiskWithNoPool(t *testing.T) {
 	}
 }
 
-// smartmontools is a package, not base. A host without it has no disks to
-// report, which is an answer rather than a failed request (JD-021, JD-032).
-func TestDisksWithoutSmartctlIsEmptyAndNotAnError(t *testing.T) {
+// smartctl not found -- not installed, or not on the PATH rc gives the
+// service -- is reported as that, not as an empty list. The empty list is what
+// hid disk health from the packaged service for two releases (#95, JD-032).
+// The metrics service turns the error into the report's reason and never
+// fails the request over it.
+func TestDisksWithoutSmartctlSaysWhy(t *testing.T) {
 	disks, err := NewAdapter(&missingBinaryRunner{missing: "smartctl"}).
 		Disks(context.Background())
-	if err != nil {
-		t.Fatalf("a host without smartctl should not fail the report: %v", err)
+	if !errors.Is(err, metrics.ErrSmartctlUnavailable) {
+		t.Fatalf("err = %v, want ErrSmartctlUnavailable", err)
 	}
 	if len(disks) != 0 {
-		t.Fatalf("disks = %v, want none", deviceNames(disks))
+		t.Errorf("disks = %v, want none", deviceNames(disks))
 	}
-	// nil marshals to null, and a consumer reads that as a broken field
-	// rather than an empty list.
-	if disks == nil {
-		t.Error("disks is nil; it should be an empty slice")
+	if !strings.Contains(err.Error(), "PATH") {
+		t.Errorf("err = %q; it should name the PATH it looked on", err)
+	}
+}
+
+// Measured on isengard: without privilege the scan prints
+// "# scan_smart_devices: Permission denied" and exits 0. Found nothing and
+// said something is a reason, not an empty host.
+func TestAScanThatComplainsIsAReasonNotAnEmptyHost(t *testing.T) {
+	a := NewAdapter(runnerFunc(func(_ context.Context, cmd system.Command) (system.CommandResult, error) {
+		return system.CommandResult{Stdout: "# scan_smart_devices: Permission denied\n"}, nil
+	}))
+	_, err := a.Disks(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "Permission denied") {
+		t.Fatalf("err = %v, want the scan's own complaint", err)
 	}
 }
 
@@ -373,14 +388,16 @@ func (r *overrideRunner) Run(ctx context.Context, cmd system.Command) (system.Co
 	return r.inner.Run(ctx, cmd)
 }
 
-// missingBinaryRunner is a host where one command is not installed. exec
-// reports that before the process starts, so there is no exit status.
+// missingBinaryRunner is a host where one command is not on the PATH. exec
+// reports that before the process starts, so there is no exit status; the
+// real runner marks it ErrCommandNotFound and names the PATH, and so does this.
 type missingBinaryRunner struct{ missing string }
 
 func (r *missingBinaryRunner) Run(_ context.Context, cmd system.Command) (system.CommandResult, error) {
 	if cmd.Name == r.missing {
-		return system.CommandResult{ExitCode: -1},
-			errors.New("exec: \"" + cmd.Name + "\": executable file not found in $PATH")
+		return system.CommandResult{ExitCode: -1}, fmt.Errorf(
+			"%w: %s is not on PATH /sbin:/bin:/usr/sbin:/usr/bin: exec: %q: executable file not found in $PATH",
+			system.ErrCommandNotFound, cmd.Name, cmd.Name)
 	}
 	return system.CommandResult{}, nil
 }

@@ -1,6 +1,9 @@
 package metrics
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // HostMetrics reads the host's own numbers. Every method returns what the
 // host said and nothing more: the judgments, the arithmetic and the sampling
@@ -54,9 +57,16 @@ type JailUsageSource interface {
 // request.
 type DiskSource interface {
 	// Disks returns every device that answers, with the pool it belongs to
-	// where one does. A host without smartctl returns none and no error.
+	// where one does. When smartctl cannot be run or will not list devices,
+	// the error says why -- ErrSmartctlUnavailable when it is not found at
+	// all -- and the report carries that reason rather than an empty list
+	// that reads like a host with no disks (JD-032).
 	Disks(ctx context.Context) ([]Disk, error)
 }
+
+// ErrSmartctlUnavailable is smartctl that could not be run: not installed, or
+// not on the PATH Jail Deck was started with.
+var ErrSmartctlUnavailable = errors.New("smartctl is not available")
 
 // JailSource says which jails the host has and which of them are up.
 //

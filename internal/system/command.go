@@ -2,6 +2,7 @@ package system
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -43,6 +44,14 @@ type CommandResult struct {
 	StdoutTruncated bool
 	StderrTruncated bool
 }
+
+// ErrCommandNotFound is a command that never ran because no executable by that
+// name is on this process's PATH. Kept apart from a command that ran and
+// failed: "not installed" and "installed where this process does not look"
+// are different answers, and treating them as one hid disk health from the
+// packaged service for two releases -- rc runs services with
+// PATH=/sbin:/bin:/usr/sbin:/usr/bin, and smartctl lives in /usr/local/sbin.
+var ErrCommandNotFound = errors.New("command not found")
 
 type CommandRunner interface {
 	Run(ctx context.Context, cmd Command) (CommandResult, error)

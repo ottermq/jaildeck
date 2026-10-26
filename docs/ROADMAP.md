@@ -48,6 +48,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Firewall Visibility** (v0.12.0): PF's state, rules with counters, NAT, anchors, tables and recent pflog lines, read-only — nothing reachable from the API can change PF (JD-020, JD-034). The interface gained a test suite in the same release (#77)
 - **Virtual Machines, begun** (v0.13.0): JD-019 locked on vm-bhyve after a spike, and Host Setup reports vm-bhyve and its UEFI firmware. The same release fixed disk health, which had never worked under rc's `PATH` (#95)
 - **VMs listed** (v0.14.0): vm-bhyve's guests and their state, in the API and on a VMs page, read-only (JD-035)
+- **VMs started and stopped** (v0.15.0): start, stop and restart, confirmed in `vm list`, with a stop that powers off a guest ignoring the button and says so (JD-036)
 
 ---
 
@@ -407,7 +408,7 @@ Jail Deck can be installed on FreeBSD in a repeatable way and run as a service.
 
 ## Milestone: Virtual Machines
 
-**Status:** begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, through the API and on a VMs page (JD-035). Creating, running and destroying a VM are ahead.
+**Status:** begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, and since v0.15.0 started, stopped and restarted, through the API and on the VMs pages (JD-035, JD-036). Creating and destroying a VM are ahead, and need image templates first.
 
 **Depends on:** Host Setup (UG check), Storage Writes (zvols), Jail Provisioning (the patterns VMs mirror). **★ Otter Cloud:** Linux VMs, after its first beta.
 
@@ -417,7 +418,7 @@ Goal: a `vms` domain mirroring jails (JD-019).
 
 - list and inspect VMs
 - create from an image template, with CPU and memory sizing, cpuset, a zvol disk and a cloud-init seed
-- start, stop, restart, destroy (`confirm=<name>`)
+- start, stop, restart, destroy (`confirm=<name>`). *Start, stop and restart built 2026-10-26 (JD-036): `vm start` detached into a session of its own, every step confirmed in `vm list`, and a stop that powers off a guest ignoring the button for 60 seconds and says `forced`.*
 - a tap on the configured bridge, as VNET jails use
 - serial console through the API, later
 

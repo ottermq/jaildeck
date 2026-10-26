@@ -235,7 +235,7 @@ func TestTheVMAdapterNeverWrites(t *testing.T) {
 		ran = append(ran, cmd)
 		return runner.Run(ctx, cmd)
 	}))
-	service := vms.NewService(a)
+	service := vms.NewService(a, nil)
 	ctx := context.Background()
 	if _, err := service.List(ctx); err != nil {
 		t.Fatalf("List: %v", err)
@@ -251,6 +251,106 @@ func TestTheVMAdapterNeverWrites(t *testing.T) {
 	for _, cmd := range ran {
 		if cmd.Name != "vm" || len(cmd.Args) == 0 || (cmd.Args[0] != "list" && cmd.Args[0] != "info") {
 			t.Errorf("ran %s, which is not a read", cmd)
+		}
+	}
+}
+
+// --- start, stop, poweroff ------------------------------------------------
+//
+// From capture-vm-lifecycle-induced.sh on isengard: one guest that boots no
+// OS, started, stopped and powered off.
+
+// vmRecorder replays captures and keeps each command as the adapter
+// built it, Detach included.
+func vmRecorder(t *testing.T, captures map[string]string) (*Adapter, *[]system.Command) {
+	t.Helper()
+	ran := &[]system.Command{}
+	runner := &replayRunner{t: t, set: vmSet, captures: captures}
+	return NewAdapter(runnerFunc(func(ctx context.Context, cmd system.Command) (system.CommandResult, error) {
+		*ran = append(*ran, cmd)
+		return runner.Run(ctx, cmd)
+	})), ran
+}
+
+func TestVMStartIsDetachedAndTheOthersAreNot(t *testing.T) {
+	a, ran := vmRecorder(t, map[string]string{
+		"vm start jd-cap-life":       "vm_life_start_piped",
+		"vm stop jd-cap-life":        "vm_life_stop",
+		"vm poweroff -f jd-cap-life": "vm_life_poweroff",
+	})
+	ctx := context.Background()
+	for _, call := range []func(context.Context, string) (string, error){a.VMStart, a.VMStop, a.VMPoweroff} {
+		if _, err := call(ctx, "jd-cap-life"); err != nil {
+			t.Fatalf("%v", err)
+		}
+	}
+	for _, cmd := range *ran {
+		want := cmd.Args[0] == "start"
+		if cmd.Detach != want {
+			t.Errorf("%s: Detach = %v, want %v", cmd, cmd.Detach, want)
+		}
+	}
+}
+
+func TestVMLifecycleAnswersWithTheCommandItRan(t *testing.T) {
+	a, _ := vmRecorder(t, map[string]string{"vm poweroff -f jd-cap-life": "vm_life_poweroff"})
+	command, err := a.VMPoweroff(context.Background(), "jd-cap-life")
+	if err != nil || command != "vm poweroff -f jd-cap-life" {
+		t.Errorf("command = %q, err = %v", command, err)
+	}
+}
+
+// vm-bhyve's refusals, in its own words: vm start's "  ! " on stdout, vm
+// poweroff's ERROR on stderr. Each exit 1.
+func TestVMLifecycleRefusalsCarryVMBhyvesWords(t *testing.T) {
+	for _, tt := range []struct {
+		capture, line string
+		call          func(*Adapter) (string, error)
+		want          string
+	}{
+		{"vm_life_start_running", "vm start jd-cap-life",
+			func(a *Adapter) (string, error) { return a.VMStart(context.Background(), "jd-cap-life") },
+			"guest appears to be running already"},
+		{"vm_life_start_absent", "vm start jd-cap-nosuch",
+			func(a *Adapter) (string, error) { return a.VMStart(context.Background(), "jd-cap-nosuch") },
+			"jd-cap-nosuch does not seem to be a valid virtual machine"},
+		{"vm_life_poweroff_stopped", "vm poweroff -f jd-cap-life",
+			func(a *Adapter) (string, error) { return a.VMPoweroff(context.Background(), "jd-cap-life") },
+			"jd-cap-life doesn't appear to be a running virtual machine"},
+	} {
+		t.Run(tt.capture, func(t *testing.T) {
+			a, _ := vmRecorder(t, map[string]string{tt.line: tt.capture})
+			_, err := tt.call(a)
+			var commandErr *system.CommandError
+			if !errors.As(err, &commandErr) || commandErr.Result.ExitCode != 1 {
+				t.Fatalf("err = %v, want a CommandError with exit 1", err)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("err = %v, want %q in it", err, tt.want)
+			}
+		})
+	}
+}
+
+// vm stop of a guest that is not running exits 0 with a WARNING: not an
+// error here either. The service never asks it to, but it would not break.
+func TestVMStopOfAStoppedGuestIsNotAnError(t *testing.T) {
+	a, _ := vmRecorder(t, map[string]string{"vm stop jd-cap-life": "vm_life_stop_stopped"})
+	if _, err := a.VMStop(context.Background(), "jd-cap-life"); err != nil {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// The listing the lifecycle waits on, through each step: Running with bhyve's
+// pid while up, Stopped after.
+func TestVMListThroughTheLifecycle(t *testing.T) {
+	for capture, want := range map[string]string{
+		"vm_life_list_running": vms.StateRunning,
+		"vm_life_list_stopped": vms.StateStopped,
+	} {
+		listing := vmList(t, capture)
+		if len(listing.VMs) != 1 || listing.VMs[0].State != want {
+			t.Errorf("%s: %+v, want one guest %s", capture, listing.VMs, want)
 		}
 	}
 }

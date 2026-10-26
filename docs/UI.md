@@ -166,7 +166,7 @@ A **Refresh** button rather than polling: a policy changes when someone reloads 
 
 ### Virtual machines
 
-Purpose: what vm-bhyve's guests are doing, read-only for now (JD-019, JD-035). Built at `/vms` and `/vms/{name}`.
+Purpose: what vm-bhyve's guests are doing, and starting and stopping them (JD-019, JD-035, JD-036). Built at `/vms` and `/vms/{name}`.
 
 **vm-bhyve's own state comes first**, as PF's does on the Firewall page:
 
@@ -178,7 +178,11 @@ The list is a table: state, name, CPU, memory, loader, datastore, and whether th
 
 A guest's page has its configuration (with resident memory beside the configured amount while it runs), its console, its network interfaces and its disks. **A stopped guest's missing console is explained, not left blank**: the console belongs to the bhyve instance. The tap is labelled as this run's, because vm-bhyve makes a new one on every start.
 
-No Refresh button and no polling yet: nothing on these pages can change a guest, so the state changes only from outside Jail Deck. That changes with lifecycle.
+**Start, Stop and Restart** sit at the end of each row and beside the guest's name on its page — one component, `VMActions`, for both. A running guest offers Stop and Restart, a stopped one Start, and a suspended one **Resume**, which is what vm-bhyve's start does to it. A guest in its boot loader or locked by another host offers nothing and says why ("Booting — try again once it is running", "Held by orthanc"), because the API would refuse.
+
+**Stop and Restart ask first, and the question is the deadline:** the guest gets the power button and a minute, and after that it is powered off and loses what it had not written. Start does not ask — nothing is lost by starting. A stop that came to a poweroff (`forced`) says so under the row, in amber, and a failure says vm-bhyve's words in red. Either way the page reads vm-bhyve again afterwards, because a failed operation can still have changed the guest.
+
+No polling: a guest changes when someone starts or stops it, and the page re-reads after its own operations.
 
 ### Logs page
 

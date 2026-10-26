@@ -22,6 +22,12 @@ type Command struct {
 	// 2.85 MB (JD-014). A cap here rather than a truncation afterwards,
 	// because the point is not to return less but to never hold it.
 	MaxOutput int
+	// Detach runs the command in a session of its own, and a timeout signals
+	// only the command, never its process group. For a command that leaves a
+	// process running on purpose: `vm start` backgrounds vm-bhyve's
+	// supervisor into its own process group, measured, and killing that
+	// group would power the guest off (JD-019, JD-036).
+	Detach bool
 }
 
 func (c Command) String() string {

@@ -7,11 +7,11 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.14.0.** Jails can be created from release templates, started,
+**Current release: v0.15.0.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API; their ZFS datasets,
-snapshots and resource usage are visible; host setup is checked; PF and bhyve VMs can be
-seen, read-only; every operation is audited, and nothing is reachable without a password
-or an API token. Creating VMs is next — see [the roadmap](docs/ROADMAP.md).
+snapshots and resource usage are visible; host setup is checked; PF can be seen,
+read-only; bhyve VMs can be seen, started and stopped; every operation is audited, and
+nothing is reachable without a password or an API token. Creating VMs is next — see [the roadmap](docs/ROADMAP.md).
 
 Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com/jaildeck/)**.
 

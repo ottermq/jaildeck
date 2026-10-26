@@ -1570,3 +1570,61 @@ Read with `tcpdump -n -e -tttt -r <file>`, where the file is `pflog_logfile` fro
 ### Read-only, by construction
 
 The port has no method that could write, and the adapter is tested for it: every command any firewall test causes the adapter to run is checked for `-f`, `-F`, `-e`, `-d`, `-k`, `-K`, and `-T` with anything but `show`. A write path is phase 2 (JD-020), and it will need a new port method, a decision record and a reason — not a flag added to an existing call.
+
+---
+
+## JD-035 — Listing Virtual Machines: `vm list`, Read From Both Ends
+
+**Status:** Locked — 2026-10-26. Measured on isengard, 15.1-RELEASE-p5, vm-bhyve 1.7.5, with two throwaway guests made and destroyed again (`capture-vm-guests-induced.sh`); every state string read in vm-bhyve's source.
+
+The first unit of JD-019's `vms` domain, built read-only: `GET /api/vms` lists every guest vm-bhyve knows with its state, and `GET /api/vms/{name}` adds what `vm info` says about one. The port has **no method that starts, stops or changes a guest**. Lifecycle is the next unit, with its own methods and the detaching JD-019 requires.
+
+### Where it comes from
+
+**`vm list`, for the listing.** It is the command Host Setup's readiness check already runs: vm-bhyve checks `vm_enable`, `vm_dir` and the datastore before listing anything, and names what is wrong. So the listing has three answers and **none of them is an error** — the firewall's position on PF not loaded (JD-034):
+
+| `vm list` | `vm_bhyve` | |
+| --- | --- | --- |
+| `vm` not found | `not_installed` | `200`, an empty list |
+| exit 1 with vm-bhyve's `ERROR:` line | `not_configured` | `200`, an empty list, and vm-bhyve's words in `problem` |
+| the table | `ready` | `200`, the guests |
+
+**`vm info <name>`, for one guest**: the UUID, resident memory, consoles, network interfaces and disks. It is not used for the listing. It runs `zfs`, `netstat` and `bhyvectl` per guest, it **does not say whether a guest starts at boot**, and with no guests it exits 1 with no output at all — measured.
+
+The detail is the listing's row joined with `vm info`'s additions. The name must be one the listing has, which makes a 404 Jail Deck's decision rather than a parse of vm-bhyve's `unable to locate virtual machine` (still recognised, for a guest destroyed between the two reads). A name vm-bhyve could never have created — its own `util::check_name` rule — is a `400` before anything runs.
+
+### The table is read from both ends
+
+`vm list` pipes its rows through `column -t`, which pads to the widest value. Two of its columns hold spaces — `AUTO` (`Yes [1]`) and `STATE` (`Running (16783)`) — so splitting on whitespace is wrong, and measured column offsets move: marking one guest to start at boot widened `AUTO` and moved `STATE` three characters right.
+
+Both of those are the **last two** columns, and the name, first, never holds a space. So a row is matched from both ends: the name, then `AUTO` and `STATE` in every form vm-bhyve can print, and the five columns between, none of which holds a space.
+
+**FreeBSD's `column -t` merges an empty field into the next.** Measured: an empty `MEMORY` puts `AUTO`'s value under the `MEMORY` heading. Of the five middle columns only `CPU` and `MEMORY` can be empty — `LOADER` defaults to `none`, `VNC` to `-` — so a row with four or three of them has its datastore, loader and VNC read and **`cpu` and `memory` left unknown** rather than guessed between. A heading other than the eight measured (`-v` adds three columns) is refused, not read by position.
+
+### Every state, from the source
+
+vm-bhyve's states were read in `lib/vm-core` and `lib/vm-run`, not inferred from two captures:
+
+| `vm list` | `state` | |
+| --- | --- | --- |
+| `Running (<pid>)` | `running` | a bhyve process for the guest; `pid` is bhyve's — measured: not `vm-run`'s, its parent |
+| `Bootloader (<pid>)` | `bootloader` | `bhyveload` or `grub-bhyve` loading a kernel, before bhyve runs |
+| `Stopped` | `stopped` | |
+| `Suspended` | `suspended` | stopped with its state saved to disk |
+| `Locked (<host>)` | `locked` | marked running by another host, in a datastore shared between hosts; `locked_by` names it |
+
+Anything else is refused as an unrecognised row. vm-bhyve decides "running" by **`pgrep` for a `bhyve: <name>` process**, so `/dev/vmm` is not read separately here: a bhyve instance vm-bhyve does not know about is not a guest this listing can name, and JD-019 already settled that vm-bhyve owns every bhyve on a host that uses it.
+
+### What is not re-parsed
+
+`cpu` and `memory` are the guest configuration's own values as vm-bhyve prints them (`"2"`, `"512M"`). They are what the operator wrote, and a unit Jail Deck derived could disagree with it — JD-034's position on PF's rule text. Where `vm info` gives bytes it gives them twice, `41967616 (40.023M)`: the integer is kept and the rounding is not.
+
+`autostart` is whether the guest is in `rc.conf`'s `vm_list`, from the listing's `AUTO`, and `autostart_order` its place there. Sections of `vm info` not read — snapshots, clone origin — and any key vm-bhyve adds are passed over.
+
+### Read on every request
+
+Nothing is stored (JD-011). Each `GET` runs `vm list`, and the detail runs `vm info` once more. `vm list` took 0.06 s on isengard with no guests.
+
+### Read-only, by construction
+
+The port has two methods, both reads, and the adapter is tested for it: every command the listing and the detail cause it to run is checked to be `vm list` or `vm info`. Starting a guest needs a new method, and JD-019's constraint with it: `vm start` does not detach.

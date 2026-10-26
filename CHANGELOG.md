@@ -20,6 +20,44 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.14.0 — 2026-10-26
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.14.0)
+
+Jail Deck can now see virtual machines. vm-bhyve's guests are listed with their state, in
+the API and on a new **VMs** page, read-only (JD-035). Nothing in this release can start,
+stop or change a guest.
+
+Nothing to act on when upgrading. Every endpoint from v0.13.0 answers as it did; there are
+two new ones.
+
+### Added
+
+- **A VMs page** at `/vms`, with a page per guest (#100). It starts with vm-bhyve's own
+  state — not installed, not configured (in vm-bhyve's words), or ready — then lists each
+  guest's state, CPU, memory and whether it starts at boot. A guest's page shows its
+  configuration, its console, its network interfaces and its disks.
+
+### Fixed
+
+- **At phone width every page scrolled sideways** (#100). The navigation becomes a row
+  across the top there, and the rail kept the wide layout's `align-self: flex-start`, so it
+  took the width of its links rather than the screen's. The row now scrolls on its own.
+
+### API
+
+- **`GET /api/vms`** lists every guest vm-bhyve knows, from `vm list`, read on every
+  request (#99, JD-035). `vm_bhyve` is `ready`, `not_installed` or `not_configured`, and
+  all three are a `200`; not configured carries vm-bhyve's own words in `problem`. A
+  guest's `state` is one of vm-bhyve's five — `running` and `bootloader` with a `pid`,
+  `stopped`, `suspended`, and `locked` with the host in `locked_by`. `cpu` and `memory`
+  are the configuration as written (`"2"`, `"512M"`), not re-parsed.
+- **`GET /api/vms/{name}`** adds what `vm info` says: UUID, resident memory, consoles,
+  network interfaces and disks, in bytes. A name the listing does not have is a `404`, one
+  vm-bhyve could never have created a `400`, and a vm-bhyve that cannot list a `409`.
+
+---
+
 ## v0.13.0 — 2026-10-26
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.13.0)

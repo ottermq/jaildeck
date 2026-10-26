@@ -7,11 +7,11 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.7.0.** Jails can be listed, started, stopped and restarted from
-the browser or the API, host setup is checked, their ZFS datasets and tags are visible and
-writable, snapshots can be taken and rolled back, every operation is audited, and nothing
-is reachable without a password or an API token. Release templates, jail creation and
-bhyve VMs are planned — see [the roadmap](docs/ROADMAP.md).
+**Current release: v0.14.0.** Jails can be created from release templates, started,
+stopped, restarted and destroyed from the browser or the API; their ZFS datasets,
+snapshots and resource usage are visible; host setup is checked; PF and bhyve VMs can be
+seen, read-only; every operation is audited, and nothing is reachable without a password
+or an API token. Starting and stopping VMs is next — see [the roadmap](docs/ROADMAP.md).
 
 Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com/jaildeck/)**.
 
@@ -231,6 +231,8 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/jails/{name}/stop` | |
 | `POST /api/jails/{name}/restart` | |
 | `GET /api/audit` | operation history, newest first |
+| `GET /api/vms` | vm-bhyve's guests and their state, and whether vm-bhyve is ready |
+| `GET /api/vms/{name}` | one guest's console, network interfaces and disks |
 
 A jail carries its storage: `datasets` is the dataset mounted at the jail's `path` plus
 everything under it, and `properties` is the ZFS *user* properties of the jail's own

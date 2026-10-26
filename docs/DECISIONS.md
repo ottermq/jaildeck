@@ -674,7 +674,7 @@ Two values are validated here rather than left to the host (JD-012), because the
 
 ## JD-019 — Virtual Machines (bhyve)
 
-**Status:** Open — scope locked 2026-10-21; mechanism pending a spike
+**Status:** Locked — 2026-10-25. Scope locked 2026-10-21; mechanism **A, `vm-bhyve`**, chosen by the spike below (#17)
 
 **Scope (locked).** Jail Deck gains a `vms` domain mirroring jails: list and inspect; create from an image template with CPU, memory and cpuset sizing, a zvol disk and a cloud-init seed; start, stop, restart, destroy with `confirm`; a tap on an operator-owned bridge, as JD-017 does for epairs; serial console through the API later. VM state is derived from the system, never stored (JD-011). The host prerequisite is `VT-x` with `EPT` and `UG` in `dmesg`, reported by Host Setup.
 
@@ -687,6 +687,48 @@ Two values are validated here rather than left to the host (JD-012), because the
 | C. libvirt | Weak: a daemon and abstraction foreign to FreeBSD conventions | Feature-rich | Heavy runtime dependency; needs `libvirtd`; cgo bindings |
 
 Spike A and B at the start of the Virtual Machines milestone, then lock this decision. Leaning **A** for consistency with JD-005, unless the spike shows gaps in cloud-init or maintenance. **C is rejected.**
+
+### The spike, 2026-10-25 (#17)
+
+The same Debian 13 cloud image (`debian-13-genericcloud-amd64`, checked against Debian's `SHA512SUMS`) was built both ways on isengard, 15.1-RELEASE-p5. Each guest had a 4 GiB zvol, a cloud-init seed, a tap on an isolated bridge with no physical member, 1 vCPU and 1 GiB. isengard was returned to a recorded baseline afterwards — interfaces, datasets, modules, packages, sysctl and a byte-identical `rc.conf` — and its jails and the Jail Deck service ran untouched throughout.
+
+**The lab VM could not host it.** bhyve nested under the laptop's KVM froze the whole VM the moment the guest ran, and QEMU refused to continue it ("Resetting the Virtual Machine is required"). bhyve work is tested on isengard.
+
+**Cloud-init works, with the seed exactly as specified.** `makefs -t cd9660 -o rockridge -o label=cidata` writes the volume ID as **`CIDATA`** — ISO 9660 upper-cases it — and Debian's cloud-init found it anyway (`nocloud`). It applied the hostname, a static address and an SSH key in both approaches. `vm-bhyve` builds its seed with the same `makefs` invocation. A cold boot reached SSH in 15–20 seconds.
+
+**What running bhyve needs, measured — the list direct bhyve would make Jail Deck own:**
+
+| | measured | direct bhyve | `vm-bhyve` |
+| --- | --- | --- | --- |
+| guest reboot | bhyve **exits 0** and is gone | Jail Deck reruns it | `vm-run` reruns it: back in 17 s |
+| guest poweroff | bhyve **exits 1** | Jail Deck stops | `vm-run` stops |
+| bhyve's error, or its instance destroyed underneath | **exits 4** | Jail Deck decides | `on_fault`, default stop |
+| after any exit | the instance **stays in `/dev/vmm`** until `bhyvectl --destroy` (rerunning without it reuses it) | Jail Deck destroys it | `vm-run` destroys it |
+| the tap | bhyve accepts **only `tapN`** — a renamed tap is refused, so a VM cannot own its tap by name | Jail Deck allocates and labels | a fresh tap per run, described `vmnet/<vm>/<n>/<switch>`, destroyed on stop |
+| the MAC | cloud-init matches the NIC by it, so it must not change | Jail Deck persists one | written into the guest's config |
+| host-side stop | SIGTERM is the ACPI power button: a booted guest powered off in 4–5 s. **It is ignored before the guest OS is up** — measured in both | Jail Deck times out and forces | `vm stop`, then `vm poweroff` (`bhyvectl --force-poweroff`) |
+| host boot | nothing starts a guest | Jail Deck's own startup | `rc.d/vm` starts `vm_list` (read from the code; isengard was not rebooted) |
+| console | — | Jail Deck sets up `nmdm` | an `nmdm` pair per guest |
+
+The exit statuses are bhyve's own, and `vm-run`'s handling of them was read in its source and then observed: restart on 0, stop on 1 or 2 unless `vm restart` asked otherwise, `on_fault` for anything else. Direct bhyve is not "fewer moving parts" — the parts are the same, and the supervisor has to be a process that outlives Jail Deck. That is `vm-run` written again, in Go or in shell.
+
+**Maintenance looked abandoned and is not.** The original `churchers/vm-bhyve` has had no commit in a year; it moved to **`freebsd/vm-bhyve`**, which had a commit four days before the spike and at least a hundred in the year before it. FreeBSD's package is 1.7.5. A check of the first repository alone would have recorded the opposite conclusion.
+
+**Size.** `vm-bhyve` is 6,767 lines of shell, 1,124 of them `vm-run`. It covers far more than Jail Deck needs — VNC, passthrough, grub, other guest types — and none of that is code Jail Deck carries.
+
+### Decided: A, `vm-bhyve`
+
+Every row of that table is needed whichever approach is taken. `vm-bhyve` does all of it and is actively maintained, and driving it is the JD-005 position: an established administrative tool, its per-guest files and datasets read as derivable state.
+
+**The constraints the spike found, which the milestone's design has to keep:**
+
+- **`vm start` does not detach.** It returns at once, but `vm-run` and its bhyve stay in the caller's process group and session — measured. Jail Deck's command runner puts each command in a process group of its own and kills that group on a timeout, so `vm start` runs under `daemon(8)` (or `setsid`), never as a plain child. Direct bhyve under `daemon(8)` was in its own session; `vm start` was not.
+- **`vm-bhyve` must be an enabled service.** It refuses to run without `vm_enable="YES"` and a `vm_dir` in `rc.conf`, and it starts `vm_list` at boot. Both are the operator's, like `jail_list` — Host Setup reports them, as it reports racct.
+- **It owns every bhyve on the host.** Its shutdown `stopall` "will also stop instances not started by vm-bhyve" (its own comment). Jail Deck never starts bhyve any other way on a host that uses it.
+- **Images are zvols that Jail Deck writes or clones.** `vm-bhyve`'s cloud-image import needs `qemu-img` (`sysutils/qemu-tools`) even for a raw image. It is not used: `vm create -C` without `-i` builds the guest and its seed, and the disk was filled directly — measured. That keeps image templates on the release-template pattern (JD-027) and takes no `qemu-tools`.
+- **A stop has a deadline.** `vm stop`, a timeout, then `vm poweroff`, because the power button is ignored until the guest has booted.
+- **Its network config adds `dhcp6: true` and `accept-ra: true`** to a static IPv4 address. Harmless on an isolated bridge and worth knowing on one that is not.
+- **State is read, not kept** (JD-011): `vm list`, `/dev/vmm`, the `vm-run` process, the guest's dataset and configuration, and a tap found by its description.
 
 ### Rationale
 

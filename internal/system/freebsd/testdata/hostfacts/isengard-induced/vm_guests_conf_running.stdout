@@ -1,0 +1,10 @@
+loader="uefi"
+cpu=2
+memory=512M
+network0_type="virtio-net"
+network0_switch="jd-capsw"
+disk0_type="virtio-blk"
+disk0_name="disk0"
+disk0_dev="sparse-zvol"
+uuid="ed117915-d146-11f1-b463-e80688cecc46"
+network0_mac="58:9c:fc:02:fa:82"

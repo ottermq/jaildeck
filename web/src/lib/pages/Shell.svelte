@@ -11,6 +11,8 @@ import Template from './Template.svelte'
 import Operations from './Operations.svelte'
 import Host from './Host.svelte'
 import Firewall from './Firewall.svelte'
+import VMs from './VMs.svelte'
+import VM from './VM.svelte'
 import NotFound from './NotFound.svelte'
 import ConfirmDialog from '../components/ConfirmDialog.svelte'
 
@@ -24,6 +26,7 @@ const menu = [
     { label: 'Dashboard', href: '/dashboard' },
     { label: 'Jails', href: '/jails' },
     { label: 'Templates', href: '/templates' },
+    { label: 'VMs', href: '/vms' },
     { label: 'Operations', href: '/operations' },
     { label: 'Firewall', href: '/firewall' },
     { label: 'Host', href: '/host' },
@@ -39,6 +42,7 @@ function isActive(href: string): boolean {
 // jail to another would reuse the mounted component and never re-fetch.
 let jail = $derived(match('/jails/:name'))
 let template = $derived(match('/templates/:name'))
+let vm = $derived(match('/vms/:name'))
 
 // The landing path is replaced rather than pushed: a push would make Back
 // return to '/', which redirects forward again and traps the user.
@@ -100,6 +104,10 @@ onMount(() => {
             <Templates />
         {:else if template}
             {#key template.name}<Template name={template.name} />{/key}
+        {:else if route.path === '/vms'}
+            <VMs />
+        {:else if vm}
+            {#key vm.name}<VM name={vm.name} />{/key}
         {:else if route.path === '/operations'}
             <Operations />
         {:else if route.path === '/firewall'}
@@ -244,8 +252,11 @@ onMount(() => {
         flex: none;
         border-right: 0;
         border-bottom: 1px solid var(--rail-border);
-        /* A top bar, so the full-height pin from the wide layout must go. */
+        /* A top bar, so the full-height pin from the wide layout must go --
+           and its flex-start too, which sizes the bar to its links rather
+           than to the screen. */
         height: auto;
+        align-self: stretch;
         overflow: visible;
         z-index: 1;
     }
@@ -254,8 +265,15 @@ onMount(() => {
         padding: var(--space-3) var(--space-4);
     }
 
+    /* Seven sections are wider than a phone. The row scrolls on its own
+       rather than widening the whole page past the viewport. */
     .rail__nav {
         flex-direction: row;
+        flex: none;
+        overflow-x: auto;
+    }
+
+    .rail__link {
         flex: none;
     }
 

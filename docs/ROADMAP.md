@@ -47,6 +47,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Metrics** (v0.11.0): disk health joined to the pools each disk holds up (JD-032), and a Prometheus endpoint behind the API's own token (JD-033). **Packaging** began in the same release: `make package` builds a verified native `.pkg`
 - **Firewall Visibility** (v0.12.0): PF's state, rules with counters, NAT, anchors, tables and recent pflog lines, read-only — nothing reachable from the API can change PF (JD-020, JD-034). The interface gained a test suite in the same release (#77)
 - **Virtual Machines, begun** (v0.13.0): JD-019 locked on vm-bhyve after a spike, and Host Setup reports vm-bhyve and its UEFI firmware. The same release fixed disk health, which had never worked under rc's `PATH` (#95)
+- **VMs listed** (v0.14.0): vm-bhyve's guests and their state, in the API and on a VMs page, read-only (JD-035)
 
 ---
 
@@ -406,7 +407,7 @@ Jail Deck can be installed on FreeBSD in a repeatable way and run as a service.
 
 ## Milestone: Virtual Machines
 
-**Status:** begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Creating, running and destroying a VM are ahead.
+**Status:** begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, through the API and on a VMs page (JD-035). Creating, running and destroying a VM are ahead.
 
 **Depends on:** Host Setup (UG check), Storage Writes (zvols), Jail Provisioning (the patterns VMs mirror). **★ Otter Cloud:** Linux VMs, after its first beta.
 
@@ -426,7 +427,7 @@ Goal: a `vms` domain mirroring jails (JD-019).
 - Host Setup reports what the VMs capability needs beyond the CPU: vm-bhyve configured and answering, and edk2-bhyve's UEFI firmware. *Built 2026-10-26: `vm list` is the probe, because vm-bhyve names each misconfiguration in its own words, measured in every state from not installed to initialised. Its remedy for a missing `vm_dir` carries `-o mountpoint=`: on a pool whose root is `mountpoint=none`, as isengard's `tank` is, a plain `zfs create` makes a dataset vm-bhyve cannot use.*
 - cloud-init seed ISO with `makefs -t cd9660 -o rockridge -o label=cidata`
 - image templates as ZFS datasets or zvols, following the release-template pattern
-- VM state derived from the system (process, `/dev/vmm`, the VM's datasets), never stored (JD-011)
+- VM state derived from the system (process, `/dev/vmm`, the VM's datasets), never stored (JD-011). *Listing built 2026-10-26 (JD-035): `GET /api/vms` and `GET /api/vms/{name}`, from `vm list` and `vm info`, read on every request. vm-bhyve decides "running" by its bhyve process, so `/dev/vmm` is not read separately. The port has no method that changes a guest.*
 
 ### Completion criteria
 

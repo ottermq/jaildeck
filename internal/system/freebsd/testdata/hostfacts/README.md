@@ -219,6 +219,39 @@ already installed or configured, since that would be an operator's.
   in its source. No `vm list` capture shows it; the adapter reads it anyway, so that it
   could never become a bare exit status.
 
+## Listing guests (JD-035)
+
+`capture-vm-guests-induced.sh`, run 2026-10-26 on isengard into `isengard-induced/` with
+the prefix `vm_guests_`, needs vm-bhyve already configured and answering. It makes two
+guests that boot no OS — an empty disk and UEFI are a running bhyve all the same —
+`jd-cap-running`, started on a switch of its own with no physical member, and
+`jd-cap-stopped`, with no network; captures `vm list`, `vm list -v` and `vm info` for
+each; adds the running one to `vm_list` and captures again; and then destroys both, its
+templates and the switch, leaving `rc.conf` byte-identical. It refuses to run where any of
+those names exist, or where `vm_list` is set, since that would be an operator's.
+
+**What that settled:**
+
+- **`vm list` cannot be split on whitespace, nor read by column offset.** `AUTO`
+  (`Yes [1]`) and `STATE` (`Running (16783)`) hold spaces, and `column -t` re-pads every
+  row to the widest value: marking one guest for boot moved `STATE` three characters
+  right. They are the last two columns, so a row is read from both ends.
+- **FreeBSD's `column -t` merges an empty field into the next one** — tried directly,
+  since no guest had an empty `MEMORY`. The parser leaves `cpu` and `memory` unknown for a
+  row with fewer than five middle columns, rather than guessing which is missing.
+- **The `pid` in `Running (pid)` is bhyve's,** not that of `vm-run`, the shell
+  supervisor that is its parent (`vm_guests_vm_run`).
+- **`vm info` with no guests exits 1 and prints nothing** (`vm_guests_none_info`), and
+  for an unknown name it is vm-bhyve's `ERROR: unable to locate virtual machine`, exit 1.
+- **A stopped guest's `vm info` has no `memory-resident` and no `console-ports`.** Both
+  come from the bhyve instance, which a stopped guest does not have.
+- `-v` adds `%CPU`, `RSZ` and `UPTIME`. Not used: the parser accepts only the eight-column
+  heading it was written against.
+
+The other three states — `Bootloader (pid)`, `Suspended` and `Locked (host)` — were not
+induced. They are read from vm-bhyve's source (`lib/vm-core`, `lib/vm-run`) and tested
+from rows written to match it.
+
 ## Disk health (#83)
 
 Captured 2026-10-25, on `isengard` and `rohan` only. `rivendell` and the VM were not

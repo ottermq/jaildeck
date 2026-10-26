@@ -1,0 +1,3 @@
+NAME            DATASTORE  LOADER  CPU  MEMORY  VNC  AUTO     STATE
+jd-cap-running  default    uefi    2    512M    -    Yes [1]  Running (16783)
+jd-cap-stopped  default    uefi    1    256M    -    No       Stopped

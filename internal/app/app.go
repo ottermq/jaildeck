@@ -19,6 +19,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/system/fake"
 	"github.com/ottermq/jaildeck/internal/system/freebsd"
 	"github.com/ottermq/jaildeck/internal/templates"
+	"github.com/ottermq/jaildeck/internal/vms"
 )
 
 var ErrNoCredential = errors.New("no operator credential configured")
@@ -32,6 +33,7 @@ type App struct {
 	templateHandler *templates.TemplateHandler
 	metricsHandler  *metrics.Handler
 	firewallHandler *firewall.Handler
+	vmHandler       *vms.Handler
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -129,6 +131,12 @@ func New(cfg *config.Config) (*App, error) {
 	}
 	firewallHandler := firewall.NewHandler(firewall.NewService(firewallSystem))
 
+	vmSystem, err := newVMSystem(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	vmHandler := vms.NewHandler(vms.NewService(vmSystem))
+
 	return &App{
 		authHandler:     authHandler,
 		jailHandler:     jailHandler,
@@ -138,6 +146,7 @@ func New(cfg *config.Config) (*App, error) {
 		templateHandler: templateHandler,
 		metricsHandler:  metricsHandler,
 		firewallHandler: firewallHandler,
+		vmHandler:       vmHandler,
 	}, nil
 }
 
@@ -148,6 +157,19 @@ func newFirewallSystem(adapter string) (firewall.FirewallSystem, error) {
 		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
 	case config.AdapterFake:
 		return fake.NewFirewall(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
+}
+
+// newVMSystem selects the read-only vm-bhyve implementation (JD-035).
+func newVMSystem(adapter string) (vms.VMSystem, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewVMs(), nil
 	default:
 		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

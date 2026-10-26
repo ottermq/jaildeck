@@ -99,8 +99,8 @@ internal/
     service.go                     # application service
     handler.go
 
-  vms/                          # bounded context: bhyve VMs (JD-019) — not yet built
-  firewall/                     # bounded context: PF, read-only first (JD-020) — not yet built
+  vms/                          # bounded context: bhyve VMs through vm-bhyve (JD-019) — read-only so far (JD-035)
+  firewall/                     # bounded context: PF, read-only (JD-020, JD-034)
 
   auth/                         # bounded context: Authentication
     auth.go                       # argon2id Hash/Verify over the PHC string ($argon2id$v=..$m=..)
@@ -284,9 +284,9 @@ Implements `storage.StorageSystem`. Responsibilities, mapped to the template/jai
 
 ZFS is required (JD-006), so this adapter can assume ZFS is present.
 
-### Firewall and VM adapters (not yet built)
+### Firewall and VM adapters
 
-The firewall adapter runs `pfctl` read-only commands (JD-020). The VM adapter's commands depend on the mechanism JD-019 settles after its spike.
+The firewall adapter runs `pfctl` read-only commands (JD-020, JD-034). The VM adapter drives vm-bhyve (JD-019); so far it runs `vm list` and `vm info` and nothing that changes a guest (JD-035).
 
 ## API conventions
 
@@ -308,7 +308,8 @@ GET    /api/storage/datasets
 GET    /api/storage/snapshots
 GET    /api/host/readiness           # Host Setup checks
 GET    /api/firewall/...             # read-only PF views (JD-020)
-GET    /api/vms ...                  # once JD-019 settles
+GET    /api/vms                      # vm-bhyve's guests, read-only so far (JD-035)
+GET    /api/vms/{name}
 GET    /api/audit
 GET    /metrics                      # Prometheus text format
 ```

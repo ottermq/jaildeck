@@ -63,3 +63,5 @@ zfs_list_snapshots	zfs list -H -d 1 -t snapshot -o name,used,refer,creation zroo
 zfs_list_snapshots_p	zfs list -H -p -d 1 -t snapshot -o name,used,refer,creation zroot/jails	exit=0
 zfs_list_type_all	zfs list -H -d 1 -t all -o name,type,used,refer,mountpoint zroot/jails	exit=0
 zfs_list_snapshots_absent	zfs list -H -d 1 -t snapshot -o name,used,refer,creation zroot/jails/definitely-not-here	exit=1
+vm_list	vm list	exit=127
+uefi_firmware	ls /usr/local/share/uefi-firmware/	exit=1

@@ -47,6 +47,17 @@ func (s *HostSystem) JailConfDefaults(ctx context.Context) (map[string]string, e
 	return map[string]string{"exec.timeout": "120", "exec.clean": ""}, nil
 }
 
+// VMBhyve is installed and not yet enabled: the state most hosts are in on the
+// way to running a VM, and the one whose remedy is worth seeing in the
+// interface.
+func (s *HostSystem) VMBhyve(ctx context.Context) (host.VMBhyve, error) {
+	return host.VMBhyve{Installed: true, Problem: "$vm_enable is not enabled in /etc/rc.conf!"}, nil
+}
+
+func (s *HostSystem) UEFIFirmware(ctx context.Context) (string, error) {
+	return "/usr/local/share/uefi-firmware/BHYVE_UEFI.fd", nil
+}
+
 func (s *HostSystem) Bridges(ctx context.Context) ([]string, error) {
 	return []string{"bridge0"}, nil
 }

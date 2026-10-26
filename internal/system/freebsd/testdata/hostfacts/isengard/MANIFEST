@@ -95,3 +95,5 @@ smartctl_unpriv	smartctl --json -i -H -A /dev/ada3 (as non-root)	exit=1
 zpool_list_vdevs	zpool list -v -H -o name	exit=0
 glabel_status	glabel status	exit=0
 geom_disk_list	geom disk list	exit=0
+vm_list	vm list	exit=127
+uefi_firmware	ls /usr/local/share/uefi-firmware/	exit=1

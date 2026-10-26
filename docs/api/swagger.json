@@ -2783,6 +2783,8 @@
                 "bridges",
                 "devfs_rulesets",
                 "cpu_virtualization",
+                "vm_bhyve",
+                "uefi_firmware",
                 "pf",
                 "zfs_pool",
                 "zfs_layout"
@@ -2793,6 +2795,8 @@
                 "CheckBridges",
                 "CheckDevfsRulesets",
                 "CheckCPUVirtualization",
+                "CheckVMBhyve",
+                "CheckUEFIFirmware",
                 "CheckPF",
                 "CheckZFSPool",
                 "CheckZFSLayout"

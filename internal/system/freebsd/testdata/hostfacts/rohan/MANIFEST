@@ -77,3 +77,5 @@ smartctl_da0	smartctl --json -i -H -A -l selftest /dev/da0	exit=32
 zpool_list_vdevs	zpool list -v -H -o name	exit=0
 glabel_status	glabel status	exit=0
 geom_disk_list	geom disk list	exit=0
+vm_list	vm list	exit=127
+uefi_firmware	ls /usr/local/share/uefi-firmware/	exit=1

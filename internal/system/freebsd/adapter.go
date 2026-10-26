@@ -7,6 +7,7 @@ type Adapter struct {
 	confFile        string
 	confDir         string
 	dmesgBoot       string
+	uefiFirmware    string
 	devfsRulesFiles []string
 }
 
@@ -16,6 +17,7 @@ func NewAdapter(runner system.CommandRunner) *Adapter {
 		confFile:        defaultJailConf,
 		confDir:         defaultJailConfDir,
 		dmesgBoot:       defaultDmesgBoot,
+		uefiFirmware:    defaultUEFIFirmware,
 		devfsRulesFiles: defaultDevfsRulesFiles,
 	}
 }

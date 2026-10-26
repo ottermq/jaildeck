@@ -1,0 +1,2 @@
+/usr/local/sbin/vm: WARNING: $vm_enable is not set properly - see rc.conf(5).
+/usr/local/sbin/vm: ERROR: $vm_enable is not enabled in /etc/rc.conf!

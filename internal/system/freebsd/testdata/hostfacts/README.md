@@ -171,10 +171,53 @@ scp '<host>:/tmp/jd-capture-layout-induced/layout_*' ./<hostname>-induced/
 | `bridges` | **fail** — `vtnet0 lo0` | **fail** — 4 ifaces | **fail** — 3 ifaces | **fail** — `lo0 ue0` | **pass** — one, then two |
 | `devfs_rulesets` | **pass** — `1 2 3 4 5` | **pass** | **pass** | **pass** — arch-independent | |
 | `cpu_virtualization` | **pass**, nested | **pass**, Westmere | **pass** from `dmesg.boot`, **unanswerable** from `dmesg` | **n/a** — armv7, no line | |
+| `vm_bhyve` | **fail** — `vm` not found | **fail** | **fail** | **fail** | **fail** at each of five steps, then **pass** |
+| `uefi_firmware` | **fail** — no edk2-bhyve | **fail** | **fail** | **fail** | **pass** — `BHYVE_UEFI.fd` |
 | `pf` | **fail** — not loaded | **fail** | **fail** | **fail** | **pass** — disabled, then enabled |
 | `vms` | **fail** — no `vmm` | **fail** | **fail** | **fail** — no `hw.vmm` oid | **loaded** — `hw.vmm` appears |
 | `zfs_pool` | one pool, `zroot` | **three pools** — cannot be guessed | two pools, one named `media` | **no ZFS at all** | |
 | `zfs_layout` | **pass** | **pass** on `tank`; `backup` holds a decoy | **nothing provisioned** | **n/a** | **partial**, **misplaced** |
+
+## VM readiness (JD-019)
+
+`vm_list` and `uefi_firmware` on every host: none has vm-bhyve or edk2-bhyve, so each
+answers the shell's `sh: vm: not found` (exit 127) and no firmware directory. The replay
+harness hands exit 127 with "not found" back as `system.ErrCommandNotFound`, because that
+is all Jail Deck's runner ever sees of a missing command: exec fails before anything
+runs, and there is no output.
+
+`capture-vm-induced.sh`, run 2026-10-26 on isengard into `isengard-induced/` with the
+prefix `vm_`, walks vm-bhyve through every state on the way to a usable install — and
+then removes it, leaving `rc.conf` byte-identical. It refuses to run where vm-bhyve is
+already installed or configured, since that would be an operator's.
+
+| state | `vm list` says |
+| --- | --- |
+| not installed | `vm: command not found` |
+| installed | `ERROR: $vm_enable is not enabled in /etc/rc.conf!`, after a WARNING |
+| `vm_enable=YES`, no `vm_dir` | `ERROR: $vm_dir has not been configured or is not a valid directory` |
+| `vm_dir` naming no dataset | `ERROR: unable to locate mountpoint for ZFS dataset tank/jd-vmcap` |
+| the dataset exists, **not mounted** | the same line |
+| mounted, before `vm init` | the empty listing, exit 0 |
+| after `vm init` | the same empty listing |
+
+**What that settled:**
+
+- **`vm list` is the readiness probe.** It checks `vm_enable`, `vm_dir` and the datastore
+  before listing anything, and names what is wrong. The check reports those words rather
+  than re-deriving vm-bhyve's rules.
+- **One message covers a missing dataset and an unmounted one.** On isengard the
+  difference is real: `tank`'s mountpoint is `none`, so `zfs create tank/vm` makes a
+  dataset vm-bhyve cannot use. The first run of the script found that out by failing
+  `vm init`. The remedy says `-o mountpoint=`.
+- **`vm init` is not a gate.** `vm list` and `vm datastore list` answer identically before
+  and after it. It only lays out `.config`, `.img`, `.iso` and `.templates` and loads
+  modules, and `rc.d/vm` runs it at every boot.
+- **`sysrc -n vm_enable vm_dir` exits 1 when either is unset**, even after printing the
+  one that is set, so its status cannot say which. Not used.
+- vm-bhyve has a second error form, `util::err_inline`'s `  ! <message>` on stdout, read
+  in its source. No `vm list` capture shows it; the adapter reads it anyway, so that it
+  could never become a bare exit status.
 
 ## Disk health (#83)
 

@@ -37,6 +37,10 @@ type stubSystem struct {
 	cpuErr      error
 	pf          PFStatus
 	pfErr       error
+	vm          VMBhyve
+	vmErr       error
+	firmware    string
+	firmwareErr error
 	pools       []string
 	poolsErr    error
 	datasets    map[string][]Dataset
@@ -71,7 +75,11 @@ func (s *stubSystem) CPUVirtualization(context.Context) (CPUVirtualization, erro
 	return s.cpu, s.cpuErr
 }
 func (s *stubSystem) PFStatus(context.Context) (PFStatus, error) { return s.pf, s.pfErr }
-func (s *stubSystem) Pools(context.Context) ([]string, error)    { return s.pools, s.poolsErr }
+func (s *stubSystem) VMBhyve(context.Context) (VMBhyve, error)   { return s.vm, s.vmErr }
+func (s *stubSystem) UEFIFirmware(context.Context) (string, error) {
+	return s.firmware, s.firmwareErr
+}
+func (s *stubSystem) Pools(context.Context) ([]string, error) { return s.pools, s.poolsErr }
 func (s *stubSystem) Datasets(_ context.Context, pool string) ([]Dataset, error) {
 	return s.datasets[pool], s.datasetsErr
 }
@@ -104,6 +112,8 @@ func readyHost() *stubSystem {
 		rulesets: []DevfsRuleset{{Name: "devfsrules_jail", Number: 4}},
 		cpu:      CPUVirtualization{Reported: true, Features: []string{"PAT", "EPT", "UG", "VPID"}},
 		pf:       PFStatus{Loaded: true, Enabled: true},
+		vm:       VMBhyve{Installed: true, Datastore: "/vm", Dataset: "tank/vm"},
+		firmware: "/usr/local/share/uefi-firmware/BHYVE_UEFI.fd",
 		pools:    []string{"tank"},
 		datasets: map[string][]Dataset{"tank": fullLayout("tank")},
 	}
@@ -295,7 +305,7 @@ func TestReadinessShape(t *testing.T) {
 		gotChecks = append(gotChecks, c.ID)
 	}
 	wantChecks := []CheckID{CheckRacct, CheckExecTimeout, CheckBridges, CheckDevfsRulesets,
-		CheckZFSPool, CheckZFSLayout, CheckCPUVirtualization, CheckPF}
+		CheckZFSPool, CheckZFSLayout, CheckCPUVirtualization, CheckVMBhyve, CheckUEFIFirmware, CheckPF}
 	if !slices.Equal(gotChecks, wantChecks) {
 		t.Errorf("checks = %v, want %v", gotChecks, wantChecks)
 	}
@@ -308,7 +318,7 @@ func TestReadinessShape(t *testing.T) {
 		CapabilityLimits:       {CapabilityUnavailable, []CheckID{CheckRacct}},
 		CapabilityVNET:         {CapabilityReady, []CheckID{CheckBridges}},
 		CapabilityProvisioning: {CapabilityReady, []CheckID{CheckDevfsRulesets, CheckZFSPool, CheckZFSLayout}},
-		CapabilityVMs:          {CapabilityUnknown, []CheckID{CheckCPUVirtualization}},
+		CapabilityVMs:          {CapabilityUnknown, []CheckID{CheckCPUVirtualization, CheckVMBhyve, CheckUEFIFirmware}},
 		CapabilityFirewall:     {CapabilityReady, []CheckID{CheckPF}},
 	}
 	var gotCaps []CapabilityID
@@ -349,5 +359,93 @@ func TestReadinessReturnsCancellation(t *testing.T) {
 	cancel()
 	if _, err := newTestService(readyHost()).Readiness(ctx); !errors.Is(err, context.Canceled) {
 		t.Errorf("Readiness() error = %v, want context.Canceled", err)
+	}
+}
+
+// --- vm-bhyve and its firmware (JD-019) ----------------------------------
+
+// vm-bhyve names each misconfiguration in its own words, measured in every
+// state on the way to a usable install. The check reports those words and
+// adds the remedy; it does not re-derive vm-bhyve's rules.
+func TestVMBhyveVerdicts(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		vm     VMBhyve
+		pool   string
+		status CheckStatus
+		remedy string
+		detail string
+	}{
+		{name: "not installed", vm: VMBhyve{},
+			status: CheckFail, remedy: "pkg install vm-bhyve edk2-bhyve", detail: "/usr/local/sbin"},
+		{name: "not enabled",
+			vm:     VMBhyve{Installed: true, Problem: "$vm_enable is not enabled in /etc/rc.conf!"},
+			status: CheckFail, remedy: "sysrc vm_enable=YES", detail: "$vm_enable is not enabled"},
+		{name: "no vm_dir, with the pool known",
+			vm:     VMBhyve{Installed: true, Problem: "$vm_dir has not been configured or is not a valid directory"},
+			pool:   "tank",
+			status: CheckFail, remedy: "zfs create -o mountpoint=/vm tank/vm && sysrc vm_dir=zfs:tank/vm && vm init"},
+		{name: "no vm_dir, pool not chosen",
+			vm:     VMBhyve{Installed: true, Problem: "$vm_dir has not been configured or is not a valid directory"},
+			status: CheckFail, remedy: "zfs create -o mountpoint=/vm <pool>/vm"},
+		// One message for missing and for unmounted -- measured -- so the
+		// remedy covers both, and the detail says why a plain zfs create on
+		// isengard's tank is not enough.
+		{name: "dataset missing or unmounted",
+			vm:     VMBhyve{Installed: true, Problem: "unable to locate mountpoint for ZFS dataset tank/jd-vmcap"},
+			status: CheckFail,
+			remedy: "zfs create -o mountpoint=/vm tank/jd-vmcap, or if it exists: zfs set mountpoint=/vm tank/jd-vmcap",
+			detail: "mountpoint=none"},
+		// An error vm-bhyve has not been seen to give: its words, no guess.
+		{name: "something else",
+			vm:     VMBhyve{Installed: true, Problem: "something new"},
+			status: CheckFail, detail: "something new"},
+		{name: "configured",
+			vm:     VMBhyve{Installed: true, Datastore: "/vm", Dataset: "tank/vm"},
+			status: CheckPass},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			v := judgeVMBhyve(tt.vm, nil, tt.pool)
+			if v.status != tt.status {
+				t.Fatalf("status = %s, want %s", v.status, tt.status)
+			}
+			if !strings.HasPrefix(v.remedy, tt.remedy) {
+				t.Errorf("remedy = %q, want it to start %q", v.remedy, tt.remedy)
+			}
+			if tt.remedy == "" && v.remedy != "" && tt.status == CheckFail && tt.vm.Problem == "something new" {
+				t.Errorf("an unrecognised problem was given a guessed remedy: %q", v.remedy)
+			}
+			if !strings.Contains(v.detail, tt.detail) {
+				t.Errorf("detail = %q, want it to mention %q", v.detail, tt.detail)
+			}
+		})
+	}
+}
+
+func TestVMBhyvePassReportsTheDatastore(t *testing.T) {
+	v := judgeVMBhyve(VMBhyve{Installed: true, Datastore: "/vm", Dataset: "tank/vm"}, nil, "tank")
+	if v.observed != "/vm (tank/vm)" {
+		t.Errorf("observed = %q", v.observed)
+	}
+	if v.remedy != "" {
+		t.Errorf("a pass carries remedy %q", v.remedy)
+	}
+}
+
+func TestVMBhyveUnreadableIsUnknown(t *testing.T) {
+	if v := judgeVMBhyve(VMBhyve{}, errors.New("vm exploded"), "tank"); v.status != CheckUnknown {
+		t.Errorf("status = %s, want unknown", v.status)
+	}
+}
+
+func TestUEFIFirmwareVerdicts(t *testing.T) {
+	if v := judgeUEFIFirmware("", nil); v.status != CheckFail || v.remedy != "pkg install edk2-bhyve" {
+		t.Errorf("absent firmware = %s %q", v.status, v.remedy)
+	}
+	if v := judgeUEFIFirmware("/usr/local/share/uefi-firmware/BHYVE_UEFI.fd", nil); v.status != CheckPass {
+		t.Errorf("present firmware = %s", v.status)
+	}
+	if v := judgeUEFIFirmware("", errors.New("stat: permission denied")); v.status != CheckUnknown {
+		t.Errorf("unreadable firmware = %s, want unknown", v.status)
 	}
 }

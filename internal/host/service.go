@@ -60,6 +60,8 @@ func (s *Service) Readiness(ctx context.Context) (Report, error) {
 		CheckBridges:           judgeBridges(s.system.Bridges(ctx)),
 		CheckDevfsRulesets:     judgeDevfsRulesets(s.system.DevfsRulesets(ctx)),
 		CheckCPUVirtualization: s.checkCPUVirtualization(ctx),
+		CheckVMBhyve:           s.checkVMBhyve(ctx),
+		CheckUEFIFirmware:      judgeUEFIFirmware(s.system.UEFIFirmware(ctx)),
 		CheckPF:                judgePF(s.system.PFStatus(ctx)),
 	}
 	pool, pools, poolVerdict, _ := s.choosePool(ctx)
@@ -304,6 +306,87 @@ func judgeCPUVirtualization(cpu CPUVirtualization, err error) verdict {
 		observed: observed,
 		detail:   "bhyve's hardware prerequisites are present (JD-019).",
 	}
+}
+
+// judgeVMBhyve passes when vm-bhyve answers `vm list`. Its own error line is
+// the detail when it does not: it says precisely what is wrong, and its rules
+// for a usable vm_dir are its own to keep (JD-019).
+//
+// Initialisation is not a gate. Measured: `vm list` answers the same before
+// and after `vm init`, which only lays out the datastore and loads modules --
+// and rc.d/vm runs it at every boot.
+func (s *Service) checkVMBhyve(ctx context.Context) verdict {
+	vm, err := s.system.VMBhyve(ctx)
+	return judgeVMBhyve(vm, err, s.pool)
+}
+
+func judgeVMBhyve(vm VMBhyve, err error, pool string) verdict {
+	if err != nil {
+		return unobserved("vm-bhyve", err)
+	}
+	const why = "Jail Deck drives bhyve through vm-bhyve (JD-019)."
+	if pool == "" {
+		pool = "<pool>"
+	}
+	setup := fmt.Sprintf("zfs create -o mountpoint=/vm %[1]s/vm && sysrc vm_dir=zfs:%[1]s/vm && vm init", pool)
+	if !vm.Installed {
+		return verdict{
+			status:   CheckFail,
+			observed: "not installed",
+			detail: why + " `vm` is not on Jail Deck's PATH. It is a package, and installs into " +
+				"/usr/local/sbin; edk2-bhyve is the firmware it boots UEFI guests with.",
+			remedy: "pkg install vm-bhyve edk2-bhyve",
+		}
+	}
+	if vm.Problem == "" {
+		observed := vm.Datastore
+		if vm.Dataset != "" {
+			observed += " (" + vm.Dataset + ")"
+		}
+		return verdict{
+			status:   CheckPass,
+			observed: observed,
+			detail:   why + " It is configured and answering. rc.d/vm runs `vm init` at every boot.",
+		}
+	}
+	v := verdict{
+		status:   CheckFail,
+		observed: vm.Problem,
+		detail:   why + " It is installed and says it cannot run: " + vm.Problem,
+	}
+	switch {
+	case strings.Contains(vm.Problem, "$vm_enable"):
+		v.remedy = "sysrc vm_enable=YES"
+	case strings.Contains(vm.Problem, "$vm_dir"):
+		v.remedy = setup
+	case strings.Contains(vm.Problem, "unable to locate mountpoint for ZFS dataset"):
+		// One message for a dataset that does not exist and one that is not
+		// mounted -- measured. A child of a pool root with mountpoint=none,
+		// as isengard's tank has, inherits not being mounted.
+		v.detail += ". vm-bhyve says this both for a dataset that does not exist and for one " +
+			"that is not mounted: a dataset under a pool root with mountpoint=none inherits none."
+		dataset := strings.TrimSpace(vm.Problem[strings.LastIndex(vm.Problem, " ")+1:])
+		v.remedy = fmt.Sprintf("zfs create -o mountpoint=/vm %[1]s, or if it exists: zfs set mountpoint=/vm %[1]s", dataset)
+	}
+	return v
+}
+
+// judgeUEFIFirmware: vm-bhyve's loader="uefi" boots guests with
+// BHYVE_UEFI.fd, which edk2-bhyve provides. Without it a UEFI guest -- every
+// cloud image the VM milestone uses -- does not start.
+func judgeUEFIFirmware(path string, err error) verdict {
+	if err != nil {
+		return unobserved("bhyve's UEFI firmware", err)
+	}
+	if path == "" {
+		return verdict{
+			status:   CheckFail,
+			observed: "not installed",
+			detail:   "bhyve boots a UEFI guest with BHYVE_UEFI.fd from edk2-bhyve, and every cloud image the VM milestone uses is one (JD-019).",
+			remedy:   "pkg install edk2-bhyve",
+		}
+	}
+	return verdict{status: CheckPass, observed: path}
 }
 
 func judgePF(pf PFStatus, err error) verdict {

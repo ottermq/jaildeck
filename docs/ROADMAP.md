@@ -420,6 +420,7 @@ Goal: a `vms` domain mirroring jails (JD-019).
 ### Technical tasks
 
 - ~~**spike first:** `vm-bhyve` against direct `bhyve(8)` + `bhyvectl` + `daemon(8)`, then record the choice in JD-019. libvirt is rejected~~ *Done 2026-10-25 (#17): **`vm-bhyve`**. Measured on isengard, both ways, with the same Debian cloud image: everything direct bhyve would make Jail Deck own — restarting on a guest reboot, destroying the instance, tap lifecycle, a stop that can force — `vm-bhyve` already does, and it is actively maintained under `freebsd/vm-bhyve`. The constraints it brings are in JD-019: `vm start` must be detached by Jail Deck, and `vm_enable` and `vm_dir` are the operator's.*
+- Host Setup reports what the VMs capability needs beyond the CPU: vm-bhyve configured and answering, and edk2-bhyve's UEFI firmware. *Built 2026-10-26: `vm list` is the probe, because vm-bhyve names each misconfiguration in its own words, measured in every state from not installed to initialised. Its remedy for a missing `vm_dir` carries `-o mountpoint=`: on a pool whose root is `mountpoint=none`, as isengard's `tank` is, a plain `zfs create` makes a dataset vm-bhyve cannot use.*
 - cloud-init seed ISO with `makefs -t cd9660 -o rockridge -o label=cidata`
 - image templates as ZFS datasets or zvols, following the release-template pattern
 - VM state derived from the system (process, `/dev/vmm`, the VM's datasets), never stored (JD-011)

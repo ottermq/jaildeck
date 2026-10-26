@@ -27,6 +27,8 @@ const (
 	CheckBridges           CheckID = "bridges"
 	CheckDevfsRulesets     CheckID = "devfs_rulesets"
 	CheckCPUVirtualization CheckID = "cpu_virtualization"
+	CheckVMBhyve           CheckID = "vm_bhyve"
+	CheckUEFIFirmware      CheckID = "uefi_firmware"
 	CheckPF                CheckID = "pf"
 	CheckZFSPool           CheckID = "zfs_pool"
 	CheckZFSLayout         CheckID = "zfs_layout"
@@ -92,6 +94,8 @@ var checkSpecs = []checkSpec{
 	{CheckZFSPool, "ZFS pool", []CapabilityID{CapabilityProvisioning}},
 	{CheckZFSLayout, "Jails dataset layout", []CapabilityID{CapabilityProvisioning}},
 	{CheckCPUVirtualization, "CPU virtualization (VT-x, EPT, UG)", []CapabilityID{CapabilityVMs}},
+	{CheckVMBhyve, "vm-bhyve", []CapabilityID{CapabilityVMs}},
+	{CheckUEFIFirmware, "bhyve UEFI firmware", []CapabilityID{CapabilityVMs}},
 	{CheckPF, "PF", []CapabilityID{CapabilityFirewall}},
 }
 

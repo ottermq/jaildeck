@@ -22,6 +22,15 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
 
+### Added
+
+- **Host Setup reports what VMs need beyond the CPU** (JD-019). Two checks join
+  `cpu_virtualization` under the `vms` capability. `vm_bhyve` asks vm-bhyve itself — `vm
+  list`, read-only — and reports its own words for whatever is wrong (not installed,
+  `vm_enable` unset, no `vm_dir`, a datastore that is missing or not mounted), with the
+  remedy. `uefi_firmware` checks for edk2-bhyve's `BHYVE_UEFI.fd`. `vm init` is not
+  required: `rc.d/vm` runs it at boot, and `vm list` answers the same either way.
+
 ### Fixed
 
 - **Disk health never worked in the packaged service** (#95). rc starts services with

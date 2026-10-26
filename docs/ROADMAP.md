@@ -419,7 +419,7 @@ Goal: a `vms` domain mirroring jails (JD-019).
 
 ### Technical tasks
 
-- **spike first:** `vm-bhyve` against direct `bhyve(8)` + `bhyvectl` + `daemon(8)`, then record the choice in JD-019. libvirt is rejected
+- ~~**spike first:** `vm-bhyve` against direct `bhyve(8)` + `bhyvectl` + `daemon(8)`, then record the choice in JD-019. libvirt is rejected~~ *Done 2026-10-25 (#17): **`vm-bhyve`**. Measured on isengard, both ways, with the same Debian cloud image: everything direct bhyve would make Jail Deck own — restarting on a guest reboot, destroying the instance, tap lifecycle, a stop that can force — `vm-bhyve` already does, and it is actively maintained under `freebsd/vm-bhyve`. The constraints it brings are in JD-019: `vm start` must be detached by Jail Deck, and `vm_enable` and `vm_dir` are the operator's.*
 - cloud-init seed ISO with `makefs -t cd9660 -o rockridge -o label=cidata`
 - image templates as ZFS datasets or zvols, following the release-template pattern
 - VM state derived from the system (process, `/dev/vmm`, the VM's datasets), never stored (JD-011)
@@ -473,7 +473,7 @@ Added 2026-10-21 with the host-agent scope:
 - ~~What are the exec timeout cap and output size cap?~~ **Answered 2026-10-24 (JD-014):** 60s by default, 5 minutes at most, 1 MiB per stream. Sized from what commands actually produce in a jail — `ps auxww` 1.4 KB against `find / -type f` at 2.85 MB.
 - ~~Does `/metrics` share auth with the API, or bind a separate loopback/socket listener?~~ **Answered 2026-10-25 (JD-033): it shares the API's auth.** The loopback was the obvious boundary and is not one here — measured on isengard, a jail with `ip4=inherit` reached the host's `127.0.0.1:8888` and was served, while the jail with its own address was refused. A Unix socket is the better-shaped answer and stays available, but Prometheus only learned to scrape one in v3.15.0 (2026-09-25), so it cannot be the only path.
 - Are derived templates (release + packages) owned by the template domain, or are they exec + snapshot from the caller's point of view?
-- `vm-bhyve` or direct bhyve — settled by the spike in Virtual Machines (JD-019)
+- ~~`vm-bhyve` or direct bhyve~~ **Answered 2026-10-25 (JD-019): `vm-bhyve`**, by a spike that built the same Linux VM both ways on isengard.
 
 Earlier:
 

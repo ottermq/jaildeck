@@ -7,6 +7,7 @@ import { ApiError } from '../services/api'
 import { normalizeEmptyValue } from '../utils'
 import { stateBadge } from '../vmState'
 import VMActions from '../components/VMActions.svelte'
+import VMImages from '../components/VMImages.svelte'
 import type { OperationResult } from '../stores/vms.svelte'
 
 let listing = $state<Listing | null>(null)
@@ -76,8 +77,10 @@ function href(name: string): string {
         <p><a href="/host" onclick={(e) => onNavClick(e, '/host')}>Host Setup</a> has the remedy.</p>
     </div>
 {:else if listing.vms.length === 0}
+    <h2 class="section-head">Guests</h2>
     <p class="notice">vm-bhyve is ready, and has no guests.</p>
 {:else}
+    <h2 class="section-head">Guests</h2>
     <div class="table-wrap">
         <table>
             <thead>
@@ -120,7 +123,15 @@ function href(name: string): string {
     </div>
 {/if}
 
+{#if listing?.vm_bhyve === 'ready'}
+    <VMImages />
+{/if}
+
 <style>
+.section-head {
+    margin-bottom: var(--space-3);
+}
+
 .name {
     font-weight: 600;
     color: var(--text-strong);

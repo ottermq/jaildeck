@@ -286,7 +286,7 @@ ZFS is required (JD-006), so this adapter can assume ZFS is present.
 
 ### Firewall and VM adapters
 
-The firewall adapter runs `pfctl` read-only commands (JD-020, JD-034). The VM adapter drives vm-bhyve (JD-019); so far it runs `vm list` and `vm info` and nothing that changes a guest (JD-035).
+The firewall adapter runs `pfctl` read-only commands (JD-020, JD-034). The VM adapter drives vm-bhyve (JD-019): `vm list` and `vm info` (JD-035), and `vm start`, `vm stop` and `vm poweroff -f` (JD-036). `vm start` is the one command the runner detaches — a session of its own, and a timeout that signals only it — because it leaves vm-bhyve's supervisor running on purpose.
 
 ## API conventions
 
@@ -308,8 +308,9 @@ GET    /api/storage/datasets
 GET    /api/storage/snapshots
 GET    /api/host/readiness           # Host Setup checks
 GET    /api/firewall/...             # read-only PF views (JD-020)
-GET    /api/vms                      # vm-bhyve's guests, read-only so far (JD-035)
+GET    /api/vms                      # vm-bhyve's guests (JD-035)
 GET    /api/vms/{name}
+POST   /api/vms/{name}/start         # and stop, restart (JD-036)
 GET    /api/audit
 GET    /metrics                      # Prometheus text format
 ```

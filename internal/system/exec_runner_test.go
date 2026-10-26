@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -218,5 +220,91 @@ func TestExecCommandRunner_Run_AFailingCommandIsNotNotFound(t *testing.T) {
 		Command{Name: "sh", Args: []string{"-c", "echo 'not found' >&2; exit 127"}})
 	if err == nil || errors.Is(err, ErrCommandNotFound) {
 		t.Errorf("err = %v; a command that ran is never ErrCommandNotFound", err)
+	}
+}
+
+// backgrounded runs script, which must print the pid of a child it leaves
+// running the way vm start leaves vm-run -- in the background, its output on
+// /dev/null -- and returns that pid. The child is killed when the test ends.
+func backgrounded(t *testing.T, cmd Command) (int, error) {
+	t.Helper()
+	result, err := (&ExecCommandRunner{}).Run(context.Background(), cmd)
+	pid, convErr := strconv.Atoi(strings.TrimSpace(strings.SplitN(result.Stdout, "\n", 2)[0]))
+	if convErr != nil {
+		t.Fatalf("no pid in %q (err %v)", result.Stdout, err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	return pid, err
+}
+
+func alive(pid int) bool { return syscall.Kill(pid, 0) == nil }
+
+// gone waits briefly for pid to be reaped: a killed child is a zombie until
+// whatever adopted it collects it.
+func gone(pid int) bool {
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !alive(pid) {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}
+
+func TestExecCommandRunner_Run_DetachedLeavesItsChildOutsideJailDecksSession(t *testing.T) {
+	start := time.Now()
+	pid, err := backgrounded(t, Command{
+		Name: "sh", Args: []string{"-c", "sleep 30 >/dev/null 2>&1 & echo $!"}, Detach: true,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// The child's output is /dev/null, so nothing holds the pipes.
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("Run blocked for %s", time.Since(start))
+	}
+	if !alive(pid) {
+		t.Fatal("the backgrounded child did not survive the command")
+	}
+	// A session, not only a group: Setpgid alone gives a group of its own
+	// too, inside Jail Deck's session.
+	if getsid(t, pid) == getsid(t, 0) {
+		t.Errorf("the child is in Jail Deck's session %d", getsid(t, 0))
+	}
+}
+
+func getsid(t *testing.T, pid int) int {
+	t.Helper()
+	sid, _, errno := syscall.RawSyscall(syscall.SYS_GETSID, uintptr(pid), 0, 0)
+	if errno != 0 {
+		t.Fatalf("getsid(%d): %v", pid, errno)
+	}
+	return int(sid)
+}
+
+// What Detach is for: a timeout must not take down what the command left
+// running -- for vm start, the guest. Without it, it does.
+func TestExecCommandRunner_Run_ATimeoutSignalsOnlyTheDetachedCommand(t *testing.T) {
+	script := "sleep 30 >/dev/null 2>&1 & echo $!; exec sleep 30"
+
+	pid, err := backgrounded(t, Command{
+		Name: "sh", Args: []string{"-c", script}, Timeout: 200 * time.Millisecond, Detach: true,
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want a timeout, got %v", err)
+	}
+	if gone(pid) {
+		t.Error("a detached command's timeout killed the child it left running")
+	}
+
+	pid, err = backgrounded(t, Command{
+		Name: "sh", Args: []string{"-c", script}, Timeout: 200 * time.Millisecond,
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want a timeout, got %v", err)
+	}
+	if !gone(pid) {
+		t.Error("a plain command's timeout left its child running")
 	}
 }

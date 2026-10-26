@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ottermq/jaildeck/internal/system"
 	"github.com/ottermq/jaildeck/internal/vms"
@@ -235,6 +236,56 @@ func readDiskKey(d *vms.Disk, key, value string) {
 	case "bytes-used":
 		d.Used = leadingInt64(value)
 	}
+}
+
+// vmLifecycleTimeout bounds one lifecycle command. Each returns in about a
+// second, measured -- vm start once its supervisor is in the background,
+// vm stop after the one second it waits between its two signals -- so this
+// is a backstop, not an expectation.
+const vmLifecycleTimeout = 30 * time.Second
+
+// VMStart runs `vm start <name>` detached from Jail Deck (JD-036).
+//
+// vm start backgrounds vm-run, the supervisor that keeps the guest's bhyve
+// running, without job control: measured, vm-run and bhyve are left in the
+// caller's process group and session. Jail Deck's runner kills a command's
+// whole process group on a timeout, so started like any other command, a
+// slow vm start would take the guest down with it. Detached, it is a session
+// of its own and a timeout signals vm start alone. vm-run's output is
+// /dev/null, so it never holds the runner's pipes.
+//
+// vm start reports its refusals as "  ! <reason>" on stdout, with exit 1:
+// "guest appears to be running already", "incomplete virtual machine
+// configuration", and the rest.
+func (a *Adapter) VMStart(ctx context.Context, name string) (string, error) {
+	return a.vmLifecycle(ctx, system.Command{Name: "vm", Args: []string{"start", name},
+		Timeout: vmLifecycleTimeout, Detach: true})
+}
+
+// VMStop runs `vm stop <name>`: SIGTERM to the guest's bhyve, which is the
+// ACPI power button, then the same again a second later. It exits 0 once
+// they are sent, and exits 0 with a WARNING for a guest that is not running
+// -- measured. Whether the guest stops is the guest's business.
+func (a *Adapter) VMStop(ctx context.Context, name string) (string, error) {
+	return a.vmLifecycle(ctx, system.Command{Name: "vm", Args: []string{"stop", name},
+		Timeout: vmLifecycleTimeout})
+}
+
+// VMPoweroff runs `vm poweroff -f <name>`: bhyvectl --force-poweroff, with
+// -f because without it vm-bhyve asks on its terminal. Silent and exit 0 on
+// a running guest; "ERROR: <name> doesn't appear to be a running virtual
+// machine", exit 1, on one that is not -- measured.
+func (a *Adapter) VMPoweroff(ctx context.Context, name string) (string, error) {
+	return a.vmLifecycle(ctx, system.Command{Name: "vm", Args: []string{"poweroff", "-f", name},
+		Timeout: vmLifecycleTimeout})
+}
+
+func (a *Adapter) vmLifecycle(ctx context.Context, cmd system.Command) (string, error) {
+	result, err := a.runner.Run(ctx, cmd)
+	if err != nil {
+		return cmd.String(), vmCommandError(cmd, result, err)
+	}
+	return cmd.String(), nil
 }
 
 // dashless is vm-bhyve's "-" for nothing, as nothing.

@@ -6,18 +6,31 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"time"
 
+	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/common"
 )
 
-// Service answers what vm-bhyve's guests are doing. It changes nothing
-// (JD-035).
+// Service answers what vm-bhyve's guests are doing (JD-035), and starts and
+// stops them (JD-036).
 type Service struct {
 	system VMSystem
+	audit  audit.Logger
+	// wait is how the lifecycle waits between looks at vm-bhyve's listing.
+	// A field so that the tests do not spend a minute watching a fake.
+	wait func(context.Context, time.Duration)
 }
 
-func NewService(system VMSystem) *Service {
-	return &Service{system: system}
+func NewService(system VMSystem, auditLogger audit.Logger) *Service {
+	return &Service{system: system, audit: auditLogger, wait: sleep}
+}
+
+func sleep(ctx context.Context, d time.Duration) {
+	select {
+	case <-time.After(d):
+	case <-ctx.Done():
+	}
 }
 
 func (s *Service) unavailable() error {
@@ -57,30 +70,9 @@ func (s *Service) Get(ctx context.Context, name string) (Detail, error) {
 	if s.system == nil {
 		return Detail{}, s.unavailable()
 	}
-	if !vmName.MatchString(name) {
-		return Detail{}, common.NewAppError(http.StatusBadRequest,
-			strconv.Quote(name)+" is not a vm-bhyve guest name")
-	}
-	listing, err := s.system.VMList(ctx)
+	row, err := s.guest(ctx, name)
 	if err != nil {
-		return Detail{}, readError("the virtual machines", err)
-	}
-	if listing.VMBhyve != VMBhyveReady {
-		message := "vm-bhyve is not installed"
-		if listing.Problem != "" {
-			message = "vm-bhyve is not configured: " + listing.Problem
-		}
-		return Detail{}, common.NewAppError(http.StatusConflict, message)
-	}
-	var row *VM
-	for i := range listing.VMs {
-		if listing.VMs[i].Name == name {
-			row = &listing.VMs[i]
-			break
-		}
-	}
-	if row == nil {
-		return Detail{}, notFound(name)
+		return Detail{}, err
 	}
 
 	info, err := s.system.VMInfo(ctx, name)
@@ -106,6 +98,32 @@ func (s *Service) Get(ctx context.Context, name string) (Detail, error) {
 		detail.Disks = make([]Disk, 0)
 	}
 	return detail, nil
+}
+
+// guest is one guest's row, by a name that has to be one vm-bhyve could have
+// made and one its listing has.
+func (s *Service) guest(ctx context.Context, name string) (*VM, error) {
+	if !vmName.MatchString(name) {
+		return nil, common.NewAppError(http.StatusBadRequest,
+			strconv.Quote(name)+" is not a vm-bhyve guest name")
+	}
+	listing, err := s.system.VMList(ctx)
+	if err != nil {
+		return nil, readError("the virtual machines", err)
+	}
+	if listing.VMBhyve != VMBhyveReady {
+		message := "vm-bhyve is not installed"
+		if listing.Problem != "" {
+			message = "vm-bhyve is not configured: " + listing.Problem
+		}
+		return nil, common.NewAppError(http.StatusConflict, message)
+	}
+	for i := range listing.VMs {
+		if listing.VMs[i].Name == name {
+			return &listing.VMs[i], nil
+		}
+	}
+	return nil, notFound(name)
 }
 
 func notFound(name string) error {

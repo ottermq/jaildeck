@@ -417,7 +417,7 @@ Goal: a `vms` domain mirroring jails (JD-019).
 
 - list and inspect VMs
 - create from an image template, with CPU and memory sizing, cpuset, a zvol disk and a cloud-init seed
-- start, stop, restart, destroy (`confirm=<name>`)
+- start, stop, restart, destroy (`confirm=<name>`). *Start, stop and restart built 2026-10-26 (JD-036): `vm start` detached into a session of its own, every step confirmed in `vm list`, and a stop that powers off a guest ignoring the button for 60 seconds and says `forced`.*
 - a tap on the configured bridge, as VNET jails use
 - serial console through the API, later
 

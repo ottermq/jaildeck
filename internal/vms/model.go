@@ -110,3 +110,13 @@ type Info struct {
 	Networks       []Network
 	Disks          []Disk
 }
+
+// OperationResult is what a start, stop or restart answers: the guest's row
+// as vm-bhyve lists it afterwards.
+type OperationResult struct {
+	VM
+	// Forced is a stop that the guest did not answer within the deadline,
+	// and that was powered off: the equivalent of pulling the plug, and
+	// reported so that nobody mistakes it for a clean shutdown.
+	Forced bool `json:"forced,omitempty"`
+}

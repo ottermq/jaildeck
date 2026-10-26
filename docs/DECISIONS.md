@@ -726,7 +726,7 @@ Every row of that table is needed whichever approach is taken. `vm-bhyve` does a
 - **`vm-bhyve` must be an enabled service.** It refuses to run without `vm_enable="YES"` and a `vm_dir` in `rc.conf`, and it starts `vm_list` at boot. Both are the operator's, like `jail_list` — Host Setup reports them, as it reports racct.
 - **It owns every bhyve on the host.** Its shutdown `stopall` "will also stop instances not started by vm-bhyve" (its own comment). Jail Deck never starts bhyve any other way on a host that uses it.
 - **Images are zvols that Jail Deck writes or clones.** `vm-bhyve`'s cloud-image import needs `qemu-img` (`sysutils/qemu-tools`) even for a raw image. It is not used: `vm create -C` without `-i` builds the guest and its seed, and the disk was filled directly — measured. That keeps image templates on the release-template pattern (JD-027) and takes no `qemu-tools`.
-- **A stop has a deadline.** `vm stop`, a timeout, then `vm poweroff`, because the power button is ignored until the guest has booted.
+- **A stop has a deadline.** `vm stop`, a timeout, then `vm poweroff`, because the power button is ignored until the guest has booted. *Built in JD-036, which also found that a guest with no OS, sitting in UEFI, answers the button at once: what ignores it is an OS that is still booting.*
 - **Its network config adds `dhcp6: true` and `accept-ra: true`** to a static IPv4 address. Harmless on an isolated bridge and worth knowing on one that is not.
 - **State is read, not kept** (JD-011): `vm list`, `/dev/vmm`, the `vm-run` process, the guest's dataset and configuration, and a tap found by its description.
 
@@ -1628,3 +1628,48 @@ Nothing is stored (JD-011). Each `GET` runs `vm list`, and the detail runs `vm i
 ### Read-only, by construction
 
 The port has two methods, both reads, and the adapter is tested for it: every command the listing and the detail cause it to run is checked to be `vm list` or `vm info`. Starting a guest needs a new method, and JD-019's constraint with it: `vm start` does not detach.
+
+---
+
+## JD-036 — Starting and Stopping a Guest: Detached, Confirmed, and a Stop With a Deadline
+
+**Status:** Locked — 2026-10-26. Measured on isengard, 15.1-RELEASE-p5, vm-bhyve 1.7.5, with a throwaway guest started, stopped and powered off (`capture-vm-lifecycle-induced.sh`), then through the API with the branch binary; vm-bhyve's `start`, `stop` and `poweroff` read in its source.
+
+`POST /api/vms/{name}/start`, `/stop` and `/restart`, audited as `vm-start`, `vm-stop` and `vm-poweroff`. They are the first VM endpoints that change the host. Creating, changing and destroying a guest are still to come.
+
+### `vm start` runs in a session of its own
+
+JD-019 required `vm start` to be detached from Jail Deck. The source says why, and the capture confirms it. `vm start` launches vm-run, the supervisor that keeps bhyve running, as `$0 _run <name> >/dev/null 2>&1 &`, without job control. So vm-run and bhyve stay in **the caller's process group and session**: measured, the capture script's group was theirs. Jail Deck's runner kills a command's whole process group on a timeout (that's how a hung `service` script and its children are cleaned up), so a slow `vm start` started the usual way would power its own guest off.
+
+The runner gained `Detach`. The command gets a new session (`setsid`), and a timeout signals that command only, never its group. That is JD-019's "or `setsid`". It was chosen over `daemon -f vm start` because `daemon` would throw away `vm start`'s output and exit status, and those are where its refusals are ("guest appears to be running already", "incomplete virtual machine configuration"). vm-run's output goes to `/dev/null`, so it never holds the runner's pipes open: measured, the pipe closed **1 second** after `vm start` began.
+
+Measured through the API: vm-run and bhyve were in a session other than Jail Deck's, and **stopping Jail Deck left the guest running**, with the same bhyve pid.
+
+### Nothing is believed from an exit status
+
+`vm start` returns once vm-run is in the background, before bhyve is up. Measured: `Stopped` on the first look, then `Running (pid)` a second later. `vm stop` returns once it has sent its signals, and **exits 0 even for a guest that isn't running** (with a WARNING). So every step is confirmed in `vm list`, once a second, the way a jail's start is confirmed in `jls` (JD-030):
+
+| step | waits for | up to |
+| --- | --- | --- |
+| start | `running` or `bootloader` | 15 s — measured: 1 s |
+| stop | `stopped` or `suspended` | **60 s** — the guest OS's shutdown, not vm-bhyve's |
+| poweroff | `stopped` or `suspended` | 15 s — measured: under 1 s |
+
+A start that `vm start` accepted but that never shows as running is a failure. The response points at `vm-bhyve.log` in the guest's directory, where vm-run writes what bhyve said.
+
+### A stop has a deadline, and says when it was used
+
+`vm stop` is the ACPI power button: SIGTERM to bhyve, then again a second later. A guest that doesn't answer within 60 seconds gets **`vm poweroff -f`**, the equivalent of pulling the plug, and the answer says **`forced: true`**. The audit log keeps both steps: the `vm-stop` entry is recorded as failed ("did not answer the ACPI shutdown within 1m0s"), followed by the `vm-poweroff` entry. A guest that stops between the deadline and the poweroff is still a stop: vm-bhyve then refuses the poweroff ("doesn't appear to be a running virtual machine"), and that refusal is logged too.
+
+**Forced poweroff is automatic**, not something the caller has to ask for. JD-019 decided a stop has a deadline. Without one, `POST /stop` on a guest that ignores the button would answer "stopped" about a guest that isn't, or hang. Reporting `forced` is what keeps the shortcut honest.
+
+**The power button was not ignored here.** JD-019 measured a Debian guest ignoring it before its OS was up. A guest with no OS at all, sitting in UEFI, powered off within the second `vm stop` itself spends, every time it was asked: three stops, one of them in the guest's first second. So the poweroff fallback hasn't happened on a real guest yet. It is tested against a scripted vm-bhyve, including the second either side of the deadline. Seeing it for real needs a guest with an OS, which arrives with image templates.
+
+### Idempotent, and refused only where vm-bhyve can't be trusted
+
+- **Start** of a `running` or `bootloader` guest, and **stop** of a `stopped` or `suspended` one, run nothing and answer the guest as it is, as a jail's start does. Nothing ran, so nothing is audited. **Starting a `suspended` guest resumes it**: vm start finds the saved state.
+- **`locked`** is refused (`409`) for every operation: another host holds the guest in a shared datastore.
+- **`bootloader`** is refused for stop and restart. vm-bhyve's stop asks on its terminal before killing a boot loader (`util::confirm`), and with Jail Deck's `/dev/null` for a terminal it declines and exits 0 **without saying so**, read in its source. Reporting that as a stop would be false.
+- **Restart** is Jail Deck's stop (deadline and fallback included) followed by start, not vm-bhyve's `restart`, which asks the guest to reboot through the power button and has no deadline. A forced stop shows as `forced: true` even though the guest is running again by the time the answer comes.
+
+Like a jail's, these are detached from the request: a client that disconnects does not stop a lifecycle step halfway. Each step is bounded by its own timeout, and the HTTP server has no write timeout for that reason.

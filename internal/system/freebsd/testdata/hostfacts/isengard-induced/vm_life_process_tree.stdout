@@ -1,0 +1,4 @@
+  PID  PPID  PGID   SID COMMAND
+67592 67591 67591 67591 sh /tmp/capture-vm-lifecycle-induced.sh
+68316     1 67591 67591 /bin/sh /usr/local/sbin/vm _run jd-cap-life
+68564 68316 67591 67591 bhyve: jd-cap-life (bhyve)

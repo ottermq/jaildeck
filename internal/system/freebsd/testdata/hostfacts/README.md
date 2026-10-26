@@ -252,6 +252,33 @@ The other three states â€” `Bootloader (pid)`, `Suspended` and `Locked (host)` â
 induced. They are read from vm-bhyve's source (`lib/vm-core`, `lib/vm-run`) and tested
 from rows written to match it.
 
+## Starting and stopping a guest (JD-036)
+
+`capture-vm-lifecycle-induced.sh`, run 2026-10-26 on isengard into `isengard-induced/` with
+the prefix `vm_life_`, makes one guest that boots no OS, `jd-cap-life`, and starts, stops and
+powers it off. Before and after each step it records the guest's state once a second
+(`vm_life_after_*`). It then destroys the guest and its template, leaving `rc.conf`
+byte-identical. It refuses to run where a `jd-cap-*` guest or its template exists.
+
+**What that settled:**
+
+- **vm-run and bhyve stay in `vm start`'s caller's process group and session**
+  (`vm_life_process_tree`). vm start backgrounds vm-run without job control, so a runner
+  that kills a command's group on a timeout would kill the guest. Jail Deck detaches it.
+- **vm start's pipe closes in a second.** vm-run's output is `/dev/null`, so nothing
+  holds the caller's stdout (`vm_life_start_piped`).
+- **vm start returns before the guest is up:** `Stopped` on the first look, `Running` a
+  second later (`vm_life_after_start`).
+- **Refusals are `  ! <reason>` on stdout with exit 1:** a guest already running, a name
+  that is not a guest.
+- **`vm stop` exits 0 for a guest that is not running**, with a WARNING on stderr.
+  `vm poweroff -f` of one is exit 1 with an ERROR. On a running guest it is silent and
+  exit 0.
+- **A guest with no OS answers the power button at once,** even in its first second
+  (`vm_life_after_stop_early`). JD-019's guest that ignored it had an OS still booting.
+  None could be made without an image, so the poweroff fallback is tested against a
+  scripted vm-bhyve.
+
 ## Disk health (#83)
 
 Captured 2026-10-25, on `isengard` and `rohan` only. `rivendell` and the VM were not

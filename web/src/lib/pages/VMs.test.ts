@@ -28,6 +28,11 @@ vi.mock('../stores/vms.svelte', async (original) => ({
     }),
 }))
 
+// The images panel has its own tests; here it only has to answer.
+vi.mock('../stores/vmImages.svelte', () => ({
+    listImages: vi.fn(async () => ({ vm_bhyve: 'ready', dataset: 'tank/vm/.images', images: [], sources: [] })),
+}))
+
 const asked: string[][] = []
 vi.mock('../stores/confirm.svelte', () => ({
     ask: vi.fn(async (c: { title: string, lines?: string[] }) => {
@@ -83,6 +88,19 @@ describe('the virtual machines page', () => {
         render(VMs)
         expect(await screen.findByText('$vm_enable is not enabled in /etc/rc.conf!')).toBeTruthy()
         expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('shows the images panel only once vm-bhyve is ready', async () => {
+        listing = { vm_bhyve: 'not_installed', vms: [] }
+        const { unmount } = render(VMs)
+        await screen.findByText(/vm-bhyve is not installed/)
+        expect(screen.queryByRole('heading', { name: 'Images' })).toBeNull()
+        unmount()
+
+        listing = { vm_bhyve: 'ready', vms: [] }
+        render(VMs)
+        expect(await screen.findByRole('heading', { name: 'Images' })).toBeTruthy()
+        expect(screen.getByRole('heading', { name: 'Guests' })).toBeTruthy()
     })
 
     it('says a ready vm-bhyve with no guests has none', async () => {

@@ -40,7 +40,7 @@ Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com
   Start, stop and restart, from the VMs page or the API, confirmed in vm-bhyve's listing; a
   guest that ignores the power button for 60 seconds is powered off, and the answer says so
   (JD-036). Image templates for creating them: Debian 13's cloud image fetched, checked
-  against Debian's checksum and written into a zvol, through the API so far (JD-037).
+  against Debian's checksum and written into a zvol, from the VMs page or the API (JD-037).
 - **Web interface** — an embedded Svelte application for all of the above, light and dark.
 
 ## Requirements

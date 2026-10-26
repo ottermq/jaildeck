@@ -89,6 +89,15 @@ cap sysctl_vmm 'sysctl hw.vmm'
 cap kldstat 'kldstat'
 cap kldstat_vmm 'kldstat -m vmm'
 
+# --- VMs (JD-019): vm-bhyve, which is a package ---------------------------
+# `vm list` is the read the readiness check makes: vm-bhyve checks vm_enable,
+# vm_dir and its datastore before it lists anything, and names what is wrong.
+# Not under $PRIV: on a host without vm-bhyve the answer is the shell's own
+# "not found", exit 127, which is what Jail Deck's runner reports as
+# ErrCommandNotFound. capture-vm-induced.sh has every state past that one.
+cap vm_list 'vm list'
+cap uefi_firmware 'ls /usr/local/share/uefi-firmware/'
+
 # --- #1: pf ---------------------------------------------------------------
 cap pfctl_info "$PRIV pfctl -s info"
 cap pfctl_rules "$PRIV pfctl -s rules"

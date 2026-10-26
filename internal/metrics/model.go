@@ -18,6 +18,11 @@ type Report struct {
 	// a host without smartmontools, which is a package rather than base
 	// (JD-032).
 	Disks []Disk `json:"disks"`
+	// DisksUnavailable says why Disks is empty when it is not because the
+	// host has none: smartctl not installed, not on the service's PATH, or
+	// refusing to list devices. JD-032 promised a host without disk health
+	// would say why; until this field it only said nothing (#95).
+	DisksUnavailable string `json:"disks_unavailable,omitempty"`
 }
 
 type Host struct {

@@ -20,6 +20,51 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.13.0 — 2026-10-26
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.13.0)
+
+Disk health finally works in the packaged service, and the **Virtual Machines** milestone
+begins: JD-019 is locked on vm-bhyve, and Host Setup reports whether a host is ready for
+it.
+
+**One thing to act on when upgrading: `rc.d/jaildeck` changed.** A `pkg add -f` of the
+package replaces it, as `docs/PACKAGING.md` describes; an install made with `make install`
+needs it installed again. Without the new script the service still cannot find `smartctl`
+or `vm`. Every endpoint from v0.12.0 answers as it did; the metrics report and the
+readiness report only gained fields and checks.
+
+### Added
+
+- **Host Setup reports what VMs need beyond the CPU** (JD-019). Two checks join
+  `cpu_virtualization` under the `vms` capability. `vm_bhyve` asks vm-bhyve itself — `vm
+  list`, read-only — and reports its own words for whatever is wrong (not installed,
+  `vm_enable` unset, no `vm_dir`, a datastore that is missing or not mounted), with the
+  remedy. `uefi_firmware` checks for edk2-bhyve's `BHYVE_UEFI.fd`. `vm init` is not
+  required: `rc.d/vm` runs it at boot, and `vm list` answers the same either way.
+
+### Fixed
+
+- **Disk health never worked in the packaged service** (#95). rc starts services with
+  `PATH=/sbin:/bin:/usr/sbin:/usr/bin`, and `smartctl` lives in `/usr/local/sbin`, so a
+  host with smartmontools installed reported no disks — the answer it gives for a host
+  without it. Every test passed because each one started the binary by hand. The rc
+  script now adds `/usr/local/sbin` and `/usr/local/bin` to `PATH`, before the env file
+  so an operator can still set it there. It matters again for `vm-bhyve`, which installs
+  `vm` in the same place.
+
+### API
+
+- **`disks_unavailable` says why `disks` is empty** when it is not because the host has
+  none (JD-032 promised this and the field did not exist). It names a `smartctl` that is
+  not on Jail Deck's `PATH` together with the `PATH` it searched, and passes on the scan's
+  own complaint — an unprivileged `smartctl --scan` prints
+  `# scan_smart_devices: Permission denied` and exits 0. The Dashboard shows the reason
+  instead of guessing one: it had been telling a host with smartmontools installed to
+  install it.
+
+---
+
 ## v0.12.0 — 2026-10-25
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.12.0)

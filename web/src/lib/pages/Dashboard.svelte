@@ -274,11 +274,12 @@ let source = $derived(report?.jails[0]?.source)
 
     <section class="panel">
         <h2>Disks</h2>
-        {#if disks.length === 0}
-            <p class="notice">
-                No disk health to report. <code>smartctl</code> comes from the
-                <code>smartmontools</code> package, which is not part of the base system.
-            </p>
+        {#if disks.length === 0 && report.disks_unavailable}
+            <!-- The reason as the server gives it. Guessing it here is what
+                 told a host that had smartmontools installed to install it. -->
+            <p class="notice">No disk health: {report.disks_unavailable}</p>
+        {:else if disks.length === 0}
+            <p class="notice">smartctl answered, and found no disk it can read on this host.</p>
         {:else}
             <div class="table-wrap">
                 <table>

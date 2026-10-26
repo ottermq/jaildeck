@@ -46,6 +46,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Exec and Automation Contract** (v0.10.0): run a command inside a jail through the API with a clean environment, a capped timeout and capped output (JD-014, JD-016); host and per-jail resource usage on a Dashboard (JD-031)
 - **Metrics** (v0.11.0): disk health joined to the pools each disk holds up (JD-032), and a Prometheus endpoint behind the API's own token (JD-033). **Packaging** began in the same release: `make package` builds a verified native `.pkg`
 - **Firewall Visibility** (v0.12.0): PF's state, rules with counters, NAT, anchors, tables and recent pflog lines, read-only — nothing reachable from the API can change PF (JD-020, JD-034). The interface gained a test suite in the same release (#77)
+- **Virtual Machines, begun** (v0.13.0): JD-019 locked on vm-bhyve after a spike, and Host Setup reports vm-bhyve and its UEFI firmware. The same release fixed disk health, which had never worked under rc's `PATH` (#95)
 
 ---
 
@@ -405,6 +406,8 @@ Jail Deck can be installed on FreeBSD in a repeatable way and run as a service.
 
 ## Milestone: Virtual Machines
 
+**Status:** begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Creating, running and destroying a VM are ahead.
+
 **Depends on:** Host Setup (UG check), Storage Writes (zvols), Jail Provisioning (the patterns VMs mirror). **★ Otter Cloud:** Linux VMs, after its first beta.
 
 Goal: a `vms` domain mirroring jails (JD-019).
@@ -419,7 +422,8 @@ Goal: a `vms` domain mirroring jails (JD-019).
 
 ### Technical tasks
 
-- **spike first:** `vm-bhyve` against direct `bhyve(8)` + `bhyvectl` + `daemon(8)`, then record the choice in JD-019. libvirt is rejected
+- ~~**spike first:** `vm-bhyve` against direct `bhyve(8)` + `bhyvectl` + `daemon(8)`, then record the choice in JD-019. libvirt is rejected~~ *Done 2026-10-25 (#17): **`vm-bhyve`**. Measured on isengard, both ways, with the same Debian cloud image: everything direct bhyve would make Jail Deck own — restarting on a guest reboot, destroying the instance, tap lifecycle, a stop that can force — `vm-bhyve` already does, and it is actively maintained under `freebsd/vm-bhyve`. The constraints it brings are in JD-019: `vm start` must be detached by Jail Deck, and `vm_enable` and `vm_dir` are the operator's.*
+- Host Setup reports what the VMs capability needs beyond the CPU: vm-bhyve configured and answering, and edk2-bhyve's UEFI firmware. *Built 2026-10-26: `vm list` is the probe, because vm-bhyve names each misconfiguration in its own words, measured in every state from not installed to initialised. Its remedy for a missing `vm_dir` carries `-o mountpoint=`: on a pool whose root is `mountpoint=none`, as isengard's `tank` is, a plain `zfs create` makes a dataset vm-bhyve cannot use.*
 - cloud-init seed ISO with `makefs -t cd9660 -o rockridge -o label=cidata`
 - image templates as ZFS datasets or zvols, following the release-template pattern
 - VM state derived from the system (process, `/dev/vmm`, the VM's datasets), never stored (JD-011)
@@ -473,7 +477,7 @@ Added 2026-10-21 with the host-agent scope:
 - ~~What are the exec timeout cap and output size cap?~~ **Answered 2026-10-24 (JD-014):** 60s by default, 5 minutes at most, 1 MiB per stream. Sized from what commands actually produce in a jail — `ps auxww` 1.4 KB against `find / -type f` at 2.85 MB.
 - ~~Does `/metrics` share auth with the API, or bind a separate loopback/socket listener?~~ **Answered 2026-10-25 (JD-033): it shares the API's auth.** The loopback was the obvious boundary and is not one here — measured on isengard, a jail with `ip4=inherit` reached the host's `127.0.0.1:8888` and was served, while the jail with its own address was refused. A Unix socket is the better-shaped answer and stays available, but Prometheus only learned to scrape one in v3.15.0 (2026-09-25), so it cannot be the only path.
 - Are derived templates (release + packages) owned by the template domain, or are they exec + snapshot from the caller's point of view?
-- `vm-bhyve` or direct bhyve — settled by the spike in Virtual Machines (JD-019)
+- ~~`vm-bhyve` or direct bhyve~~ **Answered 2026-10-25 (JD-019): `vm-bhyve`**, by a spike that built the same Linux VM both ways on isengard.
 
 Earlier:
 

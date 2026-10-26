@@ -28,6 +28,19 @@ type CPUVirtualization struct {
 	Features []string
 }
 
+// VMBhyve is what vm-bhyve says about itself (JD-019). Installed is false when
+// `vm` is not on Jail Deck's PATH at all. When it is, Problem is vm-bhyve's own
+// ERROR line from `vm list` -- it names each misconfiguration precisely, so
+// its words are reported rather than its rules re-derived -- and empty when
+// vm-bhyve is configured and answering. Datastore and Dataset are then its
+// default datastore's path and ZFS dataset.
+type VMBhyve struct {
+	Installed bool
+	Problem   string
+	Datastore string
+	Dataset   string
+}
+
 type PFStatus struct {
 	Loaded  bool
 	Enabled bool
@@ -61,6 +74,13 @@ type HostSystem interface {
 	DevfsRulesets(ctx context.Context) ([]DevfsRuleset, error)
 	CPUVirtualization(ctx context.Context) (CPUVirtualization, error)
 	PFStatus(ctx context.Context) (PFStatus, error)
+	// VMBhyve asks vm-bhyve whether it can run (`vm list`), and where its
+	// default datastore is. Read-only: `vm init`, which loads modules and
+	// writes the datastore's layout, is rc.d/vm's to run at boot.
+	VMBhyve(ctx context.Context) (VMBhyve, error)
+	// UEFIFirmware is the path of the firmware bhyve boots a UEFI guest
+	// with, empty when edk2-bhyve is not installed.
+	UEFIFirmware(ctx context.Context) (string, error)
 
 	// Pools lists the imported pools in the order zpool prints them. A host
 	// without ZFS does not lack the binary: zpool exits non-zero.

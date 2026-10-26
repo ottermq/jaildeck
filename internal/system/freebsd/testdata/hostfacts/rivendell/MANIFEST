@@ -42,3 +42,5 @@ zfs_list_all_canmount	zfs list -H -o name,mountpoint,canmount	exit=1
 zfs_version	zfs version	exit=1
 kldstat_zfs	kldstat -m zfs	exit=1
 zfs_list_absent_pool	zfs list -H -o name,mountpoint -r nosuchpool	exit=1
+vm_list	vm list	exit=127
+uefi_firmware	ls /usr/local/share/uefi-firmware/	exit=1

@@ -66,6 +66,14 @@ func replay(t *testing.T, set, name string) (system.CommandResult, error) {
 		t.Fatalf("capture %s/%s: bad exit status: %v", set, name, err)
 	}
 	result := system.CommandResult{Stdout: read("stdout"), Stderr: read("stderr"), ExitCode: exit}
+	// The capture scripts run each command through sh, which reports one it
+	// cannot find as exit 127 and "not found". Jail Deck's runner never sees
+	// that: exec fails before anything starts, and the runner reports
+	// ErrCommandNotFound with no output. Replayed as what the runner returns.
+	if exit == 127 && strings.Contains(result.Stderr, "not found") {
+		return system.CommandResult{ExitCode: -1},
+			fmt.Errorf("%w: %s", system.ErrCommandNotFound, strings.TrimSpace(result.Stderr))
+	}
 	if exit != 0 {
 		// What os/exec reports for a non-zero exit, and so what the real
 		// runner returns.
@@ -86,6 +94,7 @@ var readinessCaptures = map[string]string{
 	"dmesg":                       "dmesg",
 	"pfctl -s info":               "pfctl_info",
 	"zpool list -H -o name":       "zpool_list_h",
+	"vm list":                     "vm_list",
 }
 
 // withPools adds the zfs list -r captures a set has for each pool named.
@@ -138,6 +147,9 @@ func hostAdapter(t *testing.T, set string, captures map[string]string) (*Adapter
 	a.confDir = missing
 	a.dmesgBoot = capturedFile("dmesg_boot")
 	a.devfsRulesFiles = []string{capturedFile("devfs_rules_defaults"), capturedFile("devfs_rules_etc")}
+	// The firmware check is a file that exists or does not. ls of its
+	// directory is the capture of which; none of these hosts had edk2-bhyve.
+	a.uefiFirmware = capturedFile("uefi_firmware")
 	return a, runner
 }
 
@@ -356,6 +368,10 @@ var readOnlyCommands = map[string]bool{
 	"dmesg":                       true,
 	"pfctl -s info":               true,
 	"zpool list -H -o name":       true,
+	// vm-bhyve's own reads. `vm init` is not here and must never be: it
+	// loads kernel modules and writes the datastore's layout.
+	"vm list":           true,
+	"vm datastore list": true,
 }
 
 func readOnly(line string) bool {
@@ -375,40 +391,47 @@ func TestReadinessAgainstHostFixtures(t *testing.T) {
 			host.CheckZFSPool: host.CheckPass, host.CheckZFSLayout: host.CheckPass,
 			host.CheckRacct: host.CheckFail, host.CheckExecTimeout: host.CheckPass, host.CheckBridges: host.CheckFail,
 			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckPass, host.CheckPF: host.CheckFail,
+			host.CheckVMBhyve: host.CheckFail, host.CheckUEFIFirmware: host.CheckFail,
 		}},
 		// Three pools and none configured: the report will not pick one.
 		{set: "isengard", want: map[host.CheckID]host.CheckStatus{
 			host.CheckZFSPool: host.CheckFail, host.CheckZFSLayout: host.CheckUnknown,
 			host.CheckRacct: host.CheckPass, host.CheckExecTimeout: host.CheckFail, host.CheckBridges: host.CheckFail,
 			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckPass, host.CheckPF: host.CheckFail,
+			host.CheckVMBhyve: host.CheckFail, host.CheckUEFIFirmware: host.CheckFail,
 		}},
 		{set: "isengard", pool: "tank", want: map[host.CheckID]host.CheckStatus{
 			host.CheckZFSPool: host.CheckPass, host.CheckZFSLayout: host.CheckPass,
 			host.CheckRacct: host.CheckPass, host.CheckExecTimeout: host.CheckFail, host.CheckBridges: host.CheckFail,
 			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckPass, host.CheckPF: host.CheckFail,
+			host.CheckVMBhyve: host.CheckFail, host.CheckUEFIFirmware: host.CheckFail,
 		}},
 		// backup holds a replica of tank's layout, but not at backup/jails.
 		{set: "isengard", pool: "backup", want: map[host.CheckID]host.CheckStatus{
 			host.CheckZFSPool: host.CheckPass, host.CheckZFSLayout: host.CheckFail,
 			host.CheckRacct: host.CheckPass, host.CheckExecTimeout: host.CheckFail, host.CheckBridges: host.CheckFail,
 			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckPass, host.CheckPF: host.CheckFail,
+			host.CheckVMBhyve: host.CheckFail, host.CheckUEFIFirmware: host.CheckFail,
 		}},
 		{set: "rohan", pool: "zroot", want: map[host.CheckID]host.CheckStatus{
 			host.CheckZFSPool: host.CheckPass, host.CheckZFSLayout: host.CheckFail,
 			host.CheckRacct: host.CheckFail, host.CheckExecTimeout: host.CheckFail, host.CheckBridges: host.CheckFail,
 			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckPass, host.CheckPF: host.CheckFail,
+			host.CheckVMBhyve: host.CheckFail, host.CheckUEFIFirmware: host.CheckFail,
 		}},
 		// Without dmesg.boot, rohan's wrapped buffer can only say unknown.
 		{set: "rohan", pool: "zroot", noBootLog: true, want: map[host.CheckID]host.CheckStatus{
 			host.CheckZFSPool: host.CheckPass, host.CheckZFSLayout: host.CheckFail,
 			host.CheckRacct: host.CheckFail, host.CheckExecTimeout: host.CheckFail, host.CheckBridges: host.CheckFail,
 			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckUnknown, host.CheckPF: host.CheckFail,
+			host.CheckVMBhyve: host.CheckFail, host.CheckUEFIFirmware: host.CheckFail,
 		}},
 		// No ZFS at all: zpool exists and fails.
 		{set: "rivendell", want: map[host.CheckID]host.CheckStatus{
 			host.CheckZFSPool: host.CheckFail, host.CheckZFSLayout: host.CheckUnknown,
 			host.CheckRacct: host.CheckUnknown, host.CheckExecTimeout: host.CheckFail, host.CheckBridges: host.CheckFail,
 			host.CheckDevfsRulesets: host.CheckPass, host.CheckCPUVirtualization: host.CheckUnknown, host.CheckPF: host.CheckFail,
+			host.CheckVMBhyve: host.CheckFail, host.CheckUEFIFirmware: host.CheckFail,
 		}},
 	}
 	for _, tt := range tests {

@@ -6,6 +6,8 @@ import type { Listing } from '../stores/vms.svelte'
 import { ApiError } from '../services/api'
 import { normalizeEmptyValue } from '../utils'
 import { stateBadge } from '../vmState'
+import VMActions from '../components/VMActions.svelte'
+import type { OperationResult } from '../stores/vms.svelte'
 
 let listing = $state<Listing | null>(null)
 let loadError = $state('')
@@ -24,6 +26,26 @@ async function load() {
 
 onMount(load)
 
+// What the last operation on a guest came to, shown under its row until the
+// next one: a failure, or a stop that had to pull the plug.
+let notes = $state<Record<string, { text: string, kind: 'error' | 'warn' }>>({})
+
+async function done(name: string, outcome: { result?: OperationResult, error?: string }) {
+    delete notes[name]
+    if (outcome.error) {
+        notes[name] = { text: outcome.error, kind: 'error' }
+    } else if (outcome.result?.forced) {
+        notes[name] = { text: forcedNote(name), kind: 'warn' }
+    }
+    // Reloaded whichever way it went: a failure can still have changed the
+    // guest, and vm-bhyve's listing is the only record (JD-011).
+    await load()
+}
+
+function forcedNote(name: string): string {
+    return `${name} did not answer the power button within a minute and was powered off.`
+}
+
 function href(name: string): string {
     return `/vms/${encodeURIComponent(name)}`
 }
@@ -31,7 +53,7 @@ function href(name: string): string {
 
 <header class="page-head">
     <h1>Virtual machines</h1>
-    <p class="page-sub">Every guest vm-bhyve knows about on this host, and what it is doing. Read-only for now.</p>
+    <p class="page-sub">Every guest vm-bhyve knows about on this host, and what it is doing.</p>
 </header>
 
 {#if loadError}
@@ -67,6 +89,7 @@ function href(name: string): string {
                     <th>Loader</th>
                     <th>Datastore</th>
                     <th>At boot</th>
+                    <th class="actions-col">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -84,7 +107,13 @@ function href(name: string): string {
                         <td>{normalizeEmptyValue(vm.loader ?? '')}</td>
                         <td>{vm.datastore}</td>
                         <td>{vm.autostart ? `Yes, #${vm.autostart_order}` : 'No'}</td>
+                        <td><VMActions {vm} ondone={(outcome) => done(vm.name, outcome)} /></td>
                     </tr>
+                    {#if notes[vm.name]}
+                        <tr class="row-note row-note--{notes[vm.name].kind}">
+                            <td colspan="8" aria-live="polite">{notes[vm.name].text}</td>
+                        </tr>
+                    {/if}
                 {/each}
             </tbody>
         </table>
@@ -101,6 +130,24 @@ function href(name: string): string {
     margin-left: var(--space-2);
     color: var(--text-muted);
     font-size: 0.8rem;
+}
+
+.actions-col {
+    text-align: right;
+}
+
+.row-note td {
+    font-size: 0.875rem;
+}
+
+.row-note--error td {
+    color: var(--danger);
+    background: var(--danger-soft);
+}
+
+.row-note--warn td {
+    color: var(--warn);
+    background: var(--warn-soft);
 }
 
 .notice--warn {

@@ -72,3 +72,18 @@ export async function listVMs(): Promise<Listing> {
 export async function getVM(name: string): Promise<Detail> {
     return await api<Detail>(`/vms/${encodeURIComponent(name)}`)
 }
+
+export type VMOperation = 'start' | 'stop' | 'restart'
+
+// What a start, stop or restart answers: the guest as vm-bhyve lists it
+// afterwards.
+export interface OperationResult extends VM {
+    // The guest ignored the power button for 60 seconds and was powered off
+    // -- the plug pulled (JD-036). A restart says so too, though the guest
+    // is running again.
+    forced?: boolean
+}
+
+export async function runVMOperation(name: string, op: VMOperation): Promise<OperationResult> {
+    return await api<OperationResult>(`/vms/${encodeURIComponent(name)}/${op}`, { method: 'POST' })
+}

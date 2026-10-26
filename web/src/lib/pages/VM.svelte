@@ -6,6 +6,8 @@ import type { Detail } from '../stores/vms.svelte'
 import { ApiError } from '../services/api'
 import { formatBytes, normalizeEmptyValue } from '../utils'
 import { stateBadge } from '../vmState'
+import VMActions from '../components/VMActions.svelte'
+import type { OperationResult } from '../stores/vms.svelte'
 
 let { name }: { name: string } = $props()
 
@@ -24,6 +26,20 @@ async function load() {
 }
 
 onMount(load)
+
+let note = $state<{ text: string, kind: 'error' | 'warn' } | null>(null)
+
+async function done(outcome: { result?: OperationResult, error?: string }) {
+    note = null
+    if (outcome.error) {
+        note = { text: outcome.error, kind: 'error' }
+    } else if (outcome.result?.forced) {
+        note = { text: `${name} did not answer the power button within a minute and was powered off.`, kind: 'warn' }
+    }
+    // The console, the tap and resident memory come and go with the guest's
+    // bhyve instance, so the whole page is read again.
+    await load()
+}
 
 let consoles = $derived(Object.entries(vm?.consoles ?? {}).sort(([a], [b]) => a.localeCompare(b)))
 
@@ -46,7 +62,8 @@ function bytes(n: number | undefined): string {
 {:else if vm === null}
     <p class="notice">Loading {name}…</p>
 {:else}
-    <header class="page-head">
+    <header class="page-head page-head--row">
+        <div>
         <h1>{vm.name}</h1>
         <p class="page-sub">
             <span class="badge badge--{stateBadge[vm.state]}">{vm.state}</span>
@@ -54,7 +71,13 @@ function bytes(n: number | undefined): string {
             {#if vm.locked_by}<span>held by {vm.locked_by}</span>{/if}
             <span>{vm.autostart ? `starts at boot, #${vm.autostart_order} in vm_list` : 'not started at boot'}</span>
         </p>
+        </div>
+        <VMActions {vm} ondone={done} />
     </header>
+
+    {#if note}
+        <p class="notice notice--{note.kind}" role={note.kind === 'error' ? 'alert' : 'status'}>{note.text}</p>
+    {/if}
 
     <section class="panel">
         <h2>Configuration</h2>
@@ -192,6 +215,21 @@ function bytes(n: number | undefined): string {
     flex-wrap: wrap;
     gap: var(--space-4);
     align-items: center;
+}
+
+.page-head--row {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+}
+
+.notice--warn {
+    color: var(--warn);
+    background: var(--warn-soft);
+    border-color: color-mix(in srgb, var(--warn) 35%, transparent);
 }
 
 .panel { margin-top: var(--space-6); }

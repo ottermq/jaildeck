@@ -36,8 +36,9 @@ Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com
   pflog lines. Nothing in Jail Deck can change PF (JD-020).
 - **Virtual machines** — vm-bhyve's guests: each one's state, CPU, memory and whether it
   starts at boot, and for one guest its console, network interfaces and disks (JD-035).
-  Start, stop and restart through the API, confirmed in vm-bhyve's listing; a guest that
-  ignores the power button for 60 seconds is powered off, and the answer says so (JD-036).
+  Start, stop and restart, from the VMs page or the API, confirmed in vm-bhyve's listing; a
+  guest that ignores the power button for 60 seconds is powered off, and the answer says so
+  (JD-036).
 - **Web interface** — an embedded Svelte application for all of the above, light and dark.
 
 ## Requirements

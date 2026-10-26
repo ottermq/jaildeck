@@ -48,7 +48,9 @@ Keep the sidebar simple — avoid too many sections before the features justify 
 
 ## Navigation
 
-Built: **Dashboard**, **Jails**, **Templates**, **Operations**, **Firewall**, **Host**. A section stays highlighted on its detail pages, so `/jails/ottermq` keeps Jails lit.
+Built: **Dashboard**, **Jails**, **Templates**, **VMs**, **Operations**, **Firewall**, **Host**. A section stays highlighted on its detail pages, so `/jails/ottermq` keeps Jails lit.
+
+On a narrow screen the sections become a row across the top, and seven of them are wider than a phone: the row scrolls sideways on its own, and the page does not. Measured at 390px wide: the six sections before VMs already took 486px of links, and the rail, sized to them, made the whole page scroll sideways.
 
 Still on the sketch above: Storage, Logs, Settings. Possible later: Snapshots (if it earns a page separate from a jail's), Tasks (once long-running operations exist), Services, Packages, System.
 
@@ -162,6 +164,22 @@ Then four counters (states, states created, rule matches, state mismatches), and
 
 A **Refresh** button rather than polling: a policy changes when someone reloads it, not every five seconds.
 
+### Virtual machines
+
+Purpose: what vm-bhyve's guests are doing, read-only for now (JD-019, JD-035). Built at `/vms` and `/vms/{name}`.
+
+**vm-bhyve's own state comes first**, as PF's does on the Firewall page:
+
+- **Not installed** — the common case. One plain line, and a link to Host Setup, which says what a host needs. Not an error.
+- **Not configured** — amber, with vm-bhyve's own message quoted (`$vm_enable is not enabled in /etc/rc.conf!`) and a link to Host Setup for the remedy.
+- **Ready with no guests** — said in those words.
+
+The list is a table: state, name, CPU, memory, loader, datastore, and whether the guest starts at boot with its place in `vm_list`. Only `running` is green. `bootloader` and `locked` are amber, and a locked guest names the host holding it. CPU and memory the API could not read are a dash.
+
+A guest's page has its configuration (with resident memory beside the configured amount while it runs), its console, its network interfaces and its disks. **A stopped guest's missing console is explained, not left blank**: the console belongs to the bhyve instance. The tap is labelled as this run's, because vm-bhyve makes a new one on every start.
+
+No Refresh button and no polling yet: nothing on these pages can change a guest, so the state changes only from outside Jail Deck. That changes with lifecycle.
+
 ### Logs page
 
 Purpose: recent Jail Deck operation results, command failures, relevant jail log snippets where feasible.
@@ -196,7 +214,7 @@ What *can* be checked by a program is, and `make web-check` runs it — the type
 - **What a binding gives is the thing TypeScript cannot see.** A number input binds a number, and an emptied one binds `null`; `svelte-check` accepts a `Record<string, string>` bound to it. The tests put each v0.9.0 bug back and fail on it.
 - **Keyed rows: what index keys break is element identity, not values.** Measured: with every field in a row bound, keying by index still shows and sends the right values — Svelte 5 re-points a reused element's binding at the row now in its place. What moves is the element: remove the first of three rows and the input that held row b holds row c, so a person's focus, caret or half-typed word jumps rows. The test asserts identity, because that is what breaks.
 
-A page whose meaning depends on the server's state — the Firewall page's three PF states — gets a test per state, against a mocked store, for what each state *says*. How it looks is still checked by looking.
+A page whose meaning depends on the server's state — the Firewall page's three PF states, the VM pages' three vm-bhyve states — gets a test per state, against a mocked store, for what each state *says*. How it looks is still checked by looking.
 
 ## States
 

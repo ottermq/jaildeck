@@ -20,7 +20,19 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.13.0 — 2026-10-26
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.13.0)
+
+Disk health finally works in the packaged service, and the **Virtual Machines** milestone
+begins: JD-019 is locked on vm-bhyve, and Host Setup reports whether a host is ready for
+it.
+
+**One thing to act on when upgrading: `rc.d/jaildeck` changed.** A `pkg add -f` of the
+package replaces it, as `docs/PACKAGING.md` describes; an install made with `make install`
+needs it installed again. Without the new script the service still cannot find `smartctl`
+or `vm`. Every endpoint from v0.12.0 answers as it did; the metrics report and the
+readiness report only gained fields and checks.
 
 ### Added
 

@@ -142,6 +142,9 @@ export interface MetricsReport {
     // Empty on a host without smartmontools, which is a package rather than
     // base.
     disks: Disk[]
+    // Why disks is empty, when it is not because the host has none: smartctl
+    // not installed, not on the service's PATH, or refusing to list devices.
+    disks_unavailable?: string
 }
 
 export async function getMetrics(): Promise<MetricsReport> {

@@ -46,6 +46,13 @@ start_precmd="jaildeck_prestart"
 
 jaildeck_prestart()
 {
+	# rc starts services with PATH=/sbin:/bin:/usr/sbin:/usr/bin. Jail Deck runs
+	# tools that come from packages and live in /usr/local -- smartctl
+	# (JD-032), vm-bhyve's vm (JD-019) -- and without this a host with
+	# smartmontools installed reported no disks at all (#95). Before the env
+	# file, so an operator can still set PATH there.
+	PATH="${PATH}:/usr/local/sbin:/usr/local/bin"
+	export PATH
 	if [ -f "${jaildeck_env_file}" ]; then
 		set -a
 		. "${jaildeck_env_file}"

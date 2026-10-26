@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,5 +190,33 @@ func TestExecCommandRunner_Run_OutputExactlyAtTheCap(t *testing.T) {
 	}
 	if result.StdoutTruncated {
 		t.Error("output that fit exactly was reported as truncated")
+	}
+}
+
+// A command that is not on the PATH never ran. It is marked as that, and the
+// message names the PATH it looked on: rc gives services
+// PATH=/sbin:/bin:/usr/sbin:/usr/bin, and "smartctl: not found" sent nobody to
+// /usr/local/sbin, where it was all along (#95).
+func TestExecCommandRunner_Run_MissingCommandIsMarkedAndNamesThePath(t *testing.T) {
+	t.Setenv("PATH", "/nonexistent-for-this-test")
+	result, err := NewExecCommandRunner().Run(context.Background(),
+		Command{Name: "jaildeck-no-such-command"})
+	if !errors.Is(err, ErrCommandNotFound) {
+		t.Fatalf("err = %v, want ErrCommandNotFound", err)
+	}
+	if !strings.Contains(err.Error(), "/nonexistent-for-this-test") {
+		t.Errorf("err = %q; it should name the PATH it searched", err)
+	}
+	if result.ExitCode != -1 {
+		t.Errorf("exit code = %d, want -1 for a command that never ran", result.ExitCode)
+	}
+}
+
+// A command that ran and failed is not "not found", whatever it printed.
+func TestExecCommandRunner_Run_AFailingCommandIsNotNotFound(t *testing.T) {
+	_, err := NewExecCommandRunner().Run(context.Background(),
+		Command{Name: "sh", Args: []string{"-c", "echo 'not found' >&2; exit 127"}})
+	if err == nil || errors.Is(err, ErrCommandNotFound) {
+		t.Errorf("err = %v; a command that ran is never ErrCommandNotFound", err)
 	}
 }

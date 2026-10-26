@@ -3952,6 +3952,10 @@
                         "$ref": "#/definitions/metrics.Disk"
                     }
                 },
+                "disks_unavailable": {
+                    "description": "DisksUnavailable says why Disks is empty when it is not because the\nhost has none: smartctl not installed, not on the service's PATH, or\nrefusing to list devices. JD-032 promised a host without disk health\nwould say why; until this field it only said nothing (#95).",
+                    "type": "string"
+                },
                 "host": {
                     "$ref": "#/definitions/metrics.Host"
                 },

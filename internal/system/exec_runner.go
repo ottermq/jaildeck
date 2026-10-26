@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"syscall"
 	"time"
@@ -79,6 +80,12 @@ func (r *ExecCommandRunner) Run(ctx context.Context, cmd Command) (CommandResult
 			return result, err
 		}
 		result.ExitCode = -1
+		if errors.Is(err, exec.ErrNotFound) {
+			// Name the PATH it looked on. "smartctl: not found" sends an
+			// operator to install a package they already have.
+			return result, fmt.Errorf("%w: %s is not on PATH %s: %w",
+				ErrCommandNotFound, cmd.Name, os.Getenv("PATH"), err)
+		}
 		return result, err
 	}
 

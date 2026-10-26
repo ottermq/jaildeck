@@ -449,6 +449,10 @@ func TestDisksThatCannotBeReadDoNotFailTheReport(t *testing.T) {
 	if report.Disks == nil {
 		t.Error("disks is nil; it should marshal as [] rather than null")
 	}
+	// JD-032: a host without disk health says why (#95).
+	if report.DisksUnavailable != "smartctl: no such device" {
+		t.Errorf("disks_unavailable = %q, want the reason", report.DisksUnavailable)
+	}
 	if len(report.Jail) != 2 || report.Host.CPU.CPUs != 16 {
 		t.Errorf("the rest of the report was lost: %d jails, %d cpus",
 			len(report.Jail), report.Host.CPU.CPUs)

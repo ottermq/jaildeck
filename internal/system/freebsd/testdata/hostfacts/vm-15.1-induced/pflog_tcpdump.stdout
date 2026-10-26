@@ -1,0 +1,2 @@
+2026-10-25 18:09:59.482224 rule 2/0(match): pass out on vtnet0: 192.168.122.10 > 192.168.122.1: ICMP echo request, id 18700, seq 0, length 64
+2026-10-25 18:10:01.630380 rule 5.web.1/0(match): pass out on vtnet0: 192.168.122.10.14962 > 192.168.122.1.9: UDP, length 9

@@ -9,6 +9,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/auth"
 	"github.com/ottermq/jaildeck/internal/config"
+	"github.com/ottermq/jaildeck/internal/firewall"
 	"github.com/ottermq/jaildeck/internal/host"
 	"github.com/ottermq/jaildeck/internal/jails"
 	"github.com/ottermq/jaildeck/internal/metrics"
@@ -30,6 +31,7 @@ type App struct {
 	storageHandler  *storage.StorageHandler
 	templateHandler *templates.TemplateHandler
 	metricsHandler  *metrics.Handler
+	firewallHandler *firewall.Handler
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -121,6 +123,12 @@ func New(cfg *config.Config) (*App, error) {
 	metricsHandler := metrics.NewHandler(
 		metrics.NewService(hostMetrics, jailAdapter.usage, jailService, disks))
 
+	firewallSystem, err := newFirewallSystem(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	firewallHandler := firewall.NewHandler(firewall.NewService(firewallSystem))
+
 	return &App{
 		authHandler:     authHandler,
 		jailHandler:     jailHandler,
@@ -129,7 +137,21 @@ func New(cfg *config.Config) (*App, error) {
 		storageHandler:  storageHandler,
 		templateHandler: templateHandler,
 		metricsHandler:  metricsHandler,
+		firewallHandler: firewallHandler,
 	}, nil
+}
+
+// newFirewallSystem selects the read-only PF implementation (JD-034).
+func newFirewallSystem(adapter string) (firewall.FirewallSystem, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewFirewall(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
 }
 
 // newHostMetrics selects the host-metrics and disk implementations, with the

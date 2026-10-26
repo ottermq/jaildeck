@@ -11,7 +11,7 @@ VERSION?=
 # dependency, so `go tool swag` needs no global install and every machine runs
 # the same version. Its --version flag reports a stale constant; go.mod is the
 # truth.
-SWAG_DIRS=cmd/jaildeck,internal/app,internal/jails,internal/host,internal/audit,internal/auth,internal/storage,internal/templates,internal/metrics,internal/common
+SWAG_DIRS=cmd/jaildeck,internal/app,internal/jails,internal/host,internal/audit,internal/auth,internal/storage,internal/templates,internal/metrics,internal/firewall,internal/common
 SPEC=docs/api/swagger.json
 
 # Installation paths. PREFIX is where FreeBSD puts local software; DESTDIR
@@ -26,7 +26,7 @@ DESTDIR?=
 # `gmake -n package` would otherwise build, stage and overwrite a real archive.
 PACKAGE_MAKE=$(MAKE)
 
-.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check all install package doc doc-check
+.PHONY: build run run-fake test test-race cover cover-html vet fmt fmt-check tidy-check check clean help web web-dev web-check web-test all install package doc doc-check
 
 ## build: compile the binary into bin/
 build:
@@ -126,9 +126,17 @@ web:
 web-dev:
 	@cd web && npm install && npm run dev
 
-## web-check: typecheck the frontend (requires Node)
+## web-check: typecheck and test the frontend (requires Node)
+# Both, because the type check alone passed every bug v0.9.0's interface
+# shipped: a binding's value is invisible to TypeScript (#77). Run from a
+# subshell so make -j and BSD make's single-shell mode cannot run the two
+# halves in the wrong directory.
 web-check:
-	@cd web && npm run check
+	@(cd web && npm run check && npm test)
+
+## web-test: run the frontend tests alone (requires Node)
+web-test:
+	@(cd web && npm test)
 
 ## all: build the backend and frontend
 # In order, never as prerequisites: `all: web build` lets make -j start the Go

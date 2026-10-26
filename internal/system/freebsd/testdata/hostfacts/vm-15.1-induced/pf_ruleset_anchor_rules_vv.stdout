@@ -1,0 +1,10 @@
+@0 pass in proto tcp from any to any port = http flags S/SA keep state label "web"
+  [ Evaluations: 1         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]
+  [ Last Active Time: N/A ]
+@1 pass out log quick proto udp from any to any port = discard keep state label "udp-anchored-logged"
+  [ Evaluations: 1         Packets: 2         Bytes: 102         States: 1     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 1     ]
+  [ Last Active Time: Sun Oct 25 18:10:01 2026 ]

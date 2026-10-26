@@ -1,0 +1,35 @@
+@0 pass in quick proto tcp from any to any port = ssh flags S/SA keep state label "ssh"
+  [ Evaluations: 2         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]
+  [ Last Active Time: N/A ]
+@1 block drop in log quick from <jaildeck_test_blocked:2> to any label "blocked-sources"
+  [ Evaluations: 0         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]
+  [ Last Active Time: N/A ]
+@2 pass out log quick proto icmp all keep state label "icmp-out-logged"
+  [ Evaluations: 2         Packets: 6         Bytes: 504         States: 1     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 1     ]
+  [ Last Active Time: Sun Oct 25 18:10:01 2026 ]
+@3 pass out all flags S/SA keep state label "outbound"
+  [ Evaluations: 1         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]
+  [ Last Active Time: N/A ]
+@4 pass in all flags S/SA keep state
+  [ Evaluations: 1         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]
+  [ Last Active Time: N/A ]
+@5 anchor "jaildeck/*" all
+  [ Evaluations: 1         Packets: 2         Bytes: 102         States: 1     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 1     ]
+  [ Last Active Time: Sun Oct 25 18:10:01 2026 ]
+@6 anchor "operator" all
+  [ Evaluations: 0         Packets: 0         Bytes: 0           States: 0     ]
+  [ Source Nodes: 0      Limit: 0      NAT/RDR: 0      Route: 0      ]
+  [ Inserted: uid 0 pid 0 State Creations: 0     ]
+  [ Last Active Time: N/A ]

@@ -10,6 +10,7 @@ import Templates from './Templates.svelte'
 import Template from './Template.svelte'
 import Operations from './Operations.svelte'
 import Host from './Host.svelte'
+import Firewall from './Firewall.svelte'
 import NotFound from './NotFound.svelte'
 import ConfirmDialog from '../components/ConfirmDialog.svelte'
 
@@ -24,6 +25,7 @@ const menu = [
     { label: 'Jails', href: '/jails' },
     { label: 'Templates', href: '/templates' },
     { label: 'Operations', href: '/operations' },
+    { label: 'Firewall', href: '/firewall' },
     { label: 'Host', href: '/host' },
 ]
 
@@ -100,6 +102,8 @@ onMount(() => {
             {#key template.name}<Template name={template.name} />{/key}
         {:else if route.path === '/operations'}
             <Operations />
+        {:else if route.path === '/firewall'}
+            <Firewall />
         {:else if route.path === '/host'}
             <Host />
         {:else}

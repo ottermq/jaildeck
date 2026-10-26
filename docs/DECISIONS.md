@@ -1474,3 +1474,57 @@ Verified on isengard, 2026-10-25, against `prometheus3-3.15.0` scraping a build 
 - Both scrape jobs — TCP with a bearer token, and the Unix socket — report `health: "up"` with an empty `lastError`. 218 `jaildeck_*` series landed.
 - `jaildeck_disk_failing_attributes > 0` selects exactly `ada3`, the drive this host has been complaining about since 20 October, while `jaildeck_disk_passed{device="ada3"}` is `1`. The disagreement JD-032 exists to preserve is queryable, which was the point.
 - The `stathz` conversion checks out against physical reality rather than against itself: idle divided by `stathz` is 6,192,862 CPU-seconds against 6,203,520 of capacity for a 16-CPU host up 4 days 11:42 — 99.8% idle, which is what this host is. Dividing by `hz` would have claimed it was 87% busy for four days.
+
+---
+
+## JD-034 — Firewall Visibility: What Is Read, and What Is Not Trusted
+
+**Status:** Locked — 2026-10-25. Measured on the VM, 15.1-RELEASE-p3, with a test ruleset loaded and removed again (`capture-pf-induced.sh`); checked against isengard and rohan, 15.1-RELEASE-p5 and -p2.
+
+Phase 1 of JD-020, built: a `firewall` domain whose port has **no method that writes**. `GET /api/firewall` answers PF's state, its counters, the loaded rules with their counters, the NAT rules, every anchor with its own rules, and the tables. `GET /api/firewall/tables/{name}` answers one table's addresses. `GET /api/firewall/log` answers the most recent pflog lines.
+
+### Three states, and none of them is an error
+
+| state | what `pfctl` says | what the API says |
+| --- | --- | --- |
+| **not loaded** | `/dev/pf: No such file or directory`, exit 1, on every command | `"state": "not_loaded"`, `200`, nothing else to show |
+| **disabled** | `Status: Disabled for …`, rules still listed, counters zero | `"state": "disabled"`, rules shown, and the interface says plainly that they are not being applied |
+| **enabled** | `Status: Enabled for …` | `"state": "enabled"` |
+
+**Not loaded is the common case.** Neither isengard nor rohan has PF loaded. On the hosts this project actually runs on, the view's first job is saying so without looking broken.
+
+**pfctl's duration is not what it looks like.** `Status: Disabled for 0 days 00:21:19` was measured on a PF loaded 41 seconds earlier and never enabled — 21 minutes is the VM's uptime. The clock restarts at every `pfctl -e` and `pfctl -d` (measured: 3 seconds after an enable, 2 after the following disable), so it means "since PF was last switched on or off, **or since boot if it never has been**". It is reported as `for_seconds` with that meaning stated, and the interface says it in those words rather than "disabled for 21 minutes".
+
+**Disabled with a ruleset is the case most worth showing.** A policy is loaded and doing nothing — the state of an operator who loaded `pf.conf` and forgot `pf_enable`. The rules look exactly as they would if they were enforced, so the state is reported first and the interface does not let it be missed.
+
+### What JD-020's command list missed
+
+- **`-s rules` does not show NAT.** Measured: a loaded `nat` rule appears under `-s nat` and nowhere in `-s rules`. A view built on JD-020's list would hide every translation rule, so `-s nat` is read too.
+- **An anchor's rules are not in the main listing.** `-s rules` shows `anchor "jaildeck/*" all` and stops. `-s Anchors` lists every anchor flat — wildcard parents and inline anchors included — and each is read with `-a <anchor> -s rules` and `-a <anchor> -s nat`. One call per anchor per kind; anchors are few.
+
+### What is not trusted
+
+- **`-s Tables -vv`'s statistics.** On 15.1 it reports `Addresses: 1` for a table holding three entries and `References: Rules: 0` for a table a rule uses, while `-s rules -vv` reads `<table:3>` for the same table. Its flags (`p` persist, `a` active, `r` referenced and the rest, from `-s Tables -v`) agree with everything else and are reported. **Its counts are not**, and nothing is shown in their place: a table's addresses are read with `-T show` when that table is opened, which is also where a count is honest. The summary does not read every table's contents to count them, because a blocklist table can hold a hundred thousand entries.
+- **The exit status, alone.** A nonexistent anchor is **exit 0** with `pfctl: Anchor does not exist.` on stderr; a nonexistent table is **exit 255**. Anchors are only ever read by names `-s Anchors` just returned, and the stderr message is checked anyway.
+- **stderr, alone.** Every `-v` call prints `No ALTQ support in kernel` to stderr with exit 0. A reader that treats stderr as failure would fail on every host without ALTQ. That one notice is expected and ignored; anything else on stderr with exit 0 is reported, not swallowed.
+
+### A rule is reported as `pfctl` prints it
+
+The rule text is pfctl's own rendering — normalised by pfctl (`port = ssh`, `flags S/SA keep state` added where it applies), and **not re-parsed**. Re-implementing PF's grammar to restate a rule would be a second opinion that can disagree with the first: JD-032's position on SMART, JD-023's on `zfs`. Only what has to be a number is parsed — the counters in the brackets, the rule number `@N` from `-vv`, and the `Last Active Time` where there is one. The action (`pass`, `block`, `match`, `anchor`, `nat` …) is the first word and nothing more clever, for the interface to colour by.
+
+`-vv` rather than `-v`, because pflog refers to rules by that number and nothing else prints it.
+
+### pflog: the honest version of "recent"
+
+Read with `tcpdump -n -e -tttt -r <file>`, where the file is `pflog_logfile` from `rc.conf` (default `/var/log/pflog`). Four things the response says rather than leaves to be discovered:
+
+- **It lags.** `pflogd` buffers and flushes every 60 seconds by default, or on `SIGALRM`. Measured: the file was empty straight after the logged packets and had them after a flush. **Jail Deck does not send that signal.** It would make the view fresher, and it is still a signal to a daemon Jail Deck does not own; phase 1 changes nothing on the host. The response says the lines may be up to the flush delay behind.
+- **`log` records the packet that creates a state**, not the traffic. Six packets matched a logged rule and one line was logged. A rule whose counters say thousands with one log line is not a contradiction.
+- **An anchor is named by its last component.** A rule inside `jaildeck/web` logs as `rule 5.web.1/0`. Two anchors called `a/web` and `b/web` cannot be told apart from the log, so the line is reported with what it says, and the main rule number (`5`, which *is* unambiguous) is how the interface finds the anchor.
+- **`-tttt`, not `-ttt`.** `-ttt` is the time since the previous packet, so the first line of every read is `00:00:00`. Found in the first capture.
+
+**The tail is read honestly or not at all.** `/var/log/pflog` is rotated at 1000 KB by `/etc/newsyslog.conf.d/pf.conf` on all three hosts, so tcpdump's text is about the same size — larger than the 1 MiB the runner keeps by default, and **the runner keeps the beginning**: the oldest lines. So the log is read with a larger cap sized to the rotation, the last lines are kept in Go, and if the output is still cut short the response says the log could not be read to its end **and shows no lines**. Showing the oldest lines under the word "recent" would be worse than showing none.
+
+### Read-only, by construction
+
+The port has no method that could write, and the adapter is tested for it: every command any firewall test causes the adapter to run is checked for `-f`, `-F`, `-e`, `-d`, `-k`, `-K`, and `-T` with anything but `show`. A write path is phase 2 (JD-020), and it will need a new port method, a decision record and a reason — not a flag added to an existing call.

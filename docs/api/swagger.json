@@ -2374,6 +2374,219 @@
                 }
             }
         },
+        "/vm-images": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Image templates for VMs (JD-037): a cloud image's disk in a zvol under\n`.images` in vm-bhyve's default datastore, sealed with an `@base` snapshot\nthat guests' disks are cloned from.\n\nNothing is stored (JD-011). `state` is `ready` when `@base` exists and\n`written` when the zvol does and `@base` does not, which is a write that\nstopped. `fetching` and `writing` are this process's work in flight, with\n`running` saying which step (JD-008). `source` and `sha512` are user\nproperties on the zvol: what it was written from, and the checksum of the\nexact archive. `guests` are the guests cloned from it.\n\n`sources` is what can be prepared, with whether its verified archive is\nalready on the host. When vm-bhyve is not ready, or its datastore is not on\nZFS, the answer is a 200 that says so in `vm_bhyve` and `problem`, with no\nimages.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "vm-images"
+                ],
+                "summary": "List VM images",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/images.Listing"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/vm-images/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The same fields as the listing. An image being fetched has no zvol yet and\nis still here, with its `running` step: the resource a client was told to\nwatch exists from the moment the work starts (JD-008).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "vm-images"
+                ],
+                "summary": "Show one VM image",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Image name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/images.Image"
+                        }
+                    },
+                    "400": {
+                        "description": "Not an image name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such image",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Three stages, each audited (JD-037):\n\n1. **fetch-image**: the source's archive and the publisher's checksum file.\nThe archive is downloaded as `.part` and renamed only once its SHA-512\nmatches, so an archive under its own name is a verified one. Skipped when\nthe source's archive is already there.\n2. **write-image**: a sparse zvol the size of the disk in the archive, with\n`volmode=dev` so the host never reads the guest's partition table, and the\ndisk written straight into it by `tar -xO`.\n3. **seal-image**: the `@base` snapshot, which makes it ready.\n\n**202 and no waiting** (JD-008): minutes of work, and the client watches\n`GET /vm-images/{name}`. **200** when it was already ready, so a client that\ntimed out can ask again.\n\nThe body may be empty: the source is then the image's own name, so\n`PUT /vm-images/debian-13` prepares Debian 13.\n\n**409** when the image exists and is not ready (a write that stopped:\nremove it and prepare it again; the archive is kept), was written from\nanother source, is already being prepared, or when vm-bhyve or its\ndatastore cannot hold images.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "vm-images"
+                ],
+                "summary": "Prepare a VM image",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The image's name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The source",
+                        "name": "prepare",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/images.prepareRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Already there and ready",
+                        "schema": {
+                            "$ref": "#/definitions/images.Image"
+                        }
+                    },
+                    "202": {
+                        "description": "Preparing; watch the image",
+                        "schema": {
+                            "$ref": "#/definitions/images.Image"
+                        }
+                    },
+                    "400": {
+                        "description": "A bad name, or not a source",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Not ready, another source, busy, or no store",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Destroys the zvol and its `@base`. The archive stays: it belongs to the\nsource, and preparing the image again starts at the write.\n\n**409 while any guest's disk is cloned from it**, naming the guests. ZFS\nwould refuse too, in terms of datasets. `confirm` is the image's name.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "vm-images"
+                ],
+                "summary": "Remove a VM image",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The image to remove",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The image's name again",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/images.Removal"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing or mismatched confirm",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such image",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Guests use it, or it is being prepared",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/vms": {
             "get": {
                 "security": [
@@ -3222,6 +3435,138 @@
                     "items": {
                         "$ref": "#/definitions/host.Check"
                     }
+                }
+            }
+        },
+        "images.Image": {
+            "type": "object",
+            "properties": {
+                "dataset": {
+                    "type": "string"
+                },
+                "guests": {
+                    "description": "Guests are the guests whose disk is a clone of @base. An image is not\nremoved while there are any.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "description": "Name is the zvol's last component, which is what a client uses.",
+                    "type": "string"
+                },
+                "ready": {
+                    "description": "Ready is whether @base exists. An image is usable only then, and one\nwhose write stopped part way is a zvol that is not ready.",
+                    "type": "boolean"
+                },
+                "running": {
+                    "$ref": "#/definitions/images.Running"
+                },
+                "sha512": {
+                    "description": "SHA512 is the checksum of the archive the disk was written from. The\nsource's \"latest\" moves; this names the exact build.",
+                    "type": "string"
+                },
+                "size": {
+                    "description": "Size is the zvol's volsize: the image's disk, and the smallest disk a\nguest cloned from it can have.",
+                    "type": "integer"
+                },
+                "snapshot": {
+                    "type": "string"
+                },
+                "source": {
+                    "description": "Source is the catalog entry the image was written from. Empty for a\nzvol under .images that Jail Deck did not write.",
+                    "type": "string"
+                },
+                "state": {
+                    "description": "State is read off the disk except for the -ing forms, which come from\nwhat this process is doing (JD-008).",
+                    "type": "string"
+                },
+                "used": {
+                    "description": "Used is what the image costs the pool. Sparse and compressed, so far\nless than Size.",
+                    "type": "integer"
+                }
+            }
+        },
+        "images.Listing": {
+            "type": "object",
+            "properties": {
+                "dataset": {
+                    "description": "Dataset is where images are kept: .images under vm-bhyve's default\ndatastore.",
+                    "type": "string"
+                },
+                "images": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/images.Image"
+                    }
+                },
+                "problem": {
+                    "description": "Problem is why images cannot be prepared here, when they cannot.",
+                    "type": "string"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/images.Source"
+                    }
+                },
+                "vm_bhyve": {
+                    "description": "VMBhyve is the same answer GET /api/vms gives: ready, not_installed or\nnot_configured. Images live in vm-bhyve's datastore.",
+                    "type": "string"
+                }
+            }
+        },
+        "images.Removal": {
+            "type": "object",
+            "properties": {
+                "dataset": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "images.Running": {
+            "type": "object",
+            "properties": {
+                "since": {
+                    "type": "string"
+                },
+                "source": {
+                    "description": "Source is what is being prepared, so an image with no zvol yet can\nstill say what it will be.",
+                    "type": "string"
+                },
+                "step": {
+                    "type": "string"
+                }
+            }
+        },
+        "images.Source": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "fetched": {
+                    "description": "Fetched is whether the verified archive is already on the host, so\npreparing an image from it starts at the write.",
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "url": {
+                    "description": "URL is the archive's, for the operator to see what will be fetched.",
+                    "type": "string"
+                }
+            }
+        },
+        "images.prepareRequest": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "description": "Source is the catalog entry to prepare the image from. Empty means the\nimage's own name, when that is a source.",
+                    "type": "string"
                 }
             }
         },

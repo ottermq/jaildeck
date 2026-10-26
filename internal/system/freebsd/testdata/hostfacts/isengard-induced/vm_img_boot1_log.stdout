@@ -1,0 +1,19 @@
+2026-10-26T16:28:42-03:00: generated static mac 58:9c:fc:08:46:e9
+2026-10-26T16:28:48-03:00: created /vm/jd-cap-img/seed.iso for cloud-init
+2026-10-26T16:28:48-03:00: initialising
+2026-10-26T16:28:48-03:00:  [loader: uefi]
+2026-10-26T16:28:48-03:00:  [cpu: 1]
+2026-10-26T16:28:48-03:00:  [memory: 1G]
+2026-10-26T16:28:48-03:00:  [hostbridge: standard]
+2026-10-26T16:28:48-03:00:  [com ports: com1]
+2026-10-26T16:28:48-03:00:  [uuid: 744cf6fb-d173-11f1-b463-e80688cecc46]
+2026-10-26T16:28:48-03:00:  [debug mode: no]
+2026-10-26T16:28:48-03:00:  [primary disk: disk0]
+2026-10-26T16:28:48-03:00:  [primary disk dev: sparse-zvol]
+2026-10-26T16:28:48-03:00: booting
+2026-10-26T16:28:48-03:00:  [bhyve options: -c 1 -m 1G -AHPw -l bootrom,/usr/local/share/uefi-firmware/BHYVE_UEFI.fd -U 744cf6fb-d173-11f1-b463-e80688cecc46 -u]
+2026-10-26T16:28:48-03:00:  [bhyve devices: -s 0,hostbridge -s 31,lpc -s 0:4:0,virtio-blk,/dev/zvol/tank/vm/jd-cap-img/disk0 -s 0:5:0,ahci-cd,/vm/jd-cap-img/seed.iso]
+2026-10-26T16:28:48-03:00:  [bhyve console: -l com1,/dev/nmdm-jd-cap-img.1A]
+2026-10-26T16:28:48-03:00: starting bhyve (run 1)
+2026-10-26T16:31:13-03:00: bhyve exited with status 1
+2026-10-26T16:31:13-03:00: stopped

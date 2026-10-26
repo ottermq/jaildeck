@@ -1,0 +1,8 @@
+modified: true
+   Mode: r0w0e0
+   Mode: r0w0e0
+   Mode: r0w0e0
+Consumers:
+   Mode: r1w1e1
+GEOM_PART: zvol/tank/vm/jd-cap-geom was automatically resized.
+  Use `gpart commit zvol/tank/vm/jd-cap-geom` to save changes or `gpart undo zvol/tank/vm/jd-cap-geom` to revert them.

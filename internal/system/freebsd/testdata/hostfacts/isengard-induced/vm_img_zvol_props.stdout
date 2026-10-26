@@ -1,0 +1,7 @@
+tank/vm/.images/jd-cap-debian13	volsize	3221225472	local
+tank/vm/.images/jd-cap-debian13	used	567738368	-
+tank/vm/.images/jd-cap-debian13	referenced	567738368	-
+tank/vm/.images/jd-cap-debian13	logicalreferenced	967442432	-
+tank/vm/.images/jd-cap-debian13	compression	on	inherited from tank
+tank/vm/.images/jd-cap-debian13	volmode	dev	inherited from tank/vm/.images
+tank/vm/.images/jd-cap-debian13	refreservation	0	default

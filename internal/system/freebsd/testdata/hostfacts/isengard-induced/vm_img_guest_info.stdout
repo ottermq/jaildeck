@@ -1,0 +1,26 @@
+------------------------
+Virtual Machine: jd-cap-img
+------------------------
+  state: stopped
+  datastore: default
+  loader: uefi
+  uuid: 744cf6fb-d173-11f1-b463-e80688cecc46
+  cpu: 1
+  memory: 1G
+
+  virtual-disk
+    number: 0
+    device-type: sparse-zvol
+    emulation: virtio-blk
+    options: -
+    system-path: /dev/zvol/tank/vm/jd-cap-img/disk0
+    bytes-size: 8589934592 (8.000G)
+    bytes-used: 567738368 (541.437M)
+
+  virtual-disk
+    number: 1
+    device-type: file
+    emulation: ahci-cd
+    options: -
+    system-path: /vm/jd-cap-img/seed.iso
+

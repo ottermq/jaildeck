@@ -1,0 +1,108 @@
+0BdsDxe: failed to load Boot0001 "UEFI BHYVE SATA DVD ROM BHYVE-46CE-55DF-11CA" from PciRoot(0x0)/Pci(0x5,0x0)/Sata(0x0,0xFFFF,0x0): Not Found
+BdsDxe: loading Boot0002 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x4,0x0)
+BdsDxe: starting Boot0002 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x4,0x0)
+  Booting `Debian GNU/Linux'
+[    0.000000] secureboot: Secure boot disabled
+[    0.234128] thermal_sys: Registered thermal governor 'power_allocator'
+[    3.582940] EXT4-fs (vda1): mounted filesystem 21e75815-f685-4684-ae0b-1f2e42283c97 ro with ordered data mode. Quota mode: none.
+Begin: Running /scripts/local-bottom ... [    3.629847] EXT4-fs (vda1): unmounting filesystem 21e75815-f685-4684-ae0b-1f2e42283c97.
+GROWROOT: CHANGED: partition=1 start=262144 old: size=6027264 end=6289407 new: size=16515039 end=16777182
+[    5.117229] EXT4-fs (vda1): mounted filesystem 21e75815-f685-4684-ae0b-1f2e42283c97 ro with ordered data mode. Quota mode: none.
+[    7.959027] EXT4-fs (vda1): re-mounted 21e75815-f685-4684-ae0b-1f2e42283c97 r/w.
+[    8.108546] EXT4-fs (vda1): resizing filesystem from 753408 to 2064379 blocks
+[    8.213069] EXT4-fs (vda1): resized filesystem to 2064379
+[   10.084178] input: Power Button as /devices/LNXSYSTM:00/LNXPWRBN:00/input/input2
+[   10.214069] ACPI: button: Power Button [PWRF]
+[   11.304996] cloud-init[506]: Cloud-init v. 25.1.4 running 'init-local' at Mon, 26 Oct 2026 19:29:02 +0000. Up 11.12 seconds.
+See 'systemctl status systemd-networkd-wait-online.service' for details.
+[  132.646779] cloud-init[506]: Cloud-init v. 25.1.4 running 'init' at Mon, 26 Oct 2026 19:31:04 +0000. Up 132.63 seconds.[  132.646779] cloud-init[506]: Cloud-init v. 25.1.4 running 'init' at Mon, 26 Oct 2026 19:31:04 +0000. Up 132.63 seconds.[  132.646779] cloud-init[506]: Cloud-init v. 25.1.4 running 'init' at Mon, 26 Oct 2026 19:31:04 +0000. Up 132.63 seconds.
+[  132.678614] cloud-init[506]: ci-info: +++++++++++++++++++++++Net device info++++++++++++++++++++++++[  132.678614] cloud-init[506]: ci-info: +++++++++++++++++++++++Net device info++++++++++++++++++++++++
+[  132.692657] cloud-init[506]: ci-info: +--------+------+-----------+-----------+-------+------------+[  132.692657] cloud-init[506]: ci-info: +--------+------+-----------+-----------+-------+------------+
+[  132.708639] cloud-init[506]: ci-info: | Device |  Up  |  Address  |    Mask   | Scope | Hw-Address |[  132.708639] cloud-init[506]: ci-info: | Device |  Up  |  Address  |    Mask   | Scope | Hw-Address |[  132.708639] cloud-init[506]: ci-info: | Device |  Up  |  Address  |    Mask   | Scope | Hw-Address |
+[  132.728221] cloud-init[506]: ci-info: +--------+------+-----------+-----------+-------+------------+[  132.728221] cloud-init[506]: ci-info: +--------+------+-----------+-----------+-------+------------+[  132.728221] cloud-init[506]: ci-info: +--------+------+-----------+-----------+-------+------------+[  132.728221] cloud-init[506]: ci-info: +--------+------+-----------+
+[  132.752385] cloud-init[506]: ci-info: |   lo   | True | 127.0.0.1 | 255.0.0.0 |  host |     .      |[  132.752385] cloud-init[506]: ci-info: |   lo   | True | 127.0.0.1 | 255.0.0.0 |  host |     .      |[  132.752385] cloud-init[506]: ci-info: |   lo   | True | 127.0.0.1 | 255.0.0.0 |  host |     .      |
+[  132.768341] cloud-init[506]: ci-info: |   lo   | True |  ::1/128  |     .     |  host |     .      |[  132.768341] cloud-init[506]: ci-info: |   lo   | True |  ::1/128  |     .     |  host |     .      |[  132.768341] cloud-init[506]: ci-info: |   lo   | True |  ::1/128  |     .     |  host |     .      |
+[  132.784586] cloud-init[506]: ci-info: +--------+------+-----------+-----------+-------+------------+[  132.784586] cloud-init[506]: ci-info: +--------+------+-----------+-----------+-------+------------+[  132.784586] cloud-init[506]: ci-info: +--------+------+-----------+-----------+-------+------------+[  132.784586] cloud-init[506]: ci-info: +--------+------+-----------+-----------+---
+[  132.812151] cloud-init[506]: ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++[  132.812151] cloud-init[506]: ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++[  132.812151] cloud-init[506]: ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+[  132.828184] cloud-init[506]: ci-info: +-------+-------------+---------+-----------+-------+[  132.828184] cloud-init[506]: ci-info: +-------+-------------+---------+-----------+-------+[  132.828184] c
+[  132.840440] cloud-init[506]: ci-info: | Route | Destination | Gateway | Interface | Flags |[  132.840440] cloud-init[506]: ci-info: | Route | Destination | Gateway | Interface | Flags |
+[  132.852516] cloud-init[506]: ci-info: +-------+-------------+---------+-----------+-------+[  132.852516] cloud-init[506]: ci-info: +-------+-------------+---------+-----------+-------+[  132.852516] cloud-init[506]: ci-info: +-------+-------------+---------+-----------+-------+[  132.852516] cloud-init[506]: ci
+[  132.872437] cloud-init[506]: ci-info: +-------+-------------+---------+-----------+-------+[  132.872437] cloud-init[506]: ci-info: +-------+-------------+---------+-----------+-------+[  132.872437] cloud-init[506]: ci-info: +-------+-------------+---------+-----------+-------+
+[  OK  ] Reached target cloud-config.target - Cloud-config availability.
+[^[[0;32m  OK  ^[[0m] Reached target ^[[0;1;39mcloud-config.target^[[0m - Cloud-config availability.
+[  135.643267] cloud-init[506]: Cloud-init v. 25.1.4 running 'modules:config' at Mon, 26 Oct 2026 19:31:07 +0000. Up 135.51 seconds.;1;39msystemd-logind.service^[[0m - User Login Management...
+[  135.643267] cloud-init[506]: Cloud-init v. 25.1.4 running 'modules:config' at Mon, 26 Oct 2026 19:31:07 +0000. Up 135.51 seconds.
+[  136.383117] cloud-init[506]: Cloud-init v. 25.1.4 running 'modules:final' at Mon, 26 Oct 2026 19:31:07 +0000. Up 136.34 seconds.[  136.383117] cloud-init[506]: Cloud-init v. 25.1.4 running 'modules:final' at Mon, 26 Oct 2026 19:31:07 +0000. Up 136.34 seconds.
+<14>Oct 26 19:31:08 cloud-init: #############################################################WyTT0EzBbkRXkIu[  136.619298] cloud-init[506]: Cloud-init v. 25.1.4 finished at Mon, 26 Oct 2026 19:31:08 +0000. Datasource DataSourceNoCloud [seed=/dev/sr0].  Up 136.61 seconds[  136.619298] cloud-init[506]: Cloud-init v. 25.1.4 finished at Mon, 26 Oct 2026 19:31:08 +0000. Datasource DataSourceNoCloud [seed=/dev/sr0].  Up 136.61 seconds[  136.619298] cloud-init[506]: Cloud-init v. 25.1.4 finished at Mon, 26 Oc
+[  136.669391] cloud-init[506]: Generating public/private rsa key pair.[  136.669391] cloud-init[506]: Generating public/private rsa key pair.
+[  136.675370] cloud-init[506]: Your identification has been saved in /etc/ssh/ssh_host_rsa_key[  136.669391] cloud-init[506]: Generating public/private rsa key pair.
+[  136.675370] cloud-init[506]: Your identification has been saved in /etc/ssh/ssh_host_rsa_key
+[  136.692184] cloud-init[506]: Your public key has been saved in /etc/ssh/ssh_host_rsa_key.pub
+[  136.704407] cloud-init[506]: The key fingerprint is:[  136.704407] cloud-init[506]: The key fingerprint is:
+[  136.720490] cloud-init[506]: SHA256:flgQ56BT11/fEiHbd+wyIhflDtqeOGytaLzFGy+b+8g root@jd-cap-img[  136.720490] cloud-init[506]: SHA256:flgQ56BT11/fEiHbd+wyIhflDtqeOGytaLzFGy+b+8g root@jd-cap-img
+[  136.727658] cloud-init[506]: The key's randomart image is:
+[  OK  ] Reached target cloud-init.target - Cloud-init target.
+[  136.732518] cloud-init[506]: +---[RSA 3072]----+[  136.720490] cloud-init[506]: SHA256:flgQ56BT11/fEiHbd+wyIhflDtqeOGytaLzFGy+b+8g root@jd-cap-img
+[  136.727658] cloud-init[506]: The key's rando
+[  136.752452] cloud-init[506]: |        + o.. o. |[  136.752452] cloud-init[506]: |        + o.. o. |
+[  136.757034] cloud-init[506]: |       o *  .*...|
+[  136.759242] cloud-init[506]: |      o . . +.oo*|
+[  136.752452] cloud-init[506]: |        + o.. o. |
+[  136.759242] cloud-[  136.770687] cloud-init[506]: |       . . o +oo+|
+[  136.776574] cloud-init[506]: |        S + + +..|
+[  136.778803] cloud-init[506]: |       . = * o o |
+[!p]104[  136.786787] cloud-init[506]: |       .o X +    |
+[  136.792558] cloud-init[506]: |        o*.O     |
+[  136.794848] cloud-init[506]: |       .o.E=o    |
+[  136.804622] cloud-init[506]: +----[SHA256]-----+
+[  136.806930] cloud-init[506]: Generating public/private ecdsa key pair.
+[  136.812562] cloud-init[506]: Your identification has been saved in /etc/ssh/ssh_host_ecdsa_key
+[  136.820656] cloud-init[506]: Your public key has been saved in /etc/ssh/ssh_host_ecdsa_key.pub
+[  136.828683] cloud-init[506]: The key fingerprint is:
+[  136.831092] cloud-init[506]: SHA256:gq8on3797iOcz406lb8jlWsWyTT0EzBbkRXkIuPvNGQ root@jd-cap-img
+[  136.840752] cloud-init[506]: The key's randomart image is:
+[  136.843610] cloud-init[506]: +---[ECDSA 256]---+
+[  136.848599] cloud-init[506]: |          o.o=+. |
+[  136.852653] cloud-init[506]: |          .+o.   |
+[  136.854893] cloud-init[506]: |         .+....  |
+[  136.864972] cloud-init[506]: |     .   .ooo.   |
+[  136.867266] cloud-init[506]: |    . . S+.+E.   |
+[  136.872624] cloud-init[506]: |     . .o *+     |
+[  136.875141] cloud-init[506]: |     o.o o o+    |
+[  136.880598] cloud-init[506]: |.  o..*.oo*o .   |
+[  136.882887] cloud-init[506]: | +=.. .OB=oo.    |
+[  136.892442] cloud-init[506]: +----[SHA256]-----+
+[  136.894893] cloud-init[506]: Generating public/private ed25519 key pair.
+[  136.900298] cloud-init[506]: Your identification has been saved in /etc/ssh/ssh_host_ed25519_key
+[  136.904659] cloud-init[506]: Your public key has been saved in /etc/ssh/ssh_host_ed25519_key.pub
+[  136.912768] cloud-init[506]: The key fingerprint is:
+[  136.916688] cloud-init[506]: SHA256:ED8Z9h+waSP8NuMN4gvE9C3ysG80H/eY466Xx6nknJA root@jd-cap-img
+[  136.928400] cloud-init[506]: The key's randomart image is:
+[  136.931019] cloud-init[506]: +--[ED25519 256]--+
+[  136.936585] cloud-init[506]: |      . o .      |
+[  136.939253] cloud-init[506]: |       = + +     |
+[  136.944528] cloud-init[506]: |      o * * .    |
+[  136.946797] cloud-init[506]: |     o o * o .   |
+[  136.956388] cloud-init[506]: |      = S B .    |
+[  136.959020] cloud-init[506]: |     . *o=.*.    |
+[  136.964561] cloud-init[506]: |      o.ooEoo* . |
+[  136.966977] cloud-init[506]: |       o...=*.=  |
+[  136.976399] cloud-init[506]: |       .o .=B+   |
+[  136.978822] cloud-init[506]: +----[SHA256]-----+
+[  OK  ] Reached target shutdown.target - System Shutdown.
+[^[[0;32m  OK  ^[[0m] Reached target ^[[0;1;39mshutdown.target^[[0m - System Shutdown.
+[^[[0;32m  OK  ^[[0m] Reached target ^[[0;1;39mshutdown.target^[[0m - System S
+[  OK  ] Reached target final.target - Late Shutdown Services.
+[^[[0;32m  OK  ^[[0m] Reached target ^[[0;1;39mfinal.target^[[0m - Late Shutdown Services.
+[  OK  ] Finished systemd-poweroff.service - System Power Off.
+[^[[0;32m  OK  ^[[0m] Finished ^[[0;1;39msystemd-poweroff.service^[[0m - System Power Off.
+[  OK  ] Reached target poweroff.target - System Power Off.
+[^[[0;32m  OK  ^[[0m] Reached target ^[[0;1;39mpoweroff.target^[[0m - System Power Off.
+[  141.682569] EXT4-fs (vda1): re-mounted 21e75815-f685-4684-ae0b-1f2e42283c97 ro.
+[  141.723556] systemd-shutdown[1]: Powering off.
+[  141.729186] reboot: Power down
+[    0.234009] thermal_sys: Registered thermal governor 'power_allocator'
+[    3.571268] EXT4-fs (vda1): mounted filesystem 21e75815-f685-4684-ae0b-1f2e42283c97 ro with ordered data mode. Quota mode: none.
+Begin: Running /scripts/local-bottom ... GROWROOT: NOCHANGE: partition 1 is size 16515039. it cannot be grown
+[    6.455793] EXT4-fs (vda1): re-mounted 21e75815-f685-4684-ae0b-1f2e42283c97 r/w.
+[    6.693610] EXT4-fs (vda1): resizing filesystem from 2064379 to 2064379 blocks

@@ -188,6 +188,12 @@ A guest's page has its configuration (with resident memory beside the configured
 
 **Removing** asks for the name typed, as removing a template does. The refusal for an image a guest uses comes back naming the guest and is shown under the image's row.
 
+**Create a VM** sits beside the Guests heading once vm-bhyve is ready (JD-038). The form offers only ready images, with the image's size as the disk's placeholder and the floor the hint names. **Network** is a choice of vm-bhyve's switches — the listing now carries them — or "no network"; with no switches at all, the hint says a guest made now has none and that switches are the operator's. With a switch, the address is DHCP or static, and static opens address, gateway and nameservers. SSH keys are one per line, and the hint says plainly that **without one the guest is reachable only on its console**: a cloud image has no password. Start is ticked by default. A refusal stays in the form; success closes it, says what was made and that a cloud image takes about twenty seconds to boot, and reads both the guests and the images panel again, since the image now has a guest.
+
+**Destroy** is on a guest's page, beside Start, **only while it is stopped or suspended** — stopping is its own decision with its own deadline — and asks for the name typed, saying the disk and everything on it go and the image does not. Done, it goes back to the list; refused, it says why and stays.
+
+Checked against the real host as well as the fake: on isengard through an SSH tunnel, a guest created from the form was reached over SSH on the address typed into it, then stopped and destroyed from its page.
+
 No polling: a guest changes when someone starts or stops it, and the page re-reads after its own operations.
 
 ### Logs page

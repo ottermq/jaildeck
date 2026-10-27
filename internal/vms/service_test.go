@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/ottermq/jaildeck/internal/common"
@@ -63,8 +64,27 @@ func statusOf(t *testing.T, err error) int {
 func TestListKeepsAnEmptyListAList(t *testing.T) {
 	s := NewService(&stubSystem{listing: Listing{VMBhyve: VMBhyveReady}}, nil, nil)
 	listing, err := s.List(context.Background())
-	if err != nil || listing.VMs == nil {
-		t.Errorf("listing = %+v, err = %v; want an empty list, not null", listing, err)
+	if err != nil || listing.VMs == nil || listing.Switches == nil {
+		t.Errorf("listing = %+v, err = %v; want empty lists, not null", listing, err)
+	}
+}
+
+func TestListNamesTheSwitchesWhenVMBhyveIsReady(t *testing.T) {
+	m := newMaker()
+	listing, err := NewService(m, nil, nil).List(context.Background())
+	if err != nil || !slices.Equal(listing.Switches, []string{"jd-capsw"}) {
+		t.Errorf("switches = %v, err = %v", listing.Switches, err)
+	}
+	// Not ready: not asked.
+	m.listing = Listing{VMBhyve: VMBhyveNotInstalled}
+	m.fail["switches"] = errors.New("must not be asked")
+	if listing, err := NewService(m, nil, nil).List(context.Background()); err != nil || len(listing.Switches) != 0 {
+		t.Errorf("switches = %v, err = %v", listing.Switches, err)
+	}
+	// Ready, and the switches cannot be read: the guests are still listed.
+	m.listing = Listing{VMBhyve: VMBhyveReady, VMs: []VM{{Name: "web"}}}
+	if listing, err := NewService(m, nil, nil).List(context.Background()); err != nil || len(listing.VMs) != 1 {
+		t.Errorf("listing = %+v, err = %v; want the guests anyway", listing, err)
 	}
 }
 

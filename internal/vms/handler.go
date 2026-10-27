@@ -35,6 +35,9 @@ func NewHandler(service *Service) *Handler {
 // @Description  `cpu` and `memory` are the guest's configuration as written (`"2"`, `"512M"`),
 // @Description  not re-parsed. `autostart` is whether the guest is in `rc.conf`'s `vm_list`, and
 // @Description  `autostart_order` its place there.
+// @Description
+// @Description  `switches` are vm-bhyve's virtual switches, which a created guest's NIC can be
+// @Description  on (JD-038): read when vm-bhyve is ready, and empty otherwise.
 // @Tags         vms
 // @Produce      json
 // @Success      200  {object}  Listing

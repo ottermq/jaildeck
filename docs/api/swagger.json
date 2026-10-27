@@ -2594,7 +2594,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "`vm list`, read on every request (JD-019, JD-035).\n\n**`vm_bhyve` is `ready`, `not_installed` or `not_configured`, and none of them is\nan error.** Not configured carries vm-bhyve's own words in `problem` — the same\nones Host Setup reports, with the remedy beside them there.\n\n`state` is vm-bhyve's: `running` and `bootloader` carry the `pid` of the bhyve\nor loader process; `stopped`; `suspended`, a guest stopped with its state saved;\n`locked`, marked running by the host in `locked_by`, in a datastore shared\nbetween hosts. **Read on every request and never stored** (JD-011).\n\n`cpu` and `memory` are the guest's configuration as written (`\"2\"`, `\"512M\"`),\nnot re-parsed. `autostart` is whether the guest is in `rc.conf`'s `vm_list`, and\n`autostart_order` its place there.",
+                "description": "`vm list`, read on every request (JD-019, JD-035).\n\n**`vm_bhyve` is `ready`, `not_installed` or `not_configured`, and none of them is\nan error.** Not configured carries vm-bhyve's own words in `problem` — the same\nones Host Setup reports, with the remedy beside them there.\n\n`state` is vm-bhyve's: `running` and `bootloader` carry the `pid` of the bhyve\nor loader process; `stopped`; `suspended`, a guest stopped with its state saved;\n`locked`, marked running by the host in `locked_by`, in a datastore shared\nbetween hosts. **Read on every request and never stored** (JD-011).\n\n`cpu` and `memory` are the guest's configuration as written (`\"2\"`, `\"512M\"`),\nnot re-parsed. `autostart` is whether the guest is in `rc.conf`'s `vm_list`, and\n`autostart_order` its place there.\n\n`switches` are vm-bhyve's virtual switches, which a created guest's NIC can be\non (JD-038): read when vm-bhyve is ready, and empty otherwise.",
                 "produces": [
                     "application/json"
                 ],
@@ -5196,6 +5196,13 @@
                 "problem": {
                     "description": "Problem is vm-bhyve's own words for why it is not configured --\nthe same words Host Setup reports.",
                     "type": "string"
+                },
+                "switches": {
+                    "description": "Switches are vm-bhyve's virtual switches by name, which a guest's NIC\ncan be put on (JD-038). Read only when vm-bhyve is ready; empty, not\nabsent, otherwise.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "vm_bhyve": {
                     "description": "VMBhyve is ready, not_installed or not_configured.",

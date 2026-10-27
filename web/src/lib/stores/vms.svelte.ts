@@ -32,6 +32,8 @@ export interface Listing {
     // vm-bhyve's own words when it is not configured.
     problem?: string
     vms: VM[]
+    // vm-bhyve's switches, which a created guest's NIC can be on.
+    switches: string[]
 }
 
 export interface Network {
@@ -86,4 +88,33 @@ export interface OperationResult extends VM {
 
 export async function runVMOperation(name: string, op: VMOperation): Promise<OperationResult> {
     return await api<OperationResult>(`/vms/${encodeURIComponent(name)}/${op}`, { method: 'POST' })
+}
+
+// A guest made from an image template (JD-038). Empty fields take the
+// server's defaults: one CPU, 1G of memory, the image's own disk size, no NIC,
+// DHCP when there is one.
+export interface CreateRequest {
+    name: string
+    image: string
+    cpu?: number
+    memory?: string
+    disk?: string
+    switch?: string
+    network?: { address: string, gateway?: string, nameservers?: string[] }
+    ssh_keys?: string[]
+    start?: boolean
+}
+
+export interface Created extends VM {
+    image: string
+}
+
+export async function createVM(req: CreateRequest): Promise<Created> {
+    return await api<Created>('/vms', { method: 'POST', body: JSON.stringify(req) })
+}
+
+// Destroys a stopped guest and its disk. confirm is its name.
+export async function destroyVM(name: string): Promise<{ name: string }> {
+    const query = new URLSearchParams({ confirm: name })
+    return await api<{ name: string }>(`/vms/${encodeURIComponent(name)}?${query}`, { method: 'DELETE' })
 }

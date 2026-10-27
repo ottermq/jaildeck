@@ -235,7 +235,7 @@ func TestTheVMAdapterNeverWrites(t *testing.T) {
 		ran = append(ran, cmd)
 		return runner.Run(ctx, cmd)
 	}))
-	service := vms.NewService(a, nil)
+	service := vms.NewService(a, nil, nil)
 	ctx := context.Background()
 	if _, err := service.List(ctx); err != nil {
 		t.Fatalf("List: %v", err)

@@ -1,0 +1,9 @@
+tank/vm
+tank/vm/.images
+tank/vm/.images/debian-13
+tank/vm/.images/debian-13@base	clones	-	-
+.config
+.images
+.img
+.iso
+.templates

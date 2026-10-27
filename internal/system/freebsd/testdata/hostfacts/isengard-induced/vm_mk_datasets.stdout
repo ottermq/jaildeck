@@ -1,0 +1,2 @@
+tank/vm/jd-cap-made	filesystem	-	208896	-	default
+tank/vm/jd-cap-made/disk0	volume	8589934592	57344	tank/vm/.images/debian-13@base	dev

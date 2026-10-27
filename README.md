@@ -12,7 +12,7 @@ stopped, restarted and destroyed from the browser or the API; their ZFS datasets
 snapshots and resource usage are visible; host setup is checked; PF can be seen,
 read-only; bhyve VMs can be seen, started and stopped, and cloud images prepared for them;
 every operation is audited, and nothing is reachable without a password or an API token.
-Creating VMs from those images is next — see [the roadmap](docs/ROADMAP.md).
+VMs are created from those images through the API; the interface for it is next — see [the roadmap](docs/ROADMAP.md).
 
 Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com/jaildeck/)**.
 
@@ -41,6 +41,9 @@ Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com
   guest that ignores the power button for 60 seconds is powered off, and the answer says so
   (JD-036). Image templates for creating them: Debian 13's cloud image fetched, checked
   against Debian's checksum and written into a zvol, from the VMs page or the API (JD-037).
+  Creating a guest from one — CPU, memory, a disk cloned from the image, a NIC on the
+  operator's switch, SSH keys and a static address through cloud-init — and destroying it,
+  through the API (JD-038).
 - **Web interface** — an embedded Svelte application for all of the above, light and dark.
 
 ## Requirements
@@ -240,6 +243,8 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/vms/{name}/start` | start it and confirm it is running |
 | `POST /api/vms/{name}/stop` | the power button, then a poweroff after 60 seconds, reported as `forced` |
 | `POST /api/vms/{name}/restart` | stop, then start |
+| `POST /api/vms` | create a guest from an image: CPU, memory, disk, a NIC on a switch, SSH keys, a static address |
+| `DELETE /api/vms/{name}?confirm={name}` | destroy a stopped guest and its disk |
 | `GET /api/vm-images` | VM image templates, and the sources they can be prepared from |
 | `GET /api/vm-images/{name}` | one image: its state, the build it was written from, the guests cloned from it |
 | `PUT /api/vm-images/{name}` | prepare one from a source — `202`, then watch it |

@@ -1,0 +1,24 @@
+== meta-data
+instance-id: c12b2ce4-d17f-11f1-b463-e80688cecc46
+local-hostname: jd-cap-made
+== network-config
+version: 2
+ethernets:
+  id0:
+    set-name: eth0
+    match:
+      macaddress: 58:9c:fc:05:52:a0
+    addresses: [10.77.0.10/24]
+    dhcp6: true
+    accept-ra: true
+    nameservers:
+      addresses: [10.77.0.1]
+    routes:
+      - to: 0.0.0.0/0
+        via: 10.77.0.1
+== user-data
+#cloud-config
+resize_rootfs: True
+manage_etc_hosts: localhost
+ssh_authorized_keys:
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFMz6uwq6uCySEimJJLIKB1qaSuK3GpjZ0BSxasBIfDG jd-capture

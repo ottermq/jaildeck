@@ -99,7 +99,7 @@ internal/
     service.go                     # application service
     handler.go
 
-  vms/                          # bounded context: bhyve VMs through vm-bhyve (JD-019) — listed, started and stopped (JD-035, JD-036)
+  vms/                          # bounded context: bhyve VMs through vm-bhyve (JD-019) — listed, started and stopped, created and destroyed (JD-035, JD-036, JD-038)
   images/                       # bounded context: VM image templates, zvols in vm-bhyve's datastore (JD-037)
   firewall/                     # bounded context: PF, read-only (JD-020, JD-034)
 
@@ -312,6 +312,8 @@ GET    /api/firewall/...             # read-only PF views (JD-020)
 GET    /api/vms                      # vm-bhyve's guests (JD-035)
 GET    /api/vms/{name}
 POST   /api/vms/{name}/start         # and stop, restart (JD-036)
+POST   /api/vms                      # create from an image (JD-038)
+DELETE /api/vms/{name}
 GET    /api/vm-images                # image templates and their sources (JD-037)
 PUT    /api/vm-images/{name}         # 202, then watch it (JD-008)
 DELETE /api/vm-images/{name}

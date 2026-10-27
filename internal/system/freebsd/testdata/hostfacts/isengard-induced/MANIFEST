@@ -115,3 +115,30 @@ vm_imgls_list	zfs list -H -p -t volume,snapshot -o name,volsize,used,jaildeck:so
 vm_imgls_vm_list	doas vm list	exit=0
 vm_imgls_destroy_in_use	doas zfs destroy -r tank/vm/.images/jd-cap-ready	exit=1
 vm_imgls_destroy_written	doas zfs destroy -r tank/vm/.images/jd-cap-written	exit=0
+vm_mk_switch_create	doas vm switch create jd-capsw	exit=0	0s
+vm_mk_switch_address	doas vm switch address jd-capsw 10.77.0.1/24	exit=0	0s
+vm_mk_switch_list	doas vm switch list	exit=0	0s
+vm_mk_create	doas vm create -t jd-capture -c 2 -m 1G -s 8G -C -k /var/tmp/jd-capture-vm-create/key.pub -n 'ip=10.77.0.10/24;gateway4=10.77.0.1;nameservers=10.77.0.1;hostname=jd-cap-made' jd-cap-made	exit=0	2s
+vm_mk_conf_created	doas cat /vm/jd-cap-made/jd-cap-made.conf	exit=0	0s
+vm_mk_seed_files	doas sh -c 'cd /vm/jd-cap-made/.cloud-init && for f in *; do echo "== $f"; cat "$f"; done'	exit=0	0s
+vm_mk_add_network	doas vm add -d network -s jd-capsw jd-cap-made	exit=0	0s
+vm_mk_conf_networked	doas cat /vm/jd-cap-made/jd-cap-made.conf	exit=0	0s
+vm_mk_disk_destroy	doas zfs destroy tank/vm/jd-cap-made/disk0	exit=0	0s
+vm_mk_disk_clone	doas zfs clone -o volmode=dev -o volsize=8G tank/vm/.images/debian-13@base tank/vm/jd-cap-made/disk0	exit=0	1s
+vm_mk_datasets	zfs list -H -p -o name,type,volsize,used,origin,volmode -r tank/vm/jd-cap-made	exit=0	0s
+vm_mk_list_created	doas vm list	exit=0	0s
+vm_mk_create_taken	doas vm create -t jd-capture -s 8G jd-cap-made	exit=1	0s
+vm_mk_add_network_nosuch	doas vm add -d network -s jd-nosuchsw jd-cap-made	exit=0	0s
+vm_mk_conf_after_nosuch	doas cat /vm/jd-cap-made/jd-cap-made.conf	exit=0	0s
+vm_mk_create_badnet	doas vm create -t jd-capture -s 8G -C -n 'ip=10.77.0.11/24;mtu=9000' jd-cap-badnet	exit=1	0s
+vm_mk_list_after_refusals	doas vm list	exit=0	1s
+vm_mk_reach	(seconds from vm start until ssh answered)	exit=0	18s
+vm_mk_inside	ssh -i /var/tmp/jd-capture-vm-create/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null debian@10.77.0.10 'hostname; ip -br addr; ip route; lsblk -b -o NAME,SIZE,MOUNTPOINT /dev/vda; cat /etc/resolv.conf; sudo cloud-init status'	exit=0	1s
+vm_mk_info_running	doas vm info jd-cap-made	exit=0	1s
+vm_mk_ping	ping -c 3 -t 5 10.77.0.10	exit=0	2s
+vm_mk_stop_booted	doas vm stop jd-cap-made	exit=0	1s
+vm_mk_after_stop_booted	(state each second, up to 70s)	exit=0	3s
+vm_mk_reach_again	(seconds from the second vm start until ssh answered)	exit=0	13s
+vm_mk_destroy_running	doas vm destroy -f jd-cap-made	exit=1	0s
+vm_mk_destroy	doas vm destroy -f jd-cap-made	exit=0	2s
+vm_mk_after_destroy	zfs list -H -o name -r tank/vm; zfs get -H clones tank/vm/.images/debian-13@base; ls -A /vm	exit=0	0s

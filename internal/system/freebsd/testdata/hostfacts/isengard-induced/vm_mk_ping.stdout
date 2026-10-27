@@ -1,0 +1,8 @@
+PING 10.77.0.10 (10.77.0.10): 56 data bytes
+64 bytes from 10.77.0.10: icmp_seq=0 ttl=64 time=0.243 ms
+64 bytes from 10.77.0.10: icmp_seq=1 ttl=64 time=0.171 ms
+64 bytes from 10.77.0.10: icmp_seq=2 ttl=64 time=0.232 ms
+
+--- 10.77.0.10 ping statistics ---
+3 packets transmitted, 3 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 0.171/0.216/0.243/0.032 ms

@@ -2,6 +2,7 @@ package vms
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -168,4 +169,87 @@ func (h *Handler) operate(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, result)
+}
+
+// Create makes a guest from an image template.
+//
+// @Summary      Create a virtual machine
+// @Description  A guest from a VM image template (JD-037, JD-038), in four audited steps:
+// @Description
+// @Description  1. **vm-create**: `vm create` from Jail Deck's own template (UEFI, one virtio
+// @Description     disk, no NIC) with `cpu`, `memory` and a cloud-init seed: `ssh_keys` for the
+// @Description     image's default user, the guest's name as its hostname, and `network` as a
+// @Description     static address when given (DHCP otherwise).
+// @Description  2. **vm-add-network**: one NIC on `switch`, when given, with the MAC the seed
+// @Description     matches it by. **The switch must exist**: vm-bhyve accepts one that does not,
+// @Description     and the guest then boots with a NIC attached to nothing — measured.
+// @Description  3. **vm-replace-disk**: the disk vm create made is replaced by a clone of the
+// @Description     image's `@base` at `disk`, `volmode=dev`. The guest grows its own root
+// @Description     filesystem into it on first boot.
+// @Description  4. **vm-start**, when `start` is true, confirmed as `POST /vms/{name}/start` is.
+// @Description
+// @Description  Everything is checked first: the name, sizes, keys, addresses, that the image
+// @Description  is ready, that `disk` is at least its size, that the name is free and the
+// @Description  switch exists. **A step that fails after the guest exists destroys it again**,
+// @Description  and the error names the step. A start that fails leaves the guest, which is
+// @Description  whole, and says so.
+// @Description
+// @Description  Measured on isengard: created in 3 seconds, and reachable over SSH on its static
+// @Description  address 18 seconds after it started.
+// @Tags         vms
+// @Accept       json
+// @Produce      json
+// @Param        spec  body      CreateRequest  true  "The guest"
+// @Success      201   {object}  Created
+// @Failure      400   {object}  common.ErrorResponse  "A value refused, an image or switch that does not exist, a disk smaller than its image"
+// @Failure      401   {object}  common.ErrorResponse
+// @Failure      409   {object}  common.ErrorResponse  "The name is taken, the image is not ready, or vm-bhyve is not"
+// @Failure      500   {object}  common.ErrorResponse  "A step failed; the guest was destroyed again"
+// @Security     BearerAuth
+// @Router       /vms [post]
+func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
+	var req CreateRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		common.HandlerError(w, common.NewAppError(http.StatusBadRequest,
+			"could not read the request body: "+err.Error()))
+		return
+	}
+	created, err := h.service.Create(r.Context(), req)
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusCreated, created)
+}
+
+// Destroy removes a stopped guest.
+//
+// @Summary      Destroy a virtual machine
+// @Description  `vm destroy -f`: the guest's dataset, the disk cloned from its image with it, and
+// @Description  its configuration (JD-038). The image is then free to be removed, if nothing
+// @Description  else uses it.
+// @Description
+// @Description  **A running guest is refused**, as vm-bhyve refuses it: stopping is its own
+// @Description  decision, with its own deadline (`POST /vms/{name}/stop`). `confirm` is the
+// @Description  guest's name.
+// @Tags         vms
+// @Produce      json
+// @Param        name     path   string  true  "Guest name"
+// @Param        confirm  query  string  true  "The guest's name again"
+// @Success      200  {object}  Removal
+// @Failure      400  {object}  common.ErrorResponse  "Missing or mismatched confirm"
+// @Failure      401  {object}  common.ErrorResponse
+// @Failure      404  {object}  common.ErrorResponse  "No such guest"
+// @Failure      409  {object}  common.ErrorResponse  "Running, in its boot loader, or locked by another host"
+// @Security     BearerAuth
+// @Router       /vms/{name} [delete]
+func (h *Handler) Destroy(w http.ResponseWriter, r *http.Request) {
+	removal, err := h.service.Destroy(r.Context(), chi.URLParam(r, "name"), r.URL.Query().Get("confirm"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, removal)
 }

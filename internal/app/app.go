@@ -133,17 +133,18 @@ func New(cfg *config.Config) (*App, error) {
 	}
 	firewallHandler := firewall.NewHandler(firewall.NewService(firewallSystem))
 
-	vmSystem, err := newVMSystem(cfg.Adapter)
-	if err != nil {
-		return nil, err
-	}
-	vmHandler := vms.NewHandler(vms.NewService(vmSystem, auditLogger))
-
 	imageSystem, err := newImageSystem(cfg.Adapter)
 	if err != nil {
 		return nil, err
 	}
-	imageHandler := images.NewHandler(images.NewService(imageSystem, auditLogger))
+	imageService := images.NewService(imageSystem, auditLogger)
+	imageHandler := images.NewHandler(imageService)
+
+	vmSystem, err := newVMSystem(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	vmHandler := vms.NewHandler(vms.NewService(vmSystem, vmImageCatalog{images: imageService}, auditLogger))
 
 	return &App{
 		authHandler:     authHandler,
@@ -172,7 +173,7 @@ func newFirewallSystem(adapter string) (firewall.FirewallSystem, error) {
 	}
 }
 
-// newVMSystem selects the read-only vm-bhyve implementation (JD-035).
+// newVMSystem selects the vm-bhyve implementation (JD-035, JD-036, JD-038).
 func newVMSystem(adapter string) (vms.VMSystem, error) {
 	switch adapter {
 	case config.AdapterFreeBSD:

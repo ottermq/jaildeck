@@ -408,7 +408,7 @@ Jail Deck can be installed on FreeBSD in a repeatable way and run as a service.
 
 ## Milestone: Virtual Machines
 
-**Status:** begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, and since v0.15.0 started, stopped and restarted, through the API and on the VMs pages (JD-035, JD-036). Image templates can be prepared through the API and on the VMs page (JD-037). Creating and destroying a VM from one are ahead.
+**Status:** begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, and since v0.15.0 started, stopped and restarted, through the API and on the VMs pages (JD-035, JD-036). Image templates can be prepared through the API and on the VMs page (JD-037), and a guest created from one and destroyed through the API (JD-038). The interface for creating and destroying is ahead.
 
 **Depends on:** Host Setup (UG check), Storage Writes (zvols), Jail Provisioning (the patterns VMs mirror). **★ Otter Cloud:** Linux VMs, after its first beta.
 
@@ -417,8 +417,8 @@ Goal: a `vms` domain mirroring jails (JD-019).
 ### Capabilities
 
 - list and inspect VMs
-- create from an image template, with CPU and memory sizing, cpuset, a zvol disk and a cloud-init seed
-- start, stop, restart, destroy (`confirm=<name>`). *Start, stop and restart built 2026-10-26 (JD-036): `vm start` detached into a session of its own, every step confirmed in `vm list`, and a stop that powers off a guest ignoring the button for 60 seconds and says `forced`.*
+- create from an image template, with CPU and memory sizing, cpuset, a zvol disk and a cloud-init seed. *Built 2026-10-26 (JD-038), cpuset aside: `POST /api/vms`, `vm create` from Jail Deck's UEFI template with a seed carrying SSH keys and a static address, a NIC added on the operator's switch — checked to exist, because vm-bhyve does not — and disk0 replaced by a `volmode=dev` clone of the image. A step that fails destroys the guest again. Measured: reachable over SSH 16–18 s after it starts.*
+- start, stop, restart, destroy (`confirm=<name>`). *Destroy built 2026-10-26 (JD-038): stopped guests only, `vm destroy -f`, the disk clone with it.* *Start, stop and restart built 2026-10-26 (JD-036): `vm start` detached into a session of its own, every step confirmed in `vm list`, and a stop that powers off a guest ignoring the button for 60 seconds and says `forced`.*
 - a tap on the configured bridge, as VNET jails use
 - serial console through the API, later
 

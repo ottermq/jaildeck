@@ -1,0 +1,87 @@
+# Builds the FreeBSD package for a release, attests where it came from, and
+# attaches both to the release (#113).
+#
+# The build is native, in a FreeBSD 15.1 VM on GitHub's Linux runner:
+# package.sh refuses to cross-compile, and inside the VM it does not need to.
+# Nothing here signs a pkg repository. The repository host pulls the release,
+# verifies the attestation -- built from this release's tag, by this workflow
+# -- and signs with a key that never leaves it (JD-039). A compromised
+# workflow can at most attach a package that the host then refuses.
+name: Package
+
+on:
+  release:
+    types: [published]
+  # Rebuild an existing tag without touching its release: the package lands
+  # as a workflow artifact instead. Its attestation names the branch it was
+  # dispatched from, not the tag, so the repository host never accepts it.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing tag, e.g. v0.16.0
+        required: true
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: package-${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Version from the tag
+        run: |
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) echo "VERSION=${TAG#v}" >> "$GITHUB_ENV" ;;
+            *) echo "not a release tag: $TAG" >&2; exit 1 ;;
+          esac
+
+      # The same toolchain isengard builds releases with.
+      - name: Build in FreeBSD 15.1
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "15.1"
+          arch: x86_64
+          envs: VERSION
+          prepare: |
+            pkg install -y go gmake node26 npm-node26
+          run: |
+            freebsd-version
+            gmake package VERSION="$VERSION"
+
+      - name: Checksum
+        run: |
+          cd bin/packages
+          sha256sum "jaildeck-$VERSION.pkg" > "jaildeck-$VERSION.pkg.sha256"
+          cat "jaildeck-$VERSION.pkg.sha256"
+
+      - name: Attest where it was built
+        uses: actions/attest@v4
+        with:
+          subject-path: bin/packages/jaildeck-${{ env.VERSION }}.pkg
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$TAG" --clobber \
+            "bin/packages/jaildeck-$VERSION.pkg" "bin/packages/jaildeck-$VERSION.pkg.sha256"
+
+      - name: Keep as an artifact
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jaildeck-${{ env.VERSION }}
+          path: bin/packages/jaildeck-${{ env.VERSION }}.pkg*

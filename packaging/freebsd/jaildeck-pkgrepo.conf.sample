@@ -1,0 +1,21 @@
+# Configuration for publish-repo.sh, which publishes Jail Deck's releases
+# into a signed pkg repository (JD-039). Read as sh.
+
+# The directory the publishing user owns: pool/, builds/, rejected/, work/,
+# and the symlink current, which is the directory to serve.
+REPO_ROOT=/var/db/jaildeck-pkgrepo
+
+# The private key the repository is signed with, readable by that user only.
+# Hosts verify with the matching public key (pkg.conf signature_type: pubkey).
+SIGNING_KEY=/var/db/jaildeck-pkgrepo/keys/repo.key
+
+# Where releases come from, and what must have built them.
+GITHUB_REPO=ottermq/jaildeck
+PACKAGE=jaildeck
+WORKFLOW=.github/workflows/package.yml
+
+# Releases older than this have no package attached and are not looked for.
+SINCE=0.16.1
+
+# Signed repositories kept on disk, the served one included.
+KEEP_BUILDS=3

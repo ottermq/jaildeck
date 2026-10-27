@@ -12,7 +12,7 @@ stopped, restarted and destroyed from the browser or the API; their ZFS datasets
 snapshots and resource usage are visible; host setup is checked; PF can be seen,
 read-only; bhyve VMs can be seen, started and stopped, and cloud images prepared for them;
 every operation is audited, and nothing is reachable without a password or an API token.
-VMs are created from those images through the API; the interface for it is next — see [the roadmap](docs/ROADMAP.md).
+VMs are created from those images and destroyed, from the VMs pages or the API — see [the roadmap](docs/ROADMAP.md) for what comes next.
 
 Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com/jaildeck/)**.
 
@@ -43,7 +43,7 @@ Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com
   against Debian's checksum and written into a zvol, from the VMs page or the API (JD-037).
   Creating a guest from one — CPU, memory, a disk cloned from the image, a NIC on the
   operator's switch, SSH keys and a static address through cloud-init — and destroying it,
-  through the API (JD-038).
+  from the VMs pages or the API (JD-038).
 - **Web interface** — an embedded Svelte application for all of the above, light and dark.
 
 ## Requirements

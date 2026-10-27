@@ -33,6 +33,10 @@ type Listing struct {
 	// the same words Host Setup reports.
 	Problem string `json:"problem,omitempty"`
 	VMs     []VM   `json:"vms"`
+	// Switches are vm-bhyve's virtual switches by name, which a guest's NIC
+	// can be put on (JD-038). Read only when vm-bhyve is ready; empty, not
+	// absent, otherwise.
+	Switches []string `json:"switches"`
 }
 
 // VM is one row of `vm list`.

@@ -408,7 +408,7 @@ Jail Deck can be installed on FreeBSD in a repeatable way and run as a service.
 
 ## Milestone: Virtual Machines
 
-**Status:** begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, and since v0.15.0 started, stopped and restarted, through the API and on the VMs pages (JD-035, JD-036). Image templates can be prepared through the API and on the VMs page (JD-037), and a guest created from one and destroyed through the API (JD-038). The interface for creating and destroying is ahead.
+**Status:** begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, and since v0.15.0 started, stopped and restarted, through the API and on the VMs pages (JD-035, JD-036). Image templates can be prepared through the API and on the VMs page (JD-037), and a guest created from one and destroyed, through the API and on the VMs pages (JD-038). **The completion criterion is met**, checked on isengard on 2026-10-26 through the interface itself: a Debian guest created from the form, reached over SSH on its static address, stopped and destroyed. Left for later: `cpuset`, an idempotent `PUT`, and a serial console through the API.
 
 **Depends on:** Host Setup (UG check), Storage Writes (zvols), Jail Provisioning (the patterns VMs mirror). **★ Otter Cloud:** Linux VMs, after its first beta.
 
@@ -432,7 +432,7 @@ Goal: a `vms` domain mirroring jails (JD-019).
 
 ### Completion criteria
 
-A Linux VM can be created from an image with cloud-init, reached over the bridge, stopped and destroyed from the API and the UI.
+A Linux VM can be created from an image with cloud-init, reached over the bridge, stopped and destroyed from the API and the UI. *Met 2026-10-26: API in #109, interface in the PR after it.*
 
 ---
 

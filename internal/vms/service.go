@@ -3,6 +3,7 @@ package vms
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -54,6 +55,16 @@ func (s *Service) List(ctx context.Context) (Listing, error) {
 	}
 	if listing.VMs == nil {
 		listing.VMs = make([]VM, 0)
+	}
+	listing.Switches = make([]string, 0)
+	if listing.VMBhyve == VMBhyveReady {
+		// A failure here costs the switches and nothing else: the guests are
+		// what the listing is for, and a create checks the switch again.
+		if switches, err := s.system.VMSwitches(ctx); err != nil {
+			common.Logger(ctx, "vms").Warn("could not read vm-bhyve's switches", slog.Any("err", err))
+		} else if switches != nil {
+			listing.Switches = switches
+		}
 	}
 	return listing, nil
 }

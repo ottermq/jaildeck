@@ -8,8 +8,9 @@ description: "Build, inspect, install, upgrade and remove a locally built Jail D
 `make package VERSION=0.10.0` builds `bin/packages/jaildeck-0.10.0.pkg` using
 FreeBSD's `pkg create`. It builds the Svelte frontend, compiles the versioned Go
 executable, and reuses `make install DESTDIR=...` to stage the files. No Ports
-tree, package repository, publishing workflow or additional build framework is
-involved. The package name and selected files are deterministic; archive bytes
+tree or additional build framework is involved. Releases are also built in CI
+and published into a signed package repository, so a host can install and
+upgrade with `pkg` alone (see below, JD-039). The package name and selected files are deterministic; archive bytes
 and build timestamps are not promised to be reproducible.
 
 ## Build from a clean checkout
@@ -156,6 +157,88 @@ configuration file that could silently create, merge or replace
 tokens and other state), `/var/log/jaildeck` (audit history), and jail datasets
 are all outside the package inventory.
 
+## Install and upgrade from a package repository
+
+Released packages are published into a **signed** pkg repository. Whoever runs
+it gives you two things: the repository's URL and its public key. Install the
+key, and describe the repository to `pkg`:
+
+```sh
+install -d /usr/local/etc/pkg/keys /usr/local/etc/pkg/repos
+install -m 0644 jaildeck.pub /usr/local/etc/pkg/keys/jaildeck.pub
+cat > /usr/local/etc/pkg/repos/jaildeck.conf <<'EOF'
+jaildeck: {
+  url: "<repository URL>",
+  signature_type: "pubkey",
+  pubkey: "/usr/local/etc/pkg/keys/jaildeck.pub",
+  enabled: yes
+}
+EOF
+pkg update -r jaildeck
+pkg search -r jaildeck jaildeck
+```
+
+`pkg` checks the catalogue's signature against that key on every update. Then
+install, or upgrade, as for any package; the service is still stopped and
+started explicitly, because the package has no lifecycle scripts:
+
+```sh
+pkg install -r jaildeck jaildeck          # the first time; then configure as above
+service jaildeck stop
+pkg upgrade -r jaildeck
+service jaildeck start
+```
+
+Every release kept in the repository stays installable, which is the rollback:
+
+```sh
+service jaildeck stop
+pkg install -f -r jaildeck jaildeck-0.16.1
+service jaildeck start
+```
+
+A catalogue signed with another key is refused ("Invalid signature") and `pkg`
+keeps using the last good one; a package that does not match that catalogue's
+checksum is refused too. **`pkg update` exits 0 even then**, so check what it
+printed, not its status.
+
+A host already running a package installed with `pkg add` upgrades from the
+repository the same way; the registration simply starts naming the repository.
+
+## Publishing releases to a repository
+
+Two halves, and the signing key is never in the first:
+
+1. **CI builds and attests** (`.github/workflows/package.yml`). When a release
+   is published, a FreeBSD 15 VM in GitHub Actions runs `make package` from the
+   release's tag, and the `.pkg`, its `.sha256` and a
+   [build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds)
+   are attached to the release.
+2. **The repository host pulls, verifies and signs**
+   (`packaging/freebsd/publish-repo.sh`, configured from
+   `jaildeck-pkgrepo.conf.sample`). Run periodically by an unprivileged user
+   that owns the repository directory and the signing key, it downloads each
+   new release's package, checks the checksum, and verifies the attestation:
+   built in this repository, by `package.yml`, **from that release's own tag**.
+   Accepted packages join a pool; the repository is rebuilt from the whole pool
+   with `pkg repo`, signed, and swapped in through one symlink. A package that
+   fails is set aside under `rejected/` and not tried again.
+
+Nothing pushes to the repository host and no GitHub token is needed: releases,
+assets and attestations of a public repository are read anonymously. A
+compromised workflow could at most attach a package the host then refuses. A
+package built any other way, including a manual rerun of the workflow, names a
+branch rather than the tag in its attestation and is refused too.
+
+How the host serves the directory is the operator's choice; any static file
+server, or `file://` for the host itself, will do.
+
+```sh
+publish-repo.sh -c /path/to/jaildeck-pkgrepo.conf verify ./jaildeck-0.16.1.pkg v0.16.1
+```
+
+checks one package against the same policy without publishing anything.
+
 ## Remove the application
 
 Stop the service first and remove its enablement explicitly if you no longer
@@ -224,11 +307,11 @@ before rerunning. Never run this test on a real deployment.
 
 See [the validation record](PACKAGING-VALIDATION.md) for the environment and
 checks actually exercised. Compatibility with other architectures or FreeBSD
-major versions, Ports, repositories, signing and automated publishing are
-outside this workflow.
+major versions, and Ports, are outside this workflow.
 
 ## References
 
-- [Issue #84](https://github.com/ottermq/jaildeck/issues/84)
+- [Issue #84](https://github.com/ottermq/jaildeck/issues/84) and [issue #113](https://github.com/ottermq/jaildeck/issues/113)
+- [pkg-repo(8)](https://man.freebsd.org/cgi/man.cgi?query=pkg-repo&sektion=8) and [pkg.conf(5)](https://man.freebsd.org/cgi/man.cgi?query=pkg.conf&sektion=5): signed repositories and how a host trusts one.
 - [pkg-create(8)](https://man.freebsd.org/cgi/man.cgi?query=pkg-create&sektion=8): metadata, packing lists and staging roots.
 - [FreeBSD configuration-file conventions](https://docs.freebsd.org/en/books/porters-handbook/plist/#plist-config): explicitly installing only a sample when the operator must configure the application.

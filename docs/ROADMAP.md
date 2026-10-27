@@ -374,8 +374,11 @@ The loaded PF policy and its counters are visible in the API and the UI, and not
 
 ## Milestone: Packaging and Distribution
 
-**Status:** the first half is done in v0.11.0 (#84). Package repositories, a port and
-automated publishing are what remain.
+**Status:** the first half is done in v0.11.0 (#84). The second is built (#113, JD-039): CI
+builds and attests each release's package, and a host of the owner's pulls it, verifies the
+attestation and publishes it into a signed `pkg` repository, so hosts install and upgrade with
+`pkg` alone. It is proven end to end by the first release that goes out this way. A FreeBSD
+port remains, if the official ports tree ever becomes a goal.
 
 **Local native packaging:** `make package VERSION=X.Y.Z` builds and verifies a FreeBSD 15
 amd64 package through `pkg create`, reusing `make install` staging. See

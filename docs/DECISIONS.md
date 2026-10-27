@@ -1788,3 +1788,45 @@ Everything that can be refused is refused before `vm create`: the name (vm-bhyve
 - `PUT /api/vms/{name}` as an idempotent ensure, as jails have (JD-016). Comparing a guest to a spec needs the seed read back, and nothing needs it yet.
 - `cpuset`, more than one NIC, a second disk, user-data beyond keys. vm-bhyve can do each; none has a consumer.
 - A DHCP guest is not measured: every measurement here gave an address.
+
+---
+
+## JD-039 — A Signed Package Repository: CI Builds and Attests, a Host Pulls, Verifies and Signs
+
+**Status:** Locked — 2026-10-26. Measured with a trial repository: a package built in CI from `v0.16.0`, verified, signed and served, then installed, upgraded, rolled back and attacked from isengard (#113).
+
+Hosts install and upgrade Jail Deck with `pkg` alone, from a signed repository. That replaces building each release from its tag on the host itself, as every release since v0.11.0 was, and is the second half of the Packaging and Distribution milestone.
+
+### Two halves, and the key only in the second
+
+- **CI builds and attests.** `.github/workflows/package.yml` runs on a published release: `make package` from the release's tag in a FreeBSD 15.1 VM on GitHub's Linux runners, still a native build, as `package.sh` requires. The `.pkg`, its `.sha256` and a build provenance attestation are attached to the release. Measured: under two minutes, and the same name, version, ABI and three files as the package built on isengard from the same tag.
+- **A host of the owner's pulls, verifies and signs.** `packaging/freebsd/publish-repo.sh`, run periodically by an unprivileged user that owns the repository directory and the signing key. It accepts a package only if its checksum matches and its attestation says: built in `ottermq/jaildeck`, by `package.yml`, from **that release's tag**. It then rebuilds the repository from every accepted package, signs it with `pkg repo`, and swaps it in as one symlink.
+
+**Why pull, not push.** Nothing on the repository host is reachable from the internet, and no deploy key or signing key sits in CI. A compromised workflow can attach a package, and the host refuses it, because no attestation for a tampered file verifies. The concrete host, and how it serves the repository, are deliberately not described in this public repository.
+
+**Rejected:**
+- **A bare repository with a post-receive hook:** it reacts to pushes rather than releases, and needs a build toolchain on the repository host.
+- **A self-hosted Actions runner:** GitHub's runner does not support FreeBSD, and a runner would execute repository code on the host that holds the key.
+- **Signing in CI:** that puts the key where the code that could misuse it runs.
+
+### What was measured
+
+| | result |
+| --- | --- |
+| attestation fetched with no token | the public attestations API answers anonymously; `gh attestation verify --bundle` then checks it against Sigstore with no login (plain `gh attestation verify` insists on one) |
+| a tampered package | refused by the attestation check |
+| built from a branch | refused once `--source-ref refs/tags/<tag>` is required |
+| built by another workflow | refused once `--signer-workflow …/package.yml` is required |
+| **a `workflow_dispatch` rerun** | **records the branch it was dispatched from, not the tag, so it never qualifies**: only the run the published release triggers does |
+| a catalogue signed with another key | "Invalid signature, removing repository"; `pkg` keeps the last good catalogue |
+| …and a swapped package with it | refused against that catalogue: "fetch exceeds expected package size" |
+| …on a fresh client | nothing installable |
+| `pkg update`'s exit status in all three | **0**: it proves nothing, and nothing relies on it |
+| fresh install, upgrade, rollback | all from the repository; rollback is `pkg install -f jaildeck-<older>`, because the catalogue lists every version kept, so every accepted package is kept |
+| `pkg repo` over an empty directory | refused ("No package files have been found"); an empty pool publishes nothing |
+
+### Kept simple on purpose
+
+- The pool is the record of what is published: a package is accepted once and kept. A rejected one is kept under `rejected/` as evidence and never retried. A failure to reach GitHub is not a verdict, and is retried next run.
+- Releases before the workflow existed have nothing attached. `SINCE` keeps the job from looking for them every run.
+- No push notification: the job polls every 15 minutes, which is soon enough for a release, and costs one anonymous API call when nothing is new.

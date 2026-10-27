@@ -725,7 +725,7 @@ Every row of that table is needed whichever approach is taken. `vm-bhyve` does a
 - **`vm start` does not detach.** It returns at once, but `vm-run` and its bhyve stay in the caller's process group and session — measured. Jail Deck's command runner puts each command in a process group of its own and kills that group on a timeout, so `vm start` runs under `daemon(8)` (or `setsid`), never as a plain child. Direct bhyve under `daemon(8)` was in its own session; `vm start` was not.
 - **`vm-bhyve` must be an enabled service.** It refuses to run without `vm_enable="YES"` and a `vm_dir` in `rc.conf`, and it starts `vm_list` at boot. Both are the operator's, like `jail_list` — Host Setup reports them, as it reports racct.
 - **It owns every bhyve on the host.** Its shutdown `stopall` "will also stop instances not started by vm-bhyve" (its own comment). Jail Deck never starts bhyve any other way on a host that uses it.
-- **Images are zvols that Jail Deck writes or clones.** `vm-bhyve`'s cloud-image import needs `qemu-img` (`sysutils/qemu-tools`) even for a raw image. It is not used: `vm create -C` without `-i` builds the guest and its seed, and the disk was filled directly — measured. That keeps image templates on the release-template pattern (JD-027) and takes no `qemu-tools`.
+- **Images are zvols that Jail Deck writes or clones.** `vm-bhyve`'s cloud-image import needs `qemu-img` (`sysutils/qemu-tools`) even for a raw image. It is not used: `vm create -C` without `-i` builds the guest and its seed, and the disk was filled directly — measured. That keeps image templates on the release-template pattern (JD-027) and takes no `qemu-tools`. *Built in JD-037, which found that the disk has to be filled with GEOM kept out of it: `volmode=dev`.*
 - **A stop has a deadline.** `vm stop`, a timeout, then `vm poweroff`, because the power button is ignored until the guest has booted. *Built in JD-036, which also found that a guest with no OS, sitting in UEFI, answers the button at once: what ignores it is an OS that is still booting.*
 - **Its network config adds `dhcp6: true` and `accept-ra: true`** to a static IPv4 address. Harmless on an isolated bridge and worth knowing on one that is not.
 - **State is read, not kept** (JD-011): `vm list`, `/dev/vmm`, the `vm-run` process, the guest's dataset and configuration, and a tap found by its description.
@@ -1665,6 +1665,8 @@ A start that `vm start` accepted but that never shows as running is a failure. T
 
 **The power button was not ignored here.** JD-019 measured a Debian guest ignoring it before its OS was up. A guest with no OS at all, sitting in UEFI, powered off within the second `vm stop` itself spends, every time it was asked: three stops, one of them in the guest's first second. So the poweroff fallback hasn't happened on a real guest yet. It is tested against a scripted vm-bhyve, including the second either side of the deadline. Seeing it for real needs a guest with an OS, which arrives with image templates.
 
+*Measured 2026-10-26 with one (JD-037's capture): a Debian 13 guest stopped 3 seconds into its boot, still in the firmware or GRUB, went off at once. Stopped at 10 seconds, and again at 60, it **ignored the button for the whole 70 seconds** that were watched, and `vm poweroff -f` then stopped it. That guest had no network interface, so systemd waited for one and the boot took 141 seconds; a guest whose boot is that slow is the one the deadline exists for. One more state turned up: for about a second while the guest powered itself off, `vm list` showed **`Locked (isengard)`**, the host's own name, with bhyve gone and vm-run still exiting. A start in that second is refused as `locked`.*
+
 ### Idempotent, and refused only where vm-bhyve can't be trusted
 
 - **Start** of a `running` or `bootloader` guest, and **stop** of a `stopped` or `suspended` one, run nothing and answer the guest as it is, as a jail's start does. Nothing ran, so nothing is audited. **Starting a `suspended` guest resumes it**: vm start finds the saved state.
@@ -1673,3 +1675,116 @@ A start that `vm start` accepted but that never shows as running is a failure. T
 - **Restart** is Jail Deck's stop (deadline and fallback included) followed by start, not vm-bhyve's `restart`, which asks the guest to reboot through the power button and has no deadline. A forced stop shows as `forced: true` even though the guest is running again by the time the answer comes.
 
 Like a jail's, these are detached from the request: a client that disconnects does not stop a lifecycle step halfway. Each step is bounded by its own timeout, and the HTTP server has no write timeout for that reason.
+
+---
+
+## JD-037 — Image Templates for VMs: a Verified Archive, a zvol, and a Clone the Host Never Tastes
+
+**Status:** Locked — 2026-10-26. Measured on isengard, 15.1-RELEASE-p5, vm-bhyve 1.7.5, by fetching Debian 13's genericcloud image, writing it into a zvol and booting a guest from a clone of it (`capture-vm-images-induced.sh`, run twice); vm-bhyve's `create` and `destroy` read in its source.
+
+An **image template** is to a VM what a release template is to a jail (JD-027): something prepared once and cloned for every guest. `PUT /api/vm-images/{name}` prepares one, `GET` lists and shows them, `DELETE` removes one that no guest uses. Creating a guest from one is the next step, and the part of it this measured is recorded here so that step starts from facts.
+
+### Where an image comes from: a source the adapter knows
+
+The request names a **source**, not a URL: `{"source": "debian-13"}`. The adapter knows where that source lives, which file is the disk, and which checksum file vouches for it, the way the release adapter knows the FreeBSD mirror (JD-010). One source to start with:
+
+| source | archive | checksum | disk in the archive |
+| --- | --- | --- | --- |
+| `debian-13` | `cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.tar.xz`, 217 MiB | `SHA512SUMS` beside it | `disk.raw`, 3 GiB |
+
+**Why the `.tar.xz` and not the `.qcow2`** (342 MB) or the `.raw` (3 GiB): it is the smallest, and `tar` in base reads it. A qcow2 needs `qemu-img`, which JD-019 already declined to depend on.
+
+**Why a catalog and not any URL with a checksum:** cloud images do not share a format. Debian ships a raw disk in a tar, Ubuntu a qcow2, others an `.xz` of a raw disk. A URL field would promise all of them and deliver one. A named source is one format the adapter actually handles, and another source is an entry plus, at most, a new way to unpack. An operator-supplied URL can come later as a source of its own, with the format stated.
+
+**Verification is the publisher's checksum, over HTTPS.** Debian publishes `SHA512SUMS` for these images, and no signature beside it, so a checksum fetched from the same place guards against corruption, not against the server. That is the same strength as the release template's MANIFEST (JD-008's stage 1). The archive is downloaded to `<file>.part` and **renamed only once its SHA-512 matches**, so an archive under its own name is always a verified one, and "fetched" can be read off the disk. `fetch -a` resumes a `.part`.
+
+Measured: SHA512SUMS 2 s, the archive **69–79 s**, the checksum 1 s.
+
+**"latest" moved during the measuring.** Debian published a new build on 2026-10-26: the archive is dated 19:10 UTC and `SHA512SUMS` **19:24 UTC**, so for fourteen minutes the directory held a new archive beside the old checksums. A fetch in that window fails verification and its `.part` is removed, and asking again later succeeds — the failure is the honest outcome, not one to retry around. The two captures fetched different builds (`2a813040…` and `893deb85…`), which is what recording the checksum on the image is for.
+
+### The image is a zvol, written straight from the archive
+
+```
+zfs create -s -V <size of disk.raw> -o volmode=dev <datastore>/.images/<name>
+tar -xOf <archive> disk.raw  >  /dev/zvol/<datastore>/.images/<name>
+zfs snapshot <datastore>/.images/<name>@base
+```
+
+- **Under vm-bhyve's own datastore**, `tank/vm/.images` on isengard, so images and guests share a pool and a guest's disk can be a clone. A dot-name is not a guest: `vm list` was unchanged with it there. The archives live in the same directory, `/vm/.images`, and are kept, as `base.txz` is, so an image can be rewritten without downloading again.
+- **Its size is `disk.raw`'s**, read from `tar -tvf` (3 GiB, 13 s, since xz has to be read through to list it). Sparse: measured, the written image used **541 MiB** of the pool for 923 MiB of data, with compression on.
+- **No `dd`, no shell, no temporary file.** tar writes the disk to its standard output, and the runner gained `StdoutFile` to point that at the zvol. Measured with a synthetic archive: tar's writes are 16 KiB and 64 KiB, the result is byte-identical, and a dev-mode zvol accepts even an unaligned write. Writing the real image took **18 s**.
+- **Provenance is on the zvol**, as user properties set when it is created: `jaildeck:source` and `jaildeck:sha512`, the checksum of the archive it was written from. Debian's "latest" moves, and the checksum names the exact build. Recorded on the dataset, not in Jail Deck (JD-011).
+- **`@base` makes it ready**, as for a release template (JD-007), and the states are read the same way (JD-008): `ready`, and `written` for a zvol with no `@base` (a stage that stopped). `fetching` and `writing` come from what this process is doing; an image being fetched has no zvol yet and is listed all the same, because the resource a client watches has to exist from the start. **"Fetched" belongs to the source, not the image**: one archive can be written into any number of images, so the listing's `sources` say whether each one's verified archive is on the host, and a prepare from a fetched source starts at the write. Preparing an image that is `written` is refused, as an extracted template is: a half-written disk looks like a whole one.
+
+### `volmode=dev`, on the image and on every clone
+
+A guest's disk is a clone of `@base`, grown to the size the guest asks for. **With GEOM's default `volmode`, growing it breaks the guest.** FreeBSD tastes the zvol, finds the image's GPT, and with `kern.geom.part.auto_resize=1` (the default) moves the backup header to the new end by itself, then holds the disk **open for exclusive write** until someone runs `gpart commit` or `gpart undo`. Measured, both runs: the kernel says so (`GEOM_PART: … was automatically resized`), the consumer is `r1w1e1`, `zfs destroy` answers "dataset is busy", and a guest started on it found **nothing bootable** on its disk and sat in the firmware's menu. `vm destroy` then failed too, and only said "failed to destroy ZFS dataset", because it sends `zfs destroy`'s own message to `/dev/null`.
+
+`volmode=dev` exposes a zvol as a plain device and keeps GEOM out of it entirely. It goes on `.images`, so every image inherits it, and **explicitly on each clone**, which inherits from the guest's dataset rather than the image. Measured with it: no partition devices on the host, the guest booted Debian, **cloud-init grew the root filesystem to the new size by itself** (`EXT4-fs (vda1): resized filesystem` 8 s into the boot; the GPT's backup header moved from sector 6291455 to 16777215), and `vm destroy` exited 0. It is also the right default regardless: the host has no business parsing a guest's partition table.
+
+### A guest's disk, measured for the next step
+
+`vm create` makes `disk0` itself and has no way to be handed one. vm-bhyve can import an image (`-i`), but only through `qemu-img`. So a guest is created as usual, with its cloud-init seed (`-C`), and its `disk0` is replaced:
+
+```
+zfs destroy <datastore>/<guest>/disk0
+zfs clone -o volmode=dev -o volsize=<size> <image>@base <datastore>/<guest>/disk0
+```
+
+- The size can be given in the clone itself; measured, `-o volsize=8G` was accepted. A clone costs **56 KiB** when made, and 5.6 MiB after its first boot.
+- vm-bhyve finds the clone where it expects `disk0`, and **`vm destroy` takes it away** with the guest, because it destroys the guest's dataset recursively. The image's `@base` is then free again.
+- `vm create -C` writes the seed ISO at the guest's **first start**, not when it is created (`vm info` showed it missing until then). Its user-data is read: a `power_state` in it powered the guest off after its first boot, 141 s in, with no network to wait for.
+
+### Removing an image
+
+`DELETE /api/vm-images/{name}?confirm=<name>` destroys the zvol and its snapshot, with the same `confirm` a template's removal asks for: an image is a download and a write to make again. **It is refused while any clone of `@base` exists**, naming the guests (`zfs get clones`): ZFS refuses anyway ("snapshot has dependent clones"), and the refusal is better said in terms of guests than of datasets. The archive is kept; it belongs to the source, and another image may be written from it.
+
+### Operations
+
+Each stage writes its own audit entry: `fetch-image`, `write-image`, `seal-image`, and `destroy-image` for a removal. Like the template's, preparing is detached from the request and answers `202` (JD-008, which already listed "importing a VM image" among them).
+
+
+---
+
+## JD-038 — Creating a Guest From an Image: vm create, a NIC on the Operator's Switch, and a Cloned Disk
+
+**Status:** Locked — 2026-10-26. Measured on isengard, 15.1-RELEASE-p5, vm-bhyve 1.7.5, by making a guest from the kept `debian-13` image on a throwaway switch, reaching it over SSH, and destroying it (`capture-vm-create-induced.sh`); then through the API with the branch binary. vm-bhyve's `create`, `add` and cloud-init seed read in its source.
+
+`POST /api/vms` creates a guest from a VM image template (JD-037). `DELETE /api/vms/{name}?confirm=<name>` destroys a stopped one. Together with JD-036's lifecycle they are the milestone's completion criterion: a Linux VM created from an image with cloud-init, reached over the bridge, stopped and destroyed from the API.
+
+### Four steps, three of them vm-bhyve's
+
+```
+vm create -t jaildeck -c <cpu> -m <memory> -s <disk> -C [-k <keys>] [-n <netconfig>] <name>
+vm add -d network -s <switch> <name>
+zfs destroy <datastore>/<name>/disk0
+zfs clone -o volmode=dev -o volsize=<disk> <image>@base <datastore>/<name>/disk0
+```
+
+- **A template of Jail Deck's own**, `jaildeck.conf` in the datastore's `.templates`, because `vm create` needs one and vm-bhyve's `default.conf` boots with bhyveload from a file disk. UEFI, one virtio disk, **no NIC**. It is written when absent or different and is otherwise left alone; edits to it do not last.
+- **The NIC is added on the switch the request names**, with `vm add`. `vm create` has no switch option, but it does generate `network0_mac`, and the seed's `network-config` matches the NIC by that MAC (read in its source). Adding the NIC afterwards makes it `network0`, with that MAC: measured, `eth0` came up with the seed's address and default route.
+- **The disk is a clone of the image**, replacing the one `vm create` made, at the requested size and `volmode=dev` (JD-037). On first boot the guest grew its root filesystem into it: 7.8 GiB of the 8G clone in the capture, 9.7 GiB of 10G live.
+- **cloud-init carries only what vm-bhyve's own seed carries**: the image's default user with `ssh_keys`, the guest's name as its hostname, and `network` as a static address, gateway and nameservers (`-n`). Without `network` it is DHCP. A cloud image has no password, so a guest with no key is reachable only on its console.
+- **Measured:** `vm create` 2 s, the clone 1 s, **reachable over SSH 18 s after `vm start`** (16 s after the API answered, live), 13 s on a second boot. A booted guest on a network obeyed the power button in about 2 seconds.
+
+### Switches are the operator's, and checked
+
+A switch is a bridge and an entry in vm-bhyve's `system.conf`. Like the bridge VNET jails use (JD-017), it is the operator's: Jail Deck never creates one. **It does check that the named one exists**, because vm-bhyve does not: measured, `vm add -d network -s jd-nosuchsw` exited 0, and the guest started with a tap attached to no bridge and a dead NIC inside. The refusal lists the switches there are.
+
+### Checked before anything runs; undone when a step fails
+
+Everything that can be refused is refused before `vm create`: the name (vm-bhyve's own rule), CPU from 1 to 64, memory as vm-bhyve writes it (`512M`, `2G`), a disk in M, G or T **no smaller than the image**, each SSH key, each address (parsed as one, which also keeps netconfig's `;` out), that the image is ready, that the name is free and that the switch exists.
+
+**Keys are narrower than `authorized_keys` allows.** vm-bhyve writes each one into user-data as an unquoted YAML list item, `  - <key>`, so a comment holding `: ` would turn the item into a mapping and cloud-init would install no key at all. The comment is limited to letters, digits and `@._+-`.
+
+**A step that fails after `vm create` destroys the guest again**, audited as `vm-destroy`, and the error names the step. A guest without its NIC, or with the 8G empty disk `vm create` made instead of the image, is one vm-bhyve would start and that boots nothing, which is worse than no guest. If that destroy fails too, the error says the guest is still there, half made. **A start that fails leaves the guest**: it is whole, and starting it is a separate thing that can be tried again.
+
+### Destroying
+
+`vm destroy -f`, which destroys the guest's dataset recursively and its clone with it; the image's `@base` is then free (measured: `clones` back to `-`). **A running guest is refused (`409`)**, as vm-bhyve refuses it ("appears to be running on isengard (locked)", measured). Stopping is a decision with its own deadline (JD-036), and folding it into a destroy would hide the poweroff. `confirm` is the guest's name.
+
+### Not yet
+
+- `PUT /api/vms/{name}` as an idempotent ensure, as jails have (JD-016). Comparing a guest to a spec needs the seed read back, and nothing needs it yet.
+- `cpuset`, more than one NIC, a second disk, user-data beyond keys. vm-bhyve can do each; none has a consumer.
+- A DHCP guest is not measured: every measurement here gave an address.

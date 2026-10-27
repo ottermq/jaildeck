@@ -1,0 +1,58 @@
+------------------------
+Virtual Machine: jd-cap-made
+------------------------
+  state: running (29108)
+  datastore: default
+  loader: uefi
+  uuid: c12b2ce4-d17f-11f1-b463-e80688cecc46
+  cpu: 2
+  memory: 1G
+  memory-resident: 411897856 (392.816M)
+
+  console-ports
+    com1: /dev/nmdm-jd-cap-made.1B
+
+  network-interface
+    number: 0
+    emulation: virtio-net
+    virtual-switch: jd-capsw
+    fixed-mac-address: 58:9c:fc:05:52:a0
+    fixed-device: -
+    active-device: tap0
+    desc: vmnet/jd-cap-made/0/jd-capsw
+    mtu: 1500
+    bridge: vm-jd-capsw
+    bytes-in: 11516 (11.246K)
+    bytes-out: 15394 (15.033K)
+
+  network-interface
+    number: 1
+    emulation: virtio-net
+    virtual-switch: jd-nosuchsw
+    fixed-mac-address: 58:9c:fc:06:50:02
+    fixed-device: -
+    active-device: tap1
+    desc: vmnet/jd-cap-made/1/jd-nosuchsw
+    mtu: 1500
+    bridge: -
+    bytes-in: 0 (0.000B)
+    bytes-out: 164 (164.000B)
+
+  virtual-disk
+    number: 0
+    device-type: sparse-zvol
+    emulation: virtio-blk
+    options: -
+    system-path: /dev/zvol/tank/vm/jd-cap-made/disk0
+    bytes-size: 8589934592 (8.000G)
+    bytes-used: 568287232 (541.960M)
+
+  virtual-disk
+    number: 1
+    device-type: file
+    emulation: ahci-cd
+    options: -
+    system-path: /vm/jd-cap-made/seed.iso
+    bytes-size: 358400 (350.000K)
+    bytes-used: 25600 (25.000K)
+

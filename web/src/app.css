@@ -228,7 +228,8 @@ code {
   font-size: 0.85rem;
 }
 
-label {
+label,
+legend {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-muted);
@@ -237,7 +238,8 @@ label {
 }
 
 select,
-input {
+input,
+textarea {
   font: inherit;
   color: var(--text-strong);
   background: var(--surface);

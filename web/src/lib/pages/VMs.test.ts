@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
-import type { Detail, Listing, OperationResult, VMOperation } from '../stores/vms.svelte'
+import type { CreateRequest, Detail, Listing, OperationResult, VM as Guest, VMOperation } from '../stores/vms.svelte'
 import { ApiError } from '../services/api'
 import VMs from './VMs.svelte'
 import VM from './VM.svelte'
@@ -26,12 +26,39 @@ vi.mock('../stores/vms.svelte', async (original) => ({
         if (answer instanceof Error) throw answer
         return answer
     }),
+    createVM: vi.fn(async (req: CreateRequest) => {
+        const made: Guest = { name: req.name, datastore: 'default', loader: 'uefi', state: 'running', autostart: false }
+        listing.vms.push(made)
+        return { ...made, image: req.image }
+    }),
+    destroyVM: vi.fn(async (name: string) => {
+        destroyed.push(name)
+        if (destroyAnswer) throw destroyAnswer
+        return { name }
+    }),
 }))
 
+let destroyed: string[]
+let destroyAnswer: Error | null
+const navigated: string[] = []
+vi.mock('../router.svelte', async (original) => ({
+    ...(await original<typeof import('../router.svelte')>()),
+    navigate: vi.fn((to: string) => { navigated.push(to) }),
+}))
+
+// The images panel has its own tests; here it only has to answer.
+const listImages = vi.fn(async () => ({
+    vm_bhyve: 'ready', dataset: 'tank/vm/.images', sources: [],
+    images: [{ name: 'debian-13', source: 'debian-13', ready: true, state: 'ready', size: 3221225472, guests: [] }],
+}))
+vi.mock('../stores/vmImages.svelte', () => ({ listImages: () => listImages() }))
+
 const asked: string[][] = []
+const typed: (string | undefined)[] = []
 vi.mock('../stores/confirm.svelte', () => ({
-    ask: vi.fn(async (c: { title: string, lines?: string[] }) => {
+    ask: vi.fn(async (c: { title: string, lines?: string[], typed?: string }) => {
         asked.push([c.title, ...(c.lines ?? [])])
+        typed.push(c.typed)
         return confirmed
     }),
 }))
@@ -59,18 +86,23 @@ beforeEach(() => {
             running,
             { name: 'jd-cap-stopped', datastore: 'default', loader: 'uefi', state: 'stopped', autostart: false },
         ],
+        switches: ['jd-capsw'],
     }
     detail = running
     operated = []
     answer = { name: 'jd-cap-running', datastore: 'default', state: 'stopped', autostart: true }
     confirmed = true
     asked.length = 0
+    typed.length = 0
+    destroyed = []
+    destroyAnswer = null
+    navigated.length = 0
 })
 
 describe('the virtual machines page', () => {
     // The common case, and not an error.
     it('says vm-bhyve is not installed without alarm, and points at Host Setup', async () => {
-        listing = { vm_bhyve: 'not_installed', vms: [] }
+        listing = { vm_bhyve: 'not_installed', vms: [], switches: [] }
         render(VMs)
         expect(await screen.findByText(/vm-bhyve is not installed/)).toBeTruthy()
         expect(screen.getByRole('link', { name: 'Host Setup' }).getAttribute('href')).toBe('/host')
@@ -79,14 +111,27 @@ describe('the virtual machines page', () => {
     })
 
     it("gives vm-bhyve's own words when it is not configured", async () => {
-        listing = { vm_bhyve: 'not_configured', problem: '$vm_enable is not enabled in /etc/rc.conf!', vms: [] }
+        listing = { vm_bhyve: 'not_configured', problem: '$vm_enable is not enabled in /etc/rc.conf!', vms: [], switches: [] }
         render(VMs)
         expect(await screen.findByText('$vm_enable is not enabled in /etc/rc.conf!')).toBeTruthy()
         expect(screen.queryByRole('alert')).toBeNull()
     })
 
+    it('shows the images panel only once vm-bhyve is ready', async () => {
+        listing = { vm_bhyve: 'not_installed', vms: [], switches: [] }
+        const { unmount } = render(VMs)
+        await screen.findByText(/vm-bhyve is not installed/)
+        expect(screen.queryByRole('heading', { name: 'Images' })).toBeNull()
+        unmount()
+
+        listing = { vm_bhyve: 'ready', vms: [], switches: [] }
+        render(VMs)
+        expect(await screen.findByRole('heading', { name: 'Images' })).toBeTruthy()
+        expect(screen.getByRole('heading', { name: 'Guests' })).toBeTruthy()
+    })
+
     it('says a ready vm-bhyve with no guests has none', async () => {
-        listing = { vm_bhyve: 'ready', vms: [] }
+        listing = { vm_bhyve: 'ready', vms: [], switches: [] }
         render(VMs)
         expect(await screen.findByText(/has no guests/)).toBeTruthy()
     })
@@ -208,5 +253,54 @@ describe('starting and stopping a guest', () => {
         detail = { ...running, state: 'stopped', pid: undefined, consoles: undefined, memory_resident: undefined }
         await fireEvent.click(stop)
         expect(await screen.findByText(/None while the guest is not running/)).toBeTruthy()
+    })
+})
+
+describe('creating and destroying a guest', () => {
+    it('makes one from the form, says so, and reads the guests and the images again', async () => {
+        render(VMs)
+        await fireEvent.click(await screen.findByRole('button', { name: 'Create a VM' }))
+        await fireEvent.input(await screen.findByLabelText('Name'), { target: { value: 'jd-live-web' } })
+        const imagesBefore = listImages.mock.calls.length
+        await fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+        expect(await screen.findByText(/jd-live-web was made from debian-13 and is running/)).toBeTruthy()
+        expect(screen.getByRole('link', { name: 'jd-live-web' })).toBeTruthy()
+        expect(screen.queryByRole('form', { name: 'Create a virtual machine' })).toBeNull()
+        await waitFor(() => expect(listImages.mock.calls.length).toBeGreaterThan(imagesBefore))
+    })
+
+    it('offers Destroy only for a stopped guest', async () => {
+        render(VM, { name: 'jd-cap-running' })
+        await screen.findByRole('heading', { name: 'jd-cap-running' })
+        expect(screen.queryByRole('button', { name: 'Destroy' })).toBeNull()
+    })
+
+    it('asks for the name typed, destroys it and goes back to the list', async () => {
+        detail = { ...running, state: 'stopped', pid: undefined }
+        render(VM, { name: 'jd-cap-running' })
+        await fireEvent.click(await screen.findByRole('button', { name: 'Destroy' }))
+        await waitFor(() => expect(destroyed).toEqual(['jd-cap-running']))
+        expect(asked[0][0]).toBe('Destroy jd-cap-running?')
+        expect(typed[0]).toBe('jd-cap-running')
+        expect(navigated).toEqual(['/vms'])
+    })
+
+    it('destroys nothing when not confirmed', async () => {
+        detail = { ...running, state: 'stopped', pid: undefined }
+        confirmed = false
+        render(VM, { name: 'jd-cap-running' })
+        await fireEvent.click(await screen.findByRole('button', { name: 'Destroy' }))
+        await waitFor(() => expect(asked.length).toBe(1))
+        expect(destroyed).toEqual([])
+        expect(navigated).toEqual([])
+    })
+
+    it("shows the server's refusal and stays", async () => {
+        detail = { ...running, state: 'stopped', pid: undefined }
+        destroyAnswer = new ApiError(409, '"jd-cap-running" is running; stop it first')
+        render(VM, { name: 'jd-cap-running' })
+        await fireEvent.click(await screen.findByRole('button', { name: 'Destroy' }))
+        expect((await screen.findByRole('alert')).textContent).toContain('stop it first')
+        expect(navigated).toEqual([])
     })
 })

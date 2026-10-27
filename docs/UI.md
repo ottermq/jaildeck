@@ -182,6 +182,18 @@ A guest's page has its configuration (with resident memory beside the configured
 
 **Stop and Restart ask first, and the question is the deadline:** the guest gets the power button and a minute, and after that it is powered off and loses what it had not written. Start does not ask — nothing is lost by starting. A stop that came to a poweroff (`forced`) says so under the row, in amber, and a failure says vm-bhyve's words in red. Either way the page reads vm-bhyve again afterwards, because a failed operation can still have changed the guest.
 
+**Images** are a second panel under the guests, shown once vm-bhyve is ready (JD-037): each image's state, the source it was written from with the first twelve characters of its build's SHA-512 (the whole one on hover), its disk size, what it costs the pool, and the guests cloned from it, linked to their pages. A panel rather than a page of its own, because `/vms/images` would be the page of a guest called `images`. A datastore that cannot hold images — not on ZFS — gets amber and the server's reason, and no Prepare button.
+
+**Preparing** is a form with the source and a name that starts as the source's own. The hint says what will happen: the URL to be downloaded and checked, or, when the source's archive is already on the host, that this is only a write. The panel then polls every two seconds while anything is running and stops when nothing is, as Templates does (JD-008). **It says how the work it started came out**: "ready", or, in amber, that the image stopped before it was ready and at which state, with a link to Operations, where the failed stage's audit entry says why. Without that, a failed write looked exactly like a successful start until someone noticed the grey badge — the screenshots showed it.
+
+**Removing** asks for the name typed, as removing a template does. The refusal for an image a guest uses comes back naming the guest and is shown under the image's row.
+
+**Create a VM** sits beside the Guests heading once vm-bhyve is ready (JD-038). The form offers only ready images, with the image's size as the disk's placeholder and the floor the hint names. **Network** is a choice of vm-bhyve's switches — the listing now carries them — or "no network"; with no switches at all, the hint says a guest made now has none and that switches are the operator's. With a switch, the address is DHCP or static, and static opens address, gateway and nameservers. SSH keys are one per line, and the hint says plainly that **without one the guest is reachable only on its console**: a cloud image has no password. Start is ticked by default. A refusal stays in the form; success closes it, says what was made and that a cloud image takes about twenty seconds to boot, and reads both the guests and the images panel again, since the image now has a guest.
+
+**Destroy** is on a guest's page, beside Start, **only while it is stopped or suspended** — stopping is its own decision with its own deadline — and asks for the name typed, saying the disk and everything on it go and the image does not. Done, it goes back to the list; refused, it says why and stays.
+
+Checked against the real host as well as the fake: on isengard through an SSH tunnel, a guest created from the form was reached over SSH on the address typed into it, then stopped and destroyed from its page.
+
 No polling: a guest changes when someone starts or stops it, and the page re-reads after its own operations.
 
 ### Logs page

@@ -277,7 +277,83 @@ byte-identical. It refuses to run where a `jd-cap-*` guest or its template exist
 - **A guest with no OS answers the power button at once,** even in its first second
   (`vm_life_after_stop_early`). JD-019's guest that ignored it had an OS still booting.
   None could be made without an image, so the poweroff fallback is tested against a
-  scripted vm-bhyve.
+  scripted vm-bhyve. *JD-037's capture, below, then made one.*
+
+## VM image templates (JD-037)
+
+Two scripts, both run 2026-10-26 on isengard into `isengard-induced/`.
+
+`capture-vm-images-induced.sh`, prefix `vm_img_`, **downloads Debian 13's genericcloud
+image (217 MiB)**, checks it against Debian's `SHA512SUMS`, writes its `disk.raw` into a
+zvol under `tank/vm/.images` and snapshots it. It then makes a guest, `jd-cap-img`, whose
+`disk0` is a clone of that snapshot grown to 8G, with a cloud-init seed that powers it off
+after its first boot, and stops it three more times. It also makes one clone in GEOM's
+default mode, to record what that does. Everything is destroyed afterwards, the datasets
+are as they were and `rc.conf` is byte-identical. It refuses to run where `.images`, a
+`jd-cap-*` guest, its template or its download directory exists. It was run twice; the
+first run, without `volmode=dev`, is the one that found the GEOM hold, and these are the
+second's captures.
+
+`capture-vm-image-list-induced.sh`, prefix `vm_imgls_`, downloads nothing. It makes
+`.images` and two 64 MiB zvols standing in for images, one sealed and cloned for a guest's
+disk and one never sealed, and reads them with **the exact commands the adapter runs**, so
+the adapter's tests replay them by command line.
+
+**What that settled:**
+
+- **A clone grown past its image, in GEOM's default `volmode`, is held by the kernel.**
+  `kern.geom.part.auto_resize` moves the backup GPT header and keeps the disk open for
+  exclusive write until `gpart commit` or `gpart undo` (`vm_img_geom_clone_held`: the
+  consumer is `r1w1e1`, and dmesg says so). `zfs destroy` is then "dataset is busy"
+  (`vm_img_geom_destroy_held`), and a guest on it found nothing to boot. `volmode=dev`
+  keeps GEOM out (`vm_img_gpart` has no geom at all).
+- **tar can write the disk straight into the zvol.** `vm_img_write` is the one `dd` pipeline
+  the capture used; Jail Deck runs `tar -xOf` with its output pointed at the device, which
+  was checked byte for byte with a synthetic archive, not captured here.
+- **`zfs clone -o volsize=` grows the clone in one step** (`vm_img_clone`, `vm_img_clone_props`:
+  56 KiB used), and the guest grows its own partition into it on first boot: the GPT
+  backup header moves from sector 6291455 to 16777215 (`vm_img_clone_gpt_before`,
+  `vm_img_clone_gpt_after`). `vm_img_boot1_console` is the serial console's milestones,
+  filtered from 210 KB of escape sequences.
+- **`vm create -C` writes the seed at the first start**, not at create time
+  (`vm_img_guest_info` cannot find it yet; `vm_img_boot1_log` says it was made).
+- **A Debian guest booting with no network ignores the power button** at 10 s and at 60 s,
+  for the whole 70 s watched (`vm_img_after_stop_booting_10s`, `vm_img_after_stop_booted`
+  — the second is misnamed: at 60 s it was still booting, which took 141 s). At 3 s, in the
+  firmware or GRUB, it went off at once (`vm_img_after_stop_booting_3s`).
+- **`Locked (isengard)` is a state vm-bhyve shows for a second** while a guest powers
+  itself off, with bhyve gone and vm-run still exiting (`vm_img_boot1`, at 136 s).
+- **zfs refuses to destroy an image with a clone** (`vm_img_destroy_snapshot_in_use`,
+  `vm_imgls_destroy_in_use`); `vm destroy` of the guest takes the clone and frees it
+  (`vm_img_after_guest_destroy`).
+
+## Creating a guest from an image (JD-038)
+
+`capture-vm-create-induced.sh`, run 2026-10-26 on isengard into `isengard-induced/` with the
+prefix `vm_mk_`, uses the image `tank/vm/.images/debian-13`, which it needs to exist and leaves
+alone. It makes a throwaway switch, `jd-capsw`, with the host at 10.77.0.1/24 on it, and one
+guest, `jd-cap-made`, the way Jail Deck does: `vm create` from a UEFI template with no NIC and a
+cloud-init seed holding a throwaway SSH key and 10.77.0.10/24, `vm add` of a NIC on the switch,
+and disk0 replaced by a `volmode=dev` clone of the image at 8G. It boots it, reaches it over
+SSH from the host, stops it, boots it again, and destroys it, the switch and the template.
+Datasets were as before, and `system.conf` and `rc.conf` byte-identical. The key pair lived in
+a directory the script removed; only the public key is in the captures, in the seed.
+
+**What that settled:**
+
+- **The NIC `vm add` makes is network0, with the MAC `vm create` generated**
+  (`vm_mk_conf_created`, `vm_mk_conf_networked`), which is the MAC the seed's network-config
+  matches (`vm_mk_seed_files`). Inside, `eth0` had the seed's address and route
+  (`vm_mk_inside`), and the root filesystem had grown into the 8G clone.
+- **`vm add -d network` takes a switch that does not exist** (`vm_mk_add_network_nosuch`,
+  exit 0) and the guest then runs with a tap on no bridge (`vm_mk_info_running`, network 1).
+- **SSH answered 18 s after `vm start`** (`vm_mk_reach`), and 13 s on a second boot
+  (`vm_mk_reach_again`). A booted guest on a network obeyed the power button in 3 seconds
+  (`vm_mk_after_stop_booted`).
+- **vm-bhyve's refusals:** a name taken (`vm_mk_create_taken`), a netconfig key it does not know
+  (`vm_mk_create_badnet`), destroying a running guest (`vm_mk_destroy_running`: exit 1,
+  "appears to be running on isengard (locked)").
+- **`vm destroy` takes the clone and frees the image** (`vm_mk_after_destroy`).
 
 ## Disk health (#83)
 

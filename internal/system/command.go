@@ -28,6 +28,13 @@ type Command struct {
 	// supervisor into its own process group, measured, and killing that
 	// group would power the guest off (JD-019, JD-036).
 	Detach bool
+	// StdoutFile sends the command's standard output into this file instead
+	// of keeping it, which leaves Stdout empty. The file must already exist:
+	// it is opened for writing and never created or truncated. For a command
+	// whose output is the point, and too large to hold -- `tar -xO` writing a
+	// VM image's disk into its zvol (JD-037). The command writes to it
+	// directly, with no copy through Jail Deck.
+	StdoutFile string
 }
 
 func (c Command) String() string {
@@ -36,6 +43,10 @@ func (c Command) String() string {
 	for _, arg := range c.Args {
 		sb.WriteString(" ")
 		sb.WriteString(arg)
+	}
+	if c.StdoutFile != "" {
+		sb.WriteString(" > ")
+		sb.WriteString(c.StdoutFile)
 	}
 	return sb.String()
 }

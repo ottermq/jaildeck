@@ -1,0 +1,3 @@
+cannot destroy 'tank/vm/.images/jd-cap-debian13': volume has children
+use '-r' to destroy the following datasets:
+tank/vm/.images/jd-cap-debian13@base

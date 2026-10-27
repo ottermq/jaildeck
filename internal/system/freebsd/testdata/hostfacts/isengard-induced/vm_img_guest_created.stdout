@@ -1,0 +1,19 @@
+tank/vm/jd-cap-img	filesystem	-	167936	-
+tank/vm/jd-cap-img/disk0	volume	8589934592	57344	-
+total 15
+drwxr-xr-x  3 root wheel   5 Oct 26 16:28 .
+drwxr-xr-x  8 root wheel   8 Oct 26 16:28 ..
+drwxr-xr-x  2 root wheel   4 Oct 26 16:28 .cloud-init
+-rw-r--r--  1 root wheel 234 Oct 26 16:28 jd-cap-img.conf
+-rw-r--r--  1 root wheel  66 Oct 26 16:28 vm-bhyve.log
+loader="uefi"
+cpu=1
+memory=1G
+disk0_type="virtio-blk"
+disk0_name="disk0"
+disk0_dev="sparse-zvol"
+uuid="744cf6fb-d173-11f1-b463-e80688cecc46"
+network0_mac="58:9c:fc:08:46:e9"
+disk1_type="ahci-cd"
+disk1_name="seed.iso"
+disk1_dev="file"

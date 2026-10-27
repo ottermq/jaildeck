@@ -49,6 +49,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Virtual Machines, begun** (v0.13.0): JD-019 locked on vm-bhyve after a spike, and Host Setup reports vm-bhyve and its UEFI firmware. The same release fixed disk health, which had never worked under rc's `PATH` (#95)
 - **VMs listed** (v0.14.0): vm-bhyve's guests and their state, in the API and on a VMs page, read-only (JD-035)
 - **VMs started and stopped** (v0.15.0): start, stop and restart, confirmed in `vm list`, with a stop that powers off a guest ignoring the button and says so (JD-036)
+- **Virtual Machines** (v0.16.0): image templates from a cloud image, and guests created from them with cloud-init, a NIC on the operator's switch and a cloned disk, then destroyed — from the API and the interface (JD-037, JD-038). The milestone is done
 
 ---
 
@@ -408,7 +409,7 @@ Jail Deck can be installed on FreeBSD in a repeatable way and run as a service.
 
 ## Milestone: Virtual Machines
 
-**Status:** begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, and since v0.15.0 started, stopped and restarted, through the API and on the VMs pages (JD-035, JD-036). Creating and destroying a VM are ahead, and need image templates first.
+**Status:** done in v0.16.0, begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, and since v0.15.0 started, stopped and restarted, through the API and on the VMs pages (JD-035, JD-036). Image templates can be prepared through the API and on the VMs page (JD-037), and a guest created from one and destroyed, through the API and on the VMs pages (JD-038). **The completion criterion is met**, checked on isengard on 2026-10-26 through the interface itself: a Debian guest created from the form, reached over SSH on its static address, stopped and destroyed. Left for later: `cpuset`, an idempotent `PUT`, and a serial console through the API.
 
 **Depends on:** Host Setup (UG check), Storage Writes (zvols), Jail Provisioning (the patterns VMs mirror). **★ Otter Cloud:** Linux VMs, after its first beta.
 
@@ -417,8 +418,8 @@ Goal: a `vms` domain mirroring jails (JD-019).
 ### Capabilities
 
 - list and inspect VMs
-- create from an image template, with CPU and memory sizing, cpuset, a zvol disk and a cloud-init seed
-- start, stop, restart, destroy (`confirm=<name>`). *Start, stop and restart built 2026-10-26 (JD-036): `vm start` detached into a session of its own, every step confirmed in `vm list`, and a stop that powers off a guest ignoring the button for 60 seconds and says `forced`.*
+- create from an image template, with CPU and memory sizing, cpuset, a zvol disk and a cloud-init seed. *Built 2026-10-26 (JD-038), cpuset aside: `POST /api/vms`, `vm create` from Jail Deck's UEFI template with a seed carrying SSH keys and a static address, a NIC added on the operator's switch — checked to exist, because vm-bhyve does not — and disk0 replaced by a `volmode=dev` clone of the image. A step that fails destroys the guest again. Measured: reachable over SSH 16–18 s after it starts.*
+- start, stop, restart, destroy (`confirm=<name>`). *Destroy built 2026-10-26 (JD-038): stopped guests only, `vm destroy -f`, the disk clone with it.* *Start, stop and restart built 2026-10-26 (JD-036): `vm start` detached into a session of its own, every step confirmed in `vm list`, and a stop that powers off a guest ignoring the button for 60 seconds and says `forced`.*
 - a tap on the configured bridge, as VNET jails use
 - serial console through the API, later
 
@@ -427,12 +428,12 @@ Goal: a `vms` domain mirroring jails (JD-019).
 - ~~**spike first:** `vm-bhyve` against direct `bhyve(8)` + `bhyvectl` + `daemon(8)`, then record the choice in JD-019. libvirt is rejected~~ *Done 2026-10-25 (#17): **`vm-bhyve`**. Measured on isengard, both ways, with the same Debian cloud image: everything direct bhyve would make Jail Deck own — restarting on a guest reboot, destroying the instance, tap lifecycle, a stop that can force — `vm-bhyve` already does, and it is actively maintained under `freebsd/vm-bhyve`. The constraints it brings are in JD-019: `vm start` must be detached by Jail Deck, and `vm_enable` and `vm_dir` are the operator's.*
 - Host Setup reports what the VMs capability needs beyond the CPU: vm-bhyve configured and answering, and edk2-bhyve's UEFI firmware. *Built 2026-10-26: `vm list` is the probe, because vm-bhyve names each misconfiguration in its own words, measured in every state from not installed to initialised. Its remedy for a missing `vm_dir` carries `-o mountpoint=`: on a pool whose root is `mountpoint=none`, as isengard's `tank` is, a plain `zfs create` makes a dataset vm-bhyve cannot use.*
 - cloud-init seed ISO with `makefs -t cd9660 -o rockridge -o label=cidata`
-- image templates as ZFS datasets or zvols, following the release-template pattern
+- ~~image templates as ZFS datasets or zvols, following the release-template pattern~~ *Built 2026-10-26 (JD-037): `PUT /api/vm-images/{name}` with a source from a catalog (Debian 13's genericcloud to start), fetched and checked against the publisher's SHA512SUMS, `disk.raw` written by `tar -xO` straight into a sparse zvol under `<datastore>/.images`, sealed with `@base`. **Every image and every clone of one is `volmode=dev`**: measured, a clone grown past its image in GEOM's default mode is held open by the kernel's GPT auto-resize, and the guest on it does not boot. A guest's disk will be `vm create`'s `disk0` replaced by a clone of `@base`, which `vm destroy` takes away with it — measured, ahead of building it. The VMs page has them as a second panel, which says how a preparation it started came out.*
 - VM state derived from the system (process, `/dev/vmm`, the VM's datasets), never stored (JD-011). *Listing built 2026-10-26 (JD-035): `GET /api/vms` and `GET /api/vms/{name}`, from `vm list` and `vm info`, read on every request. vm-bhyve decides "running" by its bhyve process, so `/dev/vmm` is not read separately. The port has no method that changes a guest.*
 
 ### Completion criteria
 
-A Linux VM can be created from an image with cloud-init, reached over the bridge, stopped and destroyed from the API and the UI.
+A Linux VM can be created from an image with cloud-init, reached over the bridge, stopped and destroyed from the API and the UI. *Met 2026-10-26: API in #109, interface in the PR after it.*
 
 ---
 

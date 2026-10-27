@@ -3,6 +3,7 @@ package vms
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -16,14 +17,16 @@ import (
 // stops them (JD-036).
 type Service struct {
 	system VMSystem
+	// images is where a created guest's disk comes from (JD-038).
+	images ImageCatalog
 	audit  audit.Logger
 	// wait is how the lifecycle waits between looks at vm-bhyve's listing.
 	// A field so that the tests do not spend a minute watching a fake.
 	wait func(context.Context, time.Duration)
 }
 
-func NewService(system VMSystem, auditLogger audit.Logger) *Service {
-	return &Service{system: system, audit: auditLogger, wait: sleep}
+func NewService(system VMSystem, images ImageCatalog, auditLogger audit.Logger) *Service {
+	return &Service{system: system, images: images, audit: auditLogger, wait: sleep}
 }
 
 func sleep(ctx context.Context, d time.Duration) {
@@ -52,6 +55,16 @@ func (s *Service) List(ctx context.Context) (Listing, error) {
 	}
 	if listing.VMs == nil {
 		listing.VMs = make([]VM, 0)
+	}
+	listing.Switches = make([]string, 0)
+	if listing.VMBhyve == VMBhyveReady {
+		// A failure here costs the switches and nothing else: the guests are
+		// what the listing is for, and a create checks the switch again.
+		if switches, err := s.system.VMSwitches(ctx); err != nil {
+			common.Logger(ctx, "vms").Warn("could not read vm-bhyve's switches", slog.Any("err", err))
+		} else if switches != nil {
+			listing.Switches = switches
+		}
 	}
 	return listing, nil
 }

@@ -7,6 +7,9 @@ import { ApiError } from '../services/api'
 import { normalizeEmptyValue } from '../utils'
 import { stateBadge } from '../vmState'
 import VMActions from '../components/VMActions.svelte'
+import VMImages from '../components/VMImages.svelte'
+import NewVM from '../components/NewVM.svelte'
+import type { Created } from '../stores/vms.svelte'
 import type { OperationResult } from '../stores/vms.svelte'
 
 let listing = $state<Listing | null>(null)
@@ -46,6 +49,23 @@ function forcedNote(name: string): string {
     return `${name} did not answer the power button within a minute and was powered off.`
 }
 
+// ---- creating ----------------------------------------------------------
+
+let creating = $state(false)
+let createdNote = $state('')
+// The images panel reads its own listing on mount; a guest made or destroyed
+// changes which guests an image is the disk of, so it is mounted again.
+let imagesKey = $state(0)
+
+async function created(vm: Created) {
+    creating = false
+    createdNote = vm.state === 'running'
+        ? `${vm.name} was made from ${vm.image} and is running. A cloud image takes about twenty seconds to boot.`
+        : `${vm.name} was made from ${vm.image}.`
+    imagesKey++
+    await load()
+}
+
 function href(name: string): string {
     return `/vms/${encodeURIComponent(name)}`
 }
@@ -75,9 +95,21 @@ function href(name: string): string {
         <code>{listing.problem}</code>
         <p><a href="/host" onclick={(e) => onNavClick(e, '/host')}>Host Setup</a> has the remedy.</p>
     </div>
-{:else if listing.vms.length === 0}
-    <p class="notice">vm-bhyve is ready, and has no guests.</p>
 {:else}
+    <div class="section-head">
+        <h2>Guests</h2>
+        <button type="button" class="btn btn--small" onclick={() => { creating = true; createdNote = '' }}
+                disabled={creating}>Create a VM</button>
+    </div>
+    {#if createdNote}
+        <p class="notice" aria-live="polite">{createdNote}</p>
+    {/if}
+    {#if creating}
+        <NewVM switches={listing.switches} oncreated={created} oncancel={() => (creating = false)} />
+    {/if}
+    {#if listing.vms.length === 0}
+        <p class="notice">vm-bhyve is ready, and has no guests.</p>
+    {:else}
     <div class="table-wrap">
         <table>
             <thead>
@@ -118,9 +150,28 @@ function href(name: string): string {
             </tbody>
         </table>
     </div>
+    {/if}
+{/if}
+
+{#if listing?.vm_bhyve === 'ready'}
+    {#key imagesKey}
+        <VMImages />
+    {/key}
 {/if}
 
 <style>
+.section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-bottom: var(--space-3);
+}
+
+.notice {
+    margin-bottom: var(--space-3);
+}
+
 .name {
     font-weight: 600;
     color: var(--text-strong);

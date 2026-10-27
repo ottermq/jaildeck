@@ -1,7 +1,8 @@
 <script lang="ts">
 import { onMount } from 'svelte'
-import { onNavClick } from '../router.svelte'
-import { getVM } from '../stores/vms.svelte'
+import { navigate, onNavClick } from '../router.svelte'
+import { destroyVM, getVM } from '../stores/vms.svelte'
+import { ask } from '../stores/confirm.svelte'
 import type { Detail } from '../stores/vms.svelte'
 import { ApiError } from '../services/api'
 import { formatBytes, normalizeEmptyValue } from '../utils'
@@ -41,6 +42,41 @@ async function done(outcome: { result?: OperationResult, error?: string }) {
     await load()
 }
 
+// ---- destroying ----------------------------------------------------------
+//
+// Only a stopped guest: stopping is its own decision, with its own deadline
+// (JD-036), and the server refuses a running one anyway (JD-038).
+let destroyable = $derived(vm?.state === 'stopped' || vm?.state === 'suspended')
+let destroying = $state(false)
+
+async function destroy() {
+    if (!vm || destroying) return
+    const confirmed = await ask({
+        title: `Destroy ${vm.name}?`,
+        lines: [
+            'Its disk is destroyed with it, and everything on it: what the guest wrote since it was created is gone.',
+            'The image it was made from is not touched.',
+        ],
+        verb: 'Destroy',
+        typed: vm.name,
+    })
+    if (!confirmed) return
+    destroying = true
+    note = null
+    try {
+        await destroyVM(vm.name)
+        navigate('/vms')
+    } catch (err) {
+        note = {
+            text: err instanceof ApiError ? err.statusText ?? `Could not destroy ${name}` : 'Could not reach Jail Deck',
+            kind: 'error',
+        }
+        await load()
+    } finally {
+        destroying = false
+    }
+}
+
 let consoles = $derived(Object.entries(vm?.consoles ?? {}).sort(([a], [b]) => a.localeCompare(b)))
 
 function bytes(n: number | undefined): string {
@@ -72,7 +108,14 @@ function bytes(n: number | undefined): string {
             <span>{vm.autostart ? `starts at boot, #${vm.autostart_order} in vm_list` : 'not started at boot'}</span>
         </p>
         </div>
-        <VMActions {vm} ondone={done} />
+        <div class="head-actions">
+            <VMActions {vm} ondone={done} />
+            {#if destroyable}
+                <button type="button" class="btn btn--small btn--danger" onclick={destroy} disabled={destroying}>
+                    {destroying ? 'Destroying…' : 'Destroy'}
+                </button>
+            {/if}
+        </div>
     </header>
 
     {#if note}
@@ -224,6 +267,12 @@ function bytes(n: number | undefined): string {
     justify-content: space-between;
     gap: var(--space-4);
     flex-wrap: wrap;
+}
+
+.head-actions {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
 }
 
 .notice--warn {

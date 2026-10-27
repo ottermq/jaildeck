@@ -50,6 +50,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **VMs listed** (v0.14.0): vm-bhyve's guests and their state, in the API and on a VMs page, read-only (JD-035)
 - **VMs started and stopped** (v0.15.0): start, stop and restart, confirmed in `vm list`, with a stop that powers off a guest ignoring the button and says so (JD-036)
 - **Virtual Machines** (v0.16.0): image templates from a cloud image, and guests created from them with cloud-init, a NIC on the operator's switch and a cloned disk, then destroyed — from the API and the interface (JD-037, JD-038). The milestone is done
+- **Packaging, second half** (v0.16.1): releases built and attested in CI, and published into a signed `pkg` repository by a host that verifies the attestation (JD-039)
 
 ---
 
@@ -374,8 +375,11 @@ The loaded PF policy and its counters are visible in the API and the UI, and not
 
 ## Milestone: Packaging and Distribution
 
-**Status:** the first half is done in v0.11.0 (#84). Package repositories, a port and
-automated publishing are what remain.
+**Status:** the first half is done in v0.11.0 (#84). The second is built (#113, JD-039): CI
+builds and attests each release's package, and a host of the owner's pulls it, verifies the
+attestation and publishes it into a signed `pkg` repository, so hosts install and upgrade with
+`pkg` alone. It is proven end to end by the first release that goes out this way. A FreeBSD
+port remains, if the official ports tree ever becomes a goal.
 
 **Local native packaging:** `make package VERSION=X.Y.Z` builds and verifies a FreeBSD 15
 amd64 package through `pkg create`, reusing `make install` staging. See

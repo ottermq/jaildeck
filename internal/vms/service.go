@@ -16,14 +16,16 @@ import (
 // stops them (JD-036).
 type Service struct {
 	system VMSystem
+	// images is where a created guest's disk comes from (JD-038).
+	images ImageCatalog
 	audit  audit.Logger
 	// wait is how the lifecycle waits between looks at vm-bhyve's listing.
 	// A field so that the tests do not spend a minute watching a fake.
 	wait func(context.Context, time.Duration)
 }
 
-func NewService(system VMSystem, auditLogger audit.Logger) *Service {
-	return &Service{system: system, audit: auditLogger, wait: sleep}
+func NewService(system VMSystem, images ImageCatalog, auditLogger audit.Logger) *Service {
+	return &Service{system: system, images: images, audit: auditLogger, wait: sleep}
 }
 
 func sleep(ctx context.Context, d time.Duration) {

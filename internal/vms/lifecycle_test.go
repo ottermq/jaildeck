@@ -17,6 +17,7 @@ import (
 // in on each look, the last one repeating, and what each lifecycle command
 // answers. Every command run and every audit entry is recorded.
 type guestScript struct {
+	noCreation
 	states   []string
 	looks    int
 	startErr error
@@ -75,7 +76,7 @@ func (a *auditRecorder) summary() []string {
 // counted, in seconds of the guest's time.
 func lifecycle(g *guestScript) (*Service, *auditRecorder, *time.Duration) {
 	rec := &auditRecorder{}
-	s := NewService(g, rec)
+	s := NewService(g, nil, rec)
 	waited := new(time.Duration)
 	s.wait = func(_ context.Context, d time.Duration) { *waited += d }
 	return s, rec, waited

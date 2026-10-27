@@ -2,6 +2,9 @@ package fake
 
 import (
 	"context"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/ottermq/jaildeck/internal/vms"
@@ -22,6 +25,17 @@ type VMs struct {
 	running map[string]bool
 	nextPID int
 	pids    map[string]int
+	// made are guests created here, and gone the seeded ones destroyed.
+	made map[string]*madeVM
+	gone map[string]bool
+}
+
+// madeVM is what the fake keeps of a guest it created.
+type madeVM struct {
+	spec   vms.CreateSpec
+	sw     string
+	disk   int64
+	origin string
 }
 
 func NewVMs() *VMs {
@@ -29,17 +43,30 @@ func NewVMs() *VMs {
 		running: map[string]bool{"jd-cap-running": true},
 		pids:    map[string]int{"jd-cap-running": 16783},
 		nextPID: 20000,
+		made:    map[string]*madeVM{},
+		gone:    map[string]bool{},
 	}
 }
 
 func (f *VMs) VMList(context.Context) (vms.Listing, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	guests := []vms.VM{
+	seeded := []vms.VM{
 		{Name: "jd-cap-running", Datastore: "default", Loader: "uefi", CPU: "2", Memory: "512M",
 			Autostart: true, AutostartOrder: 1},
 		{Name: "jd-cap-stopped", Datastore: "default", Loader: "uefi", CPU: "1", Memory: "256M"},
 	}
+	guests := make([]vms.VM, 0, len(seeded)+len(f.made))
+	for _, vm := range seeded {
+		if !f.gone[vm.Name] {
+			guests = append(guests, vm)
+		}
+	}
+	for name, m := range f.made {
+		guests = append(guests, vms.VM{Name: name, Datastore: "default", Loader: "uefi",
+			CPU: strconv.Itoa(m.spec.CPU), Memory: m.spec.Memory})
+	}
+	slices.SortFunc(guests, func(a, b vms.VM) int { return strings.Compare(a.Name, b.Name) })
 	for i := range guests {
 		guests[i].State = vms.StateStopped
 		if f.running[guests[i].Name] {
@@ -89,6 +116,23 @@ func (f *VMs) VMInfo(ctx context.Context, name string) (vms.Info, error) {
 
 func (f *VMs) info(name string) (vms.Info, error) {
 	size, used := int64(1073741824), int64(57344)
+	f.mu.Lock()
+	m, made := f.made[name]
+	gone := f.gone[name]
+	f.mu.Unlock()
+	if gone {
+		return vms.Info{}, vms.ErrNoSuchVM
+	}
+	if made {
+		info := vms.Info{UUID: "c12b2ce4-d17f-11f1-b463-e80688cecc46", Networks: []vms.Network{},
+			Disks: []vms.Disk{{Number: 0, DeviceType: "sparse-zvol", Emulation: "virtio-blk",
+				Path: "/dev/zvol/zroot/vm/" + name + "/disk0", Size: &m.disk, Used: &used}}}
+		if m.sw != "" {
+			info.Networks = append(info.Networks, vms.Network{Number: 0, Emulation: "virtio-net",
+				Switch: m.sw, MAC: "58:9c:fc:05:52:a0", Device: "tap1", Bridge: "vm-" + m.sw})
+		}
+		return info, nil
+	}
 	switch name {
 	case "jd-cap-running":
 		resident, in, out := int64(41967616), int64(0), int64(553)
@@ -111,6 +155,51 @@ func (f *VMs) info(name string) (vms.Info, error) {
 		}, nil
 	}
 	return vms.Info{}, vms.ErrNoSuchVM
+}
+
+// VMSwitches is the one switch the seeded running guest is on.
+func (f *VMs) VMSwitches(context.Context) ([]string, error) {
+	return []string{"jd-capsw"}, nil
+}
+
+func (f *VMs) VMCreate(_ context.Context, spec vms.CreateSpec) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.made[spec.Name] = &madeVM{spec: spec}
+	delete(f.gone, spec.Name)
+	return "vm create -t jaildeck -c " + strconv.Itoa(spec.CPU) + " -m " + spec.Memory +
+		" -s " + spec.Disk + " -C " + spec.Name, nil
+}
+
+func (f *VMs) VMAddNetwork(_ context.Context, name, vmSwitch string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if m, ok := f.made[name]; ok {
+		m.sw = vmSwitch
+	}
+	return "vm add -d network -s " + vmSwitch + " " + name, nil
+}
+
+func (f *VMs) VMReplaceDisk(_ context.Context, name, snapshot string, size int64) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if m, ok := f.made[name]; ok {
+		m.disk, m.origin = size, snapshot
+	}
+	disk := "zroot/vm/" + name + "/disk0"
+	return "zfs destroy " + disk + " && zfs clone -o volmode=dev -o volsize=" +
+		strconv.FormatInt(size, 10) + " " + snapshot + " " + disk, nil
+}
+
+func (f *VMs) VMDestroy(_ context.Context, name string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.made[name]; ok {
+		delete(f.made, name)
+	} else {
+		f.gone[name] = true
+	}
+	return "vm destroy -f " + name, nil
 }
 
 var _ vms.VMSystem = (*VMs)(nil)

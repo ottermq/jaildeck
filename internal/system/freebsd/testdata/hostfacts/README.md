@@ -327,6 +327,34 @@ the adapter's tests replay them by command line.
   `vm_imgls_destroy_in_use`); `vm destroy` of the guest takes the clone and frees it
   (`vm_img_after_guest_destroy`).
 
+## Creating a guest from an image (JD-038)
+
+`capture-vm-create-induced.sh`, run 2026-10-26 on isengard into `isengard-induced/` with the
+prefix `vm_mk_`, uses the image `tank/vm/.images/debian-13`, which it needs to exist and leaves
+alone. It makes a throwaway switch, `jd-capsw`, with the host at 10.77.0.1/24 on it, and one
+guest, `jd-cap-made`, the way Jail Deck does: `vm create` from a UEFI template with no NIC and a
+cloud-init seed holding a throwaway SSH key and 10.77.0.10/24, `vm add` of a NIC on the switch,
+and disk0 replaced by a `volmode=dev` clone of the image at 8G. It boots it, reaches it over
+SSH from the host, stops it, boots it again, and destroys it, the switch and the template.
+Datasets were as before, and `system.conf` and `rc.conf` byte-identical. The key pair lived in
+a directory the script removed; only the public key is in the captures, in the seed.
+
+**What that settled:**
+
+- **The NIC `vm add` makes is network0, with the MAC `vm create` generated**
+  (`vm_mk_conf_created`, `vm_mk_conf_networked`), which is the MAC the seed's network-config
+  matches (`vm_mk_seed_files`). Inside, `eth0` had the seed's address and route
+  (`vm_mk_inside`), and the root filesystem had grown into the 8G clone.
+- **`vm add -d network` takes a switch that does not exist** (`vm_mk_add_network_nosuch`,
+  exit 0) and the guest then runs with a tap on no bridge (`vm_mk_info_running`, network 1).
+- **SSH answered 18 s after `vm start`** (`vm_mk_reach`), and 13 s on a second boot
+  (`vm_mk_reach_again`). A booted guest on a network obeyed the power button in 3 seconds
+  (`vm_mk_after_stop_booted`).
+- **vm-bhyve's refusals:** a name taken (`vm_mk_create_taken`), a netconfig key it does not know
+  (`vm_mk_create_badnet`), destroying a running guest (`vm_mk_destroy_running`: exit 1,
+  "appears to be running on isengard (locked)").
+- **`vm destroy` takes the clone and frees the image** (`vm_mk_after_destroy`).
+
 ## Disk health (#83)
 
 Captured 2026-10-25, on `isengard` and `rohan` only. `rivendell` and the VM were not

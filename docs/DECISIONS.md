@@ -1743,3 +1743,48 @@ zfs clone -o volmode=dev -o volsize=<size> <image>@base <datastore>/<guest>/disk
 
 Each stage writes its own audit entry: `fetch-image`, `write-image`, `seal-image`, and `destroy-image` for a removal. Like the template's, preparing is detached from the request and answers `202` (JD-008, which already listed "importing a VM image" among them).
 
+
+---
+
+## JD-038 — Creating a Guest From an Image: vm create, a NIC on the Operator's Switch, and a Cloned Disk
+
+**Status:** Locked — 2026-10-26. Measured on isengard, 15.1-RELEASE-p5, vm-bhyve 1.7.5, by making a guest from the kept `debian-13` image on a throwaway switch, reaching it over SSH, and destroying it (`capture-vm-create-induced.sh`); then through the API with the branch binary. vm-bhyve's `create`, `add` and cloud-init seed read in its source.
+
+`POST /api/vms` creates a guest from a VM image template (JD-037). `DELETE /api/vms/{name}?confirm=<name>` destroys a stopped one. Together with JD-036's lifecycle they are the milestone's completion criterion: a Linux VM created from an image with cloud-init, reached over the bridge, stopped and destroyed from the API.
+
+### Four steps, three of them vm-bhyve's
+
+```
+vm create -t jaildeck -c <cpu> -m <memory> -s <disk> -C [-k <keys>] [-n <netconfig>] <name>
+vm add -d network -s <switch> <name>
+zfs destroy <datastore>/<name>/disk0
+zfs clone -o volmode=dev -o volsize=<disk> <image>@base <datastore>/<name>/disk0
+```
+
+- **A template of Jail Deck's own**, `jaildeck.conf` in the datastore's `.templates`, because `vm create` needs one and vm-bhyve's `default.conf` boots with bhyveload from a file disk. UEFI, one virtio disk, **no NIC**. It is written when absent or different and is otherwise left alone; edits to it do not last.
+- **The NIC is added on the switch the request names**, with `vm add`. `vm create` has no switch option, but it does generate `network0_mac`, and the seed's `network-config` matches the NIC by that MAC (read in its source). Adding the NIC afterwards makes it `network0`, with that MAC: measured, `eth0` came up with the seed's address and default route.
+- **The disk is a clone of the image**, replacing the one `vm create` made, at the requested size and `volmode=dev` (JD-037). On first boot the guest grew its root filesystem into it: 7.8 GiB of the 8G clone in the capture, 9.7 GiB of 10G live.
+- **cloud-init carries only what vm-bhyve's own seed carries**: the image's default user with `ssh_keys`, the guest's name as its hostname, and `network` as a static address, gateway and nameservers (`-n`). Without `network` it is DHCP. A cloud image has no password, so a guest with no key is reachable only on its console.
+- **Measured:** `vm create` 2 s, the clone 1 s, **reachable over SSH 18 s after `vm start`** (16 s after the API answered, live), 13 s on a second boot. A booted guest on a network obeyed the power button in about 2 seconds.
+
+### Switches are the operator's, and checked
+
+A switch is a bridge and an entry in vm-bhyve's `system.conf`. Like the bridge VNET jails use (JD-017), it is the operator's: Jail Deck never creates one. **It does check that the named one exists**, because vm-bhyve does not: measured, `vm add -d network -s jd-nosuchsw` exited 0, and the guest started with a tap attached to no bridge and a dead NIC inside. The refusal lists the switches there are.
+
+### Checked before anything runs; undone when a step fails
+
+Everything that can be refused is refused before `vm create`: the name (vm-bhyve's own rule), CPU from 1 to 64, memory as vm-bhyve writes it (`512M`, `2G`), a disk in M, G or T **no smaller than the image**, each SSH key, each address (parsed as one, which also keeps netconfig's `;` out), that the image is ready, that the name is free and that the switch exists.
+
+**Keys are narrower than `authorized_keys` allows.** vm-bhyve writes each one into user-data as an unquoted YAML list item, `  - <key>`, so a comment holding `: ` would turn the item into a mapping and cloud-init would install no key at all. The comment is limited to letters, digits and `@._+-`.
+
+**A step that fails after `vm create` destroys the guest again**, audited as `vm-destroy`, and the error names the step. A guest without its NIC, or with the 8G empty disk `vm create` made instead of the image, is one vm-bhyve would start and that boots nothing, which is worse than no guest. If that destroy fails too, the error says the guest is still there, half made. **A start that fails leaves the guest**: it is whole, and starting it is a separate thing that can be tried again.
+
+### Destroying
+
+`vm destroy -f`, which destroys the guest's dataset recursively and its clone with it; the image's `@base` is then free (measured: `clones` back to `-`). **A running guest is refused (`409`)**, as vm-bhyve refuses it ("appears to be running on isengard (locked)", measured). Stopping is a decision with its own deadline (JD-036), and folding it into a destroy would hide the poweroff. `confirm` is the guest's name.
+
+### Not yet
+
+- `PUT /api/vms/{name}` as an idempotent ensure, as jails have (JD-016). Comparing a guest to a spec needs the seed read back, and nothing needs it yet.
+- `cpuset`, more than one NIC, a second disk, user-data beyond keys. vm-bhyve can do each; none has a consumer.
+- A DHCP guest is not measured: every measurement here gave an address.

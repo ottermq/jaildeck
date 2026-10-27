@@ -49,6 +49,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Virtual Machines, begun** (v0.13.0): JD-019 locked on vm-bhyve after a spike, and Host Setup reports vm-bhyve and its UEFI firmware. The same release fixed disk health, which had never worked under rc's `PATH` (#95)
 - **VMs listed** (v0.14.0): vm-bhyve's guests and their state, in the API and on a VMs page, read-only (JD-035)
 - **VMs started and stopped** (v0.15.0): start, stop and restart, confirmed in `vm list`, with a stop that powers off a guest ignoring the button and says so (JD-036)
+- **Virtual Machines** (v0.16.0): image templates from a cloud image, and guests created from them with cloud-init, a NIC on the operator's switch and a cloned disk, then destroyed — from the API and the interface (JD-037, JD-038). The milestone is done
 
 ---
 
@@ -408,7 +409,7 @@ Jail Deck can be installed on FreeBSD in a repeatable way and run as a service.
 
 ## Milestone: Virtual Machines
 
-**Status:** begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, and since v0.15.0 started, stopped and restarted, through the API and on the VMs pages (JD-035, JD-036). Image templates can be prepared through the API and on the VMs page (JD-037), and a guest created from one and destroyed, through the API and on the VMs pages (JD-038). **The completion criterion is met**, checked on isengard on 2026-10-26 through the interface itself: a Debian guest created from the form, reached over SSH on its static address, stopped and destroyed. Left for later: `cpuset`, an idempotent `PUT`, and a serial console through the API.
+**Status:** done in v0.16.0, begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, and since v0.15.0 started, stopped and restarted, through the API and on the VMs pages (JD-035, JD-036). Image templates can be prepared through the API and on the VMs page (JD-037), and a guest created from one and destroyed, through the API and on the VMs pages (JD-038). **The completion criterion is met**, checked on isengard on 2026-10-26 through the interface itself: a Debian guest created from the form, reached over SSH on its static address, stopped and destroyed. Left for later: `cpuset`, an idempotent `PUT`, and a serial console through the API.
 
 **Depends on:** Host Setup (UG check), Storage Writes (zvols), Jail Provisioning (the patterns VMs mirror). **★ Otter Cloud:** Linux VMs, after its first beta.
 

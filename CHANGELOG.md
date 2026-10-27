@@ -20,6 +20,57 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.16.0 — 2026-10-26
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.16.0)
+
+Jail Deck creates virtual machines. A cloud image is prepared once as an image template, and
+a guest is made from it with a NIC on the operator's switch, SSH keys and a static address
+through cloud-init, then reached, stopped and destroyed — from the VMs pages or the API
+(JD-037, JD-038). **This completes the Virtual Machines milestone.**
+
+Nothing to act on when upgrading. Every endpoint from v0.15.0 answers as it did, and
+`GET /api/vms` gained one field. Two things appear on the host the first time they are used,
+both under vm-bhyve's datastore: the `.images` dataset, the first time an image is prepared,
+and Jail Deck's own template, `.templates/jaildeck.conf`, the first time a guest is created.
+
+### Added
+
+- **Images on the VMs page** (#108): prepare an image from a source, watch it while it is
+  fetched and written, see which guests use it, remove it. The panel says how a preparation
+  it started came out — ready, or stopped short with a pointer to Operations.
+- **Create a VM and Destroy** (#110). The form offers ready images and vm-bhyve's switches,
+  DHCP or a static address, and SSH keys, and says what each choice means: no switch is no
+  network, and no key is console only. Destroy is on a stopped guest's page and asks for the
+  name typed.
+
+### API
+
+- **`GET`, `PUT` and `DELETE /api/vm-images/{name}`, and `GET /api/vm-images`** (#107,
+  JD-037). `PUT` answers `202` and the client watches the image (JD-008): the source's
+  archive is fetched and checked against the publisher's `SHA512SUMS`, its disk written by
+  `tar -xO` straight into a sparse zvol, and sealed with `@base`. One source to start with,
+  `debian-13`. Removal is refused while a guest's disk is cloned from the image. Audited as
+  `fetch-image`, `write-image`, `seal-image` and `destroy-image`.
+- **`POST /api/vms` and `DELETE /api/vms/{name}`** (#109, JD-038). Create runs `vm create`
+  from Jail Deck's UEFI template with a cloud-init seed, adds a NIC on the named switch —
+  checked to exist, because vm-bhyve does not — and replaces the guest's disk with a clone
+  of the image. Everything is checked first, and a step that fails destroys the guest again.
+  Destroy is for stopped guests only. Audited as `vm-create`, `vm-add-network`,
+  `vm-replace-disk` and `vm-destroy`.
+- **`GET /api/vms` carries `switches`** (#110), vm-bhyve's switches by name, read when
+  vm-bhyve is ready. Additive.
+
+### Internal
+
+- **Every image and every guest disk cloned from one is `volmode=dev`** (#107). Measured: a
+  clone grown past its image in GEOM's default mode was held open by the kernel's GPT
+  auto-resize, and the guest on it booted nothing.
+- **The command runner can send a command's output into a file** (`StdoutFile`, #107), which
+  is how tar writes an image's disk into its zvol with no shell and no temporary file.
+
+---
+
 ## v0.15.0 — 2026-10-26
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.15.0)

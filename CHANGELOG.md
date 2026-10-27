@@ -20,6 +20,32 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.16.1 — 2026-10-27
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.16.1)
+
+Releases are now built in CI and published into a signed `pkg` repository, so a host can
+install and upgrade Jail Deck with `pkg` alone (#113, JD-039). Nothing in the application
+changed: this is the first release to go out that way.
+
+Nothing to act on when upgrading. A host can keep installing with `pkg add -f` as before, or
+switch to the repository: install its public key and a `repos/jaildeck.conf`, then
+`pkg upgrade -r jaildeck` (`docs/PACKAGING.md`). Either way the service is stopped and
+started explicitly; the package still has no lifecycle scripts.
+
+### Added
+
+- **The package is built and attested in CI** (#114). Publishing a release runs
+  `make package` from its tag in a FreeBSD 15.1 VM, and attaches the `.pkg`, its `.sha256`
+  and a build provenance attestation to the release.
+- **`packaging/freebsd/publish-repo.sh`** (#114), the publishing side: run periodically
+  on the repository host, it accepts a release's package only if its checksum matches and its
+  attestation says it was built in this repository, by `package.yml`, from that release's own
+  tag; then it signs the repository with `pkg repo` and swaps it in. No GitHub token is
+  needed, and the signing key never leaves the host.
+
+---
+
 ## v0.16.0 — 2026-10-26
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.16.0)

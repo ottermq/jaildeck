@@ -1986,10 +1986,18 @@ What follows from that:
 - **Expiry:** a session ends when the login that opened it expires or is revoked. It isn't tied to the moment it was opened, so the console checks the session as it runs.
 - **Origin:** the library's default check stays on: the `Origin` must match the `Host`. Behind a proxy that rewrites `Host`, the allowed origins are set rather than the check turned off.
 - **Idle timeout:** 30 minutes with no input from the page by default (`JAILDECK_CONSOLE_IDLE`). Output doesn't count, and neither do the WebSocket's own pings, which keep the connection itself healthy.
-- **Audit:** `console-open` and `console-close`, with the target, the reason it closed (`client`, `idle`, `session-expired`, `guest-stopped`, `jail-stopped`, `console-closed`, `server-stopped`) and how long it lasted. **No keystrokes and no output are recorded, in the audit log or in any log.** The audit entry gains a duration and a reason.
+- **Audit:** `console-open` and `console-close`, with the target, the reason it closed (`client`, `idle`, `session-expired`, `shell-exited`, `guest-stopped`, `jail-stopped`, `console-closed`) and how long it lasted. **No keystrokes and no output are recorded, in the audit log or in any log.** The audit entry gains a duration and a reason.
 - **To verify while building:** the server's 30-second `ReadTimeout` must not reach a hijacked connection, and the request-log middleware must let the upgrade through. Tests will show both.
 
 ### Order
 
 1. The transport, the session service and xterm.js, with the **jail shell**. Measure the PTY first: a jail stopped mid-session, and a shell that exits.
 2. The **VM console** on the same service, as measured above.
+
+**Amended 2026-10-28: the jail shell, measured** (`capture-jail-console-induced.sh`, `ptyprobe`):
+
+- **`jexec -l` passes `TERM` and nothing else** of Jail Deck's environment into the jail; the login shell sets its own `PATH`, `HOME` and `SHELL`. So the console passes `TERM=xterm-256color` and nothing else.
+- **A resize reaches the shell** (`pty.Setsize`), and **a shell that exits ends the read at once**, with `jexec` exiting 0. The session closes with `shell-exited`.
+- **The PTY master must be made non-blocking.** Closed while a blocking read waits on it, it neither interrupts the read nor hangs up: the shell and the command it was running stayed alive in the jail, and `cmd.Wait` never returned. On a non-blocking duplicate, `Close` ends the read at once, `jexec` gets `SIGHUP`, and nothing is left behind. Every console session ends by closing that duplicate.
+- **The service stopping writes no `console-close`.** Jail Deck installs no signal handler (it never has), so `service jaildeck stop` ends the process outright. The kernel then closes the PTY masters, and the shells get the hangup and end. Nothing stays behind; only the close entry is missing.
+- **An open shell makes a jail stop take 10 s instead of under one.** `jail -r` waits for it and then kills it. So stopping, restarting or destroying a jail first closes its console sessions, with `jail-stopped`, and the stop is as quick as without one.

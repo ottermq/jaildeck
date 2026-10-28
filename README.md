@@ -11,7 +11,8 @@ is a Linux container.
 stopped, restarted and destroyed from the browser or the API; their ZFS datasets,
 snapshots and resource usage are visible; host setup is checked; PF can be seen,
 read-only; bhyve VMs are created from cloud images with cloud-init, pinned to host CPUs, started,
-stopped and destroyed, on a default network Jail Deck sets up with NAT through PF; every operation is audited, and nothing is reachable without a password or an
+stopped and destroyed, on a default network Jail Deck sets up with NAT through PF; a jail has a shell in the
+browser, from its page; every operation is audited, and nothing is reachable without a password or an
 API token. Releases install and upgrade with `pkg` from a signed repository. See
 [the roadmap](docs/ROADMAP.md) for what comes next.
 
@@ -227,6 +228,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `PUT /api/jails/{name}` | the same, idempotently: `201` made, `200` already matching, `409` with a diff |
 | `DELETE /api/jails/{name}` | stop and destroy it, with `confirm=` |
 | `POST /api/jails/{name}/exec` | run a command inside it, with a capped timeout and capped output |
+| `GET /api/jails/{name}/console` | a shell in it, over a WebSocket; audited, nothing typed recorded |
 | `PUT /api/jails/{name}/datasets/{child}` | create a child dataset, or converge an existing one |
 | `PATCH /api/jails/{name}/properties` | tag the jail's own dataset |
 | `PATCH /api/jails/{name}/datasets/{child}/properties` | tag one of its children |

@@ -791,6 +791,70 @@
                 }
             }
         },
+        "/jails/{name}/console": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Upgrades to a WebSocket attached to `jexec -l \u003cname\u003e /bin/sh -l` on a PTY\n(JD-042). **Binary frames** carry the terminal's bytes, both ways. **Text frames**\ncarry JSON: `{\"type\":\"resize\",\"cols\":120,\"rows\":40}` from the client, and\n`{\"type\":\"closed\",\"reason\":\"...\"}` from the server just before it closes.\n\n`cols` and `rows` in the query are the terminal's size to start with (80×24 if\nabsent). The session ends when the client goes, the shell exits, the jail\nstops, the login that opened it expires or is revoked, or nothing has been\ntyped for the idle timeout (`JAILDECK_CONSOLE_IDLE`); the closing reason is one\nof `client`, `shell-exited`, `jail-stopped`, `session-expired`, `idle`.\nStopping, restarting or destroying the jail hangs its consoles up first, so the\nstop does not wait on them. When the service itself stops, its shells get the\nkernel's hang-up and end, with no `console-close` entry.\n\nAudited as `console-open` and `console-close`, with who opened it, how long it\nlasted and why it ended. **Nothing typed or printed is recorded.** The\n`Origin` must be this host's. A browser authenticates with its session cookie;\nan API token works for clients that can send the header.",
+                "tags": [
+                    "jails"
+                ],
+                "summary": "A shell in a jail, over a WebSocket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Columns, 1 to 1000",
+                        "name": "cols",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows, 1 to 1000",
+                        "name": "rows",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "description": "Switching protocols"
+                    },
+                    "400": {
+                        "description": "Not a WebSocket request, or a size out of range",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "The jail is not running",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/jails/{name}/datasets/{child}": {
             "put": {
                 "security": [
@@ -3194,6 +3258,9 @@
                 "command": {
                     "type": "string"
                 },
+                "duration_ms": {
+                    "type": "integer"
+                },
                 "error": {
                     "type": "string"
                 },
@@ -3201,6 +3268,13 @@
                     "type": "integer"
                 },
                 "operation": {
+                    "type": "string"
+                },
+                "principal": {
+                    "description": "The three a session carries, which a command does not (JD-042): who\nopened it (\"session\", or \"token:\u003cname\u003e\"), how long it lasted, and why it\nended. Omitted on every other entry.",
+                    "type": "string"
+                },
+                "reason": {
                     "type": "string"
                 },
                 "request_id": {

@@ -33,7 +33,9 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(a.authHandler.RequireAuth)
 			r.Get("/", a.apiRoot)
-			jails.RegisterJailRoutes(r, a.jailHandler)
+			jails.RegisterJailRoutes(r, a.jailHandler, func(r chi.Router) {
+				r.Get("/console", a.consoleHandler.Jail)
+			})
 			host.RegisterHostRoutes(r, a.hostHandler)
 			audit.RegisterAuditRoutes(r, a.auditHandler)
 			metrics.RegisterMetricsRoutes(r, a.metricsHandler)

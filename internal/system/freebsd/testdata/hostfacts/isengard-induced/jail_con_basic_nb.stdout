@@ -1,0 +1,20 @@
+env:
+env | sort
+BLOCKSIZE=K
+ENV=/root/.shrc
+HOME=/root
+LANG=C.UTF-8
+MAIL=/var/mail/root
+MM_CHARSET=UTF-8
+PAGER=less
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin
+PWD=/
+SHELL=/bin/sh
+TERM=xterm-256color
+USER=root
+root@jd-cap-pty:/ # 
+size at start: "stty size\r\n24 80\r\nroot@jd-cap-pty:/ # "
+size after Setsize 40x120: "stty size\r\n40 120\r\nroot@jd-cap-pty:/ # "
+tty: "tty\r\n/dev/pts/1\r\nroot@jd-cap-pty:/ # "
+exit: "exit\r\n"
+read ended after 0.0s with "EOF"; jexec: <nil>

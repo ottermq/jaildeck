@@ -1,0 +1,3 @@
+shell pid: "echo $$\r\n13324\r\nroot@jd-cap-pty:/ # "
+closing the master
+read still open after 10s

@@ -355,6 +355,39 @@ a directory the script removed; only the public key is in the captures, in the s
   "appears to be running on isengard (locked)").
 - **`vm destroy` takes the clone and frees the image** (`vm_mk_after_destroy`).
 
+## A shell in a jail on a PTY (JD-042)
+
+`capture-jail-console-induced.sh`, run 2026-10-28 on isengard, writes `jpty_*` files; they are
+kept in `isengard-induced/` as `jail_con_*`. It drives the installed Jail Deck through its
+API, with the token passed to curl in a private config file. It creates one throwaway jail,
+`jd-cap-pty`, from the 15.1-RELEASE template with networking disabled, and destroys it again.
+**`ptyprobe`** (in `ptyprobe/`, cross-built with `GOOS=freebsd`) starts the shell as the console
+will: `jexec -l <jail> /bin/sh -l` on a PTY through `creack/pty`, with `TERM` and one planted
+variable in its environment. The host's other jails were left alone.
+
+The destroy was first refused: zrepl on isengard had snapshotted the jail in the meantime and
+replicated it to the backup pool. The snapshot went through the API; the backup copy was
+reported to the owner. In the first run, the MANIFEST recorded the token inside the curl
+command lines. It was blanked to `<token>` before anything was copied, and the script was
+changed so that no command line carries it.
+
+**What that settled:**
+
+- **`jexec -l` passes `TERM` and nothing else of the caller's environment.** The planted
+  variable didn't reach the shell; the login shell set its own `PATH`, `HOME` and `SHELL`
+  (`jail_con_basic`).
+- **A resize reaches the shell:** `stty size` answered `24 80`, then `40 120` after `Setsize`.
+  The shell's terminal is `/dev/pts/1`.
+- **A shell that exits ends the read at once with EOF,** and `jexec` exits 0.
+- **A jail stopped under an open shell takes 10 seconds to stop**, against under a second with
+  none open (`jail_con_stop_alone`, `jail_con_stop_jail`). The shell is then killed, and the
+  read ends with EOF (`jail_con_stop`).
+- **Closing a blocking PTY master does nothing useful.** The blocked read never returned,
+  `cmd.Wait` hung, and the shell and the `sleep 600` it was running stayed alive in the jail
+  until the probe was killed (`jail_con_hangup`). **On a non-blocking duplicate of the master,
+  closing it ended the read at once,** `jexec` got `SIGHUP`, and nothing was left in the jail
+  but cron (`jail_con_hangup_nb`, `jail_con_after_hangup_nb`).
+
 ## A guest's serial console (JD-042)
 
 `capture-vm-console-induced.sh`, run 2026-10-28 on isengard into `isengard-induced/` with the

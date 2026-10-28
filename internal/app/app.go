@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/auth"
 	"github.com/ottermq/jaildeck/internal/config"
+	"github.com/ottermq/jaildeck/internal/console"
 	"github.com/ottermq/jaildeck/internal/firewall"
 	"github.com/ottermq/jaildeck/internal/host"
 	"github.com/ottermq/jaildeck/internal/images"
@@ -29,6 +31,7 @@ var ErrNoCredential = errors.New("no operator credential configured")
 type App struct {
 	authHandler     *auth.AuthHandler
 	jailHandler     *jails.JailHandler
+	consoleHandler  *console.Handler
 	hostHandler     *host.HostHandler
 	auditHandler    *audit.AuditHandler
 	storageHandler  *storage.StorageHandler
@@ -161,8 +164,20 @@ func New(cfg *config.Config) (*App, error) {
 		}
 	}
 
+	// The console asks the jails service whether a jail is running, and the
+	// jails service hangs a jail's consoles up before it stops (JD-042).
+	shells, err := newShells(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	consoleService := console.NewService(shells, runningJails{jails: jailService}, auditLogger)
+	jailService.SetConsoles(consoleService)
+	consoleHandler := console.NewHandler(consoleService, authHandler.Recheck, auth.PrincipalOf,
+		cfg.ConsoleIdle, cfg.ConsoleOrigins)
+
 	return &App{
 		authHandler:     authHandler,
+		consoleHandler:  consoleHandler,
 		jailHandler:     jailHandler,
 		hostHandler:     hostHandler,
 		auditHandler:    auditHandler,
@@ -174,6 +189,33 @@ func New(cfg *config.Config) (*App, error) {
 		imageHandler:    imageHandler,
 		networkHandler:  networkHandler,
 	}, nil
+}
+
+// newShells selects where console shells are started (JD-042).
+func newShells(adapter string) (console.Shells, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewShells(), nil
+	case config.AdapterFake:
+		return fake.NewShells(), nil
+	}
+	return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+		adapter, config.AdapterFreeBSD, config.AdapterFake)
+}
+
+// runningJails answers the console's one question of the jails service.
+type runningJails struct{ jails *jails.JailService }
+
+func (r runningJails) Running(ctx context.Context, name string) (bool, error) {
+	jailName, err := jails.NewJailName(name)
+	if err != nil {
+		return false, err
+	}
+	jail, err := r.jails.Get(ctx, jailName)
+	if err != nil {
+		return false, err
+	}
+	return jail.Status == jails.JailStatusRunning, nil
 }
 
 // newFirewallSystem selects the read-only PF implementation (JD-034).

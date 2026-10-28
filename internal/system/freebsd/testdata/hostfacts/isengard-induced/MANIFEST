@@ -202,3 +202,21 @@ vm_pin_onepin_threads	procstat -t 37881	exit=0	0s
 vm_pin_onepin_cpusets	cpuset -g -t <each vcpu thread>	exit=0	0s
 vm_pin_unset	doas sysrc -x -f /vm/jd-cap-pin/jd-cap-pin.conf bhyve_options	exit=0	0s
 vm_pin_conf_unset	doas cat /vm/jd-cap-pin/jd-cap-pin.conf	exit=0	0s
+vm_con_create	doas vm create -t jd-capture-con -s 8G -C jd-cap-con	exit=0	2s
+vm_con_disk	doas zfs destroy tank/vm/jd-cap-con/disk0 && doas zfs clone -o volmode=dev -o volsize=8G tank/vm/.images/debian-13@base tank/vm/jd-cap-con/disk0	exit=0	2s
+vm_con_devices_stopped	ls -l /dev/nmdm-jd-cap-con.* 2>&1	exit=1	0s
+vm_con_start	doas vm start jd-cap-con	exit=0	0s
+vm_con_devices_running	ls -l /dev/nmdm-jd-cap-con.*	exit=0	0s
+vm_con_info	doas vm info jd-cap-con	exit=0	0s
+vm_con_raw	doas /tmp/conprobe /dev/nmdm-jd-cap-con.1B rawduplex	exit=0	10s
+vm_con_cooked	doas /tmp/conprobe /dev/nmdm-jd-cap-con.1B cookedduplex	exit=0	11s
+vm_con_raw_again	doas /tmp/conprobe /dev/nmdm-jd-cap-con.1B rawduplex	exit=0	10s
+vm_con_excl_cu	doas timeout 3 cu -l /dev/nmdm-jd-cap-con.1B </dev/null	exit=124	3s
+vm_con_excl	conprobe /dev/nmdm-jd-cap-con.1B excl	exit=0	10s
+vm_con_reset	doas bhyvectl --vm=jd-cap-con --force-reset	exit=0	0s
+vm_con_after_reset	doas vm list | awk 'NR == 1 || $1 == "jd-cap-con"'; ls -l /dev/nmdm-jd-cap-con.*	exit=0	0s
+vm_con_reboot	conprobe /dev/nmdm-jd-cap-con.1B hold (across a reset)	exit=0	25s
+vm_con_poweroff	doas vm poweroff -f jd-cap-con	exit=0	0s
+vm_con_stop	conprobe /dev/nmdm-jd-cap-con.1B stop	exit=0	0s
+vm_con_devices_after	ls -l /dev/nmdm-jd-cap-con.* 2>&1	exit=1	0s
+vm_con_open_after	doas /tmp/conprobe /dev/nmdm-jd-cap-con.1B rawduplex	exit=0	10s

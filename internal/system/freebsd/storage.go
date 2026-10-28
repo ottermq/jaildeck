@@ -18,7 +18,11 @@ import (
 // prints "1.41G" and "897G", which no client can total.
 var (
 	zfsListSpace = []string{"list", "-H", "-p", "-o", "name,used,avail,refer,mountpoint", "-r"}
-	zfsGetLocal  = []string{"get", "-H", "-r", "-o", "name,property,value,source", "-s", "local", "all"}
+	// -t filesystem,volume keeps a recursive get out of the snapshots, which
+	// it otherwise walks one by one though none has a local property worth
+	// listing: 2.52 s against 0.03 s on a host with 381 snapshots under its
+	// jails, for the same 10 lines (#135).
+	zfsGetLocal = []string{"get", "-H", "-r", "-t", "filesystem,volume", "-o", "name,property,value,source", "-s", "local", "all"}
 )
 
 // DatasetsUnder lists each root and everything beneath it in one call.

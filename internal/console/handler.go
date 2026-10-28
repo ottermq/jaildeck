@@ -112,6 +112,51 @@ func (h *Handler) Jail(w http.ResponseWriter, r *http.Request) {
 	h.serve(w, r, session)
 }
 
+// VM attaches to a running guest's serial console.
+//
+// @Summary      A guest's serial console, over a WebSocket
+// @Description  Upgrades to a WebSocket attached to the guest's first console port: the host's
+// @Description  end of its nmdm pair, as `vm info` names it, made raw before anything passes
+// @Description  (JD-042). Frames as for a jail's console: binary for the terminal's bytes, text
+// @Description  for JSON control. A serial line has no size, so `resize` changes nothing; the
+// @Description  guest's own `stty` or `resize` does.
+// @Description
+// @Description  **One session per guest**: a second is refused with `409`. An outside
+// @Description  `vm console` or `cu` on the host can still attach at the same time; FreeBSD lets
+// @Description  root past an exclusive lock, measured. **Closing the console does not log anyone
+// @Description  out of the guest**: a login on the serial line stays logged in.
+// @Description
+// @Description  The session ends as a jail's does, and also with `guest-stopped` when the guest
+// @Description  is no longer running (looked at every 5 s: a powered-off guest gives the device's
+// @Description  reader nothing at all), or `console-closed` when the device ends. Audited as
+// @Description  `console-open` and `console-close`; nothing typed or printed is recorded.
+// @Tags         vms
+// @Param        name  path  string  true  "Guest name"
+// @Success      101  "Switching protocols"
+// @Failure      400  {object}  common.ErrorResponse  "Not a WebSocket request"
+// @Failure      401  {object}  common.ErrorResponse
+// @Failure      404  {object}  common.ErrorResponse  "No such guest"
+// @Failure      409  {object}  common.ErrorResponse  "The guest is not running, or a console is open on it already"
+// @Security     BearerAuth
+// @Router       /vms/{name}/console [get]
+func (h *Handler) VM(w http.ResponseWriter, r *http.Request) {
+	if !isUpgrade(r) {
+		common.HandlerError(w, common.NewAppError(http.StatusBadRequest,
+			"this is a WebSocket endpoint; connect with a WebSocket client"))
+		return
+	}
+	if err := h.checkOrigin(r); err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	session, err := h.service.OpenVM(r.Context(), chi.URLParam(r, "name"), h.principal(r))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	h.serve(w, r, session)
+}
+
 // serve upgrades the request and runs the session until something ends it.
 func (h *Handler) serve(w http.ResponseWriter, r *http.Request, session *Session) {
 	// The server's ReadTimeout sets a deadline on the connection, and
@@ -171,7 +216,7 @@ func (h *Handler) bridge(r *http.Request, conn *websocket.Conn, session *Session
 				}
 			}
 			if err != nil {
-				stop(ReasonShellExited)
+				stop(session.OutputEnded())
 				return
 			}
 		}
@@ -190,7 +235,7 @@ func (h *Handler) bridge(r *http.Request, conn *websocket.Conn, session *Session
 				typed = time.Now()
 				mu.Unlock()
 				if _, err := session.Write(data); err != nil {
-					stop(ReasonShellExited)
+					stop(session.OutputEnded())
 					return
 				}
 				continue

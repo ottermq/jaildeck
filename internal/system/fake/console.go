@@ -18,8 +18,26 @@ type Shells struct{}
 func NewShells() *Shells { return &Shells{} }
 
 func (s *Shells) JailShell(_ context.Context, jail string, cols, rows uint16) (console.Terminal, error) {
+	t := newFakeTerminal(jail, cols, rows, "root@"+jail+":/ # ")
+	t.say("FreeBSD 15.1-RELEASE (fake)\r\n\r\n" + t.prompt)
+	return t, nil
+}
+
+// VMConsole is a guest's serial line at its login prompt, the way the real
+// one answered a return: "<name> login: ". The device names the guest.
+func (s *Shells) VMConsole(_ context.Context, device string) (console.Terminal, error) {
+	name := strings.TrimPrefix(device, "/dev/nmdm-")
+	if i := strings.LastIndex(name, "."); i > 0 {
+		name = name[:i]
+	}
+	t := newFakeTerminal(name, 80, 24, name+" login: ")
+	t.say("\r\nDebian GNU/Linux 13 " + name + " ttyS0 (fake)\r\n\r\n" + t.prompt)
+	return t, nil
+}
+
+func newFakeTerminal(name string, cols, rows uint16, prompt string) *fakeTerminal {
 	out, in := io.Pipe()
-	t := &fakeTerminal{jail: jail, cols: cols, rows: rows, out: out, in: in,
+	t := &fakeTerminal{jail: name, prompt: prompt, cols: cols, rows: rows, out: out, in: in,
 		queue: make(chan string, 1024), done: make(chan struct{})}
 	// One writer, so the echo and the answers arrive in the order they were
 	// made.
@@ -35,12 +53,12 @@ func (s *Shells) JailShell(_ context.Context, jail string, cols, rows uint16) (c
 			}
 		}
 	}()
-	t.say("FreeBSD 15.1-RELEASE (fake)\r\n\r\n" + t.prompt())
-	return t, nil
+	return t
 }
 
 type fakeTerminal struct {
 	jail       string
+	prompt     string
 	mu         sync.Mutex
 	cols, rows uint16
 	line       []byte
@@ -50,8 +68,6 @@ type fakeTerminal struct {
 	done       chan struct{}
 	once       sync.Once
 }
-
-func (t *fakeTerminal) prompt() string { return "root@" + t.jail + ":/ # " }
 
 func (t *fakeTerminal) say(s string) {
 	select {
@@ -104,7 +120,7 @@ func (t *fakeTerminal) run(line string, cols, rows uint16) {
 	default:
 		t.say("\r\nsh: " + strings.Fields(line)[0] + ": not found")
 	}
-	t.say("\r\n" + t.prompt())
+	t.say("\r\n" + t.prompt)
 }
 
 func (t *fakeTerminal) Resize(cols, rows uint16) error {

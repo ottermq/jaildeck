@@ -155,7 +155,8 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	vmHandler := vms.NewHandler(vms.NewService(vmSystem, vmImageCatalog{images: imageService}, auditLogger))
+	vmService := vms.NewService(vmSystem, vmImageCatalog{images: imageService}, auditLogger)
+	vmHandler := vms.NewHandler(vmService)
 	// On a real host the switches are one thing; the two fakes are joined so
 	// fake mode behaves the same.
 	if n, ok := networkSystem.(*fake.Networks); ok {
@@ -170,8 +171,10 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	consoleService := console.NewService(shells, runningJails{jails: jailService}, auditLogger)
+	consoleService := console.NewService(shells, runningJails{jails: jailService},
+		guestConsoles{vms: vmService}, auditLogger)
 	jailService.SetConsoles(consoleService)
+	vmService.SetConsoles(consoleService)
 	consoleHandler := console.NewHandler(consoleService, authHandler.Recheck, auth.PrincipalOf,
 		cfg.ConsoleIdle, cfg.ConsoleOrigins)
 
@@ -216,6 +219,18 @@ func (r runningJails) Running(ctx context.Context, name string) (bool, error) {
 		return false, err
 	}
 	return jail.Status == jails.JailStatusRunning, nil
+}
+
+// guestConsoles answers the console's question of the VMs service: is the
+// guest running, and which device is its first console port.
+type guestConsoles struct{ vms *vms.Service }
+
+func (g guestConsoles) Console(ctx context.Context, name string) (string, bool, error) {
+	detail, err := g.vms.Get(ctx, name)
+	if err != nil {
+		return "", false, err
+	}
+	return detail.Consoles["com1"], detail.State == vms.StateRunning, nil
 }
 
 // newFirewallSystem selects the read-only PF implementation (JD-034).

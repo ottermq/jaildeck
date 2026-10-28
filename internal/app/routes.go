@@ -41,6 +41,7 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 			metrics.RegisterMetricsRoutes(r, a.metricsHandler)
 			firewall.RegisterFirewallRoutes(r, a.firewallHandler)
 			vms.RegisterVMRoutes(r, a.vmHandler)
+			r.Get("/vms/{name}/console", a.consoleHandler.VM)
 			images.RegisterImageRoutes(r, a.imageHandler)
 			networks.RegisterNetworkRoutes(r, a.networkHandler)
 			storage.RegisterStorageRoutes(r, a.storageHandler)

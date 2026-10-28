@@ -8,6 +8,7 @@ import { ApiError } from '../services/api'
 import { formatBytes, normalizeEmptyValue } from '../utils'
 import { stateBadge } from '../vmState'
 import VMActions from '../components/VMActions.svelte'
+import ConsolePanel from '../components/ConsolePanel.svelte'
 import type { OperationResult } from '../stores/vms.svelte'
 
 let { name }: { name: string } = $props()
@@ -154,8 +155,8 @@ function bytes(n: number | undefined): string {
         </dl>
     </section>
 
-    <section class="panel">
-        <h2>Console</h2>
+    <ConsolePanel path={`/vms/${encodeURIComponent(vm.name)}/console`} running={vm.state === 'running'}
+                  openLabel="Open the console" onended={reason => { if (reason === 'guest-stopped') void load() }}>
         {#if consoles.length > 0}
             <dl class="facts">
                 {#each consoles as [port, device] (port)}
@@ -163,11 +164,16 @@ function bytes(n: number | undefined): string {
                     <dd><code>{device}</code></dd>
                 {/each}
             </dl>
-            <p class="hint">The host's end of a null-modem pair. From a root shell, <code>vm console {vm.name}</code> attaches to it.</p>
+            <p class="hint">
+                The guest's first serial port, the host's end of a null-modem pair. One console at a
+                time here; <code>vm console {vm.name}</code> from a root shell can still attach
+                alongside it. <strong>Closing it does not log anyone out of the guest.</strong> It's
+                audited, and nothing typed or shown is recorded.
+            </p>
         {:else}
             <p class="notice">None while the guest is not running: the console belongs to its bhyve instance.</p>
         {/if}
-    </section>
+    </ConsolePanel>
 
     <section class="panel">
         <h2>Network</h2>

@@ -22,6 +22,8 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ## v0.17.1 — 2026-10-28
 
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.17.1)
+
 The Dashboard and Jails pages load faster (#135). Measured on a host with 1,514 snapshots,
 `GET /api/jails` went from 2.6 s to 0.06 s, and `GET /api/metrics` from 1.5 s to 0.69 s.
 

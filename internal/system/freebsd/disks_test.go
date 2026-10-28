@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/ottermq/jaildeck/internal/metrics"
 	"github.com/ottermq/jaildeck/internal/system"
@@ -466,5 +469,39 @@ func TestResolveDevice(t *testing.T) {
 		if got := resolveDevice(tt.vdev, labels); got != tt.want {
 			t.Errorf("resolveDevice(%q) = %q, want %q", tt.vdev, got, tt.want)
 		}
+	}
+}
+
+// isengard's eight scanned devices, each read taking a moment as a hard disk
+// does: the reads overlap, never more than smartctlParallel at once, and the
+// answer is the same five disks in the same order as reading them in turn
+// (#135).
+func TestDisksReadsDevicesSideBySide(t *testing.T) {
+	replay := &replayRunner{t: t, set: "isengard", captures: diskCaptures(t, "isengard")}
+	var mu sync.Mutex
+	inFlight, most := 0, 0
+	a := NewAdapter(runnerFunc(func(ctx context.Context, cmd system.Command) (system.CommandResult, error) {
+		if !slices.Contains(cmd.Args, "selftest") {
+			return replay.Run(ctx, cmd)
+		}
+		mu.Lock()
+		inFlight++
+		most = max(most, inFlight)
+		mu.Unlock()
+		time.Sleep(30 * time.Millisecond)
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+		return replay.Run(ctx, cmd)
+	}))
+	disks, err := a.Disks(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := deviceNames(disks), []string{"ada0", "ada1", "ada2", "ada3", "nda0"}; !slices.Equal(got, want) {
+		t.Errorf("disks = %v, want %v", got, want)
+	}
+	if most < 2 || most > smartctlParallel {
+		t.Errorf("at most %d reads at once, want between 2 and %d", most, smartctlParallel)
 	}
 }

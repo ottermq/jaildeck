@@ -172,7 +172,7 @@ for pool in $(cat "$OUT/zpool_list_h.stdout"); do
 	# jail"). -s local is what separates a user property that was set from the
 	# ~50 native ones every dataset reports; a user property is one whose name
 	# contains a colon.
-	cap "zfs_get_local_r_$pool" "zfs get -H -r -o name,property,value,source -s local all $pool"
+	cap "zfs_get_local_r_$pool" "zfs get -H -r -t filesystem,volume -o name,property,value,source -s local all $pool"
 done
 
 # A dataset to probe the per-dataset shapes on. Prefer whichever pool actually

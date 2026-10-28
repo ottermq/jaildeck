@@ -355,6 +355,39 @@ a directory the script removed; only the public key is in the captures, in the s
   "appears to be running on isengard (locked)").
 - **`vm destroy` takes the clone and frees the image** (`vm_mk_after_destroy`).
 
+## A guest's serial console (JD-042)
+
+`capture-vm-console-induced.sh`, run 2026-10-28 on isengard into `isengard-induced/` with the
+prefix `vm_con_`, needs the path of **`conprobe`** as its argument. `conprobe` is the small Go
+program in `conprobe/`, cross-built with `GOOS=freebsd`. It opens the console device with the
+calls Jail Deck will make: `O_NONBLOCK`, x/term's `MakeRaw` and `TIOCEXCL`. The script makes
+one throwaway guest, `jd-cap-con`, as Jail Deck makes one, from the kept Debian image with a
+seed and no NIC, and waits three minutes for its getty: with no NIC, Debian's boot first waits
+out `systemd-networkd-wait-online`. Only returns are ever typed. The guest and template were
+destroyed again, datasets were as before, and `system.conf` and `rc.conf` byte-identical.
+Another guest on the host was left alone.
+
+The first subject was the UEFI firmware with nothing to boot. It was dropped, because its setup
+screen redraws itself at about 200 KB/s and hardly reads its input, which hid everything else.
+Its runs weren't kept.
+
+**What that settled:**
+
+- **The host's end opens in a terminal's normal mode** (`vm_con_raw` prints it after
+  `MakeRaw`; `vm_con_cooked` before). **Made raw at once, a return gets the login prompt**
+  (`vm_con_raw`). **Left as it is, the guest's output is echoed back to it as input**: 17,105
+  bytes of newlines in 9 seconds (`vm_con_cooked`), and the next raw session found the echoed
+  input typed at the login prompt, `Login incorrect` (`vm_con_raw_again`).
+- **`TIOCEXCL` doesn't stop a second opener that is root** (`vm_con_excl`), and `cu` connected
+  meanwhile (`vm_con_excl_cu`).
+- **A guest reset doesn't end the session.** The same descriptor wrote, and read the new
+  boot (`vm_con_reboot`, `vm_con_after_reset`).
+- **A guest powered off gives a waiting reader nothing for 60 seconds**: no end of file, and
+  a write still succeeds (`vm_con_stop`). The device is gone once closed
+  (`vm_con_devices_after`), and **opening it again creates a new, unconnected pair**
+  (`vm_con_open_after`). The devices don't exist before the guest first starts
+  (`vm_con_devices_stopped`).
+
 ## Pinning a guest's vCPUs (JD-041)
 
 `capture-vm-pin-induced.sh`, run 2026-10-28 on isengard into `isengard-induced/` with the prefix

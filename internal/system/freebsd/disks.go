@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ottermq/jaildeck/internal/metrics"
@@ -56,10 +57,11 @@ func (a *Adapter) Disks(ctx context.Context) ([]metrics.Disk, error) {
 		members = map[string]poolMember{}
 	}
 
+	reads := a.readDisks(ctx, devices)
 	disks := make([]metrics.Disk, 0, len(devices))
 	seen := map[string]bool{}
-	for _, device := range devices {
-		report, ok, err := a.readDisk(ctx, device)
+	for i, device := range devices {
+		report, ok, err := reads[i].report, reads[i].ok, reads[i].err
 		if err != nil {
 			return nil, err
 		}
@@ -88,6 +90,39 @@ func (a *Adapter) Disks(ctx context.Context) ([]metrics.Disk, error) {
 		disks = append(disks, disk)
 	}
 	return disks, nil
+}
+
+// smartctlParallel is how many disks are read at once. smartctl on one disk
+// took up to 0.6 s on isengard while a hard disk answered, and reading five in
+// turn made /api/metrics take 1.5 s (#135); the disks are independent.
+const smartctlParallel = 4
+
+// diskRead is one device's readDisk answer.
+type diskRead struct {
+	report smartReport
+	ok     bool
+	err    error
+}
+
+// readDisks reads every device, smartctlParallel at a time, and answers in
+// the devices' own order, so that what Disks makes of them -- which name
+// wins for a disk listed twice -- is the same as reading them in turn.
+func (a *Adapter) readDisks(ctx context.Context, devices []string) []diskRead {
+	reads := make([]diskRead, len(devices))
+	slots := make(chan struct{}, smartctlParallel)
+	var wg sync.WaitGroup
+	for i, device := range devices {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			report, ok, err := a.readDisk(ctx, device)
+			reads[i] = diskRead{report: report, ok: ok, err: err}
+		}()
+	}
+	wg.Wait()
+	return reads
 }
 
 // deviceName is the bare name smartctl answered under, falling back to the

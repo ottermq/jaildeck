@@ -1,0 +1,4 @@
+NAME               DATASTORE  LOADER  CPU  MEMORY  VNC  AUTO  STATE
+jd-cap-con         default    uefi    1    512M    -    No    Running (69735)
+crw--w----  1 root tty 0x181 Oct 28 13:34 /dev/nmdm-jd-cap-con.1A
+crw--w----  1 root tty 0x182 Oct 28 13:34 /dev/nmdm-jd-cap-con.1B

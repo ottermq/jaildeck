@@ -20,6 +20,27 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.18.1 — 2026-10-28
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.18.1)
+
+An exec's audit entry says what its command did (#141). Nothing to act on when upgrading.
+
+### Fixed
+
+- **Exec's audit entry recorded `exit_code` 0 and no `timed_out`, whatever the command did**
+  (#146). It was audited through the generic step logger, which records only Jail Deck's own
+  failure to run a command. Found by the Otter Cloud contract test.
+
+### API
+
+- **An exec's audit entry carries the command's `exit_code`, `timed_out` and `duration_ms`**
+  (#146). `success` still means Jail Deck ran the command: a non-zero exit is a successful
+  exec (JD-016). A command that couldn't run is audited as before. A client reading exec
+  entries from `GET /api/audit` now sees the real exit code where it saw `0`.
+
+---
+
 ## v0.18.0 — 2026-10-28
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.18.0)
@@ -74,7 +95,7 @@ a proxy, it has to pass WebSocket upgrades through for the console to connect.
 ### Known
 
 - **Exec's audit entry records `exit_code` 0 and no `timed_out`, whatever the command did**
-  (#141). It's found and not yet fixed.
+  (#141). Fixed in v0.18.1.
 
 ---
 

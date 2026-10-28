@@ -18,9 +18,9 @@ type Entry struct {
 	// (JD-011: nothing is stored that the request did not supply).
 	RequestID string `json:"request_id,omitempty"`
 
-	// The three a session carries, which a command does not (JD-042): who
-	// opened it ("session", or "token:<name>"), how long it lasted, and why it
-	// ended. Omitted on every other entry.
+	// Who opened a console session ("session", or "token:<name>"), how long
+	// it lasted, and why it ended (JD-042). DurationMS is also an exec's, how
+	// long the command ran (#141). Omitted on every other entry.
 	Principal  string `json:"principal,omitempty"`
 	DurationMS int64  `json:"duration_ms,omitempty"`
 	Reason     string `json:"reason,omitempty"`

@@ -352,6 +352,23 @@ func TestDestroy(t *testing.T) {
 		})
 	}
 
+	// This host's own lock, left by a vm-run that will not exit: waited out,
+	// then refused in its own words, and nothing run.
+	own := newMaker()
+	own.listing.VMs[0].State, own.listing.VMs[0].LockedBy = StateLocked, "isengard"
+	ownService, _ := newMakerService(own)
+	ownService.hostname = "isengard"
+	var waited time.Duration
+	ownService.wait = func(_ context.Context, d time.Duration) { waited += d }
+	_, err := ownService.Destroy(context.Background(), "existing", "existing")
+	wantAppError(t, err, http.StatusConflict, "still locked by this host")
+	if waited != OwnLockWait {
+		t.Errorf("waited %s for this host's own lock, want %s", waited, OwnLockWait)
+	}
+	if len(own.calls) != 0 {
+		t.Errorf("ran %v", own.calls)
+	}
+
 	m := newMaker()
 	s, rec := newMakerService(m)
 	removal, err := s.Destroy(context.Background(), "existing", "existing")

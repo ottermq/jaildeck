@@ -359,7 +359,12 @@ func (s *JailService) cleanRules(ctx context.Context, spec Spec, result *Created
 		if len(rules) == 0 {
 			return
 		}
-		_, err = s.rctl.RemoveJailRules(ctx, spec.Name)
+		var command string
+		command, err = s.rctl.RemoveJailRules(ctx, spec.Name)
+		if command == "" {
+			command = RemoveRulesCommand(spec.Name)
+		}
+		s.logStep(ctx, OperationRemoveLeftoverRules, spec.Name, command, err)
 	}
 	if err != nil {
 		result.RulesError = fmt.Sprintf(
@@ -390,6 +395,9 @@ func (s *JailService) cleanEpair(ctx context.Context, spec Spec, result *Created
 		return startErr
 	}
 	removed, err := s.epair.RemoveJailEpair(ctx, spec.Name)
+	if err != nil || removed != "" {
+		s.logStep(ctx, OperationRemoveLeftoverEpair, spec.Name, epairCommand(spec.Name, removed), err)
+	}
 	if err != nil {
 		return common.NewAppError(statusOf(startErr), fmt.Sprintf(
 			"%s. Its epair %s is still on %s and will block every retry; "+

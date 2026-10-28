@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ottermq/jaildeck/internal/audit"
@@ -34,7 +35,35 @@ const (
 	StopTimeout     = 60 * time.Second
 	PoweroffTimeout = 15 * time.Second
 	pollInterval    = time.Second
+	// OwnLockWait is how long a lock held by this host is given to clear.
+	// Measured: a guest that powers itself off is listed Locked (<this host>)
+	// for about a second, bhyve gone and vm-run still exiting (JD-036).
+	OwnLockWait = 10 * time.Second
 )
+
+// settled is guest, except that a guest locked by this very host -- the
+// moment vm-run takes to exit after its bhyve has gone -- is looked at again
+// until that passes, rather than refused as if another host held it. A lock
+// another host holds is answered at once.
+func (s *Service) settled(ctx context.Context, name string) (*VM, error) {
+	vm, err := s.guest(ctx, name)
+	for waited := time.Duration(0); err == nil && s.lockedHere(vm) && waited < OwnLockWait; waited += pollInterval {
+		s.wait(ctx, pollInterval)
+		vm, err = s.guest(ctx, name)
+	}
+	return vm, err
+}
+
+// lockedHere is whether the guest's run.lock names this host. vm-bhyve writes
+// `hostname` into it; the short name is compared too, in case one side is
+// fully qualified.
+func (s *Service) lockedHere(vm *VM) bool {
+	if vm.State != StateLocked || s.hostname == "" {
+		return false
+	}
+	short := func(h string) string { h, _, _ = strings.Cut(strings.ToLower(h), "."); return h }
+	return short(vm.LockedBy) == short(s.hostname)
+}
 
 // Start starts a guest and confirms vm-bhyve lists it as running.
 //
@@ -47,7 +76,7 @@ func (s *Service) Start(ctx context.Context, name string) (OperationResult, erro
 		return OperationResult{}, s.unavailable()
 	}
 	ctx = context.WithoutCancel(ctx)
-	vm, err := s.guest(ctx, name)
+	vm, err := s.settled(ctx, name)
 	if err != nil {
 		return OperationResult{}, err
 	}
@@ -55,7 +84,7 @@ func (s *Service) Start(ctx context.Context, name string) (OperationResult, erro
 	case StateRunning, StateBootloader:
 		return OperationResult{VM: *vm}, nil
 	case StateLocked:
-		return OperationResult{}, locked(vm)
+		return OperationResult{}, s.lockError(vm)
 	}
 	return s.start(ctx, name)
 }
@@ -72,7 +101,7 @@ func (s *Service) Stop(ctx context.Context, name string) (OperationResult, error
 		return OperationResult{}, s.unavailable()
 	}
 	ctx = context.WithoutCancel(ctx)
-	vm, err := s.guest(ctx, name)
+	vm, err := s.settled(ctx, name)
 	if err != nil {
 		return OperationResult{}, err
 	}
@@ -80,7 +109,7 @@ func (s *Service) Stop(ctx context.Context, name string) (OperationResult, error
 	case StateStopped, StateSuspended:
 		return OperationResult{VM: *vm}, nil
 	case StateLocked:
-		return OperationResult{}, locked(vm)
+		return OperationResult{}, s.lockError(vm)
 	case StateBootloader:
 		return OperationResult{}, inBootloader(name)
 	}
@@ -94,13 +123,13 @@ func (s *Service) Restart(ctx context.Context, name string) (OperationResult, er
 		return OperationResult{}, s.unavailable()
 	}
 	ctx = context.WithoutCancel(ctx)
-	vm, err := s.guest(ctx, name)
+	vm, err := s.settled(ctx, name)
 	if err != nil {
 		return OperationResult{}, err
 	}
 	switch vm.State {
 	case StateLocked:
-		return OperationResult{}, locked(vm)
+		return OperationResult{}, s.lockError(vm)
 	case StateBootloader:
 		return OperationResult{}, inBootloader(name)
 	}
@@ -231,6 +260,23 @@ func locked(vm *VM) error {
 	return common.NewAppError(http.StatusConflict, fmt.Sprintf(
 		"%s is locked by %s: it is marked as running on that host, in a datastore the two share",
 		strconv.Quote(vm.Name), vm.LockedBy))
+}
+
+// lockError refuses a locked guest in the words that fit whose lock it is.
+func (s *Service) lockError(vm *VM) error {
+	if s.lockedHere(vm) {
+		return lockedStill(vm)
+	}
+	return locked(vm)
+}
+
+// lockedStill is a lock of this host's own that outlasted OwnLockWait: a
+// vm-run that has not exited, which is no longer the usual second.
+func lockedStill(vm *VM) error {
+	return common.NewAppError(http.StatusConflict, fmt.Sprintf(
+		"%s is still locked by this host %s after it stopped: vm-bhyve's supervisor has not exited; "+
+			"vm-bhyve.log in the guest's directory says what it is doing",
+		strconv.Quote(vm.Name), OwnLockWait))
 }
 
 func inBootloader(name string) error {

@@ -278,7 +278,7 @@ Goal: create and destroy jails, including VNET jails with resource limits, from 
 - **a failed start leaks its epair:** `exec.poststop` does not run when the start fails, and nothing afterwards will run it, so Jail Deck destroys the orphan itself — found by the `descr jail:<name>` the stanza writes (JD-030)
 - autostart is `sysrc jail_list+=<name>`; Jail Deck writes no `/etc/jail.conf` (JD-030)
 - **a failed start leaves its rctl rules too:** `exec.prestop` does not run either, so whatever `exec.poststart` had already applied stays in the kernel and Jail Deck takes it back — the same cleanup as the epair, for a leftover that would otherwise be inherited by the next jail of that name (JD-018)
-- **neither sweep is audited.** The audit log records the steps a create or a destroy is made of; the two cleanups of things that should not have been there are reported in the response instead. Worth revisiting — they are host mutations
+- ~~**neither sweep is audited.**~~ *Audited since 2026-10-28: a sweep that removed an epair or rctl rules, or failed to, writes `remove-leftover-epair` or `remove-leftover-rctl` with the command; one that found nothing writes nothing, because it changed nothing. Both are still reported in the response.*
 
 *Settled 2026-10-24: orchestration ownership across the `jails`/`storage` boundary, and both of the behaviours JD-005 left to verify — all measured on 15.1-RELEASE-p5 and recorded in JD-030.*
 

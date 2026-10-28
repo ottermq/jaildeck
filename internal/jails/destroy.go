@@ -15,6 +15,25 @@ import (
 // which is the one that runs zfs.
 const OperationRemoveConfig = "remove-jail-conf"
 
+// The audit operations for the two sweeps: an epair or rctl rules left behind
+// by a start that failed, removed by a later create or destroy. Logged only
+// when something was removed, or would not go -- a sweep that finds nothing
+// changed nothing, and the audit log records what changed the host.
+const (
+	OperationRemoveLeftoverEpair = "remove-leftover-epair"
+	OperationRemoveLeftoverRules = "remove-leftover-rctl"
+)
+
+// epairCommand is what removing a jail's leftover epair runs, for the audit
+// entry: the interface is found by its description, so before it is found it
+// can only be named by that.
+func epairCommand(name, removed string) string {
+	if removed == "" {
+		return "ifconfig <interface described jail:" + name + "> destroy"
+	}
+	return "ifconfig " + removed + " destroy"
+}
+
 // The steps of a destroy, in the order they run. StepAutostart is shared with
 // a create, which sets the same list the other way.
 const (
@@ -190,7 +209,8 @@ func (s *JailService) Destroy(ctx context.Context, name JailName, confirm string
 	return result, nil
 }
 
-// sweepEpair destroys a leftover epair, and never fails the destroy.
+// sweepEpair destroys a leftover epair, and never fails the destroy. It is
+// audited when it removed one or failed to.
 //
 // The jail and its dataset are what the caller asked to be rid of. An
 // interface that cannot be removed is reported in the result and logged,
@@ -201,6 +221,9 @@ func (s *JailService) sweepEpair(ctx context.Context, name JailName, result *Des
 		return
 	}
 	removed, err := s.epair.RemoveJailEpair(ctx, name.String())
+	if err != nil || removed != "" {
+		s.logStep(ctx, OperationRemoveLeftoverEpair, name.String(), epairCommand(name.String(), removed), err)
+	}
 	if err != nil {
 		result.EpairError = err.Error()
 		common.Logger(ctx, "jail").Warn("could not remove the jail's leftover epair",
@@ -221,9 +244,8 @@ func (s *JailService) sweepEpair(ctx context.Context, name JailName, result *Des
 // are keyed to the name and outlive the jail, so the next jail called this
 // would quietly run under them (JD-018).
 //
-// Like sweepEpair, it writes no audit entry. The audited steps are the ones
-// the destroy is made of; a sweep is a cleanup of something that should not
-// have been there, and both are reported in the result instead.
+// Like sweepEpair, it is audited when it removed something or failed to, and
+// reported in the result either way.
 func (s *JailService) sweepRules(ctx context.Context, name JailName, result *Destroyed) {
 	if s.rctl == nil {
 		return
@@ -233,7 +255,12 @@ func (s *JailService) sweepRules(ctx context.Context, name JailName, result *Des
 		if len(rules) == 0 {
 			return
 		}
-		_, err = s.rctl.RemoveJailRules(ctx, name.String())
+		var command string
+		command, err = s.rctl.RemoveJailRules(ctx, name.String())
+		if command == "" {
+			command = RemoveRulesCommand(name.String())
+		}
+		s.logStep(ctx, OperationRemoveLeftoverRules, name.String(), command, err)
 	}
 	if err != nil {
 		result.RulesError = err.Error()

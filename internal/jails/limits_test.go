@@ -3,6 +3,7 @@ package jails
 import (
 	"context"
 	"errors"
+	"github.com/ottermq/jaildeck/internal/audit"
 	"net/http"
 	"strings"
 	"testing"
@@ -644,6 +645,7 @@ func TestFailedStartTakesBackTheRulesItApplied(t *testing.T) {
 	if len(rctl.rules["db1"]) != 0 {
 		t.Errorf("left %v in the kernel", rctl.rules["db1"])
 	}
+	wantSweep(t, logger, OperationRemoveLeftoverRules, &audit.Entry{Command: "rctl -r jail:db1", Success: true})
 }
 
 // rctlAddsOnStart makes the fake host behave like jail(8): the stanza's
@@ -676,6 +678,7 @@ func TestFailedStartReportsRulesItCouldNotTakeBack(t *testing.T) {
 			t.Errorf("rules_error = %q, want it to mention %q", result.RulesError, want)
 		}
 	}
+	wantSweep(t, logger, OperationRemoveLeftoverRules, &audit.Entry{Command: RemoveRulesCommand("db1"), Success: false})
 }
 
 // Nothing was applied, so nothing is swept -- and the kernel is not asked.
@@ -745,6 +748,7 @@ func TestDestroySweepsRulesLeftBehind(t *testing.T) {
 	if len(parts.rctl.rules["db1"]) != 0 {
 		t.Errorf("left %v in the kernel", parts.rctl.rules["db1"])
 	}
+	wantSweep(t, parts.logger, OperationRemoveLeftoverRules, &audit.Entry{Command: "rctl -r jail:db1", Success: true})
 }
 
 // The ordinary case: the jail's own prestop already took them away.
@@ -760,6 +764,7 @@ func TestDestroyReportsNoRulesWhenThereAreNone(t *testing.T) {
 	if len(parts.rctl.removed) != 0 {
 		t.Errorf("ran a removal with nothing to remove: %v", parts.rctl.removed)
 	}
+	wantSweep(t, parts.logger, OperationRemoveLeftoverRules, nil)
 }
 
 // The jail and its dataset are the point. A rule that will not go is
@@ -779,6 +784,7 @@ func TestDestroyFinishesWhenTheRulesWillNotGo(t *testing.T) {
 	if !strings.Contains(result.RulesError, "Device busy") {
 		t.Errorf("rules_error = %q, want it to say why", result.RulesError)
 	}
+	wantSweep(t, parts.logger, OperationRemoveLeftoverRules, &audit.Entry{Command: RemoveRulesCommand("db1"), Success: false})
 }
 
 // The sweep runs after the jail is down, so it cannot be racing a prestop

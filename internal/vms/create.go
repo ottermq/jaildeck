@@ -347,7 +347,7 @@ func (s *Service) Destroy(ctx context.Context, name, confirm string) (Removal, e
 		return Removal{}, s.unavailable()
 	}
 	ctx = context.WithoutCancel(ctx)
-	vm, err := s.guest(ctx, name)
+	vm, err := s.settled(ctx, name)
 	if err != nil {
 		return Removal{}, err
 	}
@@ -357,7 +357,7 @@ func (s *Service) Destroy(ctx context.Context, name, confirm string) (Removal, e
 	}
 	switch vm.State {
 	case StateLocked:
-		return Removal{}, locked(vm)
+		return Removal{}, s.lockError(vm)
 	case StateRunning, StateBootloader:
 		return Removal{}, common.NewAppError(http.StatusConflict, fmt.Sprintf(
 			"%s is %s; stop it first", strconv.Quote(name), vm.State))

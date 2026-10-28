@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"time"
@@ -20,13 +21,17 @@ type Service struct {
 	// images is where a created guest's disk comes from (JD-038).
 	images ImageCatalog
 	audit  audit.Logger
+	// hostname is this host's name as vm-bhyve writes it into a guest's
+	// run.lock, so a lock this host holds can be told from another host's.
+	hostname string
 	// wait is how the lifecycle waits between looks at vm-bhyve's listing.
 	// A field so that the tests do not spend a minute watching a fake.
 	wait func(context.Context, time.Duration)
 }
 
 func NewService(system VMSystem, images ImageCatalog, auditLogger audit.Logger) *Service {
-	return &Service{system: system, images: images, audit: auditLogger, wait: sleep}
+	hostname, _ := os.Hostname()
+	return &Service{system: system, images: images, audit: auditLogger, wait: sleep, hostname: hostname}
 }
 
 func sleep(ctx context.Context, d time.Duration) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -175,4 +176,28 @@ func contains(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// readmeEndpoint is one row of the README's endpoint table: | `METHOD /api/path…` |.
+var readmeEndpoint = regexp.MustCompile("(?m)^\\| `(GET|POST|PUT|PATCH|DELETE) /api(/[^` ?]*)")
+
+// The README's table is what a reader scans first. It had fallen thirteen
+// endpoints behind -- creating and destroying jails among them -- before this
+// test existed.
+func TestReadmeListsEveryAPIRoute(t *testing.T) {
+	b, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]bool{}
+	for _, m := range readmeEndpoint.FindAllStringSubmatch(string(b), -1) {
+		listed[m[1]+" "+normalizePath(m[2])] = true
+	}
+	for method, patterns := range apiRoutes(t) {
+		for _, pattern := range patterns {
+			if !listed[method+" "+pattern] {
+				t.Errorf("%s /api%s is in the router but not in the README's endpoint table", method, pattern)
+			}
+		}
+	}
 }

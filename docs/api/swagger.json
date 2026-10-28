@@ -2181,6 +2181,49 @@
                 }
             }
         },
+        "/names/suggest": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "A name for a new jail or guest in Jail Deck's style: an adjective and an animal,\n`jolly-otter` (#148). It is free on this host when answered -- no jail, guest or\ntemplate has it -- and nothing reserves it: creating something still takes the\nname the request gives, and nothing on the server names anything unasked.\n\nAbout 17,000 pairs, so the first draw is nearly always free; a host on which 20\ndraws find nothing gets a pair with a two-digit number, `amazing-spider-42`.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "names"
+                ],
+                "summary": "Suggest a name",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/names.Suggestion"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "The host's jails, guests or templates could not be read",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Nothing free turned up, numbered or not",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/networks/default": {
             "get": {
                 "security": [
@@ -5076,6 +5119,14 @@
                 },
                 "user": {
                     "type": "integer"
+                }
+            }
+        },
+        "names.Suggestion": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
                 }
             }
         },

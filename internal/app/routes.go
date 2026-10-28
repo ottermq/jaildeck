@@ -17,6 +17,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/images"
 	"github.com/ottermq/jaildeck/internal/jails"
 	"github.com/ottermq/jaildeck/internal/metrics"
+	"github.com/ottermq/jaildeck/internal/names"
 	"github.com/ottermq/jaildeck/internal/networks"
 	"github.com/ottermq/jaildeck/internal/storage"
 	"github.com/ottermq/jaildeck/internal/templates"
@@ -44,6 +45,7 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 			r.Get("/vms/{name}/console", a.consoleHandler.VM)
 			images.RegisterImageRoutes(r, a.imageHandler)
 			networks.RegisterNetworkRoutes(r, a.networkHandler)
+			names.RegisterNameRoutes(r, a.nameHandler)
 			storage.RegisterStorageRoutes(r, a.storageHandler)
 			templates.RegisterTemplateRoutes(r, a.templateHandler)
 		})

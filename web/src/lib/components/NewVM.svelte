@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onMount } from 'svelte'
+import NameField from './NameField.svelte'
 import { createVM } from '../stores/vms.svelte'
 import type { Created, CreateRequest } from '../stores/vms.svelte'
 import { listImages } from '../stores/vmImages.svelte'
@@ -145,7 +146,7 @@ async function submit(event: Event) {
         <div class="form__row">
             <div class="field">
                 <label for="vm-name">Name</label>
-                <input id="vm-name" bind:value={name} placeholder="web" autocomplete="off" spellcheck="false" required />
+                <NameField id="vm-name" bind:value={name} placeholder="web" />
             </div>
             <div class="field">
                 <label for="vm-image">Image</label>

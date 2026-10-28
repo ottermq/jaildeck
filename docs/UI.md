@@ -94,6 +94,8 @@ Actions: View, Start, Stop, Restart, Create (opens the jail-creation flow). Acti
 
 ### Jail creation flow
 
+**The name starts as a suggestion** (#148), as it does in the Create a VM form: an adjective and an animal, `jolly-otter`, free on the host when drawn, from `GET /api/names/suggest`. **Another** beside the field draws a new one. Typing replaces it, and a suggestion still on its way when typing starts doesn't overwrite what was typed. No suggestion at all (the server unreachable) leaves the field empty, as before.
+
 Purpose: turn the clone-configure-start sequence (`docs/SPEC.md`) into a guided flow.
 
 Built at `/jails/new`, **as one form rather than a wizard**. A wizard suits a flow whose later questions depend on the earlier answers; this one's do not, and paging a dozen fields across four screens would hide from an operator the thing they most want to see — the whole jail they are about to make. The form is sectioned instead: Source, Network, After it is built, and then **Limits**, **Jail parameters** and **Datasets and tags**, which open only when asked for. A jail that needs none of them reads as one that needs none, not as one where three sections were skipped.

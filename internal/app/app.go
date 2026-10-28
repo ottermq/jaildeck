@@ -16,6 +16,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/images"
 	"github.com/ottermq/jaildeck/internal/jails"
 	"github.com/ottermq/jaildeck/internal/metrics"
+	"github.com/ottermq/jaildeck/internal/names"
 	"github.com/ottermq/jaildeck/internal/networks"
 	"github.com/ottermq/jaildeck/internal/state"
 	"github.com/ottermq/jaildeck/internal/storage"
@@ -32,6 +33,7 @@ type App struct {
 	authHandler     *auth.AuthHandler
 	jailHandler     *jails.JailHandler
 	consoleHandler  *console.Handler
+	nameHandler     *names.Handler
 	hostHandler     *host.HostHandler
 	auditHandler    *audit.AuditHandler
 	storageHandler  *storage.StorageHandler
@@ -178,9 +180,13 @@ func New(cfg *config.Config) (*App, error) {
 	consoleHandler := console.NewHandler(consoleService, authHandler.Recheck, auth.PrincipalOf,
 		cfg.ConsoleIdle, cfg.ConsoleOrigins)
 
+	nameHandler := names.NewHandler(names.NewSuggester(
+		namesInUse{jails: jailService, vms: vmService, templates: templateService}))
+
 	return &App{
 		authHandler:     authHandler,
 		consoleHandler:  consoleHandler,
+		nameHandler:     nameHandler,
 		jailHandler:     jailHandler,
 		hostHandler:     hostHandler,
 		auditHandler:    auditHandler,
@@ -231,6 +237,40 @@ func (g guestConsoles) Console(ctx context.Context, name string) (string, bool, 
 		return "", false, err
 	}
 	return detail.Consoles["com1"], detail.State == vms.StateRunning, nil
+}
+
+// namesInUse is what a suggested name must not be (#148): a jail's, a guest's
+// or a template's on this host, read when a suggestion is asked for.
+type namesInUse struct {
+	jails     *jails.JailService
+	vms       *vms.Service
+	templates *templates.Service
+}
+
+func (n namesInUse) InUse(ctx context.Context) (map[string]bool, error) {
+	inUse := map[string]bool{}
+	jailList, err := n.jails.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, j := range jailList {
+		inUse[j.Name] = true
+	}
+	listing, err := n.vms.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, vm := range listing.VMs {
+		inUse[vm.Name] = true
+	}
+	templateList, err := n.templates.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range templateList {
+		inUse[t.Name] = true
+	}
+	return inUse, nil
 }
 
 // newFirewallSystem selects the read-only PF implementation (JD-034).

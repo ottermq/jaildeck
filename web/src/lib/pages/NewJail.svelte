@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onMount } from 'svelte'
+import NameField from '../components/NameField.svelte'
 import { navigate, onNavClick } from '../router.svelte'
 import { listTemplates } from '../stores/templates.svelte'
 import type { Template } from '../stores/templates.svelte'
@@ -243,10 +244,7 @@ let stoppedAt = $derived(failed?.failed_at)
                 </div>
                 <div class="field field--grow">
                     <label for="name">Name</label>
-                    <input
-                        id="name" bind:value={name} required autocomplete="off" spellcheck="false"
-                        placeholder="db1"
-                    />
+                    <NameField id="name" bind:value={name} placeholder="db1" />
                 </div>
                 <div class="field field--grow">
                     <label for="hostname">Hostname</label>

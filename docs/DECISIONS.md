@@ -2052,7 +2052,14 @@ pass in quick on jdn<i> inet from <subnet> to <gateway> no state
 block in quick on jdn<i> inet from <subnet> to { <every other VM network>, self } no state
 ```
 
-The default network gets one more: `block in quick on vm-<switch> inet from <its subnet> to { <every tenant network> } no state`. **A network's members reach each other**: its ports aren't private, unlike the default network's. That's what a tenant's own instances need.
+Every network's NAT line comes first, then every network's filter rules: **pfctl refuses a file whose translation comes after filtering** ("Rules must be in order"). That was measured, when the first build wrote each network's NAT beside its own rules: the second network to be created failed to load, and the rollback took it back. The default network gets one more rule: `block in quick on vm-<switch> inet from <its subnet> to { <every tenant network> } no state`.
+
+**Checked live, 2026-10-28:**
+- Two networks were created through the API, with PF loaded as an operator would load it.
+- Each network's guest reached its own jail, its own gateway, the internet and DNS.
+- Each was blocked from the other network, both ways, from the other's gateway, and from the default network's gateway.
+- The destroy of a network in use was refused, naming its guest and its jail.
+- After everything was destroyed, the host's interfaces, `system.conf` and `rc.conf` were as before. **A network's members reach each other**: its ports aren't private, unlike the default network's. That's what a tenant's own instances need.
 
 ### The API
 

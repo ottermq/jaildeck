@@ -3,6 +3,7 @@ package jails
 import (
 	"context"
 	"errors"
+	"github.com/ottermq/jaildeck/internal/audit"
 	"net/http"
 	"slices"
 	"strings"
@@ -333,6 +334,7 @@ func TestCreateVNETDestroysTheEpairWhenTheStartCannotBeConfirmed(t *testing.T) {
 	if !result.EpairRemoved {
 		t.Error("EpairRemoved is false after the epair was destroyed")
 	}
+	wantSweep(t, logger, OperationRemoveLeftoverEpair, &audit.Entry{Command: "ifconfig epair7a destroy", Success: true})
 	// The start's own message survives: the cleanup is a footnote, not the
 	// headline.
 	if !strings.Contains(err.Error(), "did not come up") {
@@ -402,6 +404,22 @@ func TestDestroySweepsALeftoverEpair(t *testing.T) {
 	if !result.Destroyed {
 		t.Error("the destroy did not finish")
 	}
+	wantSweep(t, logger, OperationRemoveLeftoverEpair, &audit.Entry{Command: "ifconfig epair7a destroy", Success: true})
+}
+
+// The ordinary destroy: the jail's own poststop took the epair, so the sweep
+// finds nothing, changes nothing, and writes nothing to the audit log.
+func TestDestroyAuditsNoSweepWhenThereIsNoEpair(t *testing.T) {
+	system, destroyer, remover, autostart, logger := destroyable()
+	service := NewJailService(Dependencies{
+		System: system, Audit: logger,
+		RootDestroyer: destroyer, ConfigRemover: remover, Autostart: autostart,
+		Epair: &stubEpairCleaner{},
+	})
+	if _, err := service.Destroy(context.Background(), "db1", "db1"); err != nil {
+		t.Fatalf("Destroy: %v", err)
+	}
+	wantSweep(t, logger, OperationRemoveLeftoverEpair, nil)
 }
 
 // The jail and its dataset are what was asked for. An interface that will
@@ -425,4 +443,6 @@ func TestDestroyCarriesOnWhenTheEpairWillNotGo(t *testing.T) {
 	if !strings.Contains(result.EpairError, "device busy") {
 		t.Errorf("EpairError = %q, want the reason named", result.EpairError)
 	}
+	wantSweep(t, logger, OperationRemoveLeftoverEpair,
+		&audit.Entry{Command: "ifconfig <interface described jail:db1> destroy", Success: false})
 }

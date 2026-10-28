@@ -215,8 +215,16 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/auth/login` | password in, session cookie out |
 | `POST /api/auth/logout` | |
 | `GET /api/auth/me` | the current principal and when the session expires |
+| `GET /api/` | redirects to `/api/jails`, for a client that guessed the base path |
+| `GET /api/host/readiness` | what the host has and lacks for jails, VNET, limits and VMs, each with its remedy |
+| `GET /api/host/layout` | whether the jails dataset layout exists |
+| `PUT /api/host/layout` | create the missing layout datasets, adopting what is there |
 | `GET /api/jails` | every jail, running or merely configured, with its ZFS datasets |
 | `GET /api/jails/{name}` | one of them, same shape |
+| `POST /api/jails` | create a jail from a ready template: network, limits, parameters, child datasets |
+| `PUT /api/jails/{name}` | the same, idempotently: `201` made, `200` already matching, `409` with a diff |
+| `DELETE /api/jails/{name}` | stop and destroy it, with `confirm=` |
+| `POST /api/jails/{name}/exec` | run a command inside it, with a capped timeout and capped output |
 | `PUT /api/jails/{name}/datasets/{child}` | create a child dataset, or converge an existing one |
 | `PATCH /api/jails/{name}/properties` | tag the jail's own dataset |
 | `PATCH /api/jails/{name}/datasets/{child}/properties` | tag one of its children |
@@ -231,6 +239,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/jails/{name}/datasets/{child}/restore` | move a retained one back in |
 | `GET /api/retained` | datasets being kept past their jails |
 | `GET /api/templates` | templates, their readiness and their lineage |
+| `GET /api/templates/{name}` | one, with every jail and template cloned from it |
 | `PUT /api/templates/{name}` | derive one from another, plus packages |
 | `DELETE /api/templates/{name}` | destroy one, refusing while jails are cloned from it |
 | `POST /api/jails/{name}/template` | clone a configured jail as a template |
@@ -239,6 +248,10 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/jails/{name}/stop` | |
 | `POST /api/jails/{name}/restart` | |
 | `GET /api/audit` | operation history, newest first |
+| `GET /api/metrics` | host and per-jail resource usage, and disk health |
+| `GET /api/firewall` | PF's state, rules with counters, NAT, anchors and tables, read-only |
+| `GET /api/firewall/tables/{name}` | one table's addresses |
+| `GET /api/firewall/log` | the most recent pflog lines |
 | `GET /api/vms` | vm-bhyve's guests and their state, and whether vm-bhyve is ready |
 | `GET /api/vms/{name}` | one guest's console, network interfaces and disks |
 | `POST /api/vms/{name}/start` | start it and confirm it is running |

@@ -47,6 +47,7 @@ type madeVM struct {
 	sw     string
 	disk   int64
 	origin string
+	pins   []int
 }
 
 func NewVMs() *VMs {
@@ -223,6 +224,47 @@ func (f *VMs) VMDestroy(_ context.Context, name string) (string, error) {
 		f.gone[name] = true
 	}
 	return "vm destroy -f " + name, nil
+}
+
+// HostCPUs is isengard's.
+func (f *VMs) HostCPUs(context.Context) (int, error) { return 16, nil }
+
+func (f *VMs) VMPinCPUs(_ context.Context, name string, cpus []int) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if m, ok := f.made[name]; ok {
+		m.pins = slices.Clone(cpus)
+	}
+	return "sysrc -f /zroot/vm/" + name + "/" + name + ".conf bhyve_options=" + vms.PinOptions(cpus), nil
+}
+
+// VMApplied is what a guest made here was made with. The seeded guests were
+// made by the capture scripts, not from an image by Jail Deck: no seed.
+func (f *VMs) VMApplied(_ context.Context, name string) (vms.Applied, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.gone[name] {
+		return vms.Applied{}, vms.ErrNoSuchVM
+	}
+	if m, ok := f.made[name]; ok {
+		applied := vms.Applied{CPU: strconv.Itoa(m.spec.CPU), Memory: m.spec.Memory, Origin: m.origin,
+			DiskSize: m.disk, Seed: true, Address: m.spec.Address, Gateway: m.spec.Gateway,
+			Nameservers: m.spec.Nameservers, SSHKeys: m.spec.SSHKeys}
+		if len(m.pins) > 0 {
+			applied.BhyveOptions = vms.PinOptions(m.pins)
+		}
+		if m.sw != "" {
+			applied.Switches = []string{m.sw}
+		}
+		return applied, nil
+	}
+	switch name {
+	case "jd-cap-running":
+		return vms.Applied{CPU: "2", Memory: "512M", Switches: []string{"jd-capsw"}, DiskSize: 1073741824}, nil
+	case "jd-cap-stopped":
+		return vms.Applied{CPU: "1", Memory: "256M", DiskSize: 1073741824}, nil
+	}
+	return vms.Applied{}, vms.ErrNoSuchVM
 }
 
 var _ vms.VMSystem = (*VMs)(nil)

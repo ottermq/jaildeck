@@ -99,7 +99,7 @@ internal/
     service.go                     # application service
     handler.go
 
-  vms/                          # bounded context: bhyve VMs through vm-bhyve (JD-019) — listed, started and stopped, created and destroyed (JD-035, JD-036, JD-038)
+  vms/                          # bounded context: bhyve VMs through vm-bhyve (JD-019) — listed, started and stopped, created and destroyed (JD-035, JD-036, JD-038), pinned and ensured (JD-041)
   images/                       # bounded context: VM image templates, zvols in vm-bhyve's datastore (JD-037)
   firewall/                     # bounded context: PF, read-only (JD-020, JD-034)
   networks/                     # bounded context: the default VM network (JD-040) — a switch, forwarding
@@ -316,7 +316,8 @@ GET    /api/firewall/...             # read-only PF views (JD-020)
 GET    /api/vms                      # vm-bhyve's guests (JD-035)
 GET    /api/vms/{name}
 POST   /api/vms/{name}/start         # and stop, restart (JD-036)
-POST   /api/vms                      # create from an image (JD-038)
+POST   /api/vms                      # create from an image (JD-038), pinned (JD-041)
+PUT    /api/vms/{name}               # idempotent create, or the differences (JD-041)
 DELETE /api/vms/{name}
 GET    /api/networks/default         # the default VM network, part by part (JD-040)
 PUT    /api/networks/default         # ensure Jail Deck's parts of it, idempotent

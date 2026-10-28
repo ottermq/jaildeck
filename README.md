@@ -255,11 +255,12 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/firewall/tables/{name}` | one table's addresses |
 | `GET /api/firewall/log` | the most recent pflog lines |
 | `GET /api/vms` | vm-bhyve's guests and their state, and whether vm-bhyve is ready |
-| `GET /api/vms/{name}` | one guest's console, network interfaces and disks |
+| `GET /api/vms/{name}` | one guest's console, network interfaces, disks and CPU pin |
 | `POST /api/vms/{name}/start` | start it and confirm it is running |
 | `POST /api/vms/{name}/stop` | the power button, then a poweroff after 60 seconds, reported as `forced` |
 | `POST /api/vms/{name}/restart` | stop, then start |
-| `POST /api/vms` | create a guest from an image: CPU, memory, disk, a NIC on a switch, SSH keys, a static address |
+| `POST /api/vms` | create a guest from an image: CPU and a pin to host CPUs, memory, disk, a NIC on a switch, SSH keys, a static address |
+| `PUT /api/vms/{name}` | the same, idempotent: create it, or say it already matches, or how it differs |
 | `DELETE /api/vms/{name}?confirm={name}` | destroy a stopped guest and its disk |
 | `GET /api/vm-images` | VM image templates, and the sources they can be prepared from |
 | `GET /api/vm-images/{name}` | one image: its state, the build it was written from, the guests cloned from it |

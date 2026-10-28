@@ -222,8 +222,9 @@ func TestParseVMInfoRefusesAnotherGuestsAnswer(t *testing.T) {
 
 // --- never a write -------------------------------------------------------
 
-// The listing and the detail run vm list, vm info and -- for the switches a
-// new guest can be on (JD-038) -- vm switch list, and nothing else that
+// The listing and the detail run vm list, vm info, -- for the switches a
+// new guest can be on (JD-038) -- vm switch list, and -- for where a guest's
+// pin is written (JD-041) -- vm datastore list, and nothing else that
 // vm-bhyve has: no start, stop, create, destroy, configure or console
 // (JD-035).
 func TestTheVMAdapterNeverWrites(t *testing.T) {
@@ -233,6 +234,7 @@ func TestTheVMAdapterNeverWrites(t *testing.T) {
 		"vm info jd-cap-running": "vm_guests_info_running",
 		"vm info jd-cap-stopped": "vm_guests_info_stopped",
 		"vm switch list":         "vm_mk_switch_list",
+		"vm datastore list":      "vm_ready_datastore",
 	}}
 	a := NewAdapter(runnerFunc(func(ctx context.Context, cmd system.Command) (system.CommandResult, error) {
 		ran = append(ran, cmd)
@@ -253,7 +255,7 @@ func TestTheVMAdapterNeverWrites(t *testing.T) {
 	}
 	for _, cmd := range ran {
 		read := len(cmd.Args) > 0 && (cmd.Args[0] == "list" || cmd.Args[0] == "info") ||
-			slices.Equal(cmd.Args, []string{"switch", "list"})
+			slices.Equal(cmd.Args, []string{"switch", "list"}) || slices.Equal(cmd.Args, []string{"datastore", "list"})
 		if cmd.Name != "vm" || !read {
 			t.Errorf("ran %s, which is not a read", cmd)
 		}

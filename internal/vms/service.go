@@ -115,6 +115,15 @@ func (s *Service) Get(ctx context.Context, name string) (Detail, error) {
 	if detail.Disks == nil {
 		detail.Disks = make([]Disk, 0)
 	}
+	// The pin is in the configuration file, which vm info does not print. A
+	// failure to read it costs the pin and nothing else, and a guest outside
+	// the default datastore has none Jail Deck wrote.
+	if applied, err := s.system.VMApplied(ctx, name); err == nil {
+		detail.CPUSet, _ = parsePins(applied.BhyveOptions)
+	} else if !errors.Is(err, ErrNoSuchVM) {
+		common.Logger(ctx, "vms").Warn("could not read the guest's configuration",
+			slog.String("vm", name), slog.Any("err", err))
+	}
 	return detail, nil
 }
 

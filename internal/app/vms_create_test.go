@@ -78,3 +78,54 @@ func TestCreateAndDestroyAVMOverTheFakeAdapter(t *testing.T) {
 		}
 	}
 }
+
+// PUT /api/vms/{name} over the fake: created and pinned, then the same again,
+// then different -- and the guest left as it was (JD-041).
+func TestEnsureAVMOverTheFakeAdapter(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatalf("create test app: %v", err)
+	}
+	router := a.Routes(testAssets())
+	cookies := login(t, router)
+
+	spec := `{"image":"debian-13","cpu":2,"cpuset":[2,3],"memory":"1G","switch":"jd-capsw",
+		"network":{"address":"10.77.0.10/24","gateway":"10.77.0.1"}}`
+	for i, want := range []int{http.StatusCreated, http.StatusOK} {
+		rec := send(t, router, http.MethodPut, "/api/vms/web", cookies, spec)
+		if rec.Code != want || !strings.Contains(rec.Body.String(), `"name":"web"`) {
+			t.Fatalf("PUT %d returned %d, want %d: %s", i+1, rec.Code, want, rec.Body)
+		}
+	}
+	rec := do(t, router, http.MethodGet, "/api/vms/web", cookies, nil)
+	if !strings.Contains(rec.Body.String(), `"cpuset":[2,3]`) {
+		t.Errorf("GET /api/vms/web has no pin: %s", rec.Body)
+	}
+
+	differs := strings.Replace(spec, `"cpuset":[2,3]`, `"cpuset":[4,5]`, 1)
+	rec = send(t, router, http.MethodPut, "/api/vms/web", cookies, differs)
+	if rec.Code != http.StatusConflict ||
+		!strings.Contains(rec.Body.String(), `{"field":"cpuset","want":"4,5","have":"2,3"}`) ||
+		!strings.Contains(rec.Body.String(), `"changed":false`) {
+		t.Errorf("PUT that differs returned %d: %s", rec.Code, rec.Body)
+	}
+
+	for _, tc := range []struct {
+		path, body string
+		code       int
+	}{
+		{"/api/vms/web", `{"name":"api","image":"debian-13"}`, http.StatusBadRequest},
+		{"/api/vms/db", `{"image":"debian-13","cpu":2,"cpuset":[2,99]}`, http.StatusBadRequest},
+		// Made by the capture scripts, not from an image: nothing to compare.
+		{"/api/vms/jd-cap-stopped", `{"image":"debian-13"}`, http.StatusConflict},
+	} {
+		if rec := send(t, router, http.MethodPut, tc.path, cookies, tc.body); rec.Code != tc.code {
+			t.Errorf("PUT %s %s returned %d, want %d: %s", tc.path, tc.body, rec.Code, tc.code, rec.Body)
+		}
+	}
+
+	rec = do(t, router, http.MethodGet, "/api/audit?limit=20", cookies, nil)
+	if !strings.Contains(rec.Body.String(), `"vm-pin-cpus"`) {
+		t.Error("the audit log has no vm-pin-cpus")
+	}
+}

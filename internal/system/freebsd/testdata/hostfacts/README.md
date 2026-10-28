@@ -355,6 +355,30 @@ a directory the script removed; only the public key is in the captures, in the s
   "appears to be running on isengard (locked)").
 - **`vm destroy` takes the clone and frees the image** (`vm_mk_after_destroy`).
 
+## Pinning a guest's vCPUs (JD-041)
+
+`capture-vm-pin-induced.sh`, run 2026-10-28 on isengard into `isengard-induced/` with the prefix
+`vm_pin_`, makes one throwaway guest, `jd-cap-pin`, from a template of its own: UEFI, 2 vCPUs,
+256M and an empty 1G disk, so the firmware runs and finds nothing to boot, which is enough to
+have vCPU threads. It writes `bhyve_options` into the guest's configuration with `sysrc -f`, as
+vm-bhyve's `config::set` does, starts the guest, and reads each vCPU thread's cpuset with
+`cpuset -g -t`, four ways. The guest and its template were destroyed again; datasets were as
+before, and `system.conf` and `rc.conf` byte-identical. Another guest on the host was left alone.
+
+**What that settled:**
+
+- **Unpinned, both vCPU threads may run on all 16 CPUs** (`vm_pin_unpinned_cpusets`), like the
+  host's root set (`vm_pin_rootset`).
+- **`-p 0:2 -p 1:3` pins vCPU 0 to CPU 2 and vCPU 1 to CPU 3** (`vm_pin_pinned_cpusets`).
+  vm-bhyve passes the options to bhyve as they are (`vm_pin_pinned_log`).
+- **A pin of one vCPU leaves the other free** (`vm_pin_onepin_cpusets`).
+- **A host CPU that does not exist makes bhyve exit with status 134, and `vm start` exits 0**
+  (`vm_pin_badcpu_start`, `vm_pin_badcpu_log`, `vm_pin_badcpu_running`): why the service checks
+  `hw.ncpu` (`vm_pin_ncpu`) first.
+- **`vm create` writes `network0_mac` even with no NIC** (`vm_pin_conf`), so a NIC is counted by
+  `network<N>_type` or `_switch`, not by its MAC.
+- **`sysrc -x -f` takes the setting away again** (`vm_pin_conf_unset`).
+
 ## The default VM network (JD-040)
 
 `capture-vm-network-induced.sh`, run 2026-10-28 on isengard into `isengard-induced/` with the

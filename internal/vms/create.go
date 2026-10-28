@@ -30,6 +30,9 @@ type CreateRequest struct {
 	Image string `json:"image"`
 	// CPU is the number of virtual CPUs. Zero means 1.
 	CPU int `json:"cpu"`
+	// CPUSet pins the guest's vCPUs to host CPUs, vCPU i to cpuset[i]: one
+	// for each vCPU, each a different one (JD-041). Absent means unpinned.
+	CPUSet []int `json:"cpuset,omitempty"`
 	// Memory is vm-bhyve's own form, a whole number of M or G: "512M",
 	// "2G". Empty means 1G.
 	Memory string `json:"memory"`
@@ -63,6 +66,7 @@ type StaticNetwork struct {
 type CreateSpec struct {
 	Name   string
 	CPU    int
+	CPUSet []int
 	Memory string
 	// Disk is the size vm create gives disk0; it is replaced at that size.
 	Disk string
@@ -108,6 +112,7 @@ var sshKey = regexp.MustCompile(
 // Create makes a guest from an image template (JD-038):
 //
 //	vm create -t jaildeck -c <cpu> -m <memory> -s <disk> -C [-k <keys>] [-n <netconfig>] <name>
+//	sysrc -f <datastore>/<name>/<name>.conf bhyve_options="-p 0:<cpu> ..."
 //	vm add -d network -s <switch> <name>
 //	zfs destroy <datastore>/<name>/disk0
 //	zfs clone -o volmode=dev -o volsize=<disk> <image>@base <datastore>/<name>/disk0
@@ -131,6 +136,13 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Created, error
 	s.log(ctx, OperationCreate, spec.Name, command, err)
 	if err != nil {
 		return Created{}, operationError("create", spec.Name, err)
+	}
+	if len(spec.CPUSet) > 0 {
+		command, err = s.system.VMPinCPUs(ctx, spec.Name, spec.CPUSet)
+		s.log(ctx, OperationPinCPUs, spec.Name, command, err)
+		if err != nil {
+			return Created{}, s.undo(ctx, spec.Name, "pin its vCPUs", err)
+		}
 	}
 	if req.Switch != "" {
 		command, err = s.system.VMAddNetwork(ctx, spec.Name, req.Switch)
@@ -176,6 +188,12 @@ func (s *Service) undo(ctx context.Context, name, step string, cause error) erro
 // check resolves a request's defaults and refuses anything vm-bhyve would
 // take and then get wrong, before anything runs.
 func (s *Service) check(ctx context.Context, req CreateRequest) (CreateSpec, ImageRef, error) {
+	return s.resolve(ctx, req, true)
+}
+
+// resolve is check, and with creating false, it does not ask for the name to
+// be free: what PUT compares an existing guest against.
+func (s *Service) resolve(ctx context.Context, req CreateRequest, creating bool) (CreateSpec, ImageRef, error) {
 	bad := func(format string, args ...any) (CreateSpec, ImageRef, error) {
 		return CreateSpec{}, ImageRef{}, common.NewAppError(http.StatusBadRequest, fmt.Sprintf(format, args...))
 	}
@@ -189,6 +207,12 @@ func (s *Service) check(ctx context.Context, req CreateRequest) (CreateSpec, Ima
 	}
 	if spec.CPU < 1 || spec.CPU > maxCPU {
 		return bad("cpu is %d; a guest has from 1 to %d", req.CPU, maxCPU)
+	}
+	if len(req.CPUSet) > 0 {
+		if err := checkCPUSet(req.CPUSet, spec.CPU); err != nil {
+			return CreateSpec{}, ImageRef{}, err
+		}
+		spec.CPUSet = slices.Clone(req.CPUSet)
 	}
 	if spec.Memory == "" {
 		spec.Memory = defaultMemory
@@ -250,7 +274,7 @@ func (s *Service) check(ctx context.Context, req CreateRequest) (CreateSpec, Ima
 		}
 		return CreateSpec{}, ImageRef{}, common.NewAppError(http.StatusConflict, "vm-bhyve is not ready: "+why)
 	}
-	if slices.ContainsFunc(listing.VMs, func(vm VM) bool { return vm.Name == req.Name }) {
+	if creating && slices.ContainsFunc(listing.VMs, func(vm VM) bool { return vm.Name == req.Name }) {
 		return CreateSpec{}, ImageRef{}, common.NewAppError(http.StatusConflict,
 			"vm-bhyve already has a guest named "+strconv.Quote(req.Name))
 	}
@@ -266,6 +290,15 @@ func (s *Service) check(ctx context.Context, req CreateRequest) (CreateSpec, Ima
 			}
 			return bad("vm-bhyve has no switch named %s (%s); switches are the operator's, made with vm switch create",
 				strconv.Quote(req.Switch), known)
+		}
+	}
+	if len(spec.CPUSet) > 0 {
+		hostCPUs, err := s.system.HostCPUs(ctx)
+		if err != nil {
+			return CreateSpec{}, ImageRef{}, readError("how many CPUs this host has", err)
+		}
+		if err := checkHostCPUs(spec.CPUSet, hostCPUs); err != nil {
+			return CreateSpec{}, ImageRef{}, err
 		}
 	}
 	return spec, image, nil

@@ -1880,3 +1880,59 @@ Every part is reported with its **owner**. Jail Deck's are put in place by the s
 
 - **Addresses are typed in.** The default network has no DHCP server, so the create form gives a guest on it a static address, with the gateway filled in. Jail Deck allocating them is #118's next step, and it also answers "which address do I connect to".
 - **Networks per tenant**, the rest of #118, and the read-only view of every network, #128.
+
+---
+
+## JD-041 — A Guest's CPU Pin, and the Idempotent PUT for VMs
+
+**Status:** Locked — 2026-10-28. Pinning measured on isengard with a throwaway guest (`capture-vm-pin-induced.sh`). The `PUT` follows JD-016 as the jails' does. These are the two of the three "left for later" in the Virtual Machines milestone. The third, a serial console, is #123's and needs its own design note.
+
+### The pin
+
+**vm-bhyve has no setting for pinning.** It hands `bhyve_options` to bhyve as they are, and bhyve's `-p <vcpu>:<hostcpu>` pins one vCPU. vm-bhyve's own sample configuration uses exactly that. So a pin is a `cpuset` in the request, `[2, 3]`, meaning vCPU 0 on host CPU 2 and vCPU 1 on host CPU 3. Jail Deck writes it into the guest's configuration the way vm-bhyve's `config::set` writes any setting:
+
+```
+sysrc -f <datastore>/<name>/<name>.conf bhyve_options="-p 0:2 -p 1:3"
+```
+
+It's a step of its own in the create, audited as `vm-pin-cpus`, and a guest whose pin fails is destroyed again, as with every other step (JD-038).
+
+**What was measured**, reading each vCPU thread's cpuset with `cpuset -g -t`:
+
+| `bhyve_options` | vCPU 0 | vCPU 1 | guest |
+| --- | --- | --- | --- |
+| none | 0–15 | 0–15 | runs |
+| `-p 0:2 -p 1:3` | **2** | **3** | runs |
+| `-p 0:2` | 2 | 0–15 | runs |
+| `-p 0:2 -p 1:999` | — | — | **bhyve exits 134; `vm start` exits 0** |
+
+**What the API takes:**
+- **One host CPU for every vCPU, each a different one.** bhyve accepts a partial pin, but a guest half pinned isn't what anyone asking for a cpuset meant, and two vCPUs on one host CPU make the guest compete with itself.
+- **Every CPU the host has, checked before anything runs** (`hw.ncpu`). A CPU the host lacks is found by bhyve only at start, by aborting, while `vm start` reports success. JD-036's start would notice the guest never came up, but only after its wait, and with no reason to give.
+- **Read back from the file, never kept** (JD-011). `GET /api/vms/{name}` carries `cpuset` when `bhyve_options` is exactly a pin as Jail Deck writes it. Options anyone else wrote aren't mistaken for one.
+
+**Not taken:** `cpuset(1)` on the bhyve process after it starts. That would need Jail Deck to act at every start, including vm-bhyve's own restart of a guest that rebooted, and at boot through `rc.d/vm`, where Jail Deck isn't involved at all. The configuration file is read at every one of those.
+
+### The PUT
+
+`PUT /api/vms/{name}` takes `POST /api/vms`'s body and does what `PUT /api/jails/{name}` does (JD-016):
+- **absent:** create it, `201`;
+- **there and matching:** `200`, nothing run;
+- **there and different:** `409` with `differences`, each as `{field, want, have}` in the request's own field names, and the guest left exactly as it is.
+
+What the guest was made with is read off the host. Each piece was measured with JD-038's guest:
+
+| field | read from |
+| --- | --- |
+| `image` | disk0's clone origin, compared against the image's `@base` |
+| `disk` | disk0's `volsize` |
+| `cpu`, `memory`, `cpuset`, `switch` | the guest's configuration file |
+| `network.*` | the seed's `network-config`, which vm-bhyve writes only for a static address. A DHCP guest has none, read in vm-bhyve's `core::create_cloud_init` |
+| `ssh_keys` | the seed's `user-data`, which vm-bhyve always writes |
+
+- **Defaults resolve the same way on both sides.** A request that leaves `cpu`, `memory` or `disk` out matches the guest those defaults made.
+- **`start` isn't compared**, for the jails' reason: a guest stopped for maintenance would refuse every `PUT`.
+- **A request a create would refuse is refused, not compared.** For example, a cpuset of the wrong length is a `400`, not a difference.
+- **A guest Jail Deck can't compare is a `409` that says why:** it's outside the default datastore, or it has no cloud-init seed, so it wasn't made from an image by Jail Deck.
+
+**Not yet:** changing a guest. A `PUT` that differs says how, and the client decides. Resizing CPUs or memory, or re-pinning a stopped guest, would be a `PATCH` with its own record, as #119 is for jails' limits.

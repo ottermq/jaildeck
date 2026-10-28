@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ottermq/jaildeck/internal/audit"
@@ -36,13 +37,17 @@ type replayRunner struct {
 	t        *testing.T
 	set      string
 	captures map[string]string
-	ran      []string
+	// mu guards ran: the disk reads run concurrently (#135).
+	mu  sync.Mutex
+	ran []string
 }
 
 func (r *replayRunner) Run(_ context.Context, cmd system.Command) (system.CommandResult, error) {
 	r.t.Helper()
 	line := cmd.String()
+	r.mu.Lock()
 	r.ran = append(r.ran, line)
+	r.mu.Unlock()
 	name, ok := r.captures[line]
 	if !ok {
 		r.t.Errorf("adapter ran %q, which this test has no capture for", line)

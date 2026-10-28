@@ -20,7 +20,10 @@ func withStorageRoots(roots ...string) map[string]string {
 	captures := make(map[string]string, 2*len(roots))
 	for _, root := range roots {
 		captures["zfs list -H -p -o name,used,avail,refer,mountpoint -r "+root] = "zfs_list_space_rp_" + root
-		captures["zfs get -H -r -o name,property,value,source -s local all "+root] = "zfs_get_local_r_" + root
+		// Captured without -t filesystem,volume (#135). Its output is the
+		// same: no snapshot on any captured host had a local property, so
+		// the captures hold no snapshot rows to leave out.
+		captures["zfs get -H -r -t filesystem,volume -o name,property,value,source -s local all "+root] = "zfs_get_local_r_" + root
 	}
 	return captures
 }

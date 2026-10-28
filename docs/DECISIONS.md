@@ -2001,3 +2001,8 @@ What follows from that:
 - **The PTY master must be made non-blocking.** Closed while a blocking read waits on it, it neither interrupts the read nor hangs up: the shell and the command it was running stayed alive in the jail, and `cmd.Wait` never returned. On a non-blocking duplicate, `Close` ends the read at once, `jexec` gets `SIGHUP`, and nothing is left behind. Every console session ends by closing that duplicate.
 - **The service stopping writes no `console-close`.** Jail Deck installs no signal handler (it never has), so `service jaildeck stop` ends the process outright. The kernel then closes the PTY masters, and the shells get the hangup and end. Nothing stays behind; only the close entry is missing.
 - **An open shell makes a jail stop take 10 s instead of under one.** `jail -r` waits for it and then kills it. So stopping, restarting or destroying a jail first closes its console sessions, with `jail-stopped`, and the stop is as quick as without one.
+
+**Amended 2026-10-28: the VM console, built and checked live** on a guest made from the Debian image:
+- The device was raw while the session held it (`-icanon -echo -ixon`), and a return got `<name> login:` back.
+- Another origin got a `403`, and a second session a `409`.
+- **Jail Deck stopping the guest closes its console first.** A guest powered off from the host's shell was caught by the session's own look at `vm list` and closed with `guest-stopped` 2.9 s later. Either way, no nmdm device was left behind.

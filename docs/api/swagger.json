@@ -3040,6 +3040,58 @@
                 }
             }
         },
+        "/vms/{name}/console": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Upgrades to a WebSocket attached to the guest's first console port: the host's\nend of its nmdm pair, as `vm info` names it, made raw before anything passes\n(JD-042). Frames as for a jail's console: binary for the terminal's bytes, text\nfor JSON control. A serial line has no size, so `resize` changes nothing; the\nguest's own `stty` or `resize` does.\n\n**One session per guest**: a second is refused with `409`. An outside\n`vm console` or `cu` on the host can still attach at the same time; FreeBSD lets\nroot past an exclusive lock, measured. **Closing the console does not log anyone\nout of the guest**: a login on the serial line stays logged in.\n\nThe session ends as a jail's does, and also with `guest-stopped` when the guest\nis no longer running (looked at every 5 s: a powered-off guest gives the device's\nreader nothing at all), or `console-closed` when the device ends. Audited as\n`console-open` and `console-close`; nothing typed or printed is recorded.",
+                "tags": [
+                    "vms"
+                ],
+                "summary": "A guest's serial console, over a WebSocket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Guest name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "description": "Switching protocols"
+                    },
+                    "400": {
+                        "description": "Not a WebSocket request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such guest",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "The guest is not running, or a console is open on it already",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/vms/{name}/restart": {
             "post": {
                 "security": [

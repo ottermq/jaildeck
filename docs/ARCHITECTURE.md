@@ -322,6 +322,7 @@ GET    /api/vms/{name}
 POST   /api/vms/{name}/start         # and stop, restart (JD-036)
 POST   /api/vms                      # create from an image (JD-038), pinned (JD-041)
 PUT    /api/vms/{name}               # idempotent create, or the differences (JD-041)
+GET    /api/vms/{name}/console       # WebSocket: the guest's serial console, raw (JD-042)
 DELETE /api/vms/{name}
 GET    /api/networks/default         # the default VM network, part by part (JD-040)
 PUT    /api/networks/default         # ensure Jail Deck's parts of it, idempotent

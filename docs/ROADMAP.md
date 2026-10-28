@@ -53,6 +53,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Packaging, second half** (v0.16.1): releases built and attested in CI, and published into a signed `pkg` repository by a host that verifies the attestation (JD-039)
 - **A default VM network** (v0.17.0): one switch Jail Deck owns, with private ports, forwarding and NAT through a PF anchor file, PF itself staying the operator's (#118 step 1, JD-040); guests pinned to host CPUs, and an idempotent `PUT` for VMs (JD-041)
 - **Faster pages** (v0.17.1): the jails listing no longer walks every snapshot, and disks are read side by side (#135)
+- **A console in the browser** (v0.18.0): a jail's shell and a guest's serial console, audited, nothing typed recorded (#123, JD-042)
 
 ---
 

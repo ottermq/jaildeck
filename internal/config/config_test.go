@@ -1,8 +1,10 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -24,6 +26,8 @@ func TestLoadConfig(t *testing.T) {
 				VMSwitch:    "jaildeck",
 				VMAddress:   "10.88.0.1/24",
 				PFAnchorDir: "/usr/local/etc/jaildeck/pf",
+
+				ConsoleIdle: 30 * time.Minute,
 			},
 		},
 		{
@@ -41,6 +45,9 @@ func TestLoadConfig(t *testing.T) {
 				VMAddress:   "10.90.0.1/24",
 				VMEgress:    "igb0",
 				PFAnchorDir: "/tmp/jaildeck-pf",
+
+				ConsoleIdle:    5 * time.Minute,
+				ConsoleOrigins: []string{"jaildeck.example.org", "*.example.org"},
 			},
 			want: Config{
 				Host:     "0.0.0.0",
@@ -55,6 +62,9 @@ func TestLoadConfig(t *testing.T) {
 				VMAddress:   "10.90.0.1/24",
 				VMEgress:    "igb0",
 				PFAnchorDir: "/tmp/jaildeck-pf",
+
+				ConsoleIdle:    5 * time.Minute,
+				ConsoleOrigins: []string{"jaildeck.example.org", "*.example.org"},
 			},
 		},
 	}
@@ -72,8 +82,14 @@ func TestLoadConfig(t *testing.T) {
 			t.Setenv("JAILDECK_VM_ADDRESS", tt.env.VMAddress)
 			t.Setenv("JAILDECK_VM_EGRESS", tt.env.VMEgress)
 			t.Setenv("JAILDECK_PF_ANCHOR_DIR", tt.env.PFAnchorDir)
+			idle := ""
+			if tt.env.ConsoleIdle != 0 {
+				idle = tt.env.ConsoleIdle.String()
+			}
+			t.Setenv("JAILDECK_CONSOLE_IDLE", idle)
+			t.Setenv("JAILDECK_CONSOLE_ORIGINS", strings.Join(tt.env.ConsoleOrigins, " , "))
 
-			if got := LoadConfig(); got == nil || *got != tt.want {
+			if got := LoadConfig(); got == nil || !reflect.DeepEqual(*got, tt.want) {
 				t.Errorf("LoadConfig() = %+v, want %+v", got, tt.want)
 			}
 		})
@@ -152,5 +168,23 @@ func TestIsLoopback(t *testing.T) {
 				t.Errorf("isLoopback(%q) = %t, want %t", tt.host, got, tt.want)
 			}
 		})
+	}
+}
+
+// A duration that does not parse keeps the default rather than turning the
+// timeout off; "0" turns it off on purpose.
+func TestConsoleIdle(t *testing.T) {
+	for value, want := range map[string]time.Duration{
+		"":     30 * time.Minute,
+		"0":    0,
+		"2h":   2 * time.Hour,
+		"soon": 30 * time.Minute,
+		"-5m":  30 * time.Minute,
+		"90s":  90 * time.Second,
+	} {
+		t.Setenv("JAILDECK_CONSOLE_IDLE", value)
+		if got := LoadConfig().ConsoleIdle; got != want {
+			t.Errorf("JAILDECK_CONSOLE_IDLE=%q: %s, want %s", value, got, want)
+		}
 	}
 }

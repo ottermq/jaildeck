@@ -102,6 +102,7 @@ internal/
   vms/                          # bounded context: bhyve VMs through vm-bhyve (JD-019) — listed, started and stopped, created and destroyed (JD-035, JD-036, JD-038), pinned and ensured (JD-041)
   images/                       # bounded context: VM image templates, zvols in vm-bhyve's datastore (JD-037)
   firewall/                     # bounded context: PF, read-only (JD-020, JD-034)
+  console/                      # the browser console (JD-042): sessions, their audit, the WebSocket bridge
   networks/                     # bounded context: the default VM network (JD-040) — a switch, forwarding
                                  # and the jaildeck/vmnet anchor file, reported part by part with owners
 
@@ -263,7 +264,9 @@ type CommandResult struct {
 }
 ```
 
-Argument arrays, not shell string interpolation. No allowlist enforcement exists yet — an open item. Errors from adapters are wrapped in `system.CommandError` (command, args, raw result, underlying cause) — handlers and domain services use `errors.As` to pull it out for user-facing summaries.
+Argument arrays, not shell string interpolation. No allowlist enforcement exists yet — an open item.
+
+**The one exception is the console's shell** (JD-042). `freebsd.Shells` starts `jexec -l <jail> /bin/sh -l` on a PTY directly, not through the runner, because a shell is neither bounded nor captured: it runs until the session closes it, and its output is a stream. It's still an argument array, it's still audited, as `console-open` and `console-close`, and it's ended by the session's hang-up rather than by a timeout. The PTY master is a non-blocking duplicate, because closing a blocking one ended neither the read nor the shell (measured). Errors from adapters are wrapped in `system.CommandError` (command, args, raw result, underlying cause) — handlers and domain services use `errors.As` to pull it out for user-facing summaries.
 
 ## FreeBSD adapters
 
@@ -307,6 +310,7 @@ POST   /api/jails                    # create (clone template + configure + star
 PUT    /api/jails/{name}             # idempotent create from a full spec (JD-016)
 DELETE /api/jails/{name}?confirm={name}
 POST   /api/jails/{name}/exec        # argv, timeout, env -> stdout, stderr, exit code
+GET    /api/jails/{name}/console     # WebSocket: a shell in the jail on a PTY (JD-042)
 GET    /api/templates
 POST   /api/templates                # prepare a new release template
 GET    /api/storage/datasets
@@ -318,6 +322,7 @@ GET    /api/vms/{name}
 POST   /api/vms/{name}/start         # and stop, restart (JD-036)
 POST   /api/vms                      # create from an image (JD-038), pinned (JD-041)
 PUT    /api/vms/{name}               # idempotent create, or the differences (JD-041)
+GET    /api/vms/{name}/console       # WebSocket: the guest's serial console, raw (JD-042)
 DELETE /api/vms/{name}
 GET    /api/networks/default         # the default VM network, part by part (JD-040)
 PUT    /api/networks/default         # ensure Jail Deck's parts of it, idempotent

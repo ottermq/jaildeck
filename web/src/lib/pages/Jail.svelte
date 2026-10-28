@@ -14,8 +14,10 @@ import { ApiError } from '../services/api'
 import { onNavClick, navigate } from '../router.svelte'
 import { ask } from '../stores/confirm.svelte'
 import { formatBytes, normalizeEmptyValue } from '../utils'
+import ConsolePanel from '../components/ConsolePanel.svelte'
 
 let { name }: { name: string } = $props()
+
 
 let jail = $state<JailData | null>(null)
 let snapshots = $state<Snapshot[] | null>(null)
@@ -638,6 +640,18 @@ async function retain(event: Event, dataset: Dataset) {
                 <button type="button" class="btn btn--small" onclick={() => (recloneFailure = null)}>Dismiss</button>
             </div>
         </div>
+    {/if}
+
+    {#if jail}
+        <ConsolePanel path={`/jails/${encodeURIComponent(name)}/console`} running={jail.status === 'running'}
+                      openLabel="Open a shell" onended={reason => { if (reason === 'jail-stopped') void load() }}>
+            <p class="hint">
+                A root shell inside the jail. It's audited: who opened it, for how long, and why it
+                closed — <strong>nothing you type or see is recorded</strong>. It closes when the jail
+                stops, when your login ends, or after a while with nothing typed.
+                {#if jail.status !== 'running'}Start the jail to open one.{/if}
+            </p>
+        </ConsolePanel>
     {/if}
 
     <section class="panel">

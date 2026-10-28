@@ -2,9 +2,11 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -53,6 +55,13 @@ type Config struct {
 	VMAddress   string
 	VMEgress    string
 	PFAnchorDir string
+
+	// The browser console (JD-042). ConsoleIdle ends a session nothing has
+	// been typed into for that long; 0 never does. ConsoleOrigins are hosts a
+	// page may open one from besides this host itself, for a proxy that
+	// rewrites Host: "jaildeck.example.org", "*.example.org".
+	ConsoleIdle    time.Duration
+	ConsoleOrigins []string
 }
 
 func LoadConfig() *Config {
@@ -75,7 +84,36 @@ func LoadConfig() *Config {
 		VMAddress:   getEnv("JAILDECK_VM_ADDRESS", "10.88.0.1/24"),
 		VMEgress:    getEnv("JAILDECK_VM_EGRESS", ""),
 		PFAnchorDir: getEnv("JAILDECK_PF_ANCHOR_DIR", "/usr/local/etc/jaildeck/pf"),
+
+		ConsoleIdle:    getDuration("JAILDECK_CONSOLE_IDLE", 30*time.Minute),
+		ConsoleOrigins: getList("JAILDECK_CONSOLE_ORIGINS"),
 	}
+}
+
+// getDuration reads a Go duration ("30m", "2h", "0"). One that does not parse
+// keeps the default and says so, rather than turning the timeout off.
+func getDuration(key string, defaultValue time.Duration) time.Duration {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil || d < 0 {
+		slog.Warn("ignoring a setting that is not a duration", "key", key, "value", value, "using", defaultValue.String())
+		return defaultValue
+	}
+	return d
+}
+
+// getList reads a comma-separated list, nil when unset.
+func getList(key string) []string {
+	var list []string
+	for _, item := range strings.Split(os.Getenv(key), ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			list = append(list, item)
+		}
+	}
+	return list
 }
 
 func getEnv(key, defaultValue string) string {

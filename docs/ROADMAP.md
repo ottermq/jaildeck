@@ -53,6 +53,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Packaging, second half** (v0.16.1): releases built and attested in CI, and published into a signed `pkg` repository by a host that verifies the attestation (JD-039)
 - **A default VM network** (v0.17.0): one switch Jail Deck owns, with private ports, forwarding and NAT through a PF anchor file, PF itself staying the operator's (#118 step 1, JD-040); guests pinned to host CPUs, and an idempotent `PUT` for VMs (JD-041)
 - **Faster pages** (v0.17.1): the jails listing no longer walks every snapshot, and disks are read side by side (#135)
+- **A console in the browser** (v0.18.0): a jail's shell and a guest's serial console, audited, nothing typed recorded (#123, JD-042)
 
 ---
 
@@ -415,7 +416,7 @@ Jail Deck can be installed on FreeBSD in a repeatable way and run as a service.
 
 ## Milestone: Virtual Machines
 
-**Status:** done in v0.16.0, begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, and since v0.15.0 started, stopped and restarted, through the API and on the VMs pages (JD-035, JD-036). Image templates can be prepared through the API and on the VMs page (JD-037), and a guest created from one and destroyed, through the API and on the VMs pages (JD-038). **The completion criterion is met**, checked on isengard on 2026-10-26 through the interface itself: a Debian guest created from the form, reached over SSH on its static address, stopped and destroyed. Since then, a guest's vCPUs can be pinned to host CPUs, and `PUT /api/vms/{name}` creates idempotently (JD-041). Left for later: a serial console through the API (#123), designed in JD-042.
+**Status:** done in v0.16.0, begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, and since v0.15.0 started, stopped and restarted, through the API and on the VMs pages (JD-035, JD-036). Image templates can be prepared through the API and on the VMs page (JD-037), and a guest created from one and destroyed, through the API and on the VMs pages (JD-038). **The completion criterion is met**, checked on isengard on 2026-10-26 through the interface itself: a Debian guest created from the form, reached over SSH on its static address, stopped and destroyed. Since then, a guest's vCPUs can be pinned to host CPUs, and `PUT /api/vms/{name}` creates idempotently (JD-041). A jail's shell and a guest's serial console are in the browser too (#123, JD-042).
 
 **Depends on:** Host Setup (UG check), Storage Writes (zvols), Jail Provisioning (the patterns VMs mirror). **★ Otter Cloud:** Linux VMs, after its first beta.
 

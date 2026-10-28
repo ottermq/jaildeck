@@ -194,6 +194,35 @@ func (h *AuthHandler) RequireAuth(next http.Handler) http.Handler {
 	})
 }
 
+// Recheck answers whether the credentials a request came with still hold, for
+// something that outlives the request: a console session ends when the login
+// that opened it expires or is revoked (JD-042). It is RequireAuth's check
+// again, with nothing written.
+func (h *AuthHandler) Recheck(r *http.Request) error {
+	if presented, ok := bearerToken(r); ok {
+		_, err := h.service.AuthenticateToken(r.Context(), presented)
+		return err
+	}
+	c, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return ErrUnauthenticated
+	}
+	_, err = h.service.Authenticate(r.Context(), c.Value)
+	return err
+}
+
+// PrincipalOf names who a request authenticated as, for the audit log:
+// "session" for the operator's login, "token:<name>" for an API token.
+func PrincipalOf(r *http.Request) string {
+	if name, ok := TokenNameFromContext(r.Context()); ok {
+		return string(kindToken) + ":" + name
+	}
+	if _, ok := SessionFromContext(r.Context()); ok {
+		return string(kindSession)
+	}
+	return ""
+}
+
 func SessionFromContext(ctx context.Context) (Session, bool) {
 	session, ok := ctx.Value(sessionKey{}).(Session)
 	return session, ok

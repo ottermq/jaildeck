@@ -11,7 +11,7 @@ VERSION?=
 # dependency, so `go tool swag` needs no global install and every machine runs
 # the same version. Its --version flag reports a stale constant; go.mod is the
 # truth.
-SWAG_DIRS=cmd/jaildeck,internal/app,internal/jails,internal/host,internal/audit,internal/auth,internal/storage,internal/templates,internal/metrics,internal/firewall,internal/vms,internal/images,internal/networks,internal/common
+SWAG_DIRS=cmd/jaildeck,internal/app,internal/jails,internal/host,internal/audit,internal/auth,internal/storage,internal/templates,internal/metrics,internal/firewall,internal/vms,internal/images,internal/networks,internal/console,internal/common
 SPEC=docs/api/swagger.json
 
 # Installation paths. PREFIX is where FreeBSD puts local software; DESTDIR

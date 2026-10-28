@@ -20,6 +20,64 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.18.0 — 2026-10-28
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.18.0)
+
+**A console in the browser** (#123, JD-042): a root shell in a running jail, and a running
+guest's serial console, each from its own page, over a WebSocket. Sessions are audited with who
+opened them, for how long and why they ended; **nothing typed or shown is recorded**.
+
+Nothing to act on when upgrading. Two settings are new and optional: `JAILDECK_CONSOLE_IDLE`
+(default `30m`) and `JAILDECK_CONSOLE_ORIGINS`, for a reverse proxy that rewrites `Host`. Behind
+a proxy, it has to pass WebSocket upgrades through for the console to connect.
+
+### Added
+
+- **A jail's shell** (#142): **Open a shell** on a running jail's page puts a terminal
+  (xterm.js) on the page, attached to `jexec -l <jail> /bin/sh -l` on a PTY.
+  - Only `TERM` reaches the jail from Jail Deck's environment.
+  - Stopping, restarting or destroying the jail closes its consoles first. An open shell
+    used to make a stop take 10 s, measured.
+- **A guest's serial console** (#143): **Open the console** on a running guest's page,
+  attached to its `com1`.
+  - One console per guest. `vm console` on the host can still attach alongside, and the
+    page says so.
+  - Closing it logs no one out of the guest.
+- **What ends a session:** the page closing, the shell exiting, the jail or guest stopping,
+  the login that opened it expiring or being revoked, or nothing typed for
+  `JAILDECK_CONSOLE_IDLE`. The page says which, in words.
+
+### API
+
+- **`GET /api/jails/{name}/console` and `GET /api/vms/{name}/console`** (#142, #143). They
+  upgrade to a WebSocket:
+  - **Binary frames** carry the terminal's bytes.
+  - **Text frames** carry JSON control: `resize` from the client, and `closed` with a reason
+    from the server.
+
+  The `Origin` is checked before anything opens. A stopped jail or guest gets `409`, and so
+  does a second console on a guest.
+- **Audit entries gain `principal`, `duration_ms` and `reason`** (#142). They appear only on
+  `console-open` and `console-close` for now. Additive.
+
+### Internal
+
+- **Two Go libraries, the first in a while:** `github.com/coder/websocket` and
+  `github.com/creack/pty`. JD-042 records the change of rule: small, focused libraries yes,
+  frameworks no.
+- **xterm.js is a devDependency,** bundled like everything else, and loaded as its own chunk only
+  when a console opens.
+- **The measurements are kept as captures:** `capture-jail-console-induced.sh` and
+  `capture-vm-console-induced.sh`, with the probes they drive.
+
+### Known
+
+- **Exec's audit entry records `exit_code` 0 and no `timed_out`, whatever the command did**
+  (#141). It's found and not yet fixed.
+
+---
+
 ## v0.17.1 — 2026-10-28
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.17.1)

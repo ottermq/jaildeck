@@ -124,7 +124,20 @@ type JailService struct {
 	autostartSource AutostartSource
 	cloneOrigin     CloneOrigin
 	exec            JailExecutor
+	// consoles are the jail's open shells (JD-042), hung up before it stops.
+	consoles ConsoleHangup
 }
+
+// ConsoleHangup hangs up every console session in a jail. An open shell made
+// a jail stop take 10 s instead of under one, measured: jail -r waited for it
+// and then killed it (JD-042).
+type ConsoleHangup interface {
+	HangUpJail(name string)
+}
+
+// SetConsoles is set after construction, because the console service asks
+// this one whether a jail is running.
+func (s *JailService) SetConsoles(c ConsoleHangup) { s.consoles = c }
 
 func NewJailService(deps Dependencies) *JailService {
 	return &JailService{
@@ -243,6 +256,10 @@ func (s *JailService) do(ctx context.Context, name JailName, op Operation, call 
 	opCtx := context.WithoutCancel(ctx)
 	if _, err := NewJailName(name.String()); err != nil {
 		return OperationResult{}, err
+	}
+	// Destroy and reclone stop the jail through Stop, so this covers them.
+	if s.consoles != nil && (op == OperationStop || op == OperationRestart) {
+		s.consoles.HangUpJail(name.String())
 	}
 	result, err := call(opCtx, name.String())
 	s.logJailOperation(opCtx, name.String(), op, result.Command, err)

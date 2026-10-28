@@ -32,6 +32,13 @@ const consoleReasons: Record<string, string> = {
     'idle': 'Closed: nothing was typed for a while.',
 }
 
+function consoleClosed(reason: string) {
+    consoleEnded = consoleReasons[reason] ?? 'The connection ended, or could not be made.'
+    // The jail stopped from somewhere else -- another tab, the API: the page
+    // still says running until it reads the jail again.
+    if (reason === 'jail-stopped') void load()
+}
+
 function openConsole() {
     consoleEnded = null
     consoleRun += 1
@@ -680,8 +687,7 @@ async function retain(event: Event, dataset: Dataset) {
             </div>
             {#if consoleOpen}
                 {#key consoleRun}
-                    <Console path={`/jails/${encodeURIComponent(name)}/console`}
-                             onclosed={reason => (consoleEnded = consoleReasons[reason] ?? 'The connection ended, or could not be made.')} />
+                    <Console path={`/jails/${encodeURIComponent(name)}/console`} onclosed={consoleClosed} />
                 {/key}
                 {#if consoleEnded !== null}
                     <p class="notice" role="status">{consoleEnded}</p>

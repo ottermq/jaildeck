@@ -11,7 +11,8 @@ is a Linux container.
 stopped, restarted and destroyed from the browser or the API; their ZFS datasets,
 snapshots and resource usage are visible; host setup is checked; PF can be seen,
 read-only; bhyve VMs are created from cloud images with cloud-init, pinned to host CPUs, started,
-stopped and destroyed, on a default network Jail Deck sets up with NAT through PF; every operation is audited, and nothing is reachable without a password or an
+stopped and destroyed, on a default network Jail Deck sets up with NAT through PF; a jail has a shell in the
+browser, from its page; every operation is audited, and nothing is reachable without a password or an
 API token. Releases install and upgrade with `pkg` from a signed repository. See
 [the roadmap](docs/ROADMAP.md) for what comes next.
 

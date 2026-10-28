@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,10 @@ type maker struct {
 		snapshot string
 		size     int64
 	}
+	// hostCPUs is hw.ncpu, and applied what each guest it made reads back
+	// as: what the host would hold after the same steps.
+	hostCPUs int
+	applied  map[string]*Applied
 }
 
 func newMaker() *maker {
@@ -31,6 +36,8 @@ func newMaker() *maker {
 		listing:  Listing{VMBhyve: VMBhyveReady, VMs: []VM{{Name: "existing", State: StateStopped}}},
 		switches: []string{"jd-capsw"},
 		fail:     map[string]error{},
+		hostCPUs: 16,
+		applied:  map[string]*Applied{},
 	}
 }
 
@@ -69,16 +76,47 @@ func (m *maker) VMCreate(_ context.Context, spec CreateSpec) (string, error) {
 		return "vm create " + spec.Name, err
 	}
 	m.set(spec.Name, StateStopped)
+	m.applied[spec.Name] = &Applied{CPU: strconv.Itoa(spec.CPU), Memory: spec.Memory, Seed: true,
+		Address: spec.Address, Gateway: spec.Gateway, Nameservers: spec.Nameservers, SSHKeys: spec.SSHKeys}
 	return "vm create " + spec.Name, nil
 }
 
 func (m *maker) VMAddNetwork(_ context.Context, name, sw string) (string, error) {
-	return "vm add -d network -s " + sw + " " + name, m.step("network")
+	if err := m.step("network"); err != nil {
+		return "vm add -d network -s " + sw + " " + name, err
+	}
+	m.applied[name].Switches = append(m.applied[name].Switches, sw)
+	return "vm add -d network -s " + sw + " " + name, nil
 }
 
 func (m *maker) VMReplaceDisk(_ context.Context, name, snapshot string, size int64) (string, error) {
 	m.disk.snapshot, m.disk.size = snapshot, size
-	return "zfs clone " + snapshot, m.step("disk")
+	if err := m.step("disk"); err != nil {
+		return "zfs clone " + snapshot, err
+	}
+	m.applied[name].Origin, m.applied[name].DiskSize = snapshot, size
+	return "zfs clone " + snapshot, nil
+}
+
+func (m *maker) HostCPUs(context.Context) (int, error) { return m.hostCPUs, m.fail["ncpu"] }
+
+func (m *maker) VMPinCPUs(_ context.Context, name string, cpus []int) (string, error) {
+	command := "sysrc -f " + name + ".conf bhyve_options=" + PinOptions(cpus)
+	if err := m.step("pin"); err != nil {
+		return command, err
+	}
+	m.applied[name].BhyveOptions = PinOptions(cpus)
+	return command, nil
+}
+
+func (m *maker) VMApplied(_ context.Context, name string) (Applied, error) {
+	if err := m.fail["applied"]; err != nil {
+		return Applied{}, err
+	}
+	if a, ok := m.applied[name]; ok {
+		return *a, nil
+	}
+	return Applied{}, ErrNoSuchVM
 }
 
 func (m *maker) VMDestroy(_ context.Context, name string) (string, error) {
@@ -86,6 +124,7 @@ func (m *maker) VMDestroy(_ context.Context, name string) (string, error) {
 		return "vm destroy -f " + name, err
 	}
 	m.listing.VMs = slices.DeleteFunc(m.listing.VMs, func(vm VM) bool { return vm.Name == name })
+	delete(m.applied, name)
 	return "vm destroy -f " + name, nil
 }
 

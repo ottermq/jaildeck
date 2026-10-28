@@ -177,19 +177,23 @@ func (h *Handler) operate(w http.ResponseWriter, r *http.Request,
 // Create makes a guest from an image template.
 //
 // @Summary      Create a virtual machine
-// @Description  A guest from a VM image template (JD-037, JD-038), in four audited steps:
+// @Description  A guest from a VM image template (JD-037, JD-038), in five audited steps:
 // @Description
 // @Description  1. **vm-create**: `vm create` from Jail Deck's own template (UEFI, one virtio
 // @Description     disk, no NIC) with `cpu`, `memory` and a cloud-init seed: `ssh_keys` for the
 // @Description     image's default user, the guest's name as its hostname, and `network` as a
 // @Description     static address when given (DHCP otherwise).
-// @Description  2. **vm-add-network**: one NIC on `switch`, when given, with the MAC the seed
+// @Description  2. **vm-pin-cpus**, when `cpuset` is given: vCPU i pinned to host CPU
+// @Description     `cpuset[i]`, written as `bhyve_options="-p 0:<cpu> ..."` (JD-041). One host
+// @Description     CPU per vCPU, each a different one, and each one the host has: bhyve aborts
+// @Description     on a CPU it lacks only at start, while `vm start` still exits 0 — measured.
+// @Description  3. **vm-add-network**: one NIC on `switch`, when given, with the MAC the seed
 // @Description     matches it by. **The switch must exist**: vm-bhyve accepts one that does not,
 // @Description     and the guest then boots with a NIC attached to nothing — measured.
-// @Description  3. **vm-replace-disk**: the disk vm create made is replaced by a clone of the
+// @Description  4. **vm-replace-disk**: the disk vm create made is replaced by a clone of the
 // @Description     image's `@base` at `disk`, `volmode=dev`. The guest grows its own root
 // @Description     filesystem into it on first boot.
-// @Description  4. **vm-start**, when `start` is true, confirmed as `POST /vms/{name}/start` is.
+// @Description  5. **vm-start**, when `start` is true, confirmed as `POST /vms/{name}/start` is.
 // @Description
 // @Description  Everything is checked first: the name, sizes, keys, addresses, that the image
 // @Description  is ready, that `disk` is at least its size, that the name is free and the
@@ -225,6 +229,68 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, http.StatusCreated, created)
+}
+
+// Ensure makes a guest exist as the request describes it, or says how it
+// differs.
+//
+// @Summary      Ensure a virtual machine
+// @Description  The idempotent form of `POST /vms` (JD-016, JD-041), with the same body. A
+// @Description  guest vm-bhyve does not have is created, as `POST` creates it: `201`. One it
+// @Description  has is compared against the request: `200` when it is what the request
+// @Description  describes, and **`409` with `differences` when it is not — and it is left
+// @Description  exactly as it is.** Nothing here reconciles a guest towards a request.
+// @Description
+// @Description  What a guest was made with is read off the host, not from a record: its
+// @Description  vm-bhyve configuration (cpu, memory, the pin in `bhyve_options`, each NIC's
+// @Description  switch), its cloud-init seed (address, gateway, nameservers, SSH keys) and
+// @Description  disk0's clone origin and size. Defaults resolve as a create resolves them, so
+// @Description  a request that leaves `cpu`, `memory` or `disk` out matches the guest those
+// @Description  defaults made.
+// @Description
+// @Description  **`start` is not compared.** It is an instruction about the create, not a
+// @Description  property of the guest: a guest stopped for maintenance would otherwise refuse
+// @Description  every `PUT`. The answer carries the guest's state, and the client decides.
+// @Description
+// @Description  A guest outside vm-bhyve's default datastore, or with no cloud-init seed, was
+// @Description  not made by Jail Deck from an image, and is refused with `409`: there is
+// @Description  nothing to compare. The body may leave `name` out; one naming another guest is
+// @Description  refused.
+// @Tags         vms
+// @Accept       json
+// @Produce      json
+// @Param        name  path      string         true  "Guest name"
+// @Param        spec  body      CreateRequest  true  "The guest it should be"
+// @Success      200   {object}  Ensured  "Already what the request describes; nothing changed"
+// @Success      201   {object}  Ensured  "Created"
+// @Failure      400   {object}  common.ErrorResponse  "A value refused, or a body naming another guest"
+// @Failure      401   {object}  common.ErrorResponse
+// @Failure      409   {object}  Ensured               "There and different; `differences` says how. Or not one Jail Deck made"
+// @Failure      500   {object}  common.ErrorResponse  "A step of the create failed; the guest was destroyed again"
+// @Security     BearerAuth
+// @Router       /vms/{name} [put]
+func (h *Handler) Ensure(w http.ResponseWriter, r *http.Request) {
+	var req CreateRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		common.HandlerError(w, common.NewAppError(http.StatusBadRequest,
+			"could not read the request body: "+err.Error()))
+		return
+	}
+	ensured, err := h.service.Ensure(r.Context(), chi.URLParam(r, "name"), req)
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	switch {
+	case len(ensured.Differences) > 0:
+		common.WriteJSON(w, http.StatusConflict, ensured)
+	case ensured.Changed:
+		common.WriteJSON(w, http.StatusCreated, ensured)
+	default:
+		common.WriteJSON(w, http.StatusOK, ensured)
+	}
 }
 
 // Destroy removes a stopped guest.

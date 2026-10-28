@@ -22,3 +22,10 @@ func (noCreation) VMReplaceDisk(context.Context, string, string, int64) (string,
 	return "", errNotScripted
 }
 func (noCreation) VMDestroy(context.Context, string) (string, error) { return "", errNotScripted }
+func (noCreation) HostCPUs(context.Context) (int, error)             { return 0, errNotScripted }
+func (noCreation) VMPinCPUs(context.Context, string, []int) (string, error) {
+	return "", errNotScripted
+}
+func (noCreation) VMApplied(context.Context, string) (Applied, error) {
+	return Applied{}, errNotScripted
+}

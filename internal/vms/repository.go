@@ -5,9 +5,9 @@ import (
 	"errors"
 )
 
-// VMSystem reads vm-bhyve (JD-035) and starts and stops its guests
-// (JD-036). It cannot create, change or destroy one: those are methods still
-// to be added, each with its reason.
+// VMSystem reads vm-bhyve (JD-035), starts and stops its guests (JD-036),
+// creates and destroys them (JD-038), and pins and reads back what a guest was
+// made with (JD-041).
 //
 // The three lifecycle methods return the command they ran, for the audit
 // entry, and vm-bhyve's own words in the error when it refused.
@@ -46,6 +46,44 @@ type VMSystem interface {
 	// VMDestroy is `vm destroy -f <name>`: the guest's dataset, its disk
 	// clone with it, and its configuration.
 	VMDestroy(ctx context.Context, name string) (string, error)
+
+	// HostCPUs is how many CPUs the host has (hw.ncpu): a pin to one past
+	// them makes bhyve abort at start while vm start still exits 0, measured
+	// (JD-041), so the service refuses it first.
+	HostCPUs(ctx context.Context) (int, error)
+	// VMPinCPUs writes bhyve_options into the guest's configuration with
+	// sysrc -f, as vm-bhyve's own config::set does: -p <vcpu>:<cpu>, vCPU i on
+	// cpus[i]. It takes effect at the guest's next start.
+	VMPinCPUs(ctx context.Context, name string, cpus []int) (string, error)
+	// VMApplied reads back what a guest in the default datastore was made
+	// with (JD-041). ErrNoSuchVM when it has no configuration there.
+	VMApplied(ctx context.Context, name string) (Applied, error)
+}
+
+// Applied is what a guest was made with, read off the host: its vm-bhyve
+// configuration, its cloud-init seed and its disk. Nothing of it is kept by
+// Jail Deck (JD-011).
+type Applied struct {
+	// CPU and Memory are the configuration's own values: "2", "1G".
+	CPU    string
+	Memory string
+	// BhyveOptions is the configuration's bhyve_options, which is where a
+	// pin is (JD-041); empty when the guest has none.
+	BhyveOptions string
+	// Switches is each NIC's switch, network0 first.
+	Switches []string
+	// Origin is disk0's clone origin, empty when it is not a clone, and
+	// DiskSize its volsize in bytes.
+	Origin   string
+	DiskSize int64
+	// Seed is whether the guest has a cloud-init seed. The rest is read from
+	// it: the first NIC's static address, gateway and nameservers, empty for
+	// DHCP, and the default user's SSH keys.
+	Seed        bool
+	Address     string
+	Gateway     string
+	Nameservers []string
+	SSHKeys     []string
 }
 
 // ImageCatalog is where a guest's disk comes from: the VM image templates

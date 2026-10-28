@@ -70,6 +70,10 @@ type VM struct {
 type Detail struct {
 	VM
 	UUID string `json:"uuid,omitempty"`
+	// CPUSet is the host CPU each vCPU is pinned to, vCPU 0 first, read from
+	// the guest's bhyve_options (JD-041). Absent for a guest not pinned, and
+	// for one whose bhyve_options are not only a pin.
+	CPUSet []int `json:"cpuset,omitempty"`
 	// MemoryResident is the guest's resident memory in bytes, from bhyvectl.
 	// Only a guest whose bhyve instance exists has one.
 	MemoryResident *int64 `json:"memory_resident,omitempty"`

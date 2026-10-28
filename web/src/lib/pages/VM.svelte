@@ -126,7 +126,12 @@ function bytes(n: number | undefined): string {
         <h2>Configuration</h2>
         <dl class="facts">
             <dt>CPU</dt>
-            <dd>{normalizeEmptyValue(vm.cpu ?? '')}</dd>
+            <dd>
+                {normalizeEmptyValue(vm.cpu ?? '')}
+                {#if vm.cpuset?.length}
+                    <span class="muted">pinned to host CPU{vm.cpuset.length > 1 ? 's' : ''} {vm.cpuset.join(', ')}</span>
+                {/if}
+            </dd>
             <dt>Memory</dt>
             <dd>
                 {normalizeEmptyValue(vm.memory ?? '')}

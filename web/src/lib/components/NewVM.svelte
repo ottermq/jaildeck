@@ -51,6 +51,7 @@ let image = $state('')
 let cpu = $state(1)
 let memory = $state('1G')
 let disk = $state('')
+let pins = $state('')
 // The first switch is only the starting choice; a list that changes later
 // does not change it.
 // svelte-ignore state_referenced_locally
@@ -102,6 +103,15 @@ async function submit(event: Event) {
         ssh_keys: split(keys, /\r?\n/),
     }
     if (disk.trim() !== '') req.disk = disk.trim()
+    const cpus = split(pins, /[\s,]+/)
+    if (cpus.length > 0) {
+        if (!cpus.every(c => /^\d+$/.test(c))) {
+            error = 'Pin to host CPUs is their numbers, one for each vCPU: 2,3'
+            busy = false
+            return
+        }
+        req.cpuset = cpus.map(Number)
+    }
     if (vmSwitch !== '') {
         req.switch = vmSwitch
         if (addressing === 'static') {
@@ -150,6 +160,11 @@ async function submit(event: Event) {
                 <input id="vm-cpu" type="number" min="1" max="64" bind:value={cpu} required />
             </div>
             <div class="field field--narrow">
+                <label for="vm-pins">Pin to CPUs</label>
+                <input id="vm-pins" bind:value={pins} placeholder={cpu > 1 ? '2,3' : '2'}
+                       autocomplete="off" spellcheck="false" inputmode="numeric" />
+            </div>
+            <div class="field field--narrow">
                 <label for="vm-memory">Memory</label>
                 <input id="vm-memory" bind:value={memory} placeholder="1G" autocomplete="off" spellcheck="false" required />
             </div>
@@ -162,7 +177,8 @@ async function submit(event: Event) {
         <p class="hint">
             Memory as vm-bhyve writes it, <code>512M</code> or <code>2G</code>. The disk is a clone of the
             image{#if chosen?.size}, at least its {formatBytes(chosen.size)} and that by default{/if}; the guest
-            grows its own filesystem into a larger one on first boot.
+            grows its own filesystem into a larger one on first boot. Pinning is optional: one host CPU for
+            each vCPU, in order, each a different one; left empty, the host schedules them anywhere.
         </p>
 
         <div class="form__row">

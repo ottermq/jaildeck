@@ -1,0 +1,8 @@
+2026-10-28T12:16:56-03:00:  [debug mode: no]
+2026-10-28T12:16:56-03:00:  [primary disk: disk0]
+2026-10-28T12:16:56-03:00:  [primary disk dev: sparse-zvol]
+2026-10-28T12:16:56-03:00: booting
+2026-10-28T12:16:56-03:00:  [bhyve options: -c 2 -m 256M -AHPw -l bootrom,/usr/local/share/uefi-firmware/BHYVE_UEFI.fd -p 0:2 -p 1:3 -U 99d382bd-d2e2-11f1-b463-e80688cecc46 -u]
+2026-10-28T12:16:56-03:00:  [bhyve devices: -s 0,hostbridge -s 31,lpc -s 0:4:0,virtio-blk,/dev/zvol/tank/vm/jd-cap-pin/disk0]
+2026-10-28T12:16:56-03:00:  [bhyve console: -l com1,/dev/nmdm-jd-cap-pin.1A]
+2026-10-28T12:16:56-03:00: starting bhyve (run 1)

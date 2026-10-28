@@ -90,6 +90,29 @@ describe('creating a virtual machine', () => {
         expect(sent[0]).toEqual({ name: 'web', image: 'debian-13', cpu: 1, memory: '1G', start: true, ssh_keys: [], switch: 'jd-livesw' })
     })
 
+    it('sends a pin as host CPU numbers', async () => {
+        form()
+        await screen.findByLabelText('Image')
+        await type('Name', 'web')
+        await type('CPUs', '2')
+        await type('Pin to CPUs', ' 2, 3 ')
+        await fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+        await waitFor(() => expect(sent.length).toBe(1))
+        expect(sent[0].cpuset).toEqual([2, 3])
+    })
+
+    it('says what a pin is instead of sending one that is not numbers', async () => {
+        form()
+        await screen.findByLabelText('Image')
+        await type('Name', 'web')
+        await type('Pin to CPUs', '2-3')
+        await fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+        expect(await screen.findByText(/Pin to host CPUs is their numbers/)).toBeTruthy()
+        expect(sent).toEqual([])
+        // And the form is not left busy.
+        expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(false)
+    })
+
     it('sends no switch for no network, and says so when there are none', async () => {
         form([])
         await screen.findByLabelText('Image')

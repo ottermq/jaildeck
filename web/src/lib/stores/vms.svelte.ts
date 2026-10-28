@@ -65,6 +65,8 @@ export interface Detail extends VM {
     consoles?: Record<string, string>
     networks: Network[]
     disks: Disk[]
+    // The host CPU each vCPU is pinned to, vCPU 0 first (JD-041).
+    cpuset?: number[]
 }
 
 export async function listVMs(): Promise<Listing> {
@@ -97,6 +99,8 @@ export interface CreateRequest {
     name: string
     image: string
     cpu?: number
+    // One host CPU per vCPU, vCPU 0 first. Absent leaves the guest unpinned.
+    cpuset?: number[]
     memory?: string
     disk?: string
     switch?: string

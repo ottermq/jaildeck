@@ -12,6 +12,13 @@ let sent: CreateRequest[]
 let answer: Created | Error
 
 vi.mock('../stores/vmImages.svelte', () => ({ listImages: vi.fn(async () => images) }))
+let defaultNet: unknown
+vi.mock('../stores/networks.svelte', () => ({
+    getDefaultNetwork: vi.fn(async () => {
+        if (defaultNet instanceof Error) throw defaultNet
+        return defaultNet
+    }),
+}))
 vi.mock('../stores/vms.svelte', async (original) => ({
     ...(await original<typeof import('../stores/vms.svelte')>()),
     createVM: vi.fn(async (req: CreateRequest) => {
@@ -32,6 +39,7 @@ beforeEach(() => {
         ],
     }
     sent = []
+    defaultNet = new Error('no default network')
     answer = { name: 'jd-live-web', datastore: 'default', state: 'running', autostart: false, image: 'debian-13' }
 })
 
@@ -109,6 +117,25 @@ describe('creating a virtual machine', () => {
         await fireEvent.click(screen.getByRole('button', { name: 'Create' }))
         expect((await screen.findByRole('alert')).textContent).toContain('no switch named')
         expect(created).not.toHaveBeenCalled()
+    })
+
+    it('offers the default network first, with no DHCP and the host as gateway', async () => {
+        defaultNet = { switch: 'jaildeck', address: '10.88.0.1/24', subnet: '10.88.0.0/24', gateway: '10.88.0.1',
+            usable: true, ready: true, parts: [] }
+        form(['jd-livesw', 'jaildeck'])
+        const net = await screen.findByLabelText('Network') as HTMLSelectElement
+        await waitFor(() => expect(net.value).toBe('jaildeck'))
+        expect(net.options[0].textContent).toBe('on the default network (jaildeck)')
+        expect(screen.queryByLabelText('DHCP')).toBeNull()
+        expect((screen.getByLabelText('Gateway') as HTMLInputElement).value).toBe('10.88.0.1')
+        expect(screen.getByText(/The default network has no DHCP/)).toBeTruthy()
+        expect((screen.getByLabelText('Address') as HTMLInputElement).placeholder).toBe('10.88.0.10/24')
+        await type('Name', 'web')
+        await type('Address', '10.88.0.10/24')
+        await fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+        await waitFor(() => expect(sent.length).toBe(1))
+        expect(sent[0].switch).toBe('jaildeck')
+        expect(sent[0].network).toEqual({ address: '10.88.0.10/24', gateway: '10.88.0.1' })
     })
 
     it('points at the images when none is ready', async () => {

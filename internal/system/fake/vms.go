@@ -28,6 +28,17 @@ type VMs struct {
 	// made are guests created here, and gone the seeded ones destroyed.
 	made map[string]*madeVM
 	gone map[string]bool
+	// switches, when set, is where the switches come from: the fake network
+	// host, so a switch it creates is one a new guest can be put on.
+	switches *Networks
+}
+
+// SwitchesFrom makes the switches the fake network host's, as they are one
+// thing on a real host.
+func (f *VMs) SwitchesFrom(n *Networks) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.switches = n
 }
 
 // madeVM is what the fake keeps of a guest it created.
@@ -157,9 +168,21 @@ func (f *VMs) info(name string) (vms.Info, error) {
 	return vms.Info{}, vms.ErrNoSuchVM
 }
 
-// VMSwitches is the one switch the seeded running guest is on.
-func (f *VMs) VMSwitches(context.Context) ([]string, error) {
-	return []string{"jd-capsw"}, nil
+// VMSwitches is the one switch the seeded running guest is on, or the fake
+// network host's when the two are joined.
+func (f *VMs) VMSwitches(ctx context.Context) ([]string, error) {
+	f.mu.Lock()
+	n := f.switches
+	f.mu.Unlock()
+	if n == nil {
+		return []string{"jd-capsw"}, nil
+	}
+	switches, _ := n.Switches(ctx)
+	names := make([]string, 0, len(switches))
+	for _, s := range switches {
+		names = append(names, s.Name)
+	}
+	return names, nil
 }
 
 func (f *VMs) VMCreate(_ context.Context, spec vms.CreateSpec) (string, error) {

@@ -52,6 +52,12 @@ const listImages = vi.fn(async () => ({
     images: [{ name: 'debian-13', source: 'debian-13', ready: true, state: 'ready', size: 3221225472, guests: [] }],
 }))
 vi.mock('../stores/vmImages.svelte', () => ({ listImages: () => listImages() }))
+// The network panel has its own tests; here the default network is not set up.
+vi.mock('../stores/networks.svelte', () => ({
+    getDefaultNetwork: vi.fn(async () => ({ switch: 'jaildeck', address: '10.88.0.1/24', subnet: '10.88.0.0/24',
+        gateway: '10.88.0.1', usable: false, ready: false, parts: [] })),
+    ensureDefaultNetwork: vi.fn(),
+}))
 
 const asked: string[][] = []
 const typed: (string | undefined)[] = []

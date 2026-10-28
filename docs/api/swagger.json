@@ -2117,6 +2117,84 @@
                 }
             }
         },
+        "/networks/default": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The network a node's guests get unless asked otherwise (#118, JD-040): a\nvm-bhyve switch with **private** ports, so guests reach the host and the\noutside and not each other, the host's address on it as their gateway, and\noutbound NAT through a PF anchor whose rules Jail Deck writes.\n\nEvery part is read off the host on every request (JD-011), with its\n`owner`. Jail Deck's parts are put in place by `PUT /api/networks/default`:\nthe switch, its address and private ports, IP forwarding now and at boot,\nthe anchor file, and loading it. The operator's are PF itself and the three\nlines `pf.conf` includes once; a failing one carries the exact `remedy`.\n\n`usable` is a guest reaching the host; `ready` is every part, NAT included.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "networks"
+                ],
+                "summary": "The default VM network",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/networks.Default"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "vm-bhyve is not ready",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Idempotent: only what is missing is done, each step audited, in order:\n`create-vm-switch`, `set-vm-switch-address`, `set-vm-switch-private`,\n`enable-ip-forwarding` (`sysctl`), `enable-ip-forwarding-at-boot`\n(`sysrc gateway_enable=YES`), `write-pf-anchor`, and `load-pf-anchor` when PF is\nup (validated with `pfctl -n` first; a file it refuses changes nothing).\n`done` names what this request did; the answer is the network afterwards.\n\n**It refuses rather than clobbers:** a switch of that name that is not a\nstandard one, or whose address is not `JAILDECK_VM_ADDRESS`, is a `409`\nbefore anything runs. It never enables PF or edits `pf.conf` (JD-020):\nthose parts stay failing until the operator does them, with their remedy.\n\nThe same as `jaildeck init vm-network`.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "networks"
+                ],
+                "summary": "Set up the default VM network",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/networks.Ensured"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "A switch of that name is not Jail Deck's to change, or vm-bhyve is not ready",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "A step failed; done names those before it",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/retained": {
             "get": {
                 "security": [
@@ -4800,6 +4878,133 @@
                     "type": "integer"
                 }
             }
+        },
+        "networks.Default": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "egress": {
+                    "description": "Egress is the interface NAT sends the guests out of.",
+                    "type": "string"
+                },
+                "gateway": {
+                    "description": "Gateway is Address without its prefix: what a guest is given.",
+                    "type": "string"
+                },
+                "parts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/networks.Part"
+                    }
+                },
+                "ready": {
+                    "description": "Ready is whether every part passes, NAT included.",
+                    "type": "boolean"
+                },
+                "subnet": {
+                    "type": "string"
+                },
+                "switch": {
+                    "description": "Switch is the vm-bhyve switch it is, and Address the host's address\non it, which is the guests' gateway.",
+                    "type": "string"
+                },
+                "usable": {
+                    "description": "Usable is whether a guest on the switch reaches the host and no other\nguest: the switch, its address and its private ports are in place.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "networks.Ensured": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "changed": {
+                    "type": "boolean"
+                },
+                "done": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "egress": {
+                    "description": "Egress is the interface NAT sends the guests out of.",
+                    "type": "string"
+                },
+                "gateway": {
+                    "description": "Gateway is Address without its prefix: what a guest is given.",
+                    "type": "string"
+                },
+                "note": {
+                    "description": "Note is said when something done takes effect later: a switch made\nprivate applies to guests as they next start.",
+                    "type": "string"
+                },
+                "parts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/networks.Part"
+                    }
+                },
+                "ready": {
+                    "description": "Ready is whether every part passes, NAT included.",
+                    "type": "boolean"
+                },
+                "subnet": {
+                    "type": "string"
+                },
+                "switch": {
+                    "description": "Switch is the vm-bhyve switch it is, and Address the host's address\non it, which is the guests' gateway.",
+                    "type": "string"
+                },
+                "usable": {
+                    "description": "Usable is whether a guest on the switch reaches the host and no other\nguest: the switch, its address and its private ports are in place.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "networks.Part": {
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "observed": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "remedy": {
+                    "description": "Remedy is set on a part that fails and is the operator's: what to\nchange, as precisely as it can be said. Jail Deck's own parts are put\nin place by PUT /api/networks/default instead.",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/networks.PartStatus"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "networks.PartStatus": {
+            "type": "string",
+            "enum": [
+                "pass",
+                "fail",
+                "unknown"
+            ],
+            "x-enum-varnames": [
+                "PartPass",
+                "PartFail",
+                "PartUnknown"
+            ]
         },
         "storage.RetainedDataset": {
             "type": "object",

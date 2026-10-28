@@ -57,6 +57,10 @@ func newTestApp(t *testing.T) (*App, error) {
 		Adapter:  config.AdapterFake,
 		StateDir: filepath.Join(root, "state"),
 		AuditLog: filepath.Join(root, "log", "audit.log"),
+
+		VMSwitch:    "jaildeck",
+		VMAddress:   "10.88.0.1/24",
+		PFAnchorDir: filepath.Join(root, "pf"),
 	}
 	hash, err := auth.Hash("test-password")
 	if err != nil {

@@ -17,6 +17,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/images"
 	"github.com/ottermq/jaildeck/internal/jails"
 	"github.com/ottermq/jaildeck/internal/metrics"
+	"github.com/ottermq/jaildeck/internal/networks"
 	"github.com/ottermq/jaildeck/internal/storage"
 	"github.com/ottermq/jaildeck/internal/templates"
 	"github.com/ottermq/jaildeck/internal/vms"
@@ -39,6 +40,7 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 			firewall.RegisterFirewallRoutes(r, a.firewallHandler)
 			vms.RegisterVMRoutes(r, a.vmHandler)
 			images.RegisterImageRoutes(r, a.imageHandler)
+			networks.RegisterNetworkRoutes(r, a.networkHandler)
 			storage.RegisterStorageRoutes(r, a.storageHandler)
 			templates.RegisterTemplateRoutes(r, a.templateHandler)
 		})

@@ -1,0 +1,3 @@
+shell pid: "echo $$\r\n17443\r\nroot@jd-cap-pty:/ # "
+closing the master
+read ended after 0.0s with "read ptmx: file already closed"; jexec: signal: hangup

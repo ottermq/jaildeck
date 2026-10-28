@@ -1,0 +1,3 @@
+ps: "echo $$\r\n12611\r\nroot@jd-cap-pty:/ # "
+READY
+read ended after 10.8s with "EOF"; jexec: signal: killed

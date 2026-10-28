@@ -14,8 +14,29 @@ import { ApiError } from '../services/api'
 import { onNavClick, navigate } from '../router.svelte'
 import { ask } from '../stores/confirm.svelte'
 import { formatBytes, normalizeEmptyValue } from '../utils'
+import Console from '../components/Console.svelte'
 
 let { name }: { name: string } = $props()
+
+// The console (JD-042): a shell in the jail, open until something ends it.
+// consoleRun remounts the terminal for "Open again".
+let consoleOpen = $state(false)
+let consoleRun = $state(0)
+let consoleEnded = $state<string | null>(null)
+
+const consoleReasons: Record<string, string> = {
+    'client': 'Closed.',
+    'shell-exited': 'The shell exited.',
+    'jail-stopped': 'The jail stopped, and its console with it.',
+    'session-expired': 'Your login ended. Sign in again to open another console.',
+    'idle': 'Closed: nothing was typed for a while.',
+}
+
+function openConsole() {
+    consoleEnded = null
+    consoleRun += 1
+    consoleOpen = true
+}
 
 let jail = $state<JailData | null>(null)
 let snapshots = $state<Snapshot[] | null>(null)
@@ -640,6 +661,40 @@ async function retain(event: Event, dataset: Dataset) {
         </div>
     {/if}
 
+    {#if jail?.status === 'running' || consoleOpen}
+        <section class="panel" aria-labelledby="console-heading">
+            <div class="panel__head">
+                <h2 id="console-heading">Console</h2>
+                {#if !consoleOpen}
+                    <button type="button" class="btn btn--small" onclick={openConsole}>Open a shell</button>
+                {:else if consoleEnded !== null}
+                    <div class="console-actions">
+                        {#if jail?.status === 'running'}
+                            <button type="button" class="btn btn--small" onclick={openConsole}>Open again</button>
+                        {/if}
+                        <button type="button" class="btn btn--small" onclick={() => (consoleOpen = false)}>Dismiss</button>
+                    </div>
+                {:else}
+                    <button type="button" class="btn btn--small" onclick={() => (consoleOpen = false)}>Close</button>
+                {/if}
+            </div>
+            {#if consoleOpen}
+                {#key consoleRun}
+                    <Console path={`/jails/${encodeURIComponent(name)}/console`}
+                             onclosed={reason => (consoleEnded = consoleReasons[reason] ?? 'The connection ended, or could not be made.')} />
+                {/key}
+                {#if consoleEnded !== null}
+                    <p class="notice" role="status">{consoleEnded}</p>
+                {/if}
+            {/if}
+            <p class="hint">
+                A root shell inside the jail. It's audited: who opened it, for how long, and why it
+                closed — <strong>nothing you type or see is recorded</strong>. It closes when the jail
+                stops, when your login ends, or after a while with nothing typed.
+            </p>
+        </section>
+    {/if}
+
     <section class="panel">
         <div class="panel__head">
             <h2>Datasets</h2>
@@ -1166,6 +1221,11 @@ async function retain(event: Event, dataset: Dataset) {
 {/if}
 
 <style>
+.console-actions {
+    display: flex;
+    gap: var(--space-2);
+}
+
 /* The one section on this page that destroys something. Marked rather than
    hidden: an operator looking for it should find it, and should not reach it
    by accident. */

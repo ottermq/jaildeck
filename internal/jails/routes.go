@@ -2,7 +2,9 @@ package jails
 
 import "github.com/go-chi/chi/v5"
 
-func RegisterJailRoutes(r chi.Router, h *JailHandler) {
+// RegisterJailRoutes mounts the jail routes. extra are more routes on one jail,
+// /jails/{name}/..., from domains of their own: the console (JD-042).
+func RegisterJailRoutes(r chi.Router, h *JailHandler, extra ...func(chi.Router)) {
 	r.Route("/jails", func(r chi.Router) {
 
 		r.Get("/", h.List)
@@ -12,6 +14,9 @@ func RegisterJailRoutes(r chi.Router, h *JailHandler) {
 		r.Post("/", h.Create)
 
 		r.Route("/{name}", func(r chi.Router) {
+			for _, mount := range extra {
+				mount(r)
+			}
 			r.Get("/", h.Get)
 			// PUT is the idempotent create: absent -> created, already
 			// matching -> nothing, different -> refused with the

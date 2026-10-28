@@ -99,9 +99,11 @@ internal/
     service.go                     # application service
     handler.go
 
-  vms/                          # bounded context: bhyve VMs through vm-bhyve (JD-019) — listed, started and stopped, created and destroyed (JD-035, JD-036, JD-038)
+  vms/                          # bounded context: bhyve VMs through vm-bhyve (JD-019) — listed, started and stopped, created and destroyed (JD-035, JD-036, JD-038), pinned and ensured (JD-041)
   images/                       # bounded context: VM image templates, zvols in vm-bhyve's datastore (JD-037)
   firewall/                     # bounded context: PF, read-only (JD-020, JD-034)
+  networks/                     # bounded context: the default VM network (JD-040) — a switch, forwarding
+                                 # and the jaildeck/vmnet anchor file, reported part by part with owners
 
   auth/                         # bounded context: Authentication
     auth.go                       # argon2id Hash/Verify over the PHC string ($argon2id$v=..$m=..)
@@ -289,6 +291,8 @@ ZFS is required (JD-006), so this adapter can assume ZFS is present.
 
 The firewall adapter runs `pfctl` read-only commands (JD-020, JD-034). The VM adapter drives vm-bhyve (JD-019): `vm list` and `vm info` (JD-035), and `vm start`, `vm stop` and `vm poweroff -f` (JD-036). `vm start` is the one command the runner detaches — a session of its own, and a timeout that signals only it — because it leaves vm-bhyve's supervisor running on purpose.
 
+The networks adapter (JD-040) reads `vm switch list`, `sysctl`, `sysrc -n`, `route -n get default` and `pfctl`, and writes only what JD-040 gives Jail Deck: its own switch through `vm switch`, `net.inet.ip.forwarding` and `gateway_enable`, and the anchor file, which it loads into `jaildeck/vmnet` only after `pfctl -n` accepts it. It never enables PF or edits `pf.conf`.
+
 ## API conventions
 
 Settled for the endpoints that exist today — `jails`, `audit` and `auth`, listed in `README.md` — and every domain added afterwards follows the same shape from the start. The fuller shape these conventions are heading for:
@@ -312,8 +316,11 @@ GET    /api/firewall/...             # read-only PF views (JD-020)
 GET    /api/vms                      # vm-bhyve's guests (JD-035)
 GET    /api/vms/{name}
 POST   /api/vms/{name}/start         # and stop, restart (JD-036)
-POST   /api/vms                      # create from an image (JD-038)
+POST   /api/vms                      # create from an image (JD-038), pinned (JD-041)
+PUT    /api/vms/{name}               # idempotent create, or the differences (JD-041)
 DELETE /api/vms/{name}
+GET    /api/networks/default         # the default VM network, part by part (JD-040)
+PUT    /api/networks/default         # ensure Jail Deck's parts of it, idempotent
 GET    /api/vm-images                # image templates and their sources (JD-037)
 PUT    /api/vm-images/{name}         # 202, then watch it (JD-008)
 DELETE /api/vm-images/{name}

@@ -7,11 +7,11 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.16.1.** Jails can be created from release templates, started,
+**Current release: v0.17.0.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API; their ZFS datasets,
 snapshots and resource usage are visible; host setup is checked; PF can be seen,
-read-only; bhyve VMs are created from cloud images with cloud-init, started, stopped and
-destroyed; every operation is audited, and nothing is reachable without a password or an
+read-only; bhyve VMs are created from cloud images with cloud-init, pinned to host CPUs, started,
+stopped and destroyed, on a default network Jail Deck sets up with NAT through PF; every operation is audited, and nothing is reachable without a password or an
 API token. Releases install and upgrade with `pkg` from a signed repository. See
 [the roadmap](docs/ROADMAP.md) for what comes next.
 
@@ -44,7 +44,9 @@ Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com
   against Debian's checksum and written into a zvol, from the VMs page or the API (JD-037).
   Creating a guest from one — CPU, memory, a disk cloned from the image, a NIC on the
   operator's switch, SSH keys and a static address through cloud-init — and destroying it,
-  from the VMs pages or the API (JD-038).
+  from the VMs pages or the API (JD-038). A default VM network for every node — a private
+  switch with the host as gateway, and outbound NAT through a PF anchor file Jail Deck owns —
+  set up by `jaildeck init vm-network` or from the VMs page (JD-040).
 - **Web interface** — an embedded Svelte application for all of the above, light and dark.
 
 ## Requirements
@@ -215,8 +217,16 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/auth/login` | password in, session cookie out |
 | `POST /api/auth/logout` | |
 | `GET /api/auth/me` | the current principal and when the session expires |
+| `GET /api/` | redirects to `/api/jails`, for a client that guessed the base path |
+| `GET /api/host/readiness` | what the host has and lacks for jails, VNET, limits and VMs, each with its remedy |
+| `GET /api/host/layout` | whether the jails dataset layout exists |
+| `PUT /api/host/layout` | create the missing layout datasets, adopting what is there |
 | `GET /api/jails` | every jail, running or merely configured, with its ZFS datasets |
 | `GET /api/jails/{name}` | one of them, same shape |
+| `POST /api/jails` | create a jail from a ready template: network, limits, parameters, child datasets |
+| `PUT /api/jails/{name}` | the same, idempotently: `201` made, `200` already matching, `409` with a diff |
+| `DELETE /api/jails/{name}` | stop and destroy it, with `confirm=` |
+| `POST /api/jails/{name}/exec` | run a command inside it, with a capped timeout and capped output |
 | `PUT /api/jails/{name}/datasets/{child}` | create a child dataset, or converge an existing one |
 | `PATCH /api/jails/{name}/properties` | tag the jail's own dataset |
 | `PATCH /api/jails/{name}/datasets/{child}/properties` | tag one of its children |
@@ -231,6 +241,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/jails/{name}/datasets/{child}/restore` | move a retained one back in |
 | `GET /api/retained` | datasets being kept past their jails |
 | `GET /api/templates` | templates, their readiness and their lineage |
+| `GET /api/templates/{name}` | one, with every jail and template cloned from it |
 | `PUT /api/templates/{name}` | derive one from another, plus packages |
 | `DELETE /api/templates/{name}` | destroy one, refusing while jails are cloned from it |
 | `POST /api/jails/{name}/template` | clone a configured jail as a template |
@@ -239,17 +250,24 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/jails/{name}/stop` | |
 | `POST /api/jails/{name}/restart` | |
 | `GET /api/audit` | operation history, newest first |
+| `GET /api/metrics` | host and per-jail resource usage, and disk health |
+| `GET /api/firewall` | PF's state, rules with counters, NAT, anchors and tables, read-only |
+| `GET /api/firewall/tables/{name}` | one table's addresses |
+| `GET /api/firewall/log` | the most recent pflog lines |
 | `GET /api/vms` | vm-bhyve's guests and their state, and whether vm-bhyve is ready |
-| `GET /api/vms/{name}` | one guest's console, network interfaces and disks |
+| `GET /api/vms/{name}` | one guest's console, network interfaces, disks and CPU pin |
 | `POST /api/vms/{name}/start` | start it and confirm it is running |
 | `POST /api/vms/{name}/stop` | the power button, then a poweroff after 60 seconds, reported as `forced` |
 | `POST /api/vms/{name}/restart` | stop, then start |
-| `POST /api/vms` | create a guest from an image: CPU, memory, disk, a NIC on a switch, SSH keys, a static address |
+| `POST /api/vms` | create a guest from an image: CPU and a pin to host CPUs, memory, disk, a NIC on a switch, SSH keys, a static address |
+| `PUT /api/vms/{name}` | the same, idempotent: create it, or say it already matches, or how it differs |
 | `DELETE /api/vms/{name}?confirm={name}` | destroy a stopped guest and its disk |
 | `GET /api/vm-images` | VM image templates, and the sources they can be prepared from |
 | `GET /api/vm-images/{name}` | one image: its state, the build it was written from, the guests cloned from it |
 | `PUT /api/vm-images/{name}` | prepare one from a source — `202`, then watch it |
 | `DELETE /api/vm-images/{name}?confirm={name}` | remove one no guest uses |
+| `GET /api/networks/default` | the default VM network, part by part, with whose each part is and the remedy |
+| `PUT /api/networks/default` | set up Jail Deck's parts of it: switch, address, private ports, forwarding, NAT rules |
 
 A jail carries its storage: `datasets` is the dataset mounted at the jail's `path` plus
 everything under it, and `properties` is the ZFS *user* properties of the jail's own

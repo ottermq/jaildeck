@@ -1665,7 +1665,7 @@ A start that `vm start` accepted but that never shows as running is a failure. T
 
 **The power button was not ignored here.** JD-019 measured a Debian guest ignoring it before its OS was up. A guest with no OS at all, sitting in UEFI, powered off within the second `vm stop` itself spends, every time it was asked: three stops, one of them in the guest's first second. So the poweroff fallback hasn't happened on a real guest yet. It is tested against a scripted vm-bhyve, including the second either side of the deadline. Seeing it for real needs a guest with an OS, which arrives with image templates.
 
-*Measured 2026-10-26 with one (JD-037's capture): a Debian 13 guest stopped 3 seconds into its boot, still in the firmware or GRUB, went off at once. Stopped at 10 seconds, and again at 60, it **ignored the button for the whole 70 seconds** that were watched, and `vm poweroff -f` then stopped it. That guest had no network interface, so systemd waited for one and the boot took 141 seconds; a guest whose boot is that slow is the one the deadline exists for. One more state turned up: for about a second while the guest powered itself off, `vm list` showed **`Locked (isengard)`**, the host's own name, with bhyve gone and vm-run still exiting. A start in that second is refused as `locked`.*
+*Measured 2026-10-26 with one (JD-037's capture): a Debian 13 guest stopped 3 seconds into its boot, still in the firmware or GRUB, went off at once. Stopped at 10 seconds, and again at 60, it **ignored the button for the whole 70 seconds** that were watched, and `vm poweroff -f` then stopped it. That guest had no network interface, so systemd waited for one and the boot took 141 seconds; a guest whose boot is that slow is the one the deadline exists for. One more state turned up: for about a second while the guest powered itself off, `vm list` showed **`Locked (isengard)`**, the host's own name, with bhyve gone and vm-run still exiting. A start in that second was refused as `locked`. Since 2026-10-28, a lock naming **this host** is waited out, looking once a second for up to 10 seconds (`OwnLockWait`), before start, stop, restart or destroy decides anything; one that outlasts that is refused in its own words. A lock naming another host is still refused at once.*
 
 ### Idempotent, and refused only where vm-bhyve can't be trusted
 
@@ -1830,3 +1830,109 @@ Hosts install and upgrade Jail Deck with `pkg` alone, from a signed repository. 
 - The pool is the record of what is published: a package is accepted once and kept. A rejected one is kept under `rejected/` as evidence and never retried. A failure to reach GitHub is not a verdict, and is retried next run.
 - Releases before the workflow existed have nothing attached. `SINCE` keeps the job from looking for them every run.
 - No push notification: the job polls every 15 minutes, which is soon enough for a release, and costs one anonymous API call when nothing is new.
+
+---
+
+## JD-040 — The Default VM Network: a Switch Jail Deck Owns, NAT Through an Anchor File
+
+**Status:** Locked — 2026-10-28. Measured on isengard with a throwaway private switch, two guests and PF loaded only for the measurement (`capture-vm-network-induced.sh`), and a second measurement of PF's `load anchor` and anchor reloads. The three ownership lines below were approved by the owner. First step of #118.
+
+A guest can't be reached unless it's on a network, and until now that meant someone at a root shell running `vm switch create`, `vm switch address`, and whatever NAT their host needed. This record gives every node **one default network**, put in place by one explicit, idempotent step: `jaildeck init vm-network` or `PUT /api/networks/default`. `GET /api/networks/default` reports it part by part.
+
+### What it is
+
+- **A standard vm-bhyve switch**, `jaildeck` by default (`JAILDECK_VM_SWITCH`), with **private ports** and **the host's address on it** (`JAILDECK_VM_ADDRESS`, default `10.88.0.1/24`). That address is the guests' gateway.
+- **IP forwarding**, now (`sysctl net.inet.ip.forwarding=1`) and at boot (`sysrc gateway_enable=YES`).
+- **Outbound NAT**, in the PF anchor `jaildeck/vmnet`, whose rules Jail Deck writes to `<JAILDECK_PF_ANCHOR_DIR>/vmnet.conf` (default `/usr/local/etc/jaildeck/pf`). It goes out through the interface of the default route, or `JAILDECK_VM_EGRESS`.
+
+### What was measured
+
+| | guest to guest | guest to host | guest to the internet, DNS |
+| --- | --- | --- | --- |
+| shared switch | reaches (ICMP and TCP) | reaches | no |
+| **private** switch | **blocked**, both | reaches | no |
+| private, with one NAT rule in `jaildeck/vmnet` and forwarding on | still blocked | reaches | **reaches** |
+
+- **`vm switch private <name> on` is the same mechanism JD-017 measured for jails.** vm-bhyve marks each guest's tap `PRIVATE` on the bridge **as the guest starts** (read in its source, and seen in `ifconfig`). A guest already running keeps its shared port until it restarts, and the answer says so.
+- **`load anchor "jaildeck/vmnet" from "<file>"` in `pf.conf` loads the anchor's rules from Jail Deck's file** whenever PF loads `pf.conf`, so they survive a reboot or a `service pf reload`. Reloading only the anchor (`pfctl -a jaildeck/vmnet -f <file>`) replaces its rules and nothing else. `pfctl -n` refuses a bad file with its line and reason (a `/33` netmask, measured), and the loaded rules stay as they were.
+- **Whether the operator's lines are in place can be read from PF itself:** with them, `pfctl -s nat` prints `nat-anchor "jaildeck/*" all`; without them, nothing. An anchor whose `nat-anchor` is gone **keeps its rules but isn't evaluated**.
+- **Enabling PF over SSH can drop that SSH session.** It happened during the measurement: a ruleset that keeps state (most do) starts tracking the already-open connection without its window scaling, and later drops its packets. A new connection works at once. The remedy text says so, because enabling PF is the operator's step.
+
+### Who owns what
+
+The three lines the earlier records drew, moved where the owner approved:
+
+1. **The switch** (JD-038 said switches are the operator's): **Jail Deck creates and owns one, the default network's.** It does so only on the explicit setup step, never at install. It adopts a switch of that name that's half made (no address, not private), and **refuses rather than clobbers** one that isn't a standard switch or whose address isn't the configured one: `409`, before anything runs. Every other switch stays the operator's.
+2. **IP forwarding:** **Jail Deck sets it**, now and in `rc.conf`, on the same explicit step, the way it already maintains `jail_list`. Both are audited.
+3. **PF** (JD-020: never write `pf.conf`, never enable PF): **unchanged.** The operator adds three lines to `pf.conf` once:
+   ```
+   nat-anchor "jaildeck/*"
+   anchor "jaildeck/*"
+   load anchor "jaildeck/vmnet" from "/usr/local/etc/jaildeck/pf/vmnet.conf"
+   ```
+   **Jail Deck owns only the file**, and loads it into the anchor after validating it. This is JD-020's phase 3, "owned anchors". The `anchor` line is unused by the default network. It's there so the rules between tenant networks (#118 step 2) need no second edit.
+
+Every part is reported with its **owner**. Jail Deck's are put in place by the setup step, audited as `create-vm-switch`, `set-vm-switch-address`, `set-vm-switch-private`, `enable-ip-forwarding`, `enable-ip-forwarding-at-boot`, `write-pf-anchor` and `load-pf-anchor`. The operator's carry a remedy: PF, `pf.conf`, and the uplink when there's no default route. A failing operator part is never worked around. With no default route, no NAT rule is written at all rather than one with no interface in it, which is a bug the tests caught.
+
+`usable` means a guest on the network reaches the host, and no other guest. `ready` means every part passes, NAT included.
+
+### Not yet
+
+- **Addresses are typed in.** The default network has no DHCP server, so the create form gives a guest on it a static address, with the gateway filled in. Jail Deck allocating them is #118's next step, and it also answers "which address do I connect to".
+- **Networks per tenant**, the rest of #118, and the read-only view of every network, #128.
+
+---
+
+## JD-041 — A Guest's CPU Pin, and the Idempotent PUT for VMs
+
+**Status:** Locked — 2026-10-28. Pinning measured on isengard with a throwaway guest (`capture-vm-pin-induced.sh`). The `PUT` follows JD-016 as the jails' does. These are the two of the three "left for later" in the Virtual Machines milestone. The third, a serial console, is #123's and needs its own design note.
+
+### The pin
+
+**vm-bhyve has no setting for pinning.** It hands `bhyve_options` to bhyve as they are, and bhyve's `-p <vcpu>:<hostcpu>` pins one vCPU. vm-bhyve's own sample configuration uses exactly that. So a pin is a `cpuset` in the request, `[2, 3]`, meaning vCPU 0 on host CPU 2 and vCPU 1 on host CPU 3. Jail Deck writes it into the guest's configuration the way vm-bhyve's `config::set` writes any setting:
+
+```
+sysrc -f <datastore>/<name>/<name>.conf bhyve_options="-p 0:2 -p 1:3"
+```
+
+It's a step of its own in the create, audited as `vm-pin-cpus`, and a guest whose pin fails is destroyed again, as with every other step (JD-038).
+
+**What was measured**, reading each vCPU thread's cpuset with `cpuset -g -t`:
+
+| `bhyve_options` | vCPU 0 | vCPU 1 | guest |
+| --- | --- | --- | --- |
+| none | 0–15 | 0–15 | runs |
+| `-p 0:2 -p 1:3` | **2** | **3** | runs |
+| `-p 0:2` | 2 | 0–15 | runs |
+| `-p 0:2 -p 1:999` | — | — | **bhyve exits 134; `vm start` exits 0** |
+
+**What the API takes:**
+- **One host CPU for every vCPU, each a different one.** bhyve accepts a partial pin, but a guest half pinned isn't what anyone asking for a cpuset meant, and two vCPUs on one host CPU make the guest compete with itself.
+- **Every CPU the host has, checked before anything runs** (`hw.ncpu`). A CPU the host lacks is found by bhyve only at start, by aborting, while `vm start` reports success. JD-036's start would notice the guest never came up, but only after its wait, and with no reason to give.
+- **Read back from the file, never kept** (JD-011). `GET /api/vms/{name}` carries `cpuset` when `bhyve_options` is exactly a pin as Jail Deck writes it. Options anyone else wrote aren't mistaken for one.
+
+**Not taken:** `cpuset(1)` on the bhyve process after it starts. That would need Jail Deck to act at every start, including vm-bhyve's own restart of a guest that rebooted, and at boot through `rc.d/vm`, where Jail Deck isn't involved at all. The configuration file is read at every one of those.
+
+### The PUT
+
+`PUT /api/vms/{name}` takes `POST /api/vms`'s body and does what `PUT /api/jails/{name}` does (JD-016):
+- **absent:** create it, `201`;
+- **there and matching:** `200`, nothing run;
+- **there and different:** `409` with `differences`, each as `{field, want, have}` in the request's own field names, and the guest left exactly as it is.
+
+What the guest was made with is read off the host. Each piece was measured with JD-038's guest:
+
+| field | read from |
+| --- | --- |
+| `image` | disk0's clone origin, compared against the image's `@base` |
+| `disk` | disk0's `volsize` |
+| `cpu`, `memory`, `cpuset`, `switch` | the guest's configuration file |
+| `network.*` | the seed's `network-config`, which vm-bhyve writes only for a static address. A DHCP guest has none, read in vm-bhyve's `core::create_cloud_init` |
+| `ssh_keys` | the seed's `user-data`, which vm-bhyve always writes |
+
+- **Defaults resolve the same way on both sides.** A request that leaves `cpu`, `memory` or `disk` out matches the guest those defaults made.
+- **`start` isn't compared**, for the jails' reason: a guest stopped for maintenance would refuse every `PUT`.
+- **A request a create would refuse is refused, not compared.** For example, a cpuset of the wrong length is a `400`, not a difference.
+- **A guest Jail Deck can't compare is a `409` that says why:** it's outside the default datastore, or it has no cloud-init seed, so it wasn't made from an image by Jail Deck.
+
+**Not yet:** changing a guest. A `PUT` that differs says how, and the client decides. Resizing CPUs or memory, or re-pinning a stopped guest, would be a `PATCH` with its own record, as #119 is for jails' limits.

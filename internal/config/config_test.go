@@ -20,6 +20,10 @@ func TestLoadConfig(t *testing.T) {
 				StateDir: "/var/db/jaildeck",
 				AuditLog: "/var/log/jaildeck/audit.log",
 				LogLevel: "info",
+
+				VMSwitch:    "jaildeck",
+				VMAddress:   "10.88.0.1/24",
+				PFAnchorDir: "/usr/local/etc/jaildeck/pf",
 			},
 		},
 		{
@@ -32,6 +36,11 @@ func TestLoadConfig(t *testing.T) {
 				AuditLog: "/tmp/jaildeck-audit.log",
 				LogLevel: "debug",
 				ZFSPool:  "tank",
+
+				VMSwitch:    "tenant0",
+				VMAddress:   "10.90.0.1/24",
+				VMEgress:    "igb0",
+				PFAnchorDir: "/tmp/jaildeck-pf",
 			},
 			want: Config{
 				Host:     "0.0.0.0",
@@ -41,6 +50,11 @@ func TestLoadConfig(t *testing.T) {
 				AuditLog: "/tmp/jaildeck-audit.log",
 				LogLevel: "debug",
 				ZFSPool:  "tank",
+
+				VMSwitch:    "tenant0",
+				VMAddress:   "10.90.0.1/24",
+				VMEgress:    "igb0",
+				PFAnchorDir: "/tmp/jaildeck-pf",
 			},
 		},
 	}
@@ -54,6 +68,10 @@ func TestLoadConfig(t *testing.T) {
 			t.Setenv("JAILDECK_AUDIT_LOG", tt.env.AuditLog)
 			t.Setenv("JAILDECK_LOG_LEVEL", tt.env.LogLevel)
 			t.Setenv("JAILDECK_ZFS_POOL", tt.env.ZFSPool)
+			t.Setenv("JAILDECK_VM_SWITCH", tt.env.VMSwitch)
+			t.Setenv("JAILDECK_VM_ADDRESS", tt.env.VMAddress)
+			t.Setenv("JAILDECK_VM_EGRESS", tt.env.VMEgress)
+			t.Setenv("JAILDECK_PF_ANCHOR_DIR", tt.env.PFAnchorDir)
 
 			if got := LoadConfig(); got == nil || *got != tt.want {
 				t.Errorf("LoadConfig() = %+v, want %+v", got, tt.want)

@@ -1175,6 +1175,8 @@ func (h *JailHandler) Exec(w http.ResponseWriter, r *http.Request) {
 // @Description  interface, because rules are keyed to the name and the next jail called
 // @Description  this would inherit them (JD-018). Neither sweep can fail the destroy:
 // @Description  what could not be cleared is reported in `epair_error` or `rules_error`.
+// @Description  A sweep that removed something, or failed to, is audited as
+// @Description  `remove-leftover-epair` or `remove-leftover-rctl`.
 // @Description
 // @Description  **Child datasets go with it** (JD-007). They are listed in `taken`. A
 // @Description  dataset worth keeping has to stop being a child first: `POST

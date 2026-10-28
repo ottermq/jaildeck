@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -30,8 +31,11 @@ func (g *guestScript) VMList(context.Context) (Listing, error) {
 	state := g.states[min(g.looks, len(g.states)-1)]
 	g.looks++
 	vm := VM{Name: "web", Datastore: "default", State: state}
-	if state == StateLocked {
+	switch state {
+	case StateLocked:
 		vm.LockedBy = "orthanc"
+	case lockedHere:
+		vm.State, vm.LockedBy = StateLocked, "isengard"
 	}
 	return Listing{VMBhyve: VMBhyveReady, VMs: []VM{vm}}, nil
 }
@@ -77,6 +81,7 @@ func (a *auditRecorder) summary() []string {
 func lifecycle(g *guestScript) (*Service, *auditRecorder, *time.Duration) {
 	rec := &auditRecorder{}
 	s := NewService(g, nil, rec)
+	s.hostname = "isengard"
 	waited := new(time.Duration)
 	s.wait = func(_ context.Context, d time.Duration) { *waited += d }
 	return s, rec, waited
@@ -90,6 +95,86 @@ func runningFor(n int, then string) []string {
 		states = append(states, StateRunning)
 	}
 	return append(states, then)
+}
+
+// lockedHere is a scripted look at the guest listed Locked (isengard): this
+// host's own lock, the second vm-run takes to exit after its bhyve has gone.
+const lockedHere = "locked-here"
+
+// --- a lock of this host's own ---------------------------------------------
+
+func TestStartWaitsOutThisHostsOwnLock(t *testing.T) {
+	g := &guestScript{states: []string{lockedHere, StateStopped, StateRunning}}
+	s, _, waited := lifecycle(g)
+	result, err := s.Start(context.Background(), "web")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if result.State != StateRunning || !slices.Equal(g.ran, []string{"vm start web"}) {
+		t.Errorf("result = %+v, ran %v; want it started once the lock cleared", result, g.ran)
+	}
+	if *waited != pollInterval {
+		t.Errorf("waited %s for the lock, want one look's worth", *waited)
+	}
+}
+
+func TestAnotherHostsLockIsRefusedAtOnce(t *testing.T) {
+	g := &guestScript{states: []string{StateLocked}}
+	s, _, waited := lifecycle(g)
+	_, err := s.Start(context.Background(), "web")
+	if code := statusOf(t, err); code != http.StatusConflict || !strings.Contains(err.Error(), "locked by orthanc") {
+		t.Errorf("err = %v, want 409 naming orthanc", err)
+	}
+	if *waited != 0 || len(g.ran) != 0 {
+		t.Errorf("waited %s and ran %v for another host's lock", *waited, g.ran)
+	}
+}
+
+func TestAnOwnLockThatDoesNotClearIsSaidForWhatItIs(t *testing.T) {
+	for _, op := range []string{"start", "stop", "restart"} {
+		t.Run(op, func(t *testing.T) {
+			g := &guestScript{states: []string{lockedHere}}
+			s, _, waited := lifecycle(g)
+			var err error
+			switch op {
+			case "start":
+				_, err = s.Start(context.Background(), "web")
+			case "stop":
+				_, err = s.Stop(context.Background(), "web")
+			case "restart":
+				_, err = s.Restart(context.Background(), "web")
+			}
+			if code := statusOf(t, err); code != http.StatusConflict || !strings.Contains(err.Error(), "still locked by this host") {
+				t.Errorf("err = %v, want 409 saying this host's lock outlasted the wait", err)
+			}
+			if *waited != OwnLockWait || len(g.ran) != 0 {
+				t.Errorf("waited %s, ran %v; want %s and nothing run", *waited, g.ran, OwnLockWait)
+			}
+		})
+	}
+}
+
+func TestLockedHereComparesShortNames(t *testing.T) {
+	s := NewService(nil, nil, nil)
+	for _, tc := range []struct {
+		host, lockedBy string
+		want           bool
+	}{
+		{"isengard", "isengard", true},
+		{"isengard.lan", "isengard", true},
+		{"ISENGARD", "isengard.lan", true},
+		{"isengard", "orthanc", false},
+		{"", "isengard", false},
+	} {
+		s.hostname = tc.host
+		if got := s.lockedHere(&VM{State: StateLocked, LockedBy: tc.lockedBy}); got != tc.want {
+			t.Errorf("host %q, locked by %q: lockedHere = %v, want %v", tc.host, tc.lockedBy, got, tc.want)
+		}
+	}
+	s.hostname = "isengard"
+	if s.lockedHere(&VM{State: StateRunning, LockedBy: "isengard"}) {
+		t.Error("a guest that is not locked was taken for locked")
+	}
 }
 
 // --- start ----------------------------------------------------------------

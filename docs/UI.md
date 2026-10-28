@@ -176,7 +176,7 @@ Purpose: what vm-bhyve's guests are doing, and starting and stopping them (JD-01
 
 The list is a table: state, name, CPU, memory, loader, datastore, and whether the guest starts at boot with its place in `vm_list`. Only `running` is green. `bootloader` and `locked` are amber, and a locked guest names the host holding it. CPU and memory the API could not read are a dash.
 
-A guest's page has its configuration (with resident memory beside the configured amount while it runs), its console, its network interfaces and its disks. **A stopped guest's missing console is explained, not left blank**: the console belongs to the bhyve instance. The tap is labelled as this run's, because vm-bhyve makes a new one on every start.
+A guest's page has its configuration (with resident memory beside the configured amount while it runs, and the host CPUs it is pinned to beside its CPU count), its console, its network interfaces and its disks. **A stopped guest's missing console is explained, not left blank**: the console belongs to the bhyve instance. The tap is labelled as this run's, because vm-bhyve makes a new one on every start.
 
 **Start, Stop and Restart** sit at the end of each row and beside the guest's name on its page — one component, `VMActions`, for both. A running guest offers Stop and Restart, a stopped one Start, and a suspended one **Resume**, which is what vm-bhyve's start does to it. A guest in its boot loader or locked by another host offers nothing and says why ("Booting — try again once it is running", "Held by orthanc"), because the API would refuse.
 
@@ -188,7 +188,11 @@ A guest's page has its configuration (with resident memory beside the configured
 
 **Removing** asks for the name typed, as removing a template does. The refusal for an image a guest uses comes back naming the guest and is shown under the image's row.
 
-**Create a VM** sits beside the Guests heading once vm-bhyve is ready (JD-038). The form offers only ready images, with the image's size as the disk's placeholder and the floor the hint names. **Network** is a choice of vm-bhyve's switches — the listing now carries them — or "no network"; with no switches at all, the hint says a guest made now has none and that switches are the operator's. With a switch, the address is DHCP or static, and static opens address, gateway and nameservers. SSH keys are one per line, and the hint says plainly that **without one the guest is reachable only on its console**: a cloud image has no password. Start is ticked by default. A refusal stays in the form; success closes it, says what was made and that a cloud image takes about twenty seconds to boot, and reads both the guests and the images panel again, since the image now has a guest.
+**Create a VM** sits beside the Guests heading once vm-bhyve is ready (JD-038). The form offers only ready images, with the image's size as the disk's placeholder and the floor the hint names. **Network** is a choice of vm-bhyve's switches — the listing now carries them — or "no network"; with no switches at all, the hint says a guest made now has none and that switches are the operator's. With a switch, the address is DHCP or static, and static opens address, gateway and nameservers. SSH keys are one per line, and the hint says plainly that **without one the guest is reachable only on its console**: a cloud image has no password. **Pin to CPUs** is optional: host CPU numbers, one for each vCPU, `2,3` (JD-041). Anything but numbers is refused in the form, with what a pin is; the server checks the count and that the host has them. Start is ticked by default. A refusal stays in the form; success closes it, says what was made and that a cloud image takes about twenty seconds to boot, and reads both the guests and the images panel again, since the image now has a guest.
+
+**Default network** is a third panel, between the guests and the images (JD-040). One line says what it is — switch, subnet, gateway, the interface it goes out through — under a badge: **ready** (green) when every part passes, **host only** (amber) when guests reach the host and not yet the outside, **not set up** otherwise. Below it, every part that doesn't pass, with its **owner**: "Jail Deck" or "you". An operator's part carries its remedy in a block with a Copy button: the PF commands, with the warning that enabling PF over SSH can drop that session, and the three `pf.conf` lines. **Set up** appears only while one of Jail Deck's own parts fails, and the hint under it names what it does and that PF and `pf.conf` are left alone. Done, it says which parts it put in place and, after making the ports private, that a guest already running keeps its shared port until it restarts. Once ready, the parts fold behind "Show the parts".
+
+**On the default network, the create form changes**: it's preselected and listed first as "on the default network (jaildeck)", DHCP isn't offered because there's no DHCP server on it, the gateway is filled in, the address placeholder is in its subnet, and the hint says what a guest on it reaches.
 
 **Destroy** is on a guest's page, beside Start, **only while it is stopped or suspended** — stopping is its own decision with its own deadline — and asks for the name typed, saying the disk and everything on it go and the image does not. Done, it goes back to the list; refused, it says why and stays.
 
@@ -206,18 +210,16 @@ Purpose: expose safe configuration visibility — HTTP bind address, detected Fr
 
 ## Frontend architecture
 
-Not designed yet:
+Settled by building it, between v0.6.0 and v0.16.0. These were open questions here until then; what follows is what was built and why it stayed.
 
-1. **Framework mode** — SvelteKit (file-based routing, more structure/conventions) or a plain Svelte + Vite SPA (fewer conventions, hand-rolled routing)? This decides several of the questions below.
-2. **State management** — Svelte's built-in stores (`svelte/store`), Svelte 5 runes, or something else?
-3. **Routing** — SvelteKit's built-in routing, or a lightweight router (`svelte-routing`, `page.js`) for a plain Svelte + Vite app; whether the route structure mirrors the API path structure from `docs/ARCHITECTURE.md`
-4. **Component library / styling approach** — plain CSS, a utility framework, or a component library?
-5. **API client pattern** — hand-rolled `fetch` wrappers, a generated client, or something like TanStack Query (`@tanstack/svelte-query`) for caching/refetch?
-6. **Refresh pattern** — how the UI reflects state after a mutation: polling, optimistic updates, or plain refetch-after-mutation?
-7. **Long-running operation UI** — JD-008 settled the API half (2026-10-23): the prepare call returns `202` and the template's own resource carries `state` and `running`. What the page does with that — a progress row on the template, a toast on completion, how often it polls — is still open.
-8. **Build tooling** — Vite, either standalone or via SvelteKit (which is itself Vite-based) — the specific setup depends on the framework-mode decision above.
-
-These should be settled together when Phase 1b (`docs/ROADMAP.md`) actually starts, not decided piecemeal ahead of time.
+1. **Plain Svelte 5 + Vite, not SvelteKit.** It's a single-page application with no server rendering, built by `make web` into `web/dist` and embedded into the Go binary (`web/embed.go`, JD-009). It has **no runtime dependencies at all**: everything in `package.json` is a devDependency, and production ships one executable.
+2. **State is runes in modules.** Each domain has a store module, `src/lib/stores/<domain>.svelte.ts`, holding its types and the API calls. Pages keep their own `$state` and `$derived`. There's no global cache. Every page reads what it shows when it mounts, because the host is the record (JD-011).
+3. **A router of a few dozen lines** (`src/lib/router.svelte.ts`): a `$state` path, `match()` for `:name` segments, `navigate()` and `onNavClick()`. A dependency would bring history handling, lazy loading and nested layouts this application has no use for. Paths mirror the API's where they can (`/jails/{name}`, `/vms/{name}`), and two pages must never claim the same path. That's why VM images are a panel on the VMs page and not `/vms/images`, which would be a guest called `images`.
+4. **Plain CSS.** Design tokens are custom properties in `src/app.css`, redefined under `prefers-color-scheme: dark`. Global styles cover the controls, tables, badges and notices. Each component's own layout is scoped in its `<style>`. There's no utility framework and no component library.
+5. **One `fetch` wrapper** (`src/lib/services/api.ts`). Every call goes to `/api`, and a `401` clears the session state, so the app shows the login page. A failure is an `ApiError` carrying the status, the server's message and the decoded body, because a `409` often explains itself in its body (JD-024).
+6. **Refetch after every mutation**, whichever way it went: a command that failed can still have changed the host. Nothing is optimistic.
+7. **Long-running work is polled.** A page reads its listing every 2 seconds while anything in it has `running` (JD-008), and stops when nothing does. Templates and VM images both work this way. A page that started work says how it came out, because a `202` only says the work began.
+8. **Destructive actions go through one confirm dialog** (`stores/confirm.svelte.ts`, mounted once in the shell). It asks for a typed name where the API demands `confirm=`.
 
 ## Checking a frontend change
 

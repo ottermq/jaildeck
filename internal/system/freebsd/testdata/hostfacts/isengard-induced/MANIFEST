@@ -142,3 +142,63 @@ vm_mk_reach_again	(seconds from the second vm start until ssh answered)	exit=0	1
 vm_mk_destroy_running	doas vm destroy -f jd-cap-made	exit=1	0s
 vm_mk_destroy	doas vm destroy -f jd-cap-made	exit=0	2s
 vm_mk_after_destroy	zfs list -H -o name -r tank/vm; zfs get -H clones tank/vm/.images/debian-13@base; ls -A /vm	exit=0	0s
+vm_net_switch_create	doas vm switch create jd-netsw	exit=0
+vm_net_switch_address	doas vm switch address jd-netsw 10.81.0.1/24	exit=0
+vm_net_shared_a_to_b	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 10.81.0.11'	exit=0
+vm_net_shared_a_to_host	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 10.81.0.1'	exit=0
+vm_net_shared_a_to_internet	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 9.9.9.9'	exit=1
+vm_net_shared_a_dns	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'getent hosts deb.debian.org'	exit=2
+vm_net_shared_a_tcp_b	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'timeout 5 bash -c "</dev/tcp/10.81.0.11/22" && echo open'	exit=0
+vm_net_shared_a_neigh	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ip neigh'	exit=0
+vm_net_shared_bridge	ifconfig vm-jd-netsw	exit=0
+vm_net_private_on	doas vm switch private jd-netsw on	exit=0
+vm_net_switch_list_private	doas vm switch list	exit=0
+vm_net_private_a_to_b	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 10.81.0.11'	exit=1
+vm_net_private_a_to_host	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 10.81.0.1'	exit=0
+vm_net_private_a_to_internet	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 9.9.9.9'	exit=1
+vm_net_private_a_dns	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'getent hosts deb.debian.org'	exit=2
+vm_net_private_a_tcp_b	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'timeout 5 bash -c "</dev/tcp/10.81.0.11/22" && echo open'	exit=1
+vm_net_private_a_neigh	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ip neigh'	exit=0
+vm_net_private_bridge	ifconfig vm-jd-netsw	exit=0
+vm_net_pf_load	doas kldload pf && doas pfctl -q -f /var/tmp/jd-capture-vm-network/pf.conf && doas pfctl -q -e; doas pfctl -s info | head -1	exit=0
+vm_net_pf_anchor	echo 'nat on em0 inet from 10.81.0.0/24 to any -> (em0)' | doas pfctl -a jaildeck/vmnet -f - && doas pfctl -a jaildeck/vmnet -s nat	exit=0
+vm_net_pf_anchors	doas pfctl -s Anchors -v; doas pfctl -s nat	exit=0
+vm_net_forwarding	doas sysctl net.inet.ip.forwarding=1	exit=0
+vm_net_nat_a_to_b	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 10.81.0.11'	exit=1
+vm_net_nat_a_to_host	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 10.81.0.1'	exit=0
+vm_net_nat_a_to_internet	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 9.9.9.9'	exit=0
+vm_net_nat_a_dns	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'getent hosts deb.debian.org'	exit=0
+vm_net_nat_a_tcp_b	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'timeout 5 bash -c "</dev/tcp/10.81.0.11/22" && echo open'	exit=1
+vm_net_nat_a_neigh	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ip neigh'	exit=0
+vm_net_nat_bridge	ifconfig vm-jd-netsw	exit=0
+vm_net_pf_states	doas pfctl -s state | grep -c 10.81.0.10	exit=0
+vm_pin_ncpu	sysctl -n hw.ncpu	exit=0	0s
+vm_pin_rootset	cpuset -g -s 1	exit=0	0s
+vm_pin_create	doas vm create -t jd-capture-pin -s 1G jd-cap-pin	exit=0	1s
+vm_pin_unpinned_start	doas vm start jd-cap-pin	exit=0	1s
+vm_pin_unpinned_running	[ -e /dev/vmm/jd-cap-pin ] && echo running || echo 'not running'	exit=0	0s
+vm_pin_unpinned_log	doas tail -n 8 /vm/jd-cap-pin/vm-bhyve.log	exit=0	0s
+vm_pin_unpinned_args	ps -o args= -p 36180	exit=0	0s
+vm_pin_unpinned_threads	procstat -t 36180	exit=0	0s
+vm_pin_unpinned_cpusets	cpuset -g -t <each vcpu thread>	exit=0	0s
+vm_pin_set	doas sysrc -f /vm/jd-cap-pin/jd-cap-pin.conf 'bhyve_options=-p 0:2 -p 1:3'	exit=0	0s
+vm_pin_conf	doas cat /vm/jd-cap-pin/jd-cap-pin.conf	exit=0	0s
+vm_pin_pinned_start	doas vm start jd-cap-pin	exit=0	0s
+vm_pin_pinned_running	[ -e /dev/vmm/jd-cap-pin ] && echo running || echo 'not running'	exit=0	0s
+vm_pin_pinned_log	doas tail -n 8 /vm/jd-cap-pin/vm-bhyve.log	exit=0	0s
+vm_pin_pinned_args	ps -o args= -p 36682	exit=0	0s
+vm_pin_pinned_threads	procstat -t 36682	exit=0	0s
+vm_pin_pinned_cpusets	cpuset -g -t <each vcpu thread>	exit=0	0s
+vm_pin_set_bad	doas sysrc -f /vm/jd-cap-pin/jd-cap-pin.conf 'bhyve_options=-p 0:2 -p 1:999'	exit=0	0s
+vm_pin_badcpu_start	doas vm start jd-cap-pin	exit=0	0s
+vm_pin_badcpu_running	[ -e /dev/vmm/jd-cap-pin ] && echo running || echo 'not running'	exit=0	0s
+vm_pin_badcpu_log	doas tail -n 8 /vm/jd-cap-pin/vm-bhyve.log	exit=0	0s
+vm_pin_set_one	doas sysrc -f /vm/jd-cap-pin/jd-cap-pin.conf 'bhyve_options=-p 0:2'	exit=0	0s
+vm_pin_onepin_start	doas vm start jd-cap-pin	exit=0	0s
+vm_pin_onepin_running	[ -e /dev/vmm/jd-cap-pin ] && echo running || echo 'not running'	exit=0	0s
+vm_pin_onepin_log	doas tail -n 8 /vm/jd-cap-pin/vm-bhyve.log	exit=0	0s
+vm_pin_onepin_args	ps -o args= -p 37881	exit=0	0s
+vm_pin_onepin_threads	procstat -t 37881	exit=0	0s
+vm_pin_onepin_cpusets	cpuset -g -t <each vcpu thread>	exit=0	0s
+vm_pin_unset	doas sysrc -x -f /vm/jd-cap-pin/jd-cap-pin.conf bhyve_options	exit=0	0s
+vm_pin_conf_unset	doas cat /vm/jd-cap-pin/jd-cap-pin.conf	exit=0	0s

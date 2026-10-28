@@ -3,6 +3,8 @@ import { onMount } from 'svelte'
 import { createVM } from '../stores/vms.svelte'
 import type { Created, CreateRequest } from '../stores/vms.svelte'
 import { listImages } from '../stores/vmImages.svelte'
+import { getDefaultNetwork } from '../stores/networks.svelte'
+import type { DefaultNetwork } from '../stores/networks.svelte'
 import type { Image } from '../stores/vmImages.svelte'
 import { ApiError } from '../services/api'
 import { formatBytes } from '../utils'
@@ -19,7 +21,20 @@ let { switches, oncreated, oncancel }: {
 let images = $state<Image[] | null>(null)
 let imagesError = $state('')
 
+// The default network (JD-040) is offered first. It has no DHCP server, so a
+// guest on it is given a static address, with the host as its gateway.
+let defaultNet = $state<DefaultNetwork | null>(null)
+
 onMount(async () => {
+    try {
+        const net = await getDefaultNetwork()
+        if (net.usable && switches.includes(net.switch)) {
+            defaultNet = net
+            vmSwitch = net.switch
+        }
+    } catch {
+        // No default network to offer; the form works without it.
+    }
     try {
         const listing = await listImages()
         // Only a ready image can be cloned from.
@@ -36,6 +51,7 @@ let image = $state('')
 let cpu = $state(1)
 let memory = $state('1G')
 let disk = $state('')
+let pins = $state('')
 // The first switch is only the starting choice; a list that changes later
 // does not change it.
 // svelte-ignore state_referenced_locally
@@ -48,6 +64,24 @@ let keys = $state('')
 let start = $state(true)
 
 let chosen = $derived(images?.find(i => i.name === image))
+let onDefault = $derived(defaultNet !== null && vmSwitch === defaultNet.switch)
+// An example address in the default network's subnet, not the host's.
+let addressExample = $derived.by(() => {
+    if (!onDefault || !defaultNet) return '10.0.0.5/24'
+    const octets = defaultNet.gateway.split('.')
+    octets[3] = octets[3] === '10' ? '11' : '10'
+    return `${octets.join('.')}/${defaultNet.subnet.split('/')[1]}`
+})
+let orderedSwitches = $derived(defaultNet
+    ? [defaultNet.switch, ...switches.filter(s => s !== defaultNet!.switch)]
+    : switches)
+
+$effect(() => {
+    if (onDefault && defaultNet) {
+        addressing = 'static'
+        if (gateway === '') gateway = defaultNet.gateway
+    }
+})
 let busy = $state(false)
 let error = $state('')
 
@@ -69,6 +103,15 @@ async function submit(event: Event) {
         ssh_keys: split(keys, /\r?\n/),
     }
     if (disk.trim() !== '') req.disk = disk.trim()
+    const cpus = split(pins, /[\s,]+/)
+    if (cpus.length > 0) {
+        if (!cpus.every(c => /^\d+$/.test(c))) {
+            error = 'Pin to host CPUs is their numbers, one for each vCPU: 2,3'
+            busy = false
+            return
+        }
+        req.cpuset = cpus.map(Number)
+    }
     if (vmSwitch !== '') {
         req.switch = vmSwitch
         if (addressing === 'static') {
@@ -117,6 +160,11 @@ async function submit(event: Event) {
                 <input id="vm-cpu" type="number" min="1" max="64" bind:value={cpu} required />
             </div>
             <div class="field field--narrow">
+                <label for="vm-pins">Pin to CPUs</label>
+                <input id="vm-pins" bind:value={pins} placeholder={cpu > 1 ? '2,3' : '2'}
+                       autocomplete="off" spellcheck="false" inputmode="numeric" />
+            </div>
+            <div class="field field--narrow">
                 <label for="vm-memory">Memory</label>
                 <input id="vm-memory" bind:value={memory} placeholder="1G" autocomplete="off" spellcheck="false" required />
             </div>
@@ -129,15 +177,16 @@ async function submit(event: Event) {
         <p class="hint">
             Memory as vm-bhyve writes it, <code>512M</code> or <code>2G</code>. The disk is a clone of the
             image{#if chosen?.size}, at least its {formatBytes(chosen.size)} and that by default{/if}; the guest
-            grows its own filesystem into a larger one on first boot.
+            grows its own filesystem into a larger one on first boot. Pinning is optional: one host CPU for
+            each vCPU, in order, each a different one; left empty, the host schedules them anywhere.
         </p>
 
         <div class="form__row">
             <div class="field">
                 <label for="vm-switch">Network</label>
                 <select id="vm-switch" bind:value={vmSwitch}>
-                    {#each switches as s (s)}
-                        <option value={s}>on switch {s}</option>
+                    {#each orderedSwitches as s (s)}
+                        <option value={s}>{s === defaultNet?.switch ? `on the default network (${s})` : `on switch ${s}`}</option>
                     {/each}
                     <option value="">no network</option>
                 </select>
@@ -146,12 +195,21 @@ async function submit(event: Event) {
                 <fieldset class="field">
                     <legend>Address</legend>
                     <div class="radios">
-                        <label><input type="radio" bind:group={addressing} value="dhcp" /> DHCP</label>
+                        {#if !onDefault}
+                            <label><input type="radio" bind:group={addressing} value="dhcp" /> DHCP</label>
+                        {/if}
                         <label><input type="radio" bind:group={addressing} value="static" /> Static</label>
                     </div>
                 </fieldset>
             {/if}
         </div>
+        {#if onDefault && defaultNet}
+            <p class="hint">
+                The default network has no DHCP: give the guest an address in <code>{defaultNet.subnet}</code>
+                other than the host’s, with <code>{defaultNet.gateway}</code> as its gateway. It reaches the
+                host{defaultNet.ready ? ' and the outside' : ''}, and no other guest.
+            </p>
+        {/if}
         {#if switches.length === 0}
             <p class="hint">
                 vm-bhyve has no switches, so a guest made now has no network. Switches are the
@@ -162,7 +220,7 @@ async function submit(event: Event) {
             <div class="form__row">
                 <div class="field">
                     <label for="vm-address">Address</label>
-                    <input id="vm-address" bind:value={address} placeholder="10.0.0.5/24"
+                    <input id="vm-address" bind:value={address} placeholder={addressExample}
                            autocomplete="off" spellcheck="false" required />
                 </div>
                 <div class="field">

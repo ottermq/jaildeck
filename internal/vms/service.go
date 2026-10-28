@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"time"
@@ -20,13 +21,17 @@ type Service struct {
 	// images is where a created guest's disk comes from (JD-038).
 	images ImageCatalog
 	audit  audit.Logger
+	// hostname is this host's name as vm-bhyve writes it into a guest's
+	// run.lock, so a lock this host holds can be told from another host's.
+	hostname string
 	// wait is how the lifecycle waits between looks at vm-bhyve's listing.
 	// A field so that the tests do not spend a minute watching a fake.
 	wait func(context.Context, time.Duration)
 }
 
 func NewService(system VMSystem, images ImageCatalog, auditLogger audit.Logger) *Service {
-	return &Service{system: system, images: images, audit: auditLogger, wait: sleep}
+	hostname, _ := os.Hostname()
+	return &Service{system: system, images: images, audit: auditLogger, wait: sleep, hostname: hostname}
 }
 
 func sleep(ctx context.Context, d time.Duration) {
@@ -109,6 +114,15 @@ func (s *Service) Get(ctx context.Context, name string) (Detail, error) {
 	}
 	if detail.Disks == nil {
 		detail.Disks = make([]Disk, 0)
+	}
+	// The pin is in the configuration file, which vm info does not print. A
+	// failure to read it costs the pin and nothing else, and a guest outside
+	// the default datastore has none Jail Deck wrote.
+	if applied, err := s.system.VMApplied(ctx, name); err == nil {
+		detail.CPUSet, _ = parsePins(applied.BhyveOptions)
+	} else if !errors.Is(err, ErrNoSuchVM) {
+		common.Logger(ctx, "vms").Warn("could not read the guest's configuration",
+			slog.String("vm", name), slog.Any("err", err))
 	}
 	return detail, nil
 }

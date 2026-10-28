@@ -51,6 +51,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **VMs started and stopped** (v0.15.0): start, stop and restart, confirmed in `vm list`, with a stop that powers off a guest ignoring the button and says so (JD-036)
 - **Virtual Machines** (v0.16.0): image templates from a cloud image, and guests created from them with cloud-init, a NIC on the operator's switch and a cloned disk, then destroyed — from the API and the interface (JD-037, JD-038). The milestone is done
 - **Packaging, second half** (v0.16.1): releases built and attested in CI, and published into a signed `pkg` repository by a host that verifies the attestation (JD-039)
+- **A default VM network** (v0.17.0): one switch Jail Deck owns, with private ports, forwarding and NAT through a PF anchor file, PF itself staying the operator's (#118 step 1, JD-040); guests pinned to host CPUs, and an idempotent `PUT` for VMs (JD-041)
 
 ---
 
@@ -278,7 +279,7 @@ Goal: create and destroy jails, including VNET jails with resource limits, from 
 - **a failed start leaks its epair:** `exec.poststop` does not run when the start fails, and nothing afterwards will run it, so Jail Deck destroys the orphan itself — found by the `descr jail:<name>` the stanza writes (JD-030)
 - autostart is `sysrc jail_list+=<name>`; Jail Deck writes no `/etc/jail.conf` (JD-030)
 - **a failed start leaves its rctl rules too:** `exec.prestop` does not run either, so whatever `exec.poststart` had already applied stays in the kernel and Jail Deck takes it back — the same cleanup as the epair, for a leftover that would otherwise be inherited by the next jail of that name (JD-018)
-- **neither sweep is audited.** The audit log records the steps a create or a destroy is made of; the two cleanups of things that should not have been there are reported in the response instead. Worth revisiting — they are host mutations
+- ~~**neither sweep is audited.**~~ *Audited since 2026-10-28: a sweep that removed an epair or rctl rules, or failed to, writes `remove-leftover-epair` or `remove-leftover-rctl` with the command; one that found nothing writes nothing, because it changed nothing. Both are still reported in the response.*
 
 *Settled 2026-10-24: orchestration ownership across the `jails`/`storage` boundary, and both of the behaviours JD-005 left to verify — all measured on 15.1-RELEASE-p5 and recorded in JD-030.*
 
@@ -413,7 +414,7 @@ Jail Deck can be installed on FreeBSD in a repeatable way and run as a service.
 
 ## Milestone: Virtual Machines
 
-**Status:** done in v0.16.0, begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, and since v0.15.0 started, stopped and restarted, through the API and on the VMs pages (JD-035, JD-036). Image templates can be prepared through the API and on the VMs page (JD-037), and a guest created from one and destroyed, through the API and on the VMs pages (JD-038). **The completion criterion is met**, checked on isengard on 2026-10-26 through the interface itself: a Debian guest created from the form, reached over SSH on its static address, stopped and destroyed. Left for later: `cpuset`, an idempotent `PUT`, and a serial console through the API.
+**Status:** done in v0.16.0, begun in v0.13.0. The mechanism is decided — vm-bhyve, by a spike that built the same Linux VM both ways (JD-019) — and Host Setup reports whether a host is ready for it. Since v0.14.0 guests can be listed and inspected, and since v0.15.0 started, stopped and restarted, through the API and on the VMs pages (JD-035, JD-036). Image templates can be prepared through the API and on the VMs page (JD-037), and a guest created from one and destroyed, through the API and on the VMs pages (JD-038). **The completion criterion is met**, checked on isengard on 2026-10-26 through the interface itself: a Debian guest created from the form, reached over SSH on its static address, stopped and destroyed. Since then, a guest's vCPUs can be pinned to host CPUs, and `PUT /api/vms/{name}` creates idempotently (JD-041). Left for later: a serial console through the API (#123).
 
 **Depends on:** Host Setup (UG check), Storage Writes (zvols), Jail Provisioning (the patterns VMs mirror). **★ Otter Cloud:** Linux VMs, after its first beta.
 
@@ -422,7 +423,7 @@ Goal: a `vms` domain mirroring jails (JD-019).
 ### Capabilities
 
 - list and inspect VMs
-- create from an image template, with CPU and memory sizing, cpuset, a zvol disk and a cloud-init seed. *Built 2026-10-26 (JD-038), cpuset aside: `POST /api/vms`, `vm create` from Jail Deck's UEFI template with a seed carrying SSH keys and a static address, a NIC added on the operator's switch — checked to exist, because vm-bhyve does not — and disk0 replaced by a `volmode=dev` clone of the image. A step that fails destroys the guest again. Measured: reachable over SSH 16–18 s after it starts.*
+- create from an image template, with CPU and memory sizing, cpuset, a zvol disk and a cloud-init seed. *cpuset built 2026-10-28 (JD-041): one host CPU per vCPU, written as `bhyve_options="-p 0:<cpu> ..."` because vm-bhyve has no setting of its own, and checked against `hw.ncpu` first, because bhyve aborts on a CPU the host lacks while `vm start` exits 0, measured. An idempotent `PUT /api/vms/{name}` the same day, comparing against what the host holds: the configuration, the seed and disk0's origin.* *Built 2026-10-26 (JD-038), cpuset aside: `POST /api/vms`, `vm create` from Jail Deck's UEFI template with a seed carrying SSH keys and a static address, a NIC added on the operator's switch — checked to exist, because vm-bhyve does not — and disk0 replaced by a `volmode=dev` clone of the image. A step that fails destroys the guest again. Measured: reachable over SSH 16–18 s after it starts.*
 - start, stop, restart, destroy (`confirm=<name>`). *Destroy built 2026-10-26 (JD-038): stopped guests only, `vm destroy -f`, the disk clone with it.* *Start, stop and restart built 2026-10-26 (JD-036): `vm start` detached into a session of its own, every step confirmed in `vm list`, and a stop that powers off a guest ignoring the button for 60 seconds and says `forced`.*
 - a tap on the configured bridge, as VNET jails use
 - serial console through the API, later
@@ -441,9 +442,22 @@ A Linux VM can be created from an image with cloud-init, reached over the bridge
 
 ---
 
+## Next: VM Networks (#118)
+
+**Status:** step 1 done in v0.17.0. Step 2 not started.
+
+Goal: every guest on a network without a root shell, and, for Otter Cloud, a network per tenant.
+
+- **a default network**, ensured on an explicit step and reported part by part (JD-040). *Built 2026-10-28: `GET` and `PUT /api/networks/default`, `jaildeck init vm-network`, and a panel on the VMs page. Jail Deck owns one switch with private ports and the host's address, IP forwarding now and at boot, and the NAT rules in the file behind `jaildeck/vmnet`. PF and three lines of `pf.conf` stay the operator's, shown with their remedy. The create form defaults to it. Checked end to end on isengard: two guests on it reached the internet and the host, and not each other.*
+- addresses allocated by Jail Deck, so the form needn't ask and a guest's page can say where to connect
+- networks per tenant as a resource: a bridge or a VLAN each, a subnet from a range, nothing between networks, refused while in use
+- a read-only view of every network (#128)
+
+---
+
 ## Later: Firewall Tables and Anchors
 
-PF phases 2 and 3 (JD-020) — adding and removing addresses in operator-declared tables, then loading rules into `jaildeck/*` anchors with validation and rollback. Only when a real need appears, most likely per-VM rules.
+PF phases 2 and 3 (JD-020) — adding and removing addresses in operator-declared tables, then loading rules into `jaildeck/*` anchors with validation and rollback. Only when a real need appears, most likely per-VM rules. *Phase 3 began with the default network (JD-040): one anchor, `jaildeck/vmnet`, loaded from Jail Deck's file after `pfctl -n` accepts it.*
 
 ---
 

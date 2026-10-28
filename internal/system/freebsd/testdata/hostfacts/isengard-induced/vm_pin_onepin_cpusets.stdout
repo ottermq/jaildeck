@@ -1,0 +1,4 @@
+vcpu 0: tid 217180 mask: 2
+tid 217180 domain policy: first-touch mask: 0
+vcpu 1: tid 217181 mask: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+tid 217181 domain policy: first-touch mask: 0

@@ -20,6 +20,68 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.17.0 — 2026-10-28
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.17.0)
+
+Every node can have **a default VM network**, put in place by one explicit step: a switch
+Jail Deck owns, with private ports and the host as gateway, IP forwarding, and outbound NAT
+through a PF anchor whose rules Jail Deck writes (#118 step 1, JD-040). A guest's vCPUs can
+be **pinned to host CPUs**, and `PUT /api/vms/{name}` **creates a guest idempotently** or says
+how it differs (JD-041).
+
+Nothing to act on when upgrading. Nothing on the host changes until someone runs
+`jaildeck init vm-network` or presses **Set up** on the VMs page. **PF stays yours:** for
+guests to reach the outside, add the three lines the panel shows to `pf.conf` once and reload
+PF. Enabling PF over SSH can drop that session; a new connection works at once.
+
+### Added
+
+- **A Default network panel on the VMs page** (#130). Every part shows its owner: Jail Deck
+  or you. Jail Deck's parts are put in place by **Set up**, and yours come with the exact
+  commands and a Copy button. The create form defaults to the network: no DHCP is offered,
+  the gateway is filled in, and the address hint is in its subnet.
+- **`jaildeck init vm-network`** (#130), the same setup from the shell.
+- **Pin to CPUs** in the create form, and the pin on a guest's page (#131).
+- Settings: `JAILDECK_VM_SWITCH` (default `jaildeck`), `JAILDECK_VM_ADDRESS`
+  (`10.88.0.1/24`), `JAILDECK_VM_EGRESS` (the default route's interface) and
+  `JAILDECK_PF_ANCHOR_DIR` (`/usr/local/etc/jaildeck/pf`).
+
+### API
+
+- **`GET` and `PUT /api/networks/default`** (#130, JD-040). `GET` reports the network part by
+  part, with an owner, a status and a remedy for each. `PUT` ensures Jail Deck's parts,
+  audited as `create-vm-switch`, `set-vm-switch-address`, `set-vm-switch-private`,
+  `enable-ip-forwarding`, `enable-ip-forwarding-at-boot`, `write-pf-anchor` and
+  `load-pf-anchor`. A second call changes nothing. A switch of that name that is set up
+  differently is refused with `409`, not overwritten.
+- **`cpuset` on `POST /api/vms`** (#131, JD-041): one host CPU per vCPU, each a different
+  one, checked against the host's CPUs before anything runs. It's written as
+  `bhyve_options="-p 0:<cpu> ..."`, audited as `vm-pin-cpus`. `GET /api/vms/{name}` carries
+  it. Additive.
+- **`PUT /api/vms/{name}`** (#131, JD-041), with `POST`'s body. It answers:
+  - **`201`** when it created the guest;
+  - **`200`** when the guest already matches;
+  - **`409` with `differences`** when it doesn't, leaving the guest as it is.
+
+  It compares against what the host holds: the guest's configuration, its cloud-init seed
+  and its disk's origin. `start` isn't compared.
+
+### Fixed
+
+- **A guest locked by this host was refused as if another host held it** (#122). For about a
+  second while a guest powers itself off, vm-bhyve lists it locked by its own host. Start,
+  stop, restart and destroy now wait that out.
+- **The leftover sweeps changed the host without an audit entry** (#122). They now write
+  `remove-leftover-epair` or `remove-leftover-rctl` when they removed something or failed to.
+
+### Internal
+
+- **The README's endpoint table had fallen 13 endpoints behind** (#122). It's complete again,
+  and a test now fails for any route it lacks.
+
+---
+
 ## v0.16.1 — 2026-10-27
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.16.1)

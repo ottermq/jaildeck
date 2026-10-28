@@ -51,6 +51,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **VMs started and stopped** (v0.15.0): start, stop and restart, confirmed in `vm list`, with a stop that powers off a guest ignoring the button and says so (JD-036)
 - **Virtual Machines** (v0.16.0): image templates from a cloud image, and guests created from them with cloud-init, a NIC on the operator's switch and a cloned disk, then destroyed — from the API and the interface (JD-037, JD-038). The milestone is done
 - **Packaging, second half** (v0.16.1): releases built and attested in CI, and published into a signed `pkg` repository by a host that verifies the attestation (JD-039)
+- **A default VM network** (v0.17.0): one switch Jail Deck owns, with private ports, forwarding and NAT through a PF anchor file, PF itself staying the operator's (#118 step 1, JD-040); guests pinned to host CPUs, and an idempotent `PUT` for VMs (JD-041)
 
 ---
 
@@ -443,7 +444,7 @@ A Linux VM can be created from an image with cloud-init, reached over the bridge
 
 ## Next: VM Networks (#118)
 
-**Status:** step 1 built, unreleased. Step 2 not started.
+**Status:** step 1 done in v0.17.0. Step 2 not started.
 
 Goal: every guest on a network without a root shell, and, for Otter Cloud, a network per tenant.
 

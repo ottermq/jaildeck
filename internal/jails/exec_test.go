@@ -317,3 +317,35 @@ func TestExecAuditsACommandThatCouldNotRun(t *testing.T) {
 		t.Errorf("entries = %+v, want one failed entry", logger.entries)
 	}
 }
+
+// A command that ran is a successful exec whatever it exited with (JD-016),
+// and its entry says what it exited with: an entry claiming exit 0 for a
+// command that failed, as it used to, answers the one question the entry is
+// for wrongly (#141).
+func TestExecAuditsWhatTheCommandDid(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result ExecResult
+	}{
+		{"exited non-zero", ExecResult{ExitCode: 3, DurationMS: 12}},
+		{"timed out", ExecResult{ExitCode: -1, TimedOut: true, DurationMS: 5000}},
+		{"exited 0", ExecResult{ExitCode: 0, DurationMS: 7}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := &fakeLogger{}
+			service := execService(aRunningJail(), &stubExecutor{result: tc.result}, logger)
+			if _, err := service.Exec(context.Background(), "db1", anExec()); err != nil {
+				t.Fatalf("Exec: %v", err)
+			}
+			if len(logger.entries) != 1 {
+				t.Fatalf("wrote %d entries", len(logger.entries))
+			}
+			e := logger.entries[0]
+			if !e.Success || e.ExitCode != tc.result.ExitCode || e.TimedOut != tc.result.TimedOut ||
+				e.DurationMS != tc.result.DurationMS || e.Error != "" {
+				t.Errorf("entry = %+v, want success with exit %d, timed_out %v, %d ms",
+					e, tc.result.ExitCode, tc.result.TimedOut, tc.result.DurationMS)
+			}
+		})
+	}
+}

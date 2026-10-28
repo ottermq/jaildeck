@@ -3,12 +3,14 @@ package jails
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/common"
 )
 
@@ -118,7 +120,7 @@ func (s *JailService) Exec(ctx context.Context, name JailName, request ExecReque
 	result, err := s.exec.ExecInJail(opCtx, name.String(), argv, env, timeout)
 	result.Jail, result.Argv, result.Timeout = name.String(), request.Argv, timeout.String()
 
-	s.logStep(opCtx, OperationExec, name.String(), execCommandLine(name.String(), argv, env), err)
+	s.logExec(opCtx, name.String(), execCommandLine(name.String(), argv, env), result, err)
 	if err != nil {
 		return result, err
 	}
@@ -202,4 +204,30 @@ func execCommandLine(name string, argv []string, env map[string]string) string {
 		}
 	}
 	return strings.Join(append(parts, argv...), " ")
+}
+
+// logExec audits an exec. A command that could not be run is a failed entry,
+// as for any step. One that ran is a successful exec whatever it exited with
+// (JD-016), and its entry carries the command's own exit code, whether it was
+// stopped by the timeout, and how long it took (#141): "what did that token
+// run, and what came of it" is what the entry is for.
+func (s *JailService) logExec(ctx context.Context, target, command string, result ExecResult, err error) {
+	if err != nil {
+		s.logStep(ctx, OperationExec, target, command, err)
+		return
+	}
+	entry := audit.Entry{
+		Timestamp:  time.Now(),
+		Operation:  OperationExec,
+		Target:     target,
+		Command:    command,
+		Success:    true,
+		ExitCode:   result.ExitCode,
+		TimedOut:   result.TimedOut,
+		DurationMS: result.DurationMS,
+	}
+	if logErr := s.operationLogger.Log(ctx, entry); logErr != nil {
+		common.Logger(ctx, "jail").Error("failed to write operation log",
+			slog.String("operation", OperationExec), slog.String("target", target), slog.Any("err", logErr))
+	}
 }

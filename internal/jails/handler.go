@@ -1123,7 +1123,9 @@ func (h *JailHandler) Ensure(w http.ResponseWriter, r *http.Request) {
 // @Description
 // @Description  Every call is audited with the command line it became, which includes any
 // @Description  environment values: a secret passed this way is written to the audit log,
-// @Description  which is `0700` and root-owned for that kind of reason.
+// @Description  which is `0700` and root-owned for that kind of reason. A command that ran is
+// @Description  a successful entry whatever it exited with, and the entry carries what came of
+// @Description  it: its `exit_code`, `timed_out`, and `duration_ms`.
 // @Tags         jails
 // @Accept       json
 // @Produce      json

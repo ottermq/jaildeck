@@ -1830,3 +1830,53 @@ Hosts install and upgrade Jail Deck with `pkg` alone, from a signed repository. 
 - The pool is the record of what is published: a package is accepted once and kept. A rejected one is kept under `rejected/` as evidence and never retried. A failure to reach GitHub is not a verdict, and is retried next run.
 - Releases before the workflow existed have nothing attached. `SINCE` keeps the job from looking for them every run.
 - No push notification: the job polls every 15 minutes, which is soon enough for a release, and costs one anonymous API call when nothing is new.
+
+---
+
+## JD-040 — The Default VM Network: a Switch Jail Deck Owns, NAT Through an Anchor File
+
+**Status:** Locked — 2026-10-28. Measured on isengard with a throwaway private switch, two guests and PF loaded only for the measurement (`capture-vm-network-induced.sh`), and a second measurement of PF's `load anchor` and anchor reloads. The three ownership lines below were approved by the owner. First step of #118.
+
+A guest can't be reached unless it's on a network, and until now that meant someone at a root shell running `vm switch create`, `vm switch address`, and whatever NAT their host needed. This record gives every node **one default network**, put in place by one explicit, idempotent step: `jaildeck init vm-network` or `PUT /api/networks/default`. `GET /api/networks/default` reports it part by part.
+
+### What it is
+
+- **A standard vm-bhyve switch**, `jaildeck` by default (`JAILDECK_VM_SWITCH`), with **private ports** and **the host's address on it** (`JAILDECK_VM_ADDRESS`, default `10.88.0.1/24`). That address is the guests' gateway.
+- **IP forwarding**, now (`sysctl net.inet.ip.forwarding=1`) and at boot (`sysrc gateway_enable=YES`).
+- **Outbound NAT**, in the PF anchor `jaildeck/vmnet`, whose rules Jail Deck writes to `<JAILDECK_PF_ANCHOR_DIR>/vmnet.conf` (default `/usr/local/etc/jaildeck/pf`). It goes out through the interface of the default route, or `JAILDECK_VM_EGRESS`.
+
+### What was measured
+
+| | guest to guest | guest to host | guest to the internet, DNS |
+| --- | --- | --- | --- |
+| shared switch | reaches (ICMP and TCP) | reaches | no |
+| **private** switch | **blocked**, both | reaches | no |
+| private, with one NAT rule in `jaildeck/vmnet` and forwarding on | still blocked | reaches | **reaches** |
+
+- **`vm switch private <name> on` is the same mechanism JD-017 measured for jails.** vm-bhyve marks each guest's tap `PRIVATE` on the bridge **as the guest starts** (read in its source, and seen in `ifconfig`). A guest already running keeps its shared port until it restarts, and the answer says so.
+- **`load anchor "jaildeck/vmnet" from "<file>"` in `pf.conf` loads the anchor's rules from Jail Deck's file** whenever PF loads `pf.conf`, so they survive a reboot or a `service pf reload`. Reloading only the anchor (`pfctl -a jaildeck/vmnet -f <file>`) replaces its rules and nothing else. `pfctl -n` refuses a bad file with its line and reason (a `/33` netmask, measured), and the loaded rules stay as they were.
+- **Whether the operator's lines are in place can be read from PF itself:** with them, `pfctl -s nat` prints `nat-anchor "jaildeck/*" all`; without them, nothing. An anchor whose `nat-anchor` is gone **keeps its rules but isn't evaluated**.
+- **Enabling PF over SSH can drop that SSH session.** It happened during the measurement: a ruleset that keeps state (most do) starts tracking the already-open connection without its window scaling, and later drops its packets. A new connection works at once. The remedy text says so, because enabling PF is the operator's step.
+
+### Who owns what
+
+The three lines the earlier records drew, moved where the owner approved:
+
+1. **The switch** (JD-038 said switches are the operator's): **Jail Deck creates and owns one, the default network's.** It does so only on the explicit setup step, never at install. It adopts a switch of that name that's half made (no address, not private), and **refuses rather than clobbers** one that isn't a standard switch or whose address isn't the configured one: `409`, before anything runs. Every other switch stays the operator's.
+2. **IP forwarding:** **Jail Deck sets it**, now and in `rc.conf`, on the same explicit step, the way it already maintains `jail_list`. Both are audited.
+3. **PF** (JD-020: never write `pf.conf`, never enable PF): **unchanged.** The operator adds three lines to `pf.conf` once:
+   ```
+   nat-anchor "jaildeck/*"
+   anchor "jaildeck/*"
+   load anchor "jaildeck/vmnet" from "/usr/local/etc/jaildeck/pf/vmnet.conf"
+   ```
+   **Jail Deck owns only the file**, and loads it into the anchor after validating it. This is JD-020's phase 3, "owned anchors". The `anchor` line is unused by the default network. It's there so the rules between tenant networks (#118 step 2) need no second edit.
+
+Every part is reported with its **owner**. Jail Deck's are put in place by the setup step, audited as `create-vm-switch`, `set-vm-switch-address`, `set-vm-switch-private`, `enable-ip-forwarding`, `enable-ip-forwarding-at-boot`, `write-pf-anchor` and `load-pf-anchor`. The operator's carry a remedy: PF, `pf.conf`, and the uplink when there's no default route. A failing operator part is never worked around. With no default route, no NAT rule is written at all rather than one with no interface in it, which is a bug the tests caught.
+
+`usable` means a guest on the network reaches the host, and no other guest. `ready` means every part passes, NAT included.
+
+### Not yet
+
+- **Addresses are typed in.** The default network has no DHCP server, so the create form gives a guest on it a static address, with the gateway filled in. Jail Deck allocating them is #118's next step, and it also answers "which address do I connect to".
+- **Networks per tenant**, the rest of #118, and the read-only view of every network, #128.

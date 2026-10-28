@@ -43,6 +43,16 @@ type Config struct {
 	Socket      string
 	SocketGroup string
 	SocketOnly  bool
+
+	// The default VM network (#118, JD-040): a vm-bhyve switch Jail Deck
+	// owns, with VMAddress -- the host's address on it, which is the guests'
+	// gateway -- and outbound NAT through the PF anchor files in PFAnchorDir.
+	// VMEgress is the interface NAT goes out of; empty means the one the
+	// default route uses.
+	VMSwitch    string
+	VMAddress   string
+	VMEgress    string
+	PFAnchorDir string
 }
 
 func LoadConfig() *Config {
@@ -60,6 +70,11 @@ func LoadConfig() *Config {
 		Socket:      getEnv("JAILDECK_SOCKET", ""),
 		SocketGroup: getEnv("JAILDECK_SOCKET_GROUP", ""),
 		SocketOnly:  getEnv("JAILDECK_SOCKET_ONLY", "") == "true",
+
+		VMSwitch:    getEnv("JAILDECK_VM_SWITCH", "jaildeck"),
+		VMAddress:   getEnv("JAILDECK_VM_ADDRESS", "10.88.0.1/24"),
+		VMEgress:    getEnv("JAILDECK_VM_EGRESS", ""),
+		PFAnchorDir: getEnv("JAILDECK_PF_ANCHOR_DIR", "/usr/local/etc/jaildeck/pf"),
 	}
 }
 

@@ -9,6 +9,7 @@ import { stateBadge } from '../vmState'
 import VMActions from '../components/VMActions.svelte'
 import VMImages from '../components/VMImages.svelte'
 import NewVM from '../components/NewVM.svelte'
+import VMNetwork from '../components/VMNetwork.svelte'
 import type { Created } from '../stores/vms.svelte'
 import type { OperationResult } from '../stores/vms.svelte'
 
@@ -154,6 +155,8 @@ function href(name: string): string {
 {/if}
 
 {#if listing?.vm_bhyve === 'ready'}
+    <!-- Setting the network up may add a switch, which the create form lists. -->
+    <VMNetwork onchanged={load} />
     {#key imagesKey}
         <VMImages />
     {/key}

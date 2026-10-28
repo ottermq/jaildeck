@@ -6,11 +6,13 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/config"
 	"github.com/ottermq/jaildeck/internal/host"
+	"github.com/ottermq/jaildeck/internal/networks"
 	"github.com/ottermq/jaildeck/internal/system/fake"
 )
 
@@ -61,5 +63,38 @@ func TestRunInitRejects(t *testing.T) {
 	cfg.Adapter = "linux"
 	if err := runInit(nil, io.Discard, io.Discard, cfg); err == nil {
 		t.Error("runInit() with an unknown adapter succeeded")
+	}
+}
+
+// The fake host has no default network: init vm-network puts Jail Deck's
+// parts in place and says what is left for the operator, PF and pf.conf.
+func TestRunInitVMNetwork(t *testing.T) {
+	cfg := initConfig(t)
+	cfg.VMSwitch, cfg.VMAddress, cfg.PFAnchorDir = "jaildeck", "10.88.0.1/24", filepath.Join(t.TempDir(), "pf")
+	var out, errOut bytes.Buffer
+	if err := runInit([]string{"vm-network"}, &out, &errOut, cfg); err != nil {
+		t.Fatalf("runInit(vm-network) = %v", err)
+	}
+	for _, want := range []string{"done: switch", "done: private", "done: forwarding_at_boot",
+		"PF enabled -- fail (operator)", "sysrc pf_enable=YES", `load anchor "jaildeck/vmnet"`,
+		"guests on jaildeck reach the host"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestPrintEnsuredSaysWhenNothingWasDone(t *testing.T) {
+	var out bytes.Buffer
+	_ = printEnsured(&out, networks.Ensured{Default: networks.Default{Switch: "jaildeck", Subnet: "10.88.0.0/24", Usable: true, Ready: true}})
+	if !strings.Contains(out.String(), "jaildeck: nothing to do") || !strings.Contains(out.String(), "is ready") {
+		t.Errorf("output = %q", out.String())
+	}
+}
+
+func TestRunInitRejectsAnUnknownTarget(t *testing.T) {
+	err := runInit([]string{"network"}, io.Discard, io.Discard, initConfig(t))
+	if !errors.Is(err, ErrUnexpectedArgs) || !strings.Contains(err.Error(), "vm-network") {
+		t.Errorf("err = %v, want the targets named", err)
 	}
 }

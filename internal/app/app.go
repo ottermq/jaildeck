@@ -14,6 +14,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/images"
 	"github.com/ottermq/jaildeck/internal/jails"
 	"github.com/ottermq/jaildeck/internal/metrics"
+	"github.com/ottermq/jaildeck/internal/networks"
 	"github.com/ottermq/jaildeck/internal/state"
 	"github.com/ottermq/jaildeck/internal/storage"
 	"github.com/ottermq/jaildeck/internal/system"
@@ -36,6 +37,7 @@ type App struct {
 	firewallHandler *firewall.Handler
 	vmHandler       *vms.Handler
 	imageHandler    *images.Handler
+	networkHandler  *networks.Handler
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -140,11 +142,24 @@ func New(cfg *config.Config) (*App, error) {
 	imageService := images.NewService(imageSystem, auditLogger)
 	imageHandler := images.NewHandler(imageService)
 
+	networkSystem, err := NewNetworkSystem(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	networkHandler := networks.NewHandler(networks.NewService(networkSystem, auditLogger, NetworkSettings(cfg)))
+
 	vmSystem, err := newVMSystem(cfg.Adapter)
 	if err != nil {
 		return nil, err
 	}
 	vmHandler := vms.NewHandler(vms.NewService(vmSystem, vmImageCatalog{images: imageService}, auditLogger))
+	// On a real host the switches are one thing; the two fakes are joined so
+	// fake mode behaves the same.
+	if n, ok := networkSystem.(*fake.Networks); ok {
+		if v, ok := vmSystem.(*fake.VMs); ok {
+			v.SwitchesFrom(n)
+		}
+	}
 
 	return &App{
 		authHandler:     authHandler,
@@ -157,6 +172,7 @@ func New(cfg *config.Config) (*App, error) {
 		firewallHandler: firewallHandler,
 		vmHandler:       vmHandler,
 		imageHandler:    imageHandler,
+		networkHandler:  networkHandler,
 	}, nil
 }
 
@@ -184,6 +200,25 @@ func newVMSystem(adapter string) (vms.VMSystem, error) {
 		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)
 	}
+}
+
+// NewNetworkSystem selects the networks implementation (JD-040). Exported for
+// `jaildeck init vm-network`, which runs without the rest of the application.
+func NewNetworkSystem(adapter string) (networks.System, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewNetworks(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
+}
+
+// NetworkSettings is the default VM network as configured.
+func NetworkSettings(cfg *config.Config) networks.Settings {
+	return networks.Settings{Switch: cfg.VMSwitch, Address: cfg.VMAddress, Egress: cfg.VMEgress, AnchorDir: cfg.PFAnchorDir}
 }
 
 // newImageSystem selects the VM image implementation (JD-037).

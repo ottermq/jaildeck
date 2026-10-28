@@ -1,0 +1,8 @@
+PING 9.9.9.9 (9.9.9.9) 56(84) bytes of data.
+64 bytes from 9.9.9.9: icmp_seq=1 ttl=56 time=18.6 ms
+64 bytes from 9.9.9.9: icmp_seq=2 ttl=56 time=17.1 ms
+64 bytes from 9.9.9.9: icmp_seq=3 ttl=56 time=12.9 ms
+
+--- 9.9.9.9 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2005ms
+rtt min/avg/max/mdev = 12.936/16.236/18.634/2.412 ms

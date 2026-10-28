@@ -142,3 +142,33 @@ vm_mk_reach_again	(seconds from the second vm start until ssh answered)	exit=0	1
 vm_mk_destroy_running	doas vm destroy -f jd-cap-made	exit=1	0s
 vm_mk_destroy	doas vm destroy -f jd-cap-made	exit=0	2s
 vm_mk_after_destroy	zfs list -H -o name -r tank/vm; zfs get -H clones tank/vm/.images/debian-13@base; ls -A /vm	exit=0	0s
+vm_net_switch_create	doas vm switch create jd-netsw	exit=0
+vm_net_switch_address	doas vm switch address jd-netsw 10.81.0.1/24	exit=0
+vm_net_shared_a_to_b	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 10.81.0.11'	exit=0
+vm_net_shared_a_to_host	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 10.81.0.1'	exit=0
+vm_net_shared_a_to_internet	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 9.9.9.9'	exit=1
+vm_net_shared_a_dns	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'getent hosts deb.debian.org'	exit=2
+vm_net_shared_a_tcp_b	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'timeout 5 bash -c "</dev/tcp/10.81.0.11/22" && echo open'	exit=0
+vm_net_shared_a_neigh	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ip neigh'	exit=0
+vm_net_shared_bridge	ifconfig vm-jd-netsw	exit=0
+vm_net_private_on	doas vm switch private jd-netsw on	exit=0
+vm_net_switch_list_private	doas vm switch list	exit=0
+vm_net_private_a_to_b	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 10.81.0.11'	exit=1
+vm_net_private_a_to_host	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 10.81.0.1'	exit=0
+vm_net_private_a_to_internet	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 9.9.9.9'	exit=1
+vm_net_private_a_dns	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'getent hosts deb.debian.org'	exit=2
+vm_net_private_a_tcp_b	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'timeout 5 bash -c "</dev/tcp/10.81.0.11/22" && echo open'	exit=1
+vm_net_private_a_neigh	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ip neigh'	exit=0
+vm_net_private_bridge	ifconfig vm-jd-netsw	exit=0
+vm_net_pf_load	doas kldload pf && doas pfctl -q -f /var/tmp/jd-capture-vm-network/pf.conf && doas pfctl -q -e; doas pfctl -s info | head -1	exit=0
+vm_net_pf_anchor	echo 'nat on em0 inet from 10.81.0.0/24 to any -> (em0)' | doas pfctl -a jaildeck/vmnet -f - && doas pfctl -a jaildeck/vmnet -s nat	exit=0
+vm_net_pf_anchors	doas pfctl -s Anchors -v; doas pfctl -s nat	exit=0
+vm_net_forwarding	doas sysctl net.inet.ip.forwarding=1	exit=0
+vm_net_nat_a_to_b	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 10.81.0.11'	exit=1
+vm_net_nat_a_to_host	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 10.81.0.1'	exit=0
+vm_net_nat_a_to_internet	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ping -c 3 -W 2 9.9.9.9'	exit=0
+vm_net_nat_a_dns	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'getent hosts deb.debian.org'	exit=0
+vm_net_nat_a_tcp_b	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'timeout 5 bash -c "</dev/tcp/10.81.0.11/22" && echo open'	exit=1
+vm_net_nat_a_neigh	ssh -n -i /var/tmp/jd-capture-vm-network/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.81.0.10 'ip neigh'	exit=0
+vm_net_nat_bridge	ifconfig vm-jd-netsw	exit=0
+vm_net_pf_states	doas pfctl -s state | grep -c 10.81.0.10	exit=0

@@ -1,0 +1,2 @@
+NAME      TYPE      IFACE        ADDRESS       PRIVATE  MTU  VLAN  PORTS
+jd-netsw  standard  vm-jd-netsw  10.81.0.1/24  yes      -    -     -

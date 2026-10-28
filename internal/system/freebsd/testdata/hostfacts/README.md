@@ -355,6 +355,36 @@ a directory the script removed; only the public key is in the captures, in the s
   "appears to be running on isengard (locked)").
 - **`vm destroy` takes the clone and frees the image** (`vm_mk_after_destroy`).
 
+## The default VM network (JD-040)
+
+`capture-vm-network-induced.sh`, run 2026-10-28 on isengard into `isengard-induced/` with the
+prefix `vm_net_`, **changes the host's networking and loads PF**, so it refuses to run where PF
+is already loaded and turns PF off again from a watchdog after six minutes whatever happens. It
+uses the image `tank/vm/.images/debian-13` and leaves it alone. It makes a throwaway switch,
+`jd-netsw` (10.81.0.0/24, the host on .1), and two guests on it, `jd-net-a` (.10) and
+`jd-net-b` (.11), and has `jd-net-a` reach the other guest (ICMP and TCP), the host, the
+internet and DNS three ways: the switch shared, the switch private, and private with one NAT
+rule in the `jaildeck/vmnet` anchor and forwarding on. PF was loaded with a ruleset that passes
+everything **without keeping state** and includes only the `jaildeck/*` anchors. Everything was
+put back: PF unloaded, forwarding as it was, the guests, the switch and the template destroyed.
+Run detached under `daemon(8)`, because enabling PF can drop the SSH session that started it.
+
+**Sanitized:** the host's own switches are left out of `vm_net_switch_list_private`, and a probe
+of the LAN's gateway was removed, as the script no longer makes it.
+
+**What that settled:**
+
+- **A private switch keeps guests apart and leaves the host reachable** (`vm_net_private_a_to_b`
+  and `_tcp_b` exit 1, `vm_net_private_a_to_host` exit 0); on the shared switch the same guests
+  reach each other (`vm_net_shared_a_to_b`, `_tcp_b`). vm-bhyve marks each tap `PRIVATE` as the
+  guest starts (`vm_net_private_bridge`).
+- **NAT through the anchor, with forwarding on, reaches the internet and DNS** and still keeps the
+  guests apart (`vm_net_nat_a_to_internet`, `vm_net_nat_a_dns`, `vm_net_nat_a_to_b`). Without
+  NAT, the private switch reaches nothing beyond the host (`vm_net_private_a_to_internet`).
+- **pfctl prints the anchor's rule in its own form**, `nat on em0 inet from 10.81.0.0/24 to any
+  -> (em0) round-robin` (`vm_net_pf_anchor`), and the main ruleset's include as `nat-anchor
+  "jaildeck/*" all` (`vm_net_pf_anchors`): what the service compares against.
+
 ## Disk health (#83)
 
 Captured 2026-10-25, on `isengard` and `rohan` only. `rivendell` and the VM were not

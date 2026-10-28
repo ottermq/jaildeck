@@ -44,7 +44,9 @@ Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com
   against Debian's checksum and written into a zvol, from the VMs page or the API (JD-037).
   Creating a guest from one — CPU, memory, a disk cloned from the image, a NIC on the
   operator's switch, SSH keys and a static address through cloud-init — and destroying it,
-  from the VMs pages or the API (JD-038).
+  from the VMs pages or the API (JD-038). A default VM network for every node — a private
+  switch with the host as gateway, and outbound NAT through a PF anchor file Jail Deck owns —
+  set up by `jaildeck init vm-network` or from the VMs page (JD-040).
 - **Web interface** — an embedded Svelte application for all of the above, light and dark.
 
 ## Requirements
@@ -263,6 +265,8 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/vm-images/{name}` | one image: its state, the build it was written from, the guests cloned from it |
 | `PUT /api/vm-images/{name}` | prepare one from a source — `202`, then watch it |
 | `DELETE /api/vm-images/{name}?confirm={name}` | remove one no guest uses |
+| `GET /api/networks/default` | the default VM network, part by part, with whose each part is and the remedy |
+| `PUT /api/networks/default` | set up Jail Deck's parts of it: switch, address, private ports, forwarding, NAT rules |
 
 A jail carries its storage: `datasets` is the dataset mounted at the jail's `path` plus
 everything under it, and `properties` is the ZFS *user* properties of the jail's own

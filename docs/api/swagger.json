@@ -4716,7 +4716,7 @@
             "type": "object",
             "properties": {
                 "bridge": {
-                    "description": "Bridge is the bridge the host end of the epair joins, and is required\nfor NetworkVNET. **It is the operator's.** Jail Deck adds and removes\nits own epairs and nothing else: it never creates a bridge, never adds\na physical interface to one, and never edits rc.conf's network\nsettings (JD-017). GET /api/host reports which bridges exist.",
+                    "description": "Bridge is the bridge the host end of the epair joins, and is required\nfor NetworkVNET. It is the operator's, or a tenant network's jdn\u003ci\u003e,\nwhich Jail Deck made on POST /api/networks (JD-043). Either way the jail\nadds and removes its own epair and nothing else: creating a jail never\ncreates a bridge, never adds a physical interface to one, and never\nedits rc.conf's network settings (JD-017). GET /api/host reports which\nbridges exist, and GET /api/networks which are tenant networks'.",
                     "type": "string"
                 },
                 "gateway": {

@@ -52,6 +52,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Virtual Machines** (v0.16.0): image templates from a cloud image, and guests created from them with cloud-init, a NIC on the operator's switch and a cloned disk, then destroyed — from the API and the interface (JD-037, JD-038). The milestone is done
 - **Packaging, second half** (v0.16.1): releases built and attested in CI, and published into a signed `pkg` repository by a host that verifies the attestation (JD-039)
 - **A default VM network** (v0.17.0): one switch Jail Deck owns, with private ports, forwarding and NAT through a PF anchor file, PF itself staying the operator's (#118 step 1, JD-040); guests pinned to host CPUs, and an idempotent `PUT` for VMs (JD-041)
+- **Faster pages** (v0.17.1): the jails listing no longer walks every snapshot, and disks are read side by side (#135)
 
 ---
 

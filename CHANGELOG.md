@@ -20,6 +20,25 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.17.1 — 2026-10-28
+
+The Dashboard and Jails pages load faster (#135). Measured on a host with 1,514 snapshots,
+`GET /api/jails` went from 2.6 s to 0.06 s, and `GET /api/metrics` from 1.5 s to 0.69 s.
+
+Nothing to act on when upgrading.
+
+### Fixed
+
+- **Listing jails walked every snapshot** (#138). The recursive `zfs get` that reads the jail
+  datasets' tags visited each snapshot under them, though none has a local property to report,
+  so it got slower with every snapshot taken. It now reads filesystems and volumes only, with
+  the same output: 0.03 s instead of 2.52 s for that one call.
+- **Disk health read one disk after another** (#138). `smartctl` took up to 0.57 s on a slow
+  disk. Up to four disks are now read at once, and the results keep the scan's order, so
+  nothing in the report changes.
+
+---
+
 ## v0.17.0 — 2026-10-28
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.17.0)

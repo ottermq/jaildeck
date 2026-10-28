@@ -96,3 +96,58 @@ func TestAConsoleThroughTheRouter(t *testing.T) {
 		t.Errorf("console of a stopped jail: %v %v, want 409", resp, err)
 	}
 }
+
+// A guest's console through the router: its login prompt, and a stop through
+// the API that hangs it up first rather than leaving it to the guest watch.
+func TestAGuestsConsoleThroughTheRouter(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatalf("create test app: %v", err)
+	}
+	router := a.Routes(testAssets())
+	cookies := login(t, router)
+	server := httptest.NewServer(router)
+	t.Cleanup(server.Close)
+	header := http.Header{}
+	for _, c := range cookies {
+		header.Add("Cookie", c.Name+"="+c.Value)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/vms/jd-cap-running/console"
+	conn, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: header})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.CloseNow()
+	var out strings.Builder
+	for !strings.Contains(out.String(), "jd-cap-running login: ") {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("reading the prompt: %v (%q)", err, out.String())
+		}
+		out.Write(data)
+	}
+	if _, resp, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: header}); err == nil || resp.StatusCode != http.StatusConflict {
+		t.Errorf("a second console: %v %v, want 409", resp, err)
+	}
+	t0 := time.Now()
+	if rec := send(t, router, http.MethodPost, "/api/vms/jd-cap-running/stop", cookies, ""); rec.Code != http.StatusOK {
+		t.Fatalf("stop returned %d: %s", rec.Code, rec.Body)
+	}
+	reason := ""
+	for reason == "" {
+		kind, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("waiting for the closed message: %v", err)
+		}
+		if kind == websocket.MessageText {
+			var message struct{ Type, Reason string }
+			_ = json.Unmarshal(data, &message)
+			reason = message.Reason
+		}
+	}
+	if reason != "guest-stopped" || time.Since(t0) > 3*time.Second {
+		t.Errorf("closed with %q after %s, want guest-stopped at once", reason, time.Since(t0))
+	}
+}

@@ -169,6 +169,11 @@ func (s *Service) start(ctx context.Context, name string) (OperationResult, erro
 }
 
 func (s *Service) stop(ctx context.Context, name string) (OperationResult, error) {
+	// Its console goes first, so the page says why at once rather than when
+	// the console's own watch next looks (JD-042).
+	if s.consoles != nil {
+		s.consoles.HangUpVM(name)
+	}
 	command, err := s.system.VMStop(ctx, name)
 	if err != nil {
 		s.log(ctx, OperationStop, name, command, err)

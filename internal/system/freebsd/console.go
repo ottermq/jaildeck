@@ -11,6 +11,7 @@ import (
 
 	"github.com/creack/pty"
 	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 
 	"github.com/ottermq/jaildeck/internal/console"
 )
@@ -121,5 +122,31 @@ func (t *ptyTerminal) Close() error {
 	})
 	return err
 }
+
+// VMConsole opens the host's end of a guest's nmdm pair, non-blocking so that
+// Go's poller manages it and a close ends a waiting read, and makes it raw at
+// once. Measured: left as it opens (echo, icanon, ixon...), the guest's output
+// was echoed back to it as input -- 17 KB of newlines in 9 s, and the echoed
+// text typed at its login prompt. Raw, a return got the prompt and nothing
+// else. This is what vm console's cu does too.
+func (s *Shells) VMConsole(_ context.Context, device string) (console.Terminal, error) {
+	fd, err := unix.Open(device, unix.O_RDWR|unix.O_NOCTTY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf("opening %s: %w", device, err)
+	}
+	if _, err := term.MakeRaw(fd); err != nil {
+		unix.Close(fd)
+		return nil, fmt.Errorf("making %s raw: %w", device, err)
+	}
+	return &deviceTerminal{file: os.NewFile(uintptr(fd), device)}, nil
+}
+
+// deviceTerminal is a serial console: no process behind it, and no size.
+type deviceTerminal struct{ file *os.File }
+
+func (t *deviceTerminal) Read(p []byte) (int, error)  { return t.file.Read(p) }
+func (t *deviceTerminal) Write(p []byte) (int, error) { return t.file.Write(p) }
+func (t *deviceTerminal) Resize(uint16, uint16) error { return nil }
+func (t *deviceTerminal) Close() error                { return t.file.Close() }
 
 var _ console.Shells = (*Shells)(nil)

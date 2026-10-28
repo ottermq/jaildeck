@@ -27,7 +27,19 @@ type Service struct {
 	// wait is how the lifecycle waits between looks at vm-bhyve's listing.
 	// A field so that the tests do not spend a minute watching a fake.
 	wait func(context.Context, time.Duration)
+	// consoles are the guests' open serial consoles (JD-042).
+	consoles ConsoleHangup
 }
+
+// ConsoleHangup closes a guest's console session before Jail Deck stops it.
+// A guest stopped some other way is noticed by the session itself.
+type ConsoleHangup interface {
+	HangUpVM(name string)
+}
+
+// SetConsoles is set after construction: the console service asks this one
+// for a guest's state and console device.
+func (s *Service) SetConsoles(c ConsoleHangup) { s.consoles = c }
 
 func NewService(system VMSystem, images ImageCatalog, auditLogger audit.Logger) *Service {
 	hostname, _ := os.Hostname()

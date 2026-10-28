@@ -5,8 +5,8 @@ import (
 	"errors"
 )
 
-// Terminal is one interactive session's far end: a shell in a jail on a PTY
-// (JD-042). Read returns what the shell wrote, and an error once the shell is
+// Terminal is one interactive session's far end: a shell in a jail on a PTY,
+// or a guest's serial console (JD-042). Read returns what the shell wrote, and an error once the shell is
 // gone. Close hangs up: the shell gets SIGHUP and is waited for, and a Read
 // blocked on the terminal returns at once -- which is why the PTY's master is
 // non-blocking, measured.
@@ -23,6 +23,11 @@ type Shells interface {
 	// JailShell starts `jexec -l <jail> /bin/sh -l` on a PTY of the given
 	// size, with TERM as the only variable passed in.
 	JailShell(ctx context.Context, jail string, cols, rows uint16) (Terminal, error)
+	// VMConsole opens a guest's console device, the host's end of its nmdm
+	// pair, and makes it raw before anything passes through it: left as it
+	// opens, it echoed the guest's own output back to it as input (measured).
+	// A serial line has no size, so Resize does nothing.
+	VMConsole(ctx context.Context, device string) (Terminal, error)
 }
 
 // ErrNotRunning is a jail that is not running: there is nothing to attach to.

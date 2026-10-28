@@ -34,6 +34,29 @@ func (j jailStates) Running(_ context.Context, name string) (bool, error) {
 	return running, nil
 }
 
+// guests maps a guest to its console device; "" is a guest that is not
+// running, and a name not here is no guest at all.
+type guests struct {
+	mu     sync.Mutex
+	states map[string]string
+}
+
+func (g *guests) Console(_ context.Context, name string) (string, bool, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	device, ok := g.states[name]
+	if !ok {
+		return "", false, common.NewAppError(http.StatusNotFound, "vm-bhyve has no virtual machine named "+name)
+	}
+	return device, device != "", nil
+}
+
+func (g *guests) stop(name string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.states[name] = ""
+}
+
 type recorder struct {
 	mu      sync.Mutex
 	entries []audit.Entry
@@ -53,6 +76,7 @@ func (r *recorder) all() []audit.Entry {
 }
 
 type rig struct {
+	guests  *guests
 	service *console.Service
 	handler *console.Handler
 	audit   *recorder
@@ -62,8 +86,9 @@ type rig struct {
 
 func newRig(t *testing.T, idle time.Duration, origins ...string) *rig {
 	t.Helper()
-	rg := &rig{audit: &recorder{}}
-	rg.service = console.NewService(fake.NewShells(), jailStates{"nginx": true, "postgres": false}, rg.audit)
+	rg := &rig{audit: &recorder{}, guests: &guests{states: map[string]string{
+		"web": "/dev/nmdm-web.1B", "db": "", "odd": "/dev/ttyu0"}}}
+	rg.service = console.NewService(fake.NewShells(), jailStates{"nginx": true, "postgres": false}, rg.guests, rg.audit)
 	rg.handler = console.NewHandler(rg.service,
 		func(*http.Request) error {
 			if rg.expired.Load() {
@@ -73,8 +98,10 @@ func newRig(t *testing.T, idle time.Duration, origins ...string) *rig {
 		},
 		func(*http.Request) string { return "session" }, idle, origins)
 	console.SetHeartbeat(rg.handler, 20*time.Millisecond)
+	console.SetGuestWatch(rg.service, 20*time.Millisecond)
 	r := chi.NewRouter()
 	r.Get("/jails/{name}/console", rg.handler.Jail)
+	r.Get("/vms/{name}/console", rg.handler.VM)
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
 	rg.url = "ws" + strings.TrimPrefix(server.URL, "http")
@@ -342,5 +369,124 @@ func TestTheFirstReasonIsTheOneAudited(t *testing.T) {
 	entries := rg.audit.all()
 	if last := entries[len(entries)-1]; last.Reason != console.ReasonJailStopped || last.Principal != "token:otter" {
 		t.Errorf("close entry = %+v, want reason %q", last, console.ReasonJailStopped)
+	}
+}
+
+// --- a guest's serial console --------------------------------------------------
+
+func TestAGuestsConsoleIsItsLoginPromptAndOnlyOneAtATime(t *testing.T) {
+	rg := newRig(t, time.Hour)
+	tm, _, err := dial(t, rg.url+"/vms/web/console", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.until("web login: ")
+	tm.typed("\r")
+	tm.until("\r\nweb login: ")
+
+	if _, resp, err := dial(t, rg.url+"/vms/web/console", nil); err == nil || resp.StatusCode != http.StatusConflict {
+		t.Errorf("a second console on web: %v %v, want 409", resp, err)
+	}
+
+	// Closing the first frees the guest's console for another.
+	_ = tm.conn.Close(websocket.StatusNormalClosure, "")
+	eventually(t, "the first session finished", func() bool { return rg.service.Open() == 0 })
+	again, _, err := dial(t, rg.url+"/vms/web/console", nil)
+	if err != nil {
+		t.Fatalf("after the first closed: %v", err)
+	}
+	again.until("web login: ")
+
+	open := rg.audit.all()[0]
+	if open.Operation != console.OperationOpen || open.Target != "vm/web" || open.Command != "open /dev/nmdm-web.1B" {
+		t.Errorf("open entry = %+v", open)
+	}
+}
+
+// A powered-off guest gives the device's reader nothing at all (measured), so
+// the session looks at the guest and ends itself.
+func TestAGuestThatStopsEndsItsConsole(t *testing.T) {
+	rg := newRig(t, time.Hour)
+	tm, _, err := dial(t, rg.url+"/vms/web/console", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.until("login: ")
+	rg.guests.stop("web")
+	if reason := tm.closing(); reason != console.ReasonGuestStopped {
+		t.Errorf("closed with %q, want %q", reason, console.ReasonGuestStopped)
+	}
+}
+
+func TestAGuestsConsoleIsRefusedBeforeTheUpgrade(t *testing.T) {
+	rg := newRig(t, time.Hour)
+	for path, code := range map[string]int{
+		"/vms/db/console":     http.StatusConflict,
+		"/vms/nosuch/console": http.StatusNotFound,
+		// vm info named something that is not this guest's nmdm device.
+		"/vms/odd/console": http.StatusInternalServerError,
+	} {
+		if _, resp, err := dial(t, rg.url+path, nil); err == nil || resp == nil || resp.StatusCode != code {
+			t.Errorf("%s: %v %v, want %d", path, resp, err, code)
+		}
+	}
+	if _, resp, err := dial(t, rg.url+"/vms/web/console", http.Header{"Origin": {"https://evil.example"}}); err == nil || resp.StatusCode != http.StatusForbidden {
+		t.Errorf("another origin: %v %v, want 403", resp, err)
+	}
+	if n := len(rg.audit.all()); n != 0 {
+		t.Errorf("%d audit entries; a refused console opens nothing", n)
+	}
+	// None of the refusals took web's one console.
+	tm, _, err := dial(t, rg.url+"/vms/web/console", nil)
+	if err != nil {
+		t.Fatalf("web after the refusals: %v", err)
+	}
+	tm.until("login: ")
+}
+
+// A console device that ends of itself ends the session as console-closed,
+// not as a shell exiting. The fake's line ends on "exit"; a real device ends
+// when its far side goes.
+func TestAConsoleDeviceThatEndsSaysSo(t *testing.T) {
+	rg := newRig(t, time.Hour)
+	tm, _, err := dial(t, rg.url+"/vms/web/console", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.until("login: ")
+	tm.typed("exit\r")
+	if reason := tm.closing(); reason != console.ReasonConsoleClosed {
+		t.Errorf("closed with %q, want %q", reason, console.ReasonConsoleClosed)
+	}
+}
+
+// failingConsoles fails to open a guest's console once.
+type failingConsoles struct {
+	console.Shells
+	failed atomic.Bool
+}
+
+func (f *failingConsoles) VMConsole(ctx context.Context, device string) (console.Terminal, error) {
+	if f.failed.CompareAndSwap(false, true) {
+		return nil, errors.New("open /dev/nmdm-web.1B: device busy")
+	}
+	return f.Shells.VMConsole(ctx, device)
+}
+
+// A console that failed to open gives the guest's one console back.
+func TestAFailedOpenFreesTheGuestsConsole(t *testing.T) {
+	rec := &recorder{}
+	g := &guests{states: map[string]string{"web": "/dev/nmdm-web.1B"}}
+	service := console.NewService(&failingConsoles{Shells: fake.NewShells()}, jailStates{}, g, rec)
+	if _, err := service.OpenVM(context.Background(), "web", "session"); err == nil {
+		t.Fatal("the first open succeeded")
+	}
+	session, err := service.OpenVM(context.Background(), "web", "session")
+	if err != nil {
+		t.Fatalf("after a failed open: %v", err)
+	}
+	service.Finish(context.Background(), session, console.ReasonClient)
+	if first := rec.all()[0]; first.Success || !strings.Contains(first.Error, "device busy") {
+		t.Errorf("the failed open's entry = %+v", first)
 	}
 }

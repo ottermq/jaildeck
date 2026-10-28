@@ -1,0 +1,4 @@
+pass in quick on jdt-a inet from 10.91.1.0/24 to 10.91.1.1 no state
+block drop in quick on jdt-a inet from 10.91.1.0/24 to <__automatic_3e6e3d32_0>
+pass in quick on jdt-b inet from 10.91.2.0/24 to 10.91.2.1 no state
+block drop in quick on jdt-b inet from 10.91.2.0/24 to <__automatic_3e6e3d32_1>

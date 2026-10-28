@@ -264,6 +264,10 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/vms` | create a guest from an image: CPU and a pin to host CPUs, memory, disk, a NIC on a switch, SSH keys, a static address |
 | `PUT /api/vms/{name}` | the same, idempotent: create it, or say it already matches, or how it differs |
 | `GET /api/vms/{name}/console` | its serial console, over a WebSocket; one at a time, audited |
+| `GET /api/networks` | tenant networks: a bridge each, its subnet, gateway and members |
+| `POST /api/networks` | create one: a bridge on a free /24 of the range, a vm-bhyve switch on it, rules keeping it apart |
+| `GET /api/networks/{name}` | one tenant network |
+| `DELETE /api/networks/{name}?confirm={name}` | destroy an empty one |
 | `GET /api/names/suggest` | a free name for a new jail or guest, adjective and animal: `jolly-otter` |
 | `DELETE /api/vms/{name}?confirm={name}` | destroy a stopped guest and its disk |
 | `GET /api/vm-images` | VM image templates, and the sources they can be prepared from |

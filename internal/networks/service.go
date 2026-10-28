@@ -90,26 +90,35 @@ func (s *Service) egress(ctx context.Context) (string, error) {
 // file exactly as it has always been, so a host that set the default network
 // up does not see it as changed.
 //
-// For each tenant network, the pass to its own gateway comes before the block
-// of everything else the host has ("self") and of every other VM network:
-// measured, the block first took the gateway with it, and with it the host's
-// own traffic to the guests. The default network reaches no tenant network.
+// Every NAT rule comes before every filter rule: pfctl refuses a file that
+// puts translation after filtering ("Rules must be in order"), measured when
+// a second network's NAT followed the first one's rules. For each tenant
+// network, the pass to its own gateway comes before the block of everything
+// else the host has ("self") and of every other VM network: measured, the
+// block first took the gateway with it, and with it the host's own traffic to
+// the guests. The default network reaches no tenant network.
 func anchorContent(subnet netip.Prefix, defaultBridge, egress string, tenants []Network) string {
 	var b strings.Builder
 	b.WriteString("# Written by Jail Deck: NAT for the default VM network (JD-040).\n" +
 		"# Rewritten when it differs; edits here do not last.\n")
 	fmt.Fprintf(&b, "nat on %s inet from %s to any -> (%s)\n", egress, subnet, egress)
 	all := []string{subnet.String()}
+	listed := make([]Network, 0, len(tenants))
 	for _, t := range tenants {
 		if t.Subnet != "" {
 			all = append(all, t.Subnet)
+			listed = append(listed, t)
 		}
 	}
-	if len(all) == 1 {
+	if len(listed) == 0 {
 		return b.String()
 	}
 	b.WriteString("\n# Tenant networks (JD-043): each reaches its own gateway and the outside,\n" +
-		"# and nothing else of the host's or of another network's.\n")
+		"# and nothing else of the host's or of another network's. NAT first:\n" +
+		"# pfctl takes translation before filtering, or not at all.\n")
+	for _, t := range listed {
+		fmt.Fprintf(&b, "nat on %s inet from %s to any -> (%s)\n", egress, t.Subnet, egress)
+	}
 	others := func(own string) string {
 		list := make([]string, 0, len(all))
 		for _, s := range all {
@@ -119,12 +128,8 @@ func anchorContent(subnet netip.Prefix, defaultBridge, egress string, tenants []
 		}
 		return strings.Join(append(list, "self"), ", ")
 	}
-	for _, t := range tenants {
-		if t.Subnet == "" {
-			continue
-		}
+	for _, t := range listed {
 		fmt.Fprintf(&b, "\n# %s\n", t.Name)
-		fmt.Fprintf(&b, "nat on %s inet from %s to any -> (%s)\n", egress, t.Subnet, egress)
 		fmt.Fprintf(&b, "pass in quick on %s inet from %s to %s no state\n", t.Bridge, t.Subnet, t.Gateway)
 		fmt.Fprintf(&b, "block in quick on %s inet from %s to { %s } no state\n", t.Bridge, t.Subnet, others(t.Subnet))
 	}

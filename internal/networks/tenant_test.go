@@ -96,6 +96,20 @@ func TestTwoNetworksBlockEachOther(t *testing.T) {
 	if slices.Contains(rec.ops(), OperationLoadAnchor+" ok") {
 		t.Error("loaded an anchor with PF down")
 	}
+	// Translation before filtering, or pfctl refuses the file: measured, a
+	// second network's NAT after the first one's rules failed to load.
+	lastNat, firstFilter := -1, len(file)
+	for i, line := range strings.Split(file, "\n") {
+		switch {
+		case strings.HasPrefix(line, "nat "):
+			lastNat = i
+		case strings.HasPrefix(line, "pass ") || strings.HasPrefix(line, "block "):
+			firstFilter = min(firstFilter, i)
+		}
+	}
+	if lastNat > firstFilter {
+		t.Errorf("a nat rule comes after a filter rule:\n%s", file)
+	}
 }
 
 // A /24 the host already has an address in is skipped, and so is one a jdn

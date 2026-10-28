@@ -1,0 +1,2 @@
+TIOCEXCL: <nil>
+second open by root while exclusive: true <nil>

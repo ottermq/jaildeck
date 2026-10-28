@@ -1936,3 +1936,60 @@ What the guest was made with is read off the host. Each piece was measured with 
 - **A guest Jail Deck can't compare is a `409` that says why:** it's outside the default datastore, or it has no cloud-init seed, so it wasn't made from an image by Jail Deck.
 
 **Not yet:** changing a guest. A `PUT` that differs says how, and the client decides. Resizing CPUs or memory, or re-pinning a stopped guest, would be a `PATCH` with its own record, as #119 is for jails' limits.
+
+---
+
+## JD-042 — The Browser Console: a WebSocket, a PTY for Jails, the Raw nmdm Device for VMs
+
+**Status:** Locked — 2026-10-28. The design follows the owner's research note and its review. The VM half was measured on isengard (`capture-vm-console-induced.sh`, using `conprobe` from the same directory). The jail half is measured in the PR that builds it. This is #123's design note. It also records a change of rule: **Jail Deck takes small, focused dependencies where a solved problem has a mature library.** It still takes no frameworks.
+
+### Shape
+
+```
+xterm.js  ⇄  WebSocket  ⇄  console service (auth, one session registry, audit)
+                                ├── jail: jexec -l <jail> /bin/sh -l on a PTY
+                                └── VM:   /dev/nmdm-<name>.1B, raw
+```
+
+- **Endpoints:** `GET /api/jails/{name}/console` and `GET /api/vms/{name}/console`, upgraded to a WebSocket behind the existing `RequireAuth`.
+- **Transport:** `github.com/coder/websocket`. It's context-aware, safe for concurrent writes, checks the `Origin` by default, has no dependencies of its own, and passes Autobahn.
+- **Messages:** binary frames carry the terminal's bytes. Text frames carry control messages as JSON: `{"type":"resize","cols":120,"rows":40}` from the page, and `{"type":"closed","reason":"..."}` from the server before it closes.
+- **Jail shells:** `github.com/creack/pty` puts the shell on a PTY. That's what `vi`, `top` and line editing need, and what lets a resize reach the shell.
+- **Front end:** `@xterm/xterm` and `@xterm/addon-fit`, bundled into the binary as everything else is (JD-009).
+
+### The VM's console device, measured
+
+Measured on a Debian guest made as Jail Deck makes one, with a getty on its serial console:
+
+| what | result |
+| --- | --- |
+| the host's end, `/dev/nmdm-<name>.1B`, as first opened | `echo icanon isig icrnl ixon opost`: a terminal's normal processing |
+| opened and **made raw at once** (x/term's `MakeRaw`), three returns | `jd-cap-con login:` three times, nothing else |
+| **left as opened**, three returns | **17,105 bytes of newlines in 9 s.** Everything the guest printed was echoed back to it as input, and its getty answered each line with another. |
+| raw again, afterwards | the guest was still taking the echoed input: `login: Password: … Login incorrect` |
+| a second open by root, while the first holds `TIOCEXCL` | **succeeds**, and `cu` connects too. FreeBSD lets root past the exclusive flag, and Jail Deck and `vm console` both run as root. |
+| the guest reset (a reboot) while open | the descriptor keeps working, and the new boot's output arrives on it. In an earlier run, against firmware with nothing to boot, a write got `EIO` and the read reached end of file. That run wasn't kept. |
+| the guest powered off while a reader waits | **nothing for 60 s: no end of file, no error.** A write still succeeds. The device disappears only once Jail Deck closes it. |
+| opening the device of a guest that isn't running | **succeeds:** nmdm creates the pair on open. A session there would talk to nothing. |
+
+What follows from that:
+
+- **The device is made raw the moment it's opened, before a byte is read or written.** Left as opened, it types the guest's own output into its login prompt. This is what `vm console`'s `cu` does too.
+- **The path comes from `vm info`, for a guest that `vm list` says is running.** It's never taken from the request, and it's never derived from the name alone, since nmdm would create a pair for any name. The device is opened with `O_NONBLOCK`, so that Go's poller manages it and a close interrupts a blocked read.
+- **Jail Deck watches the guest, not the device.** A powered-off guest gives the reader nothing at all, so a VM session checks `vm list` every few seconds. It closes with `guest-stopped` when the guest stops. End of file or `EIO` on the device ends the session too, with `console-closed`.
+- **One session per VM console, in Jail Deck.** A second request gets a `409`. An outside `vm console` or `cu` can't be kept out: `TIOCEXCL` doesn't stop root, as measured. The page says so.
+- **Closing the console doesn't log anyone out of the guest.** The page says this once, beside the console.
+
+### Sessions
+
+- **Authentication:** the session cookie, as every page request uses it. A browser can't send `Authorization` on a WebSocket, so an API token works for non-browser clients only.
+- **Expiry:** a session ends when the login that opened it expires or is revoked. It isn't tied to the moment it was opened, so the console checks the session as it runs.
+- **Origin:** the library's default check stays on: the `Origin` must match the `Host`. Behind a proxy that rewrites `Host`, the allowed origins are set rather than the check turned off.
+- **Idle timeout:** 30 minutes with no input from the page by default (`JAILDECK_CONSOLE_IDLE`). Output doesn't count, and neither do the WebSocket's own pings, which keep the connection itself healthy.
+- **Audit:** `console-open` and `console-close`, with the target, the reason it closed (`client`, `idle`, `session-expired`, `guest-stopped`, `jail-stopped`, `console-closed`, `server-stopped`) and how long it lasted. **No keystrokes and no output are recorded, in the audit log or in any log.** The audit entry gains a duration and a reason.
+- **To verify while building:** the server's 30-second `ReadTimeout` must not reach a hijacked connection, and the request-log middleware must let the upgrade through. Tests will show both.
+
+### Order
+
+1. The transport, the session service and xterm.js, with the **jail shell**. Measure the PTY first: a jail stopped mid-session, and a shell that exits.
+2. The **VM console** on the same service, as measured above.

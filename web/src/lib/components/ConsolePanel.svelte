@@ -73,6 +73,28 @@ function closed(reason: string) {
 </section>
 
 <style>
+/* A panel styles itself here, as VMNetwork's and VMImages' do: the pages'
+   scoped styles do not reach into a component. */
+.panel {
+    margin-top: var(--space-6);
+}
+
+.panel__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-bottom: var(--space-3);
+}
+
+.panel__head h2 {
+    margin-bottom: 0;
+}
+
+.notice {
+    margin-top: var(--space-3);
+}
+
 .actions {
     display: flex;
     gap: var(--space-2);

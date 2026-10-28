@@ -443,3 +443,50 @@ func TestAGuestsConsoleIsRefusedBeforeTheUpgrade(t *testing.T) {
 	}
 	tm.until("login: ")
 }
+
+// A console device that ends of itself ends the session as console-closed,
+// not as a shell exiting. The fake's line ends on "exit"; a real device ends
+// when its far side goes.
+func TestAConsoleDeviceThatEndsSaysSo(t *testing.T) {
+	rg := newRig(t, time.Hour)
+	tm, _, err := dial(t, rg.url+"/vms/web/console", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.until("login: ")
+	tm.typed("exit\r")
+	if reason := tm.closing(); reason != console.ReasonConsoleClosed {
+		t.Errorf("closed with %q, want %q", reason, console.ReasonConsoleClosed)
+	}
+}
+
+// failingConsoles fails to open a guest's console once.
+type failingConsoles struct {
+	console.Shells
+	failed atomic.Bool
+}
+
+func (f *failingConsoles) VMConsole(ctx context.Context, device string) (console.Terminal, error) {
+	if f.failed.CompareAndSwap(false, true) {
+		return nil, errors.New("open /dev/nmdm-web.1B: device busy")
+	}
+	return f.Shells.VMConsole(ctx, device)
+}
+
+// A console that failed to open gives the guest's one console back.
+func TestAFailedOpenFreesTheGuestsConsole(t *testing.T) {
+	rec := &recorder{}
+	g := &guests{states: map[string]string{"web": "/dev/nmdm-web.1B"}}
+	service := console.NewService(&failingConsoles{Shells: fake.NewShells()}, jailStates{}, g, rec)
+	if _, err := service.OpenVM(context.Background(), "web", "session"); err == nil {
+		t.Fatal("the first open succeeded")
+	}
+	session, err := service.OpenVM(context.Background(), "web", "session")
+	if err != nil {
+		t.Fatalf("after a failed open: %v", err)
+	}
+	service.Finish(context.Background(), session, console.ReasonClient)
+	if first := rec.all()[0]; first.Success || !strings.Contains(first.Error, "device busy") {
+		t.Errorf("the failed open's entry = %+v", first)
+	}
+}

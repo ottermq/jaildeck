@@ -114,9 +114,11 @@ func (h *Handler) Jail(w http.ResponseWriter, r *http.Request) {
 
 // serve upgrades the request and runs the session until something ends it.
 func (h *Handler) serve(w http.ResponseWriter, r *http.Request, session *Session) {
-	// The server's ReadTimeout set a deadline on the connection when the
-	// request began, and a hijacked connection keeps it: without this, every
-	// console would drop after 30 seconds.
+	// The server's ReadTimeout sets a deadline on the connection, and
+	// net/http says a hijacked connection "may have read or write deadlines
+	// already set". Go 1.26 happens to clear the read one while hijacking (the
+	// test passes without these lines); clearing them here keeps a console
+	// from depending on that and dropping after 30 seconds.
 	rc := http.NewResponseController(w)
 	_ = rc.SetReadDeadline(time.Time{})
 	_ = rc.SetWriteDeadline(time.Time{})

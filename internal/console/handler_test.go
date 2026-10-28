@@ -183,7 +183,8 @@ func TestAShellAnswersResizesAndExits(t *testing.T) {
 		open.Command != "jexec -l nginx /bin/sh -l" || !open.Success {
 		t.Errorf("open entry = %+v", open)
 	}
-	if closed.Operation != console.OperationClose || closed.Reason != console.ReasonShellExited || closed.Principal != "session" {
+	if closed.Operation != console.OperationClose || closed.Reason != console.ReasonShellExited || closed.Principal != "session" ||
+		closed.DurationMS <= 0 {
 		t.Errorf("close entry = %+v", closed)
 	}
 	for _, e := range entries {
@@ -246,12 +247,14 @@ func TestNothingTypedEndsTheSessionButOutputDoesNot(t *testing.T) {
 		t.Fatal(err)
 	}
 	tm.until("# ")
-	// Typing keeps it open past the idle time.
-	for i := 0; i < 4; i++ {
-		time.Sleep(60 * time.Millisecond)
-		tm.typed(" ")
+	// Typing keeps it open past the idle time: 300 ms of keys, twice the
+	// idle time, and the shell still answers.
+	for i := 0; i < 6; i++ {
+		time.Sleep(50 * time.Millisecond)
+		tm.typed("\x7f")
 	}
-	tm.typed("\r")
+	tm.typed("hostname\r")
+	tm.until("\r\nnginx")
 	if reason := tm.closing(); reason != console.ReasonIdle {
 		t.Errorf("closed with %q, want %q", reason, console.ReasonIdle)
 	}
@@ -324,4 +327,20 @@ func TestAConsoleOutlivesTheServersReadTimeout(t *testing.T) {
 	time.Sleep(600 * time.Millisecond)
 	tm.typed("hostname\r")
 	tm.until("\r\nnginx")
+}
+
+// The first reason a session ended for is the one recorded: a jail that stops
+// also makes the shell's read fail, and the bridge may report that instead.
+func TestTheFirstReasonIsTheOneAudited(t *testing.T) {
+	rg := newRig(t, time.Hour)
+	session, err := rg.service.OpenJail(context.Background(), "nginx", "token:otter", 80, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rg.service.HangUpJail("nginx")
+	rg.service.Finish(context.Background(), session, console.ReasonShellExited)
+	entries := rg.audit.all()
+	if last := entries[len(entries)-1]; last.Reason != console.ReasonJailStopped || last.Principal != "token:otter" {
+		t.Errorf("close entry = %+v, want reason %q", last, console.ReasonJailStopped)
+	}
 }

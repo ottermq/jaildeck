@@ -44,6 +44,12 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "version":
+			// --commit is what packaging checks the binary against (#165).
+			if len(os.Args) > 2 && os.Args[2] == "--commit" {
+				revision, _ := buildinfo.Commit()
+				fmt.Println(revision)
+				return
+			}
 			fmt.Println(buildinfo.Version())
 			return
 		case "passwd":

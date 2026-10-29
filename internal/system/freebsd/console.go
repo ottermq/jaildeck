@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -148,5 +150,37 @@ func (t *deviceTerminal) Read(p []byte) (int, error)  { return t.file.Read(p) }
 func (t *deviceTerminal) Write(p []byte) (int, error) { return t.file.Write(p) }
 func (t *deviceTerminal) Resize(uint16, uint16) error { return nil }
 func (t *deviceTerminal) Close() error                { return t.file.Close() }
+
+// ConsoleHolders reads who has the device open from fstat(1):
+//
+//	USER     CMD          PID   FD MOUNT      INUM MODE         SZ|DV R/W NAME
+//	root     cu         38812    3 /dev        392 crw--w----  nmdm-web.1B rw  /dev/nmdm-web.1B
+//
+// Jail Deck's own rows are left out. fstat also complains on stderr about a
+// process that went away while it looked ("kinfo_getfile(): No such
+// process") and still exits 0 with the rows, measured on the #153 incident.
+func (s *Shells) ConsoleHolders(ctx context.Context, device string) ([]console.Holder, error) {
+	out, err := exec.CommandContext(ctx, "fstat", device).Output()
+	if err != nil {
+		return nil, fmt.Errorf("fstat %s: %w", device, err)
+	}
+	return parseHolders(string(out), os.Getpid()), nil
+}
+
+func parseHolders(out string, self int) []console.Holder {
+	holders := make([]console.Holder, 0)
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 3 || f[0] == "USER" {
+			continue
+		}
+		pid, err := strconv.Atoi(f[2])
+		if err != nil || pid == self {
+			continue
+		}
+		holders = append(holders, console.Holder{Command: f[1], PID: pid})
+	}
+	return holders
+}
 
 var _ console.Shells = (*Shells)(nil)

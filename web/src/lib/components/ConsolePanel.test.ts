@@ -77,4 +77,14 @@ describe('the console panel', () => {
         FakeSocket.last!.onclose?.()
         expect(await screen.findByText('The connection ended, or could not be made.')).toBeTruthy()
     })
+
+    it('says which process shares a guest’s console, and how to close it', async () => {
+        render(ConsolePanel, { path: '/vms/web/console', running: true, openLabel: 'Open the console' })
+        await fireEvent.click(screen.getByRole('button', { name: 'Open the console' }))
+        await waitFor(() => expect(FakeSocket.last).not.toBeNull())
+        FakeSocket.last!.onmessage?.({ data: JSON.stringify({ type: 'closed', reason: 'console-shared',
+            detail: '"web"\u2019s console is open already in cu (pid 38812) on the host; close it first (~. in cu)' }) })
+        FakeSocket.last!.onclose?.()
+        expect(await screen.findByText(/cu \(pid 38812\)/)).toBeTruthy()
+    })
 })

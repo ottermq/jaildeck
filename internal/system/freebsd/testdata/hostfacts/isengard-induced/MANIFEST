@@ -232,6 +232,7 @@ jail_con_hangup	doas /tmp/ptyprobe jd-cap-pty hangup	exit=143	386s
 jail_con_after_hangup	ps -J jd-cap-pty -o pid,stat,command 2>&1	exit=0	0s
 jail_con_hangup_nb	doas /tmp/ptyprobe jd-cap-pty hangupnb	exit=0	4s
 jail_con_after_hangup_nb	ps -J jd-cap-pty -o pid,stat,command 2>&1	exit=0	0s
+con_fstat_shared	fstat /dev/nmdm-pleasant-platypus.1B (the #153 incident; bhyve's .1A row left out: a different device)	exit=0	0s
 ten_bridge_a	tenant a 10.91.1	exit=0	0s
 ten_bridge_b	tenant b 10.91.2	exit=0	0s
 ten_switch_list	doas vm switch list | awk 'NR == 1 || $1 ~ /^jdt-/'	exit=0	0s

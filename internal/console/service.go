@@ -35,6 +35,9 @@ const (
 	// A guest's console: the guest stopped, or the device itself ended.
 	ReasonGuestStopped  = "guest-stopped"
 	ReasonConsoleClosed = "console-closed"
+	// ReasonConsoleShared is another reader appearing on the device: from
+	// then on each would get fragments of the guest's output (#153).
+	ReasonConsoleShared = "console-shared"
 )
 
 // GuestConsole says whether a guest is running and, if it is, which device
@@ -180,6 +183,18 @@ func (s *Service) OpenVM(ctx context.Context, name, principal string) (*Session,
 		return nil, common.NewAppError(http.StatusInternalServerError, fmt.Sprintf(
 			"vm info names %s as %s's console, which is not the nmdm device vm-bhyve makes", strconv.Quote(device), name))
 	}
+	// Someone else on the device -- a vm console from a shell, typically --
+	// would take half of every line the guest prints (#153).
+	holders, err := s.shells.ConsoleHolders(ctx, device)
+	if err != nil {
+		return nil, common.NewAppError(http.StatusInternalServerError,
+			"could not read who else has "+device+" open: "+err.Error())
+	}
+	if len(holders) > 0 {
+		return nil, &SharedError{Holders: holders, Message: fmt.Sprintf(
+			"%s's console is open already in %s on the host; two readers would each get fragments of what "+
+				"the guest prints. Close it first (~. in cu, the end of vm console)", strconv.Quote(name), holderList(holders))}
+	}
 	s.mu.Lock()
 	if s.vmTaken[name] {
 		s.mu.Unlock()
@@ -208,15 +223,16 @@ func (s *Service) OpenVM(ctx context.Context, name, principal string) (*Session,
 	s.mu.Lock()
 	s.sessions[session] = struct{}{}
 	s.mu.Unlock()
-	go s.watchGuest(context.WithoutCancel(ctx), session, name)
+	go s.watchGuest(context.WithoutCancel(ctx), session, name, device)
 	return session, nil
 }
 
 // nmdmDevice is the host's end of a vm-bhyve console: /dev/nmdm-<name>.<n>B.
 var nmdmDevice = regexp.MustCompile(`^/dev/nmdm-[A-Za-z0-9][A-Za-z0-9._-]*\.[0-9]+B$`)
 
-// watchGuest ends a VM session once its guest is no longer running.
-func (s *Service) watchGuest(ctx context.Context, session *Session, name string) {
+// watchGuest ends a VM session once its guest is no longer running, or once
+// another reader has the device open too.
+func (s *Service) watchGuest(ctx context.Context, session *Session, name, device string) {
 	ticker := time.NewTicker(s.watch)
 	defer ticker.Stop()
 	for {
@@ -229,8 +245,32 @@ func (s *Service) watchGuest(ctx context.Context, session *Session, name string)
 				session.end(ReasonGuestStopped)
 				return
 			}
+			if holders, err := s.shells.ConsoleHolders(ctx, device); err == nil && len(holders) > 0 {
+				session.end(ReasonConsoleShared)
+				return
+			}
 		}
 	}
+}
+
+// SharedError is a guest's console another process has open (#153). It is
+// not answered as an HTTP refusal: a browser cannot read the status or body
+// of a refused WebSocket handshake, so the page would only know that it
+// failed. The handler accepts and closes at once, saying why.
+type SharedError struct {
+	Holders []Holder
+	Message string
+}
+
+func (e *SharedError) Error() string { return e.Message }
+
+// holderList is the holders for a message: "cu (pid 38812), cu (pid 38813)".
+func holderList(holders []Holder) string {
+	parts := make([]string, len(holders))
+	for i, h := range holders {
+		parts[i] = fmt.Sprintf("%s (pid %d)", h.Command, h.PID)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func isNotFound(err error) bool {

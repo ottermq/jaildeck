@@ -55,6 +55,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Faster pages** (v0.17.1): the jails listing no longer walks every snapshot, and disks are read side by side (#135)
 - **A console in the browser** (v0.18.0): a jail's shell and a guest's serial console, audited, nothing typed recorded (#123, JD-042)
 - **Exec audited truthfully** (v0.18.1): an exec's audit entry carries its command's exit code, timeout and duration (#141)
+- **Tenant networks** (v0.19.0): a network per tenant, a bridge on its own `/24` with a switch on it, kept apart by PF (#118 step 2, JD-043); names suggested for new jails and guests (#148); a shared guest console refused, naming who holds it (#153)
 
 ---
 
@@ -447,7 +448,7 @@ A Linux VM can be created from an image with cloud-init, reached over the bridge
 
 ## Next: VM Networks (#118)
 
-**Status:** step 1 done in v0.17.0. Step 2: tenant networks built, unreleased; addresses and creating on a network next.
+**Status:** step 1 done in v0.17.0. Step 2, tenant networks, done in v0.19.0. Addresses and creating on a network next.
 
 Goal: every guest on a network without a root shell, and, for Otter Cloud, a network per tenant.
 

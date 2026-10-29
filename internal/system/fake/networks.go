@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -237,6 +238,61 @@ func (f *Networks) SwitchUsers(_ context.Context, name string) ([]string, error)
 		return []string{}, nil
 	}
 	return guests(name), nil
+}
+
+// Interfaces is the fake host as ifconfig would list it (#128): a LAN port,
+// each switch's bridge and each tenant bridge, with a tap for every guest on
+// a switch, and an operator's bridge0 carrying a VNET jail's epair.
+func (f *Networks) Interfaces(context.Context) ([]networks.Interface, error) {
+	f.mu.Lock()
+	switches := slices.Clone(f.switches)
+	bridges := make([]networks.TenantBridge, 0, len(f.bridges))
+	for _, b := range f.bridges {
+		bridges = append(bridges, *b)
+	}
+	guests := f.guests
+	f.mu.Unlock()
+	slices.SortFunc(bridges, func(a, b networks.TenantBridge) int { return strings.Compare(a.Name, b.Name) })
+
+	list := []networks.Interface{
+		{Name: "em0", Addresses: []netip.Prefix{netip.MustParsePrefix("192.0.2.10/24")}, Groups: []string{}},
+		{Name: "bridge0", Groups: []string{"bridge"}, Members: []networks.BridgeMember{{Name: "em1"}, {Name: "epair0a"}}},
+		{Name: "em1", Groups: []string{}},
+		{Name: "epair0a", Description: "jail:nginx", Groups: []string{"epair"}},
+	}
+	taps := 0
+	bridgeOf := func(name, description string, address netip.Prefix, private bool, sw string) networks.Interface {
+		b := networks.Interface{Name: name, Description: description, Groups: []string{"bridge"}}
+		if address.IsValid() {
+			b.Addresses = []netip.Prefix{address}
+		}
+		if guests != nil && sw != "" {
+			for _, g := range guests(sw) {
+				tap := "tap" + strconv.Itoa(taps)
+				taps++
+				b.Members = append(b.Members, networks.BridgeMember{Name: tap, Private: private})
+				list = append(list, networks.Interface{Name: tap, Description: "vmnet/" + g + "/0/" + sw, Groups: []string{"tap"}})
+			}
+		}
+		return b
+	}
+	for _, sw := range switches {
+		if sw.Bridge == "" || strings.HasPrefix(sw.Bridge, "jdn") {
+			continue
+		}
+		address, _ := netip.ParsePrefix(sw.Address)
+		list = append(list, bridgeOf(sw.Bridge, "", address, sw.Private, sw.Name))
+	}
+	for _, b := range bridges {
+		sw := ""
+		for _, s := range switches {
+			if s.Bridge == b.Name {
+				sw = s.Name
+			}
+		}
+		list = append(list, bridgeOf(b.Name, b.Description, b.Address, false, sw))
+	}
+	return list, nil
 }
 
 // BridgeUsers: the fake's jails have no VNET stanzas naming a tenant bridge.

@@ -2,6 +2,7 @@
 import { onMount } from 'svelte'
 import { route, navigate, onNavClick, match } from '../router.svelte'
 import { auth, logout } from '../stores/auth.svelte'
+import VersionBadge from '../components/VersionBadge.svelte'
 import Dashboard from './Dashboard.svelte'
 import Jails from './Jails.svelte'
 import Jail from './Jail.svelte'
@@ -13,6 +14,7 @@ import Host from './Host.svelte'
 import Firewall from './Firewall.svelte'
 import VMs from './VMs.svelte'
 import VM from './VM.svelte'
+import Networks from './Networks.svelte'
 import NotFound from './NotFound.svelte'
 import ConfirmDialog from '../components/ConfirmDialog.svelte'
 
@@ -27,6 +29,7 @@ const menu = [
     { label: 'Jails', href: '/jails' },
     { label: 'Templates', href: '/templates' },
     { label: 'VMs', href: '/vms' },
+    { label: 'Networks', href: '/networks' },
     { label: 'Operations', href: '/operations' },
     { label: 'Firewall', href: '/firewall' },
     { label: 'Host', href: '/host' },
@@ -61,6 +64,7 @@ onMount(() => {
             <span class="brand">
                 <span class="brand__accent">J</span>ail<span class="brand__accent">D</span>eck
             </span>
+            <VersionBadge />
         </div>
 
         <nav class="rail__nav" aria-label="Sections">
@@ -108,6 +112,8 @@ onMount(() => {
             <VMs />
         {:else if vm}
             {#key vm.name}<VM name={vm.name} />{/key}
+        {:else if route.path === '/networks'}
+            <Networks />
         {:else if route.path === '/operations'}
             <Operations />
         {:else if route.path === '/firewall'}
@@ -149,6 +155,15 @@ onMount(() => {
 .rail__brand {
     padding: var(--space-5) var(--space-4) var(--space-4);
     border-bottom: 1px solid var(--rail-border);
+}
+
+/* The version sits under the logo here, and beside it in the narrow top
+   bar (#136). */
+.rail__brand {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
 }
 
 .brand {
@@ -263,7 +278,11 @@ onMount(() => {
 
     .rail__brand {
         padding: var(--space-3) var(--space-4);
+        flex-direction: row;
+        align-items: baseline;
+        gap: var(--space-3);
     }
+
 
     /* Seven sections are wider than a phone. The row scrolls on its own
        rather than widening the whole page past the viewport. */

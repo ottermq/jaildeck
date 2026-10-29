@@ -208,3 +208,77 @@ func (a *Adapter) BridgeUsers(_ context.Context, bridge string) ([]string, error
 	}
 	return users, nil
 }
+
+// Interfaces is every interface from one `ifconfig -a -f inet:cidr`, for the
+// Networks view (#128): names, descriptions, IPv4 addresses with their
+// prefix, groups, and a bridge's members with their private flag.
+func (a *Adapter) Interfaces(ctx context.Context) ([]networks.Interface, error) {
+	result, err := a.runHost(ctx, system.Command{Name: "ifconfig", Args: []string{"-a", "-f", "inet:cidr"}})
+	if err != nil {
+		return nil, err
+	}
+	return parseInterfaces(result.Stdout), nil
+}
+
+// parseInterfaces reads ifconfig's blocks: a line at the margin starts one,
+// "vm-jaildeck: flags=...", and its indented lines belong to it. A member's
+// own continuation line ("        port 7 priority 128 ...") is indented
+// further and ignored. Measured on isengard (capture-topology-induced.sh):
+//
+//	vm-jaildeck: flags=1008843<UP,...> metric 0 mtu 1500
+//		inet 10.88.0.1/24 broadcast 10.88.0.255
+//		member: tap0 flags=943<LEARNING,DISCOVER,PRIVATE,AUTOEDGE,AUTOPTP>
+//		groups: bridge vm-switch viid-667b2@
+//	tap0: flags=1008943<UP,...> metric 0 mtu 1500
+//		description: vmnet/jd-cap-128/0/jaildeck
+func parseInterfaces(out string) []networks.Interface {
+	interfaces := make([]networks.Interface, 0)
+	var current *networks.Interface
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" {
+			continue
+		}
+		if line[0] != '\t' && line[0] != ' ' {
+			name, _, ok := strings.Cut(line, ": ")
+			if !ok {
+				current = nil
+				continue
+			}
+			interfaces = append(interfaces, networks.Interface{Name: name, Groups: make([]string, 0),
+				Members: make([]networks.BridgeMember, 0), Addresses: make([]netip.Prefix, 0)})
+			current = &interfaces[len(interfaces)-1]
+			continue
+		}
+		if current == nil || !strings.HasPrefix(line, "\t") || strings.HasPrefix(line, "\t ") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "\t")
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "description: "):
+			current.Description = strings.TrimPrefix(line, "description: ")
+		case fields[0] == "inet" && len(fields) >= 2:
+			if p, err := netip.ParsePrefix(fields[1]); err == nil {
+				current.Addresses = append(current.Addresses, p)
+			}
+		case fields[0] == "groups:":
+			current.Groups = append(current.Groups, fields[1:]...)
+		case fields[0] == "member:" && len(fields) >= 2:
+			private := len(fields) >= 3 && slices.Contains(memberFlags(fields[2]), "PRIVATE")
+			current.Members = append(current.Members, networks.BridgeMember{Name: fields[1], Private: private})
+		}
+	}
+	return interfaces
+}
+
+// memberFlags reads "flags=943<LEARNING,DISCOVER,PRIVATE,AUTOEDGE,AUTOPTP>".
+func memberFlags(field string) []string {
+	_, inner, ok := strings.Cut(field, "<")
+	if !ok {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(inner, ">"), ",")
+}

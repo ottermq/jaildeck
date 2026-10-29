@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ottermq/jaildeck/internal/buildinfo"
 	"github.com/ottermq/jaildeck/internal/common"
 )
 
@@ -57,7 +58,9 @@ func (s *Service) Report(ctx context.Context) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	report := Report{Host: host, Jail: make([]JailUsage, 0), Disks: make([]Disk, 0)}
+	commit, _ := buildinfo.Commit()
+	report := Report{Build: Build{Version: buildinfo.Version(), Commit: commit},
+		Host: host, Jail: make([]JailUsage, 0), Disks: make([]Disk, 0)}
 
 	// Disks are read before the jails and never fail the report. A host
 	// without smartmontools has none to read, and a smartctl unhappy about

@@ -7,11 +7,11 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.19.0.** Jails can be created from release templates, started,
+**Current release: v0.20.0.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API; their ZFS datasets,
 snapshots and resource usage are visible; host setup is checked; PF can be seen,
-read-only; bhyve VMs are created from cloud images with cloud-init, pinned to host CPUs, started,
-stopped and destroyed, on a default network Jail Deck sets up with NAT through PF, or on networks of their own kept apart by PF; a jail has a shell in the
+read-only; bhyve VMs are created from cloud images with cloud-init, with a console password if wanted, pinned to host CPUs, started,
+stopped and destroyed, on a default network Jail Deck sets up with NAT through PF, or on networks of their own kept apart by PF, and every network and what is on it can be seen; a jail has a shell in the
 browser, and a guest its serial console; every operation is audited, and nothing is reachable without a password or an
 API token. Releases install and upgrade with `pkg` from a signed repository. See
 [the roadmap](docs/ROADMAP.md) for what comes next.
@@ -218,6 +218,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/auth/login` | password in, session cookie out |
 | `POST /api/auth/logout` | |
 | `GET /api/auth/me` | the current principal and when the session expires |
+| `GET /api/about` | which Jail Deck is running: version, commit, when it started, its state directory |
 | `GET /api/` | redirects to `/api/jails`, for a client that guessed the base path |
 | `GET /api/host/readiness` | what the host has and lacks for jails, VNET, limits and VMs, each with its remedy |
 | `GET /api/host/layout` | whether the jails dataset layout exists |
@@ -274,6 +275,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/vm-images/{name}` | one image: its state, the build it was written from, the guests cloned from it |
 | `PUT /api/vm-images/{name}` | prepare one from a source — `202`, then watch it |
 | `DELETE /api/vm-images/{name}?confirm={name}` | remove one no guest uses |
+| `GET /api/topology` | every bridge and vm-bhyve switch, its addresses and NAT, and the jails and guests on it |
 | `GET /api/networks/default` | the default VM network, part by part, with whose each part is and the remedy |
 | `PUT /api/networks/default` | set up Jail Deck's parts of it: switch, address, private ports, forwarding, NAT rules |
 

@@ -918,6 +918,25 @@ The whole decision is about who chooses the moment a filesystem disappears. `zfs
 
 **Verified end to end on isengard**, with a jail configured for the purpose and never started: retain the data, `zfs destroy -r` the jail (which succeeded, where the half-moved form had failed `busy`), recreate the jail's dataset, restore the data — marker file and `refquota` both intact, mounted back where they belonged.
 
+**Amended 2026-10-29 — a mountpoint set on the dataset itself (#121).** The three commands above are right for a child that **inherits** its mountpoint. One whose `mountpoint` is set locally — inside the jail, as Jail Deck allows: `<jail>/var/db/postgres` — keeps it through the rename, because a local property travels with the dataset. Measured on isengard, in a scratch tree shaped like Jail Deck's (`capture-retain-mountpoint-induced.sh`, fixtures `ret_*`): after the rename, unmount and mount, the retained dataset was mounted back at `<jail>/var/db/postgres`, and `zfs destroy -r` on the jail failed with `pool or dataset is busy` — the half-moved state this decision exists to prevent.
+
+So such a child is moved differently, and every step is audited:
+
+```
+retain:   zfs rename -u <jail>/pg <pool>/jails/retained/<name>
+          zfs unmount <pool>/jails/retained/<name>
+          zfs set jaildeck:mountpoint=var/db/postgres <pool>/jails/retained/<name>
+          zfs inherit mountpoint <pool>/jails/retained/<name>
+restore:  zfs rename -u <pool>/jails/retained/<name> <jail2>/pg
+          zfs unmount <jail2>/pg
+          zfs set mountpoint=<jail2 path>/var/db/postgres <jail2>/pg
+          zfs inherit jaildeck:mountpoint <jail2>/pg
+```
+
+- **The record is relative to the jail,** not the old path, so a restore into another jail — the point of retaining — puts it at the same place inside *that* jail. A record that climbs out of the jail (`..`, anyone can set the property) is refused, and so is retaining a child whose local mountpoint is outside its jail.
+- **No `zfs mount` follows the inherit or the set.** Measured: both mount the dataset at its new mountpoint by themselves, even one that was not mounted, and a `zfs mount` after them fails as already mounted. The mount state is therefore read again rather than assumed, and a dataset that was not mounted is unmounted again — left as it was found, as above.
+- **Measured end to end in the scratch tree:** the jail destroyed cleanly once the child was retained this way, and the restore into a second jail mounted it at that jail's `var/db/postgres` with its marker file intact. The tree sat beside `<pool>/jails`, so the host's replication of that tree did not copy it; not run through the API for the same reason.
+
 ---
 
 ## JD-026 — Re-cloning a Jail's Root
@@ -1788,6 +1807,16 @@ Everything that can be refused is refused before `vm create`: the name (vm-bhyve
 - `PUT /api/vms/{name}` as an idempotent ensure, as jails have (JD-016). Comparing a guest to a spec needs the seed read back, and nothing needs it yet.
 - `cpuset`, more than one NIC, a second disk, user-data beyond keys. vm-bhyve can do each; none has a consumer.
 - A DHCP guest is not measured: every measurement here gave an address.
+
+**Amended 2026-10-29 — a console password (#152).** "A guest with no key is reachable only on its console" above was wrong: a cloud image's default user is locked, so its console stops at the login prompt and nobody gets past it. A guest can now be given **`console_password`**, on `POST` and `PUT /api/vms` and in the form:
+
+- **It is hashed before it leaves Jail Deck**, with bcrypt from `golang.org/x/crypto`, already a dependency for argon2id (JD-003); SHA-512 crypt, which the issue proposed, would have meant writing or adding one. Debian 13's libxcrypt takes bcrypt's `$2a$` form: measured, the shadow entry was `$2a$10$...` and the console logged in. The password is never stored, logged or answered; the audit records `vm create ... -u <file>`, and the file lives only for the command.
+- **It needs user-data of Jail Deck's own.** `vm create` takes `-u <file>` or `-k <keys>`, never both ("-u and -k are mutually exclusive", read in `vm-core`), and copies `-u`'s file as it is. Jail Deck writes what vm-bhyve would have — `resize_rootfs`, `manage_etc_hosts`, the keys — and adds `password` (the default user's, whatever the image names it), `chpasswd: { expire: false }`, and **`ssh_pwauth: false`, so the password opens the console and not SSH**. Without a password nothing changes: `-k`, and vm-bhyve's own user-data.
+- **Measured live** on isengard with the branch binary, a throwaway guest from `debian-13`: the console logged in as `debian` with the password; SSH with a key worked; SSH offering only a password was refused (`Permission denied (publickey)`); `sshd -T` showed password and keyboard-interactive authentication off; the password was in neither the seed, the audit log nor the service log. The seed is kept as `vm_pw_user_data`, its key and hash replaced.
+- **`PUT` compares it without saying it.** The hash is read back from the seed and the request's password checked against it. A difference is `set`, `none` or `another`, never a value.
+- **From 8 to 72 bytes, no control characters:** bcrypt reads no more than 72, and a console can't type a control character.
+
+This is a break-glass login, not a way in for everyday use: on a platform with tenants, whoever creates the guest sets it, and an operator opening the console reaches a login prompt (jaildeck#155, otter_cloud#142).
 
 ---
 

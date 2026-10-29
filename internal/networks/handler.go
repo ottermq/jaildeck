@@ -26,6 +26,45 @@ func RegisterNetworkRoutes(r chi.Router, h *Handler) {
 	r.Post("/networks", h.Create)
 	r.Get("/networks/{name}", h.Get)
 	r.Delete("/networks/{name}", h.Destroy)
+	// Not under /networks: it is every bridge, not a network Jail Deck made,
+	// and a tenant network may be named anything /networks/{name} takes.
+	r.Get("/topology", h.Topology)
+}
+
+// Topology is every bridge and switch, and what is on each.
+//
+// @Summary      Every network an instance can be on
+// @Description  The host's bridges and vm-bhyve's switches, each with its addresses, whose it
+// @Description  is (`kind`: the `default` network, a `tenant` network, or the `operator`'s)
+// @Description  and its members, attributed to their jail or guest by the description their
+// @Description  start wrote: `jail:<name>` on a VNET jail's epair (JD-030),
+// @Description  `vmnet/<guest>/<n>/<switch>` on a guest's tap (JD-035). Anything else on a
+// @Description  bridge is `other`. `private` is the bridge's flag on that port (#128).
+// @Description
+// @Description  **A switch whose bridge does not exist yet** -- vm-bhyve makes a standard
+// @Description  switch's bridge at `vm init`, at boot -- is listed with `exists: false` and no
+// @Description  `name`, not left out.
+// @Description
+// @Description  `nat` is whether Jail Deck's own anchor translates the bridge's subnet:
+// @Description  `loaded`, `not-loaded`, or `unknown` when PF is not enabled or the bridge has
+// @Description  no address. NAT the operator wrote into pf.conf is not read.
+// @Description
+// @Description  Read-only, and read off the host at every request: two commands, `ifconfig
+// @Description  -a` and `vm switch list`, plus PF's anchor when PF is on.
+// @Tags         networks
+// @Produce      json
+// @Success      200  {object}  Topology
+// @Failure      401  {object}  common.ErrorResponse
+// @Failure      500  {object}  common.ErrorResponse  "The host's interfaces could not be read"
+// @Security     BearerAuth
+// @Router       /topology [get]
+func (h *Handler) Topology(w http.ResponseWriter, r *http.Request) {
+	t, err := h.service.Topology(r.Context())
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, t)
 }
 
 // Default reports the default VM network, part by part.

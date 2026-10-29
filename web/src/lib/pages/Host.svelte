@@ -3,6 +3,7 @@ import { onMount } from 'svelte'
 import { getReadiness } from '../stores/host.svelte'
 import type { Readiness, Check, Capability, CheckStatus, CapabilityStatus } from '../stores/host.svelte'
 import { ApiError } from '../services/api'
+import AboutJaildeck from '../components/AboutJaildeck.svelte'
 
 let report = $state<Readiness | null>(null)
 let loadError = $state('')
@@ -157,6 +158,8 @@ async function copy(check: Check) {
 {:else if loading}
     <p class="notice">Checking the host…</p>
 {/if}
+
+<AboutJaildeck />
 
 <style>
 .host-head {

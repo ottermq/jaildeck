@@ -218,6 +218,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/auth/login` | password in, session cookie out |
 | `POST /api/auth/logout` | |
 | `GET /api/auth/me` | the current principal and when the session expires |
+| `GET /api/about` | which Jail Deck is running: version, commit, when it started, its state directory |
 | `GET /api/` | redirects to `/api/jails`, for a client that guessed the base path |
 | `GET /api/host/readiness` | what the host has and lacks for jails, VNET, limits and VMs, each with its remedy |
 | `GET /api/host/layout` | whether the jails dataset layout exists |

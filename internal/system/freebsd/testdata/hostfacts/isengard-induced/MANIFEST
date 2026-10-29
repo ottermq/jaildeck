@@ -346,3 +346,4 @@ ret_set_mounted	doas zfs set mountpoint=/var/tmp/jd-cap-121/containers/j2/srv ta
 ret_set_mounted_state	zfs get -H -o name,property,value,source mountpoint,mounted,jaildeck:mountpoint tank/jd-cap-121/containers/j2/pg; mount | grep /var/tmp/jd-cap-121 | sort	exit=0
 ret_inherit_mounted	doas zfs inherit mountpoint tank/jd-cap-121/containers/j2/pg	exit=0
 ret_inherit_mounted_state	zfs get -H -o name,property,value,source mountpoint,mounted,jaildeck:mountpoint tank/jd-cap-121/containers/j2/pg; mount | grep /var/tmp/jd-cap-121 | sort	exit=0
+vm_pw_user_data	cat /vm/jd-live-pw/.cloud-init/user-data (#152; key and hash replaced by <key> and <hash>)	exit=0	0s

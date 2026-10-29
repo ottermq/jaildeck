@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/ottermq/jaildeck/internal/about"
 	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/auth"
 	"github.com/ottermq/jaildeck/internal/config"
@@ -34,6 +36,7 @@ type App struct {
 	jailHandler     *jails.JailHandler
 	consoleHandler  *console.Handler
 	nameHandler     *names.Handler
+	aboutHandler    *about.Handler
 	hostHandler     *host.HostHandler
 	auditHandler    *audit.AuditHandler
 	storageHandler  *storage.StorageHandler
@@ -188,6 +191,7 @@ func New(cfg *config.Config) (*App, error) {
 		authHandler:     authHandler,
 		consoleHandler:  consoleHandler,
 		nameHandler:     nameHandler,
+		aboutHandler:    about.NewHandler(time.Now(), cfg.StateDir),
 		jailHandler:     jailHandler,
 		hostHandler:     hostHandler,
 		auditHandler:    auditHandler,

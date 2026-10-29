@@ -33,6 +33,37 @@
                 }
             }
         },
+        "/about": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Its version as `jaildeck version` prints it, the commit it was built from, when\nit started and its state directory (#136). **Behind authentication**, like\neverything else: telling an unauthenticated visitor the exact version would\nmake it easier to aim at a known issue.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "about"
+                ],
+                "summary": "Which Jail Deck is running",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/about.About"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/audit": {
             "get": {
                 "security": [
@@ -3033,7 +3064,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "A guest from a VM image template (JD-037, JD-038), in five audited steps:\n\n1. **vm-create**: `vm create` from Jail Deck's own template (UEFI, one virtio\ndisk, no NIC) with `cpu`, `memory` and a cloud-init seed: `ssh_keys` for the\nimage's default user, the guest's name as its hostname, and `network` as a\nstatic address when given (DHCP otherwise).\n2. **vm-pin-cpus**, when `cpuset` is given: vCPU i pinned to host CPU\n`cpuset[i]`, written as `bhyve_options=\"-p 0:\u003ccpu\u003e ...\"` (JD-041). One host\nCPU per vCPU, each a different one, and each one the host has: bhyve aborts\non a CPU it lacks only at start, while `vm start` still exits 0 — measured.\n3. **vm-add-network**: one NIC on `switch`, when given, with the MAC the seed\nmatches it by. **The switch must exist**: vm-bhyve accepts one that does not,\nand the guest then boots with a NIC attached to nothing — measured.\n4. **vm-replace-disk**: the disk vm create made is replaced by a clone of the\nimage's `@base` at `disk`, `volmode=dev`. The guest grows its own root\nfilesystem into it on first boot.\n5. **vm-start**, when `start` is true, confirmed as `POST /vms/{name}/start` is.\n\nEverything is checked first: the name, sizes, keys, addresses, that the image\nis ready, that `disk` is at least its size, that the name is free and the\nswitch exists. **A step that fails after the guest exists destroys it again**,\nand the error names the step. A start that fails leaves the guest, which is\nwhole, and says so.\n\nMeasured on isengard: created in 3 seconds, and reachable over SSH on its static\naddress 18 seconds after it started.",
+                "description": "A guest from a VM image template (JD-037, JD-038), in five audited steps:\n\n1. **vm-create**: `vm create` from Jail Deck's own template (UEFI, one virtio\ndisk, no NIC) with `cpu`, `memory` and a cloud-init seed: `ssh_keys` for the\nimage's default user, the guest's name as its hostname, and `network` as a\nstatic address when given (DHCP otherwise). `console_password`, when given,\nis the default user's password **for its console only** (SSH still takes\nkeys alone): from 8 to 72 bytes, hashed with bcrypt before it reaches the\nseed, and never stored, logged or answered (#152).\n2. **vm-pin-cpus**, when `cpuset` is given: vCPU i pinned to host CPU\n`cpuset[i]`, written as `bhyve_options=\"-p 0:\u003ccpu\u003e ...\"` (JD-041). One host\nCPU per vCPU, each a different one, and each one the host has: bhyve aborts\non a CPU it lacks only at start, while `vm start` still exits 0 — measured.\n3. **vm-add-network**: one NIC on `switch`, when given, with the MAC the seed\nmatches it by. **The switch must exist**: vm-bhyve accepts one that does not,\nand the guest then boots with a NIC attached to nothing — measured.\n4. **vm-replace-disk**: the disk vm create made is replaced by a clone of the\nimage's `@base` at `disk`, `volmode=dev`. The guest grows its own root\nfilesystem into it on first boot.\n5. **vm-start**, when `start` is true, confirmed as `POST /vms/{name}/start` is.\n\nEverything is checked first: the name, sizes, keys, addresses, that the image\nis ready, that `disk` is at least its size, that the name is free and the\nswitch exists. **A step that fails after the guest exists destroys it again**,\nand the error names the step. A start that fails leaves the guest, which is\nwhole, and says so.\n\nMeasured on isengard: created in 3 seconds, and reachable over SSH on its static\naddress 18 seconds after it started.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3164,7 +3195,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "The idempotent form of `POST /vms` (JD-016, JD-041), with the same body. A\nguest vm-bhyve does not have is created, as `POST` creates it: `201`. One it\nhas is compared against the request: `200` when it is what the request\ndescribes, and **`409` with `differences` when it is not — and it is left\nexactly as it is.** Nothing here reconciles a guest towards a request.\n\nWhat a guest was made with is read off the host, not from a record: its\nvm-bhyve configuration (cpu, memory, the pin in `bhyve_options`, each NIC's\nswitch), its cloud-init seed (address, gateway, nameservers, SSH keys) and\ndisk0's clone origin and size. Defaults resolve as a create resolves them, so\na request that leaves `cpu`, `memory` or `disk` out matches the guest those\ndefaults made.\n\n**`start` is not compared.** It is an instruction about the create, not a\nproperty of the guest: a guest stopped for maintenance would otherwise refuse\nevery `PUT`. The answer carries the guest's state, and the client decides.\n\nA guest outside vm-bhyve's default datastore, or with no cloud-init seed, was\nnot made by Jail Deck from an image, and is refused with `409`: there is\nnothing to compare. The body may leave `name` out; one naming another guest is\nrefused.",
+                "description": "The idempotent form of `POST /vms` (JD-016, JD-041), with the same body. A\nguest vm-bhyve does not have is created, as `POST` creates it: `201`. One it\nhas is compared against the request: `200` when it is what the request\ndescribes, and **`409` with `differences` when it is not — and it is left\nexactly as it is.** Nothing here reconciles a guest towards a request.\n\nWhat a guest was made with is read off the host, not from a record: its\nvm-bhyve configuration (cpu, memory, the pin in `bhyve_options`, each NIC's\nswitch), its cloud-init seed (address, gateway, nameservers, SSH keys, the\nconsole password checked against its hash) and disk0's clone origin and size.\nA password's difference says only `set`, `none` or `another`, never a value.\nDefaults resolve as a create resolves them, so\na request that leaves `cpu`, `memory` or `disk` out matches the guest those\ndefaults made.\n\n**`start` is not compared.** It is an instruction about the create, not a\nproperty of the guest: a guest stopped for maintenance would otherwise refuse\nevery `PUT`. The answer carries the guest's state, and the client decides.\n\nA guest outside vm-bhyve's default datastore, or with no cloud-init seed, was\nnot made by Jail Deck from an image, and is refused with `409`: there is\nnothing to compare. The body may leave `name` out; one naming another guest is\nrefused.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3560,6 +3591,30 @@
         }
     },
     "definitions": {
+        "about.About": {
+            "type": "object",
+            "properties": {
+                "commit": {
+                    "description": "Commit is the git revision the binary was built from, empty when the\ntoolchain stamped none, and Modified whether that tree had changes.",
+                    "type": "string"
+                },
+                "modified": {
+                    "type": "boolean"
+                },
+                "started": {
+                    "description": "Started is when this process started serving.",
+                    "type": "string"
+                },
+                "state_dir": {
+                    "description": "StateDir is where the credential, the tokens and the sessions live\n(JAILDECK_STATE_DIR).",
+                    "type": "string"
+                },
+                "version": {
+                    "description": "Version is what `jaildeck version` prints: \"v0.19.0\" for a release\nor package build, the toolchain's stamp or \"dev\" otherwise.",
+                    "type": "string"
+                }
+            }
+        },
         "audit.Entry": {
             "type": "object",
             "properties": {
@@ -5743,6 +5798,10 @@
         "vms.CreateRequest": {
             "type": "object",
             "properties": {
+                "console_password": {
+                    "description": "ConsolePassword is the default user's password, for its console only:\na cloud image has none, so without it the console stops at the login\nprompt (#152). SSH still takes keys alone. It is hashed before it\nleaves Jail Deck and is never stored, logged or answered.",
+                    "type": "string"
+                },
                 "cpu": {
                     "description": "CPU is the number of virtual CPUs. Zero means 1.",
                     "type": "integer"
@@ -5778,7 +5837,7 @@
                     ]
                 },
                 "ssh_keys": {
-                    "description": "SSHKeys go into the default user's authorized_keys. A cloud image\nhas no password, so a guest with none is reachable only on its\nconsole.",
+                    "description": "SSHKeys go into the default user's authorized_keys.",
                     "type": "array",
                     "items": {
                         "type": "string"

@@ -77,7 +77,7 @@ func (m *maker) VMCreate(_ context.Context, spec CreateSpec) (string, error) {
 	}
 	m.set(spec.Name, StateStopped)
 	m.applied[spec.Name] = &Applied{CPU: strconv.Itoa(spec.CPU), Memory: spec.Memory, Seed: true,
-		Address: spec.Address, Gateway: spec.Gateway, Nameservers: spec.Nameservers, SSHKeys: spec.SSHKeys}
+		Address: spec.Address, Gateway: spec.Gateway, Nameservers: spec.Nameservers, SSHKeys: spec.SSHKeys, PasswordHash: spec.PasswordHash}
 	return "vm create " + spec.Name, nil
 }
 

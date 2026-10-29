@@ -62,6 +62,7 @@ let address = $state('')
 let gateway = $state('')
 let nameservers = $state('')
 let keys = $state('')
+let password = $state('')
 let start = $state(true)
 
 let chosen = $derived(images?.find(i => i.name === image))
@@ -103,6 +104,7 @@ async function submit(event: Event) {
         start,
         ssh_keys: split(keys, /\r?\n/),
     }
+    if (password !== '') req.console_password = password
     if (disk.trim() !== '') req.disk = disk.trim()
     const cpus = split(pins, /[\s,]+/)
     if (cpus.length > 0) {
@@ -242,8 +244,18 @@ async function submit(event: Event) {
                       placeholder="ssh-ed25519 AAAA… you@laptop"></textarea>
         </div>
         <p class="hint">
-            One per line, for the image's default user (<code>debian</code> on Debian). A cloud image has
-            no password: <strong>without a key the guest is reachable only on its console.</strong>
+            One per line, for the image's default user (<code>debian</code> on Debian).
+        </p>
+
+        <div class="field">
+            <label for="vm-password">Console password</label>
+            <input id="vm-password" type="password" bind:value={password}
+                   autocomplete="new-password" minlength="8" maxlength="72" spellcheck="false" />
+        </div>
+        <p class="hint">
+            For the same user, on the guest's console only: SSH still takes keys alone. A cloud image
+            has no password of its own, so <strong>without one the console stops at the login prompt</strong>,
+            and <strong>without a key or a password there is no way in.</strong>
         </p>
 
         <label class="check"><input type="checkbox" bind:checked={start} /> Start it once it is made</label>

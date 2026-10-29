@@ -125,6 +125,9 @@ func (s *Service) compare(ctx context.Context, vm VM, req CreateRequest) (Ensure
 	differ("network.gateway", spec.Gateway, have.Gateway)
 	differ("network.nameservers", strings.Join(spec.Nameservers, ","), strings.Join(have.Nameservers, ","))
 	differ("ssh_keys", strings.Join(spec.SSHKeys, "\n"), strings.Join(have.SSHKeys, "\n"))
+	if d, ok := comparePassword(req.ConsolePassword, have.PasswordHash); !ok {
+		differences = append(differences, d)
+	}
 
 	if len(differences) > 0 {
 		result.Differences = differences

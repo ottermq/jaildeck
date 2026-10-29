@@ -1789,6 +1789,16 @@ Everything that can be refused is refused before `vm create`: the name (vm-bhyve
 - `cpuset`, more than one NIC, a second disk, user-data beyond keys. vm-bhyve can do each; none has a consumer.
 - A DHCP guest is not measured: every measurement here gave an address.
 
+**Amended 2026-10-29 — a console password (#152).** "A guest with no key is reachable only on its console" above was wrong: a cloud image's default user is locked, so its console stops at the login prompt and nobody gets past it. A guest can now be given **`console_password`**, on `POST` and `PUT /api/vms` and in the form:
+
+- **It is hashed before it leaves Jail Deck**, with bcrypt from `golang.org/x/crypto`, already a dependency for argon2id (JD-003); SHA-512 crypt, which the issue proposed, would have meant writing or adding one. Debian 13's libxcrypt takes bcrypt's `$2a$` form: measured, the shadow entry was `$2a$10$...` and the console logged in. The password is never stored, logged or answered; the audit records `vm create ... -u <file>`, and the file lives only for the command.
+- **It needs user-data of Jail Deck's own.** `vm create` takes `-u <file>` or `-k <keys>`, never both ("-u and -k are mutually exclusive", read in `vm-core`), and copies `-u`'s file as it is. Jail Deck writes what vm-bhyve would have — `resize_rootfs`, `manage_etc_hosts`, the keys — and adds `password` (the default user's, whatever the image names it), `chpasswd: { expire: false }`, and **`ssh_pwauth: false`, so the password opens the console and not SSH**. Without a password nothing changes: `-k`, and vm-bhyve's own user-data.
+- **Measured live** on isengard with the branch binary, a throwaway guest from `debian-13`: the console logged in as `debian` with the password; SSH with a key worked; SSH offering only a password was refused (`Permission denied (publickey)`); `sshd -T` showed password and keyboard-interactive authentication off; the password was in neither the seed, the audit log nor the service log. The seed is kept as `vm_pw_user_data`, its key and hash replaced.
+- **`PUT` compares it without saying it.** The hash is read back from the seed and the request's password checked against it. A difference is `set`, `none` or `another`, never a value.
+- **From 8 to 72 bytes, no control characters:** bcrypt reads no more than 72, and a console can't type a control character.
+
+This is a break-glass login, not a way in for everyday use: on a platform with tenants, whoever creates the guest sets it, and an operator opening the console reaches a login prompt (jaildeck#155, otter_cloud#142).
+
 ---
 
 ## JD-039 — A Signed Package Repository: CI Builds and Attests, a Host Pulls, Verifies and Signs

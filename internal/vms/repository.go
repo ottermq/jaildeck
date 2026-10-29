@@ -78,12 +78,13 @@ type Applied struct {
 	DiskSize int64
 	// Seed is whether the guest has a cloud-init seed. The rest is read from
 	// it: the first NIC's static address, gateway and nameservers, empty for
-	// DHCP, and the default user's SSH keys.
-	Seed        bool
-	Address     string
-	Gateway     string
-	Nameservers []string
-	SSHKeys     []string
+	// DHCP, the default user's SSH keys, and its console password's hash.
+	Seed         bool
+	Address      string
+	Gateway      string
+	Nameservers  []string
+	SSHKeys      []string
+	PasswordHash string
 }
 
 // ImageCatalog is where a guest's disk comes from: the VM image templates

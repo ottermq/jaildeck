@@ -1,0 +1,9 @@
+#cloud-config
+resize_rootfs: True
+manage_etc_hosts: localhost
+ssh_authorized_keys:
+  - "ssh-ed25519 <key> jd-live-pw"
+password: "$2a$10$<hash>"
+chpasswd:
+  expire: false
+ssh_pwauth: false

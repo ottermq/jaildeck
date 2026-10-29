@@ -20,6 +20,68 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.19.0 — 2026-10-29
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.19.0)
+
+**Tenant networks** (#118 step 2, JD-043): a network of its own for each tenant, a bridge on its
+own `/24` with a vm-bhyve switch on it, kept apart from every other network by PF. New jails and
+guests also come with a **name suggested** (#148), and a guest's console no longer shows garbage
+when something else on the host has it open (#153).
+
+Nothing to act on when upgrading. One setting is new and optional: `JAILDECK_NETWORK_RANGE`
+(default `10.92.0.0/16`), the range tenant networks take their `/24`s from. `pf.conf` needs
+nothing beyond JD-040's three lines: tenant networks' rules share the default network's anchor
+file, which stays byte-for-byte the same while there are none.
+
+### Added
+
+- **Tenant networks** (#151): created and destroyed through the API, in audited steps.
+  - Each is a bridge `jdn<i>` on the lowest free `/24` of the range, the host's `.1` on it as the
+    gateway, and a vm-bhyve **manual** switch named after the network.
+  - Each gets NAT, a pass to its own gateway, and a block of every other VM network and the host.
+    The default network reaches no tenant network.
+  - **A step that fails takes back the earlier ones:** a network without its rules is one others
+    can reach.
+  - A guest joins one with its switch, a VNET jail with its bridge. Addresses are still the
+    client's for now.
+- **Name suggestions** (#150): **Create a jail** and **Create a VM** open with a name already
+  given, an adjective and an animal (`jolly-otter`), and an **Another** button. A name in use is
+  never suggested, and typing your own always wins.
+
+### Changed
+
+- **A guest's console is refused while another reader has its device open** (#154, fixing
+  #153). Two readers on one serial line each get fragments of what the guest prints. v0.18.0 let
+  a `vm console` on the host attach alongside; now the browser console closes at once and names
+  the process holding the device (`cu (pid 38812)`), with how to close it. A reader that turns up
+  during a session ends it the same way.
+
+### API
+
+- **`POST /api/networks`**, **`GET /api/networks`**, **`GET /api/networks/{name}`** and
+  **`DELETE /api/networks/{name}?confirm=`** (#151). A delete is refused, naming them, while a
+  guest's configuration names the switch, a jail's names the bridge, or anything is on it.
+- **`GET /api/names/suggest`** (#150). After 20 taken draws it adds a two-digit number; after 40
+  it answers `503`. `POST` and `PUT` still need a name.
+- **A console's `closed` message gains `detail`,** and its reasons gain `console-shared` (#154).
+  Additive. A guest's console with another reader on its device is accepted and then closed, not
+  refused: a browser can't read a refused WebSocket handshake.
+
+### Internal
+
+- **`internal/names`,** Jail Deck's own package for the word lists: 142 adjectives and 125
+  animals, every pair a valid jail, guest and host name.
+- **The measurements are kept as captures:** `capture-tenant-network-induced.sh`, and the
+  incident's own `fstat` output as `con_fstat_shared`.
+
+### Known
+
+- **A guest made from a cloud image can't be logged into at its console:** it has no password
+  (#152).
+
+---
+
 ## v0.18.1 — 2026-10-28
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.18.1)

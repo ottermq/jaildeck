@@ -1,0 +1,4 @@
+NAME      TYPE      IFACE        ADDRESS       PRIVATE  MTU  VLAN  PORTS
+vmlan     standard  vm-vmlan     10.80.0.1/24  no       -    -     -
+jaildeck  standard  vm-jaildeck  10.88.0.1/24  yes      -    -     -
+jdcap128  standard  -            -             no       -    -     -

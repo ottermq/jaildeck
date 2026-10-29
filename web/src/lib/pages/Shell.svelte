@@ -13,6 +13,7 @@ import Host from './Host.svelte'
 import Firewall from './Firewall.svelte'
 import VMs from './VMs.svelte'
 import VM from './VM.svelte'
+import Networks from './Networks.svelte'
 import NotFound from './NotFound.svelte'
 import ConfirmDialog from '../components/ConfirmDialog.svelte'
 
@@ -27,6 +28,7 @@ const menu = [
     { label: 'Jails', href: '/jails' },
     { label: 'Templates', href: '/templates' },
     { label: 'VMs', href: '/vms' },
+    { label: 'Networks', href: '/networks' },
     { label: 'Operations', href: '/operations' },
     { label: 'Firewall', href: '/firewall' },
     { label: 'Host', href: '/host' },
@@ -108,6 +110,8 @@ onMount(() => {
             <VMs />
         {:else if vm}
             {#key vm.name}<VM name={vm.name} />{/key}
+        {:else if route.path === '/networks'}
+            <Networks />
         {:else if route.path === '/operations'}
             <Operations />
         {:else if route.path === '/firewall'}

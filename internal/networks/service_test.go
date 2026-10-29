@@ -31,6 +31,8 @@ type host struct {
 	addresses   []netip.Prefix
 	switchUsers map[string][]string
 	bridgeUsers map[string][]string
+	// interfaces are what ifconfig would list, for the Networks view (#128).
+	interfaces []Interface
 }
 
 func freshHost() *host {
@@ -129,6 +131,13 @@ func (h *host) SwitchUsers(_ context.Context, name string) ([]string, error) {
 
 func (h *host) BridgeUsers(_ context.Context, bridge string) ([]string, error) {
 	return h.bridgeUsers[bridge], nil
+}
+
+func (h *host) Interfaces(context.Context) ([]Interface, error) {
+	if err := h.fail["interfaces"]; err != nil {
+		return nil, err
+	}
+	return h.interfaces, nil
 }
 
 func (h *host) sw(name string) *Switch {

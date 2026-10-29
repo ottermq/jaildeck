@@ -43,3 +43,35 @@ export async function getDefaultNetwork(): Promise<DefaultNetwork> {
 export async function ensureDefaultNetwork(): Promise<Ensured> {
     return await api<Ensured>('/networks/default', { method: 'PUT' })
 }
+
+// Every bridge and vm-bhyve switch, and what is on each (#128): GET /api/topology.
+export interface TopologyMember {
+    interface: string
+    kind: 'jail' | 'vm' | 'other'
+    instance?: string
+    nic?: string
+    private: boolean
+}
+
+export interface TopologyBridge {
+    // Empty, with exists false, for a switch whose bridge is not made yet.
+    name: string
+    exists: boolean
+    kind: 'default' | 'tenant' | 'operator'
+    switch?: string
+    switch_type?: string
+    network?: string
+    tenant?: string
+    description?: string
+    addresses: string[]
+    nat: 'loaded' | 'not-loaded' | 'unknown'
+    members: TopologyMember[]
+}
+
+export interface Topology {
+    bridges: TopologyBridge[]
+}
+
+export async function getTopology(): Promise<Topology> {
+    return api<Topology>('/topology')
+}

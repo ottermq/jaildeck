@@ -605,6 +605,12 @@ type restoreRequest struct {
 // @Description  jail just lost that path, so stop it first. Leaving the move half done is
 // @Description  worse — a dataset still mounted inside a jail makes the jail undestroyable.
 // @Description
+// @Description  **A mountpoint set on the dataset itself** (`/var/db/postgres` inside the
+// @Description  jail) travels with a rename, so it would stay mounted in the jail it left.
+// @Description  It is recorded instead, relative to the jail, in `jaildeck:mountpoint`, and
+// @Description  inherited while retained; `zfs inherit` mounts it under retained by itself,
+// @Description  so no `zfs mount` follows (#121). One outside the jail is refused with `409`.
+// @Description
 // @Description  The retained parent is created on demand and is deliberately not part of
 // @Description  the layout readiness check (JD-021).
 // @Tags         storage
@@ -617,7 +623,7 @@ type restoreRequest struct {
 // @Failure      400     {object}  common.ErrorResponse  "Not a dataset name"
 // @Failure      401     {object}  common.ErrorResponse
 // @Failure      404     {object}  common.ErrorResponse  "No such jail or dataset"
-// @Failure      409     {object}  common.ErrorResponse  "That retained name is taken"
+// @Failure      409     {object}  common.ErrorResponse  "That retained name is taken, or the dataset's own mountpoint is outside its jail"
 // @Security     BearerAuth
 // @Router       /jails/{name}/datasets/{child}/retain [post]
 func (h *JailHandler) Retain(w http.ResponseWriter, r *http.Request) {
@@ -649,6 +655,11 @@ func (h *JailHandler) Retain(w http.ResponseWriter, r *http.Request) {
 // @Description  which is the point of keeping it. Its properties and snapshots travel with
 // @Description  it, because they belong to the dataset and not to where it sits.
 // @Description
+// @Description  A dataset retained with its own mountpoint gets it back **under the jail it
+// @Description  goes into**: `jaildeck:mountpoint=var/db/postgres` restored into db2 is
+// @Description  mounted at db2's path plus `/var/db/postgres`, and the record is removed
+// @Description  (#121). A record that climbs out of the jail (`..`) is refused with `409`.
+// @Description
 // @Description  from is the short name from GET /retained, not the full dataset path.
 // @Tags         storage
 // @Accept       json
@@ -660,7 +671,7 @@ func (h *JailHandler) Retain(w http.ResponseWriter, r *http.Request) {
 // @Failure      400     {object}  common.ErrorResponse
 // @Failure      401     {object}  common.ErrorResponse
 // @Failure      404     {object}  common.ErrorResponse  "Nothing retained under that name"
-// @Failure      409     {object}  common.ErrorResponse  "The jail already has a child of that name"
+// @Failure      409     {object}  common.ErrorResponse  "The jail already has a child of that name, or the dataset's recorded mountpoint would land outside it"
 // @Security     BearerAuth
 // @Router       /jails/{name}/datasets/{child}/restore [post]
 func (h *JailHandler) Restore(w http.ResponseWriter, r *http.Request) {

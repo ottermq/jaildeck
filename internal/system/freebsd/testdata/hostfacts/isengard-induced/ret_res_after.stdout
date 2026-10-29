@@ -1,0 +1,8 @@
+tank/jd-cap-121/containers/j2/pg	mountpoint	/var/tmp/jd-cap-121/containers/j2/var/db/pg	local
+tank/jd-cap-121/containers/j2/pg	mounted	yes	-
+tank/jd-cap-121/containers/j2/pg	jaildeck:mountpoint	-	-
+tank/jd-cap-121 on /var/tmp/jd-cap-121 (zfs, local, noatime, nfsv4acls)
+tank/jd-cap-121/containers on /var/tmp/jd-cap-121/containers (zfs, local, noatime, nfsv4acls)
+tank/jd-cap-121/containers/j2 on /var/tmp/jd-cap-121/containers/j2 (zfs, local, noatime, nfsv4acls)
+tank/jd-cap-121/containers/j2/pg on /var/tmp/jd-cap-121/containers/j2/var/db/pg (zfs, local, noatime, nfsv4acls)
+tank/jd-cap-121/retained on /var/tmp/jd-cap-121/retained (zfs, local, noatime, nfsv4acls)

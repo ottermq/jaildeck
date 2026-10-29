@@ -1022,7 +1022,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "The same three commands in the other direction.\n\nIt need not be the jail it left, and it need not keep the name it left\nwith: a dataset retained from ottermq can come back as ottermq-2's data,\nwhich is the point of keeping it. Its properties and snapshots travel with\nit, because they belong to the dataset and not to where it sits.\n\nfrom is the short name from GET /retained, not the full dataset path.",
+                "description": "The same three commands in the other direction.\n\nIt need not be the jail it left, and it need not keep the name it left\nwith: a dataset retained from ottermq can come back as ottermq-2's data,\nwhich is the point of keeping it. Its properties and snapshots travel with\nit, because they belong to the dataset and not to where it sits.\n\nA dataset retained with its own mountpoint gets it back **under the jail it\ngoes into**: `jaildeck:mountpoint=var/db/postgres` restored into db2 is\nmounted at db2's path plus `/var/db/postgres`, and the record is removed\n(#121). A record that climbs out of the jail (`..`) is refused with `409`.\n\nfrom is the short name from GET /retained, not the full dataset path.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1084,7 +1084,7 @@
                         }
                     },
                     "409": {
-                        "description": "The jail already has a child of that name",
+                        "description": "The jail already has a child of that name, or the dataset's recorded mountpoint would land outside it",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -1099,7 +1099,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Moves it to \u003cpool\u003e/jails/retained/\u003cname\u003e. zfs destroy -r on a jail takes\nits children and their snapshots with it (JD-007), so a dataset worth\nkeeping has to stop being a child first.\n\nThree audited commands: zfs rename -u, zfs unmount, zfs mount. The -u is\nnot optional — a plain zfs rename unmounts and remounts inside the same\ncommand, which on a running jail is the filesystem vanishing from under a\nlive process (JD-025).\n\nIt still unmounts: remounted=true means the filesystem moved and a running\njail just lost that path, so stop it first. Leaving the move half done is\nworse — a dataset still mounted inside a jail makes the jail undestroyable.\n\nThe retained parent is created on demand and is deliberately not part of\nthe layout readiness check (JD-021).",
+                "description": "Moves it to \u003cpool\u003e/jails/retained/\u003cname\u003e. zfs destroy -r on a jail takes\nits children and their snapshots with it (JD-007), so a dataset worth\nkeeping has to stop being a child first.\n\nThree audited commands: zfs rename -u, zfs unmount, zfs mount. The -u is\nnot optional — a plain zfs rename unmounts and remounts inside the same\ncommand, which on a running jail is the filesystem vanishing from under a\nlive process (JD-025).\n\nIt still unmounts: remounted=true means the filesystem moved and a running\njail just lost that path, so stop it first. Leaving the move half done is\nworse — a dataset still mounted inside a jail makes the jail undestroyable.\n\n**A mountpoint set on the dataset itself** (`/var/db/postgres` inside the\njail) travels with a rename, so it would stay mounted in the jail it left.\nIt is recorded instead, relative to the jail, in `jaildeck:mountpoint`, and\ninherited while retained; `zfs inherit` mounts it under retained by itself,\nso no `zfs mount` follows (#121). One outside the jail is refused with `409`.\n\nThe retained parent is created on demand and is deliberately not part of\nthe layout readiness check (JD-021).",
                 "consumes": [
                     "application/json"
                 ],
@@ -1161,7 +1161,7 @@
                         }
                     },
                     "409": {
-                        "description": "That retained name is taken",
+                        "description": "That retained name is taken, or the dataset's own mountpoint is outside its jail",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }

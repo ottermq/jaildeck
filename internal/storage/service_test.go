@@ -107,6 +107,9 @@ func (s *stubSystem) SetProperties(_ context.Context, name string, properties ma
 		if !replaced {
 			s.properties = append(s.properties, Property{Dataset: name, Name: property, Value: value})
 		}
+		if property == "mountpoint" && s.notMounted != nil {
+			s.mountpointChanged(name, value)
+		}
 	}
 	return Result{Dataset: name, Command: stubCommand("set", name, properties)}, nil
 }
@@ -120,6 +123,9 @@ func (s *stubSystem) InheritProperty(_ context.Context, name, property string) (
 	s.properties = slices.DeleteFunc(s.properties, func(p Property) bool {
 		return p.Dataset == name && p.Name == property
 	})
+	if property == "mountpoint" && s.notMounted != nil {
+		s.mountpointChanged(name, s.mountpointFor(name))
+	}
 	return Result{Dataset: name, Command: command}, nil
 }
 
@@ -433,10 +439,44 @@ func (s *stubSystem) RenameDataset(_ context.Context, from, to string) (Result, 
 	for i, d := range s.datasets {
 		if d.Name == from || strings.HasPrefix(d.Name, from+"/") {
 			s.datasets[i].Name = to + strings.TrimPrefix(d.Name, from)
-			s.datasets[i].Mountpoint = "/usr/local/jails/retained/" + to[strings.LastIndex(to, "/")+1:]
+			if s.localValue(from, "mountpoint") == "" {
+				s.datasets[i].Mountpoint = "/usr/local/jails/retained/" + to[strings.LastIndex(to, "/")+1:]
+			}
 		}
 	}
+	// A locally set property travels with the dataset, mountpoint included:
+	// that is the whole of #121.
+	for i, p := range s.properties {
+		if p.Dataset == from || strings.HasPrefix(p.Dataset, from+"/") {
+			s.properties[i].Dataset = to + strings.TrimPrefix(p.Dataset, from)
+		}
+	}
+	if s.notMounted[from] {
+		delete(s.notMounted, from)
+		s.notMounted[to] = true
+	}
 	return Result{Dataset: to, Command: command}, nil
+}
+
+func (s *stubSystem) localValue(dataset, property string) string {
+	for _, p := range s.properties {
+		if p.Dataset == dataset && p.Name == property {
+			return p.Value
+		}
+	}
+	return ""
+}
+
+// mountpointChanged is what zfs does when a mountpoint is set or inherited:
+// it mounts the dataset there, whether or not it was mounted before --
+// measured on isengard for #121.
+func (s *stubSystem) mountpointChanged(name, mountpoint string) {
+	for i, d := range s.datasets {
+		if d.Name == name {
+			s.datasets[i].Mountpoint = mountpoint
+		}
+	}
+	delete(s.notMounted, name)
 }
 
 func (s *stubSystem) Mounted(_ context.Context, dataset string) (bool, error) {
@@ -448,12 +488,20 @@ func (s *stubSystem) Mounted(_ context.Context, dataset string) (bool, error) {
 
 func (s *stubSystem) Unmount(_ context.Context, dataset string) (Result, error) {
 	s.ran = append(s.ran, "zfs unmount "+dataset)
-	return Result{Dataset: dataset, Command: "zfs unmount " + dataset}, s.mountErrorFor(dataset)
+	err := s.mountErrorFor(dataset)
+	if err == nil {
+		s.notMounted[dataset] = true
+	}
+	return Result{Dataset: dataset, Command: "zfs unmount " + dataset}, err
 }
 
 func (s *stubSystem) Mount(_ context.Context, dataset string) (Result, error) {
 	s.ran = append(s.ran, "zfs mount "+dataset)
-	return Result{Dataset: dataset, Command: "zfs mount " + dataset}, s.mountErrorFor(dataset)
+	err := s.mountErrorFor(dataset)
+	if err == nil {
+		delete(s.notMounted, dataset)
+	}
+	return Result{Dataset: dataset, Command: "zfs mount " + dataset}, err
 }
 
 func (s *stubSystem) mountErrorFor(dataset string) error {

@@ -355,6 +355,46 @@ a directory the script removed; only the public key is in the captures, in the s
   "appears to be running on isengard (locked)").
 - **`vm destroy` takes the clone and frees the image** (`vm_mk_after_destroy`).
 
+## Tenant networks (JD-043)
+
+`capture-tenant-network-induced.sh`, run 2026-10-28 on isengard into `isengard-induced/` with
+the prefix `ten_`, **changes the host's networking and loads PF**. It refuses where PF is
+already loaded, and a watchdog unloads PF after ten minutes. It makes two throwaway tenants,
+each a bridge with the host on `.1` and a vm-bhyve manual switch on it:
+- **A:** `jdt-a`, `10.91.1.0/24`;
+- **B:** `jdt-b`, `10.91.2.0/24`;
+- on each, a Debian guest (`.10`, from the kept image) and a VNET jail (`.20`). The jail roots
+  are clones under `<pool>/jdcap-tenant`, outside what zrepl copies.
+
+It probes in four layouts: no PF; PF rules with the block first; PF rules with the pass first;
+and the same members moved onto one VLAN-filtering bridge. Then it times 256 bridges. Only
+the throwaway interfaces are recorded.
+
+Everything was put back: forwarding as it was (`1`), PF unloaded, the interfaces as before, and
+`rc.conf` byte-identical. `system.conf` kept the two `bridge_jdt-*` lines `vm switch destroy`
+leaves for a manual switch; they were removed by hand, and the finding went into the adapter.
+
+`net_tenant_bridge` and `net_bridge_group` are one `jdn` bridge made as the adapter makes one,
+with an epair on it, read back with `ifconfig -f inet:cidr`.
+
+**What that settled:**
+
+- **The host routes one tenant into another** once forwarding is on: guest to guest, guest to
+  the other tenant's jail, and SSH to the host through the other tenant's gateway all reached
+  (`ten_nopf_*`, `0` is reached). Isolation is PF's.
+- **One tenant's two rules, the pass to its own gateway first, keep it apart** (`ten_pfp_*`):
+  the other tenant, its gateway and the host's SSH there were blocked, the own gateway reached,
+  and the internet reached through NAT. **With the block first** (`ten_pf_*`), the host's own
+  SSH to the guests failed, so those probes are empty: the block of `self` also caught the
+  replies.
+- **VLANs on one bridge work, and route like separate bridges do** (`ten_vlan_*`). The gateways
+  work as `vlan(4)` on the bridge (`ten_vlan_gateways`), and a guest reset keeps its tap and
+  its VLAN (`ten_vlan_after_reset`).
+- **256 bridges: created in 1 s, destroyed in 3 s** (`ten_scale_*`).
+- **Pings from inside a VNET jail failed** throughout, even within its own tenant, while TCP
+  from the same jail reached (`*_ja_tcp_a1`). That's a limit of the probe, not of the network;
+  the jail's reach is read from TCP.
+
 ## A shell in a jail on a PTY (JD-042)
 
 `capture-jail-console-induced.sh`, run 2026-10-28 on isengard, writes `jpty_*` files; they are

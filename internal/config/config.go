@@ -55,6 +55,9 @@ type Config struct {
 	VMAddress   string
 	VMEgress    string
 	PFAnchorDir string
+	// NetworkRange is the block tenant networks' subnets come from, one /24
+	// each (JD-043).
+	NetworkRange string
 
 	// The browser console (JD-042). ConsoleIdle ends a session nothing has
 	// been typed into for that long; 0 never does. ConsoleOrigins are hosts a
@@ -84,6 +87,8 @@ func LoadConfig() *Config {
 		VMAddress:   getEnv("JAILDECK_VM_ADDRESS", "10.88.0.1/24"),
 		VMEgress:    getEnv("JAILDECK_VM_EGRESS", ""),
 		PFAnchorDir: getEnv("JAILDECK_PF_ANCHOR_DIR", "/usr/local/etc/jaildeck/pf"),
+
+		NetworkRange: getEnv("JAILDECK_NETWORK_RANGE", "10.92.0.0/16"),
 
 		ConsoleIdle:    getDuration("JAILDECK_CONSOLE_IDLE", 30*time.Minute),
 		ConsoleOrigins: getList("JAILDECK_CONSOLE_ORIGINS"),

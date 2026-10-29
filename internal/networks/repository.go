@@ -1,6 +1,9 @@
 package networks
 
-import "context"
+import (
+	"context"
+	"net/netip"
+)
 
 // Switch is one row of `vm switch list`.
 type Switch struct {
@@ -57,4 +60,36 @@ type System interface {
 	// into anchor, replacing what was there. A file pfctl refuses leaves the
 	// loaded rules as they were (measured).
 	LoadAnchor(ctx context.Context, anchor, path string) (string, error)
+
+	// Tenant networks (JD-043). TenantBridges lists the bridges named jdn<i>,
+	// each with its description, address and members; AddressesInUse is every
+	// IPv4 prefix configured on any interface of the host.
+	TenantBridges(ctx context.Context) ([]TenantBridge, error)
+	AddressesInUse(ctx context.Context) ([]netip.Prefix, error)
+	// CreateTenantBridge is `ifconfig bridge create name <bridge> description
+	// <d> up`, which is not atomic: measured, it can fail with the bridge
+	// already made, so the service destroys it again on any failure.
+	CreateTenantBridge(ctx context.Context, bridge, description string) (string, error)
+	SetBridgeAddress(ctx context.Context, bridge, address string) (string, error)
+	DestroyBridge(ctx context.Context, bridge string) (string, error)
+	// CreateManualSwitch is a vm-bhyve switch on a bridge Jail Deck made.
+	// DestroySwitch also removes the bridge_<name> line vm switch destroy
+	// leaves in system.conf for a manual switch (measured).
+	CreateManualSwitch(ctx context.Context, name, bridge string) (string, error)
+	DestroySwitch(ctx context.Context, name string) (string, error)
+	// SwitchUsers are the guests whose configuration puts a NIC on the
+	// switch, running or not; BridgeUsers the jails whose configuration
+	// names the bridge.
+	SwitchUsers(ctx context.Context, name string) ([]string, error)
+	BridgeUsers(ctx context.Context, bridge string) ([]string, error)
+}
+
+// TenantBridge is one jdn<i> bridge as the host has it.
+type TenantBridge struct {
+	Name        string
+	Description string
+	// Address is the host's address on it, the network's gateway; zero when
+	// it has none.
+	Address netip.Prefix
+	Members []string
 }

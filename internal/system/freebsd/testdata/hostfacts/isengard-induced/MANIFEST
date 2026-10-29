@@ -233,3 +233,83 @@ jail_con_after_hangup	ps -J jd-cap-pty -o pid,stat,command 2>&1	exit=0	0s
 jail_con_hangup_nb	doas /tmp/ptyprobe jd-cap-pty hangupnb	exit=0	4s
 jail_con_after_hangup_nb	ps -J jd-cap-pty -o pid,stat,command 2>&1	exit=0	0s
 con_fstat_shared	fstat /dev/nmdm-pleasant-platypus.1B (the #153 incident; bhyve's .1A row left out: a different device)	exit=0	0s
+ten_bridge_a	tenant a 10.91.1	exit=0	0s
+ten_bridge_b	tenant b 10.91.2	exit=0	0s
+ten_switch_list	doas vm switch list | awk 'NR == 1 || $1 ~ /^jdt-/'	exit=0	0s
+ten_guest_a	guest jdt-a1 jdt-a 10.91.1.10 10.91.1.1	exit=0	3s
+ten_guest_b	guest jdt-b1 jdt-b 10.91.2.10 10.91.2.1	exit=0	4s
+ten_jail_a	jail_on jdt-ja a 10.91.1.20 10.91.1.1	exit=0	1s
+ten_jail_b	jail_on jdt-jb b 10.91.2.20 10.91.2.1	exit=0	1s
+ten_members	doas ifconfig jdt-a | grep member; echo; doas ifconfig jdt-b | grep member	exit=0	0s
+ten_reach_guests	echo a1 after 20s; ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 hostname; ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.2.10 hostname	exit=0	0s
+ten_forwarding_on	doas sysctl net.inet.ip.forwarding=1	exit=0	0s
+ten_nopf_ja_to_a1	doas jexec jdt-ja ping -c 2 -t 2 10.91.1.10 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_nopf_a1_to_ja	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.1.20 >/dev/null 2>&1; echo $?'	exit=0	1s
+ten_nopf_ja_tcp_a1	doas jexec jdt-ja nc -z -w 2 10.91.1.10 22 >/dev/null 2>&1; echo $?	exit=0	1s
+ten_nopf_a1_to_b1	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.2.10 >/dev/null 2>&1; echo $?'	exit=0	1s
+ten_nopf_a1_tcp_b1	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'timeout 3 bash -c "</dev/tcp/10.91.2.10/22" 2>/dev/null; echo $?'	exit=0	0s
+ten_nopf_ja_to_jb	doas jexec jdt-ja ping -c 2 -t 2 10.91.2.20 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_nopf_a1_to_jb	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.2.20 >/dev/null 2>&1; echo $?'	exit=0	1s
+ten_nopf_a1_to_gw_a	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.1.1 >/dev/null 2>&1; echo $?'	exit=0	2s
+ten_nopf_a1_to_gw_b	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.2.1 >/dev/null 2>&1; echo $?'	exit=0	1s
+ten_nopf_a1_tcp_host_ssh_b	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'timeout 3 bash -c "</dev/tcp/10.91.2.1/22" 2>/dev/null; echo $?'	exit=0	0s
+ten_nopf_a1_to_internet	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 2 9.9.9.9 >/dev/null 2>&1; echo $?'	exit=0	3s
+ten_nopf_ja_to_internet	doas jexec jdt-ja ping -c 2 -t 3 9.9.9.9 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_pf_load	doas kldload -n pf; doas pfctl -f /var/tmp/jd-capture-tenant/pf.conf && doas pfctl -a jaildeck/tenants -f /var/tmp/jd-capture-tenant/tenants.conf && doas pfctl -e	exit=0	0s
+ten_pf_rules	doas pfctl -a jaildeck/tenants -s rules; doas pfctl -a jaildeck/tenants -s nat	exit=0	0s
+ten_pf_ja_to_a1	doas jexec jdt-ja ping -c 2 -t 2 10.91.1.10 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_pf_a1_to_ja	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.1.20 >/dev/null 2>&1; echo $?'	exit=255	3s
+ten_pf_ja_tcp_a1	doas jexec jdt-ja nc -z -w 2 10.91.1.10 22 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_pf_a1_to_b1	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.2.10 >/dev/null 2>&1; echo $?'	exit=255	3s
+ten_pf_a1_tcp_b1	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'timeout 3 bash -c "</dev/tcp/10.91.2.10/22" 2>/dev/null; echo $?'	exit=255	4s
+ten_pf_ja_to_jb	doas jexec jdt-ja ping -c 2 -t 2 10.91.2.20 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_pf_a1_to_jb	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.2.20 >/dev/null 2>&1; echo $?'	exit=255	3s
+ten_pf_a1_to_gw_a	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.1.1 >/dev/null 2>&1; echo $?'	exit=255	3s
+ten_pf_a1_to_gw_b	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.2.1 >/dev/null 2>&1; echo $?'	exit=255	3s
+ten_pf_a1_tcp_host_ssh_b	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'timeout 3 bash -c "</dev/tcp/10.91.2.1/22" 2>/dev/null; echo $?'	exit=255	3s
+ten_pf_a1_to_internet	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 2 9.9.9.9 >/dev/null 2>&1; echo $?'	exit=255	3s
+ten_pf_ja_to_internet	doas jexec jdt-ja ping -c 2 -t 3 9.9.9.9 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_pf_reload	doas pfctl -a jaildeck/tenants -f /var/tmp/jd-capture-tenant/tenants-passfirst.conf && doas pfctl -a jaildeck/tenants -s rules	exit=0	0s
+ten_pfp_ja_to_a1	doas jexec jdt-ja ping -c 2 -t 2 10.91.1.10 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_pfp_a1_to_ja	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.1.20 >/dev/null 2>&1; echo $?'	exit=0	1s
+ten_pfp_ja_tcp_a1	doas jexec jdt-ja nc -z -w 2 10.91.1.10 22 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_pfp_a1_to_b1	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.2.10 >/dev/null 2>&1; echo $?'	exit=0	3s
+ten_pfp_a1_tcp_b1	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'timeout 3 bash -c "</dev/tcp/10.91.2.10/22" 2>/dev/null; echo $?'	exit=0	3s
+ten_pfp_ja_to_jb	doas jexec jdt-ja ping -c 2 -t 2 10.91.2.20 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_pfp_a1_to_jb	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.2.20 >/dev/null 2>&1; echo $?'	exit=0	2s
+ten_pfp_a1_to_gw_a	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.1.1 >/dev/null 2>&1; echo $?'	exit=0	1s
+ten_pfp_a1_to_gw_b	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.2.1 >/dev/null 2>&1; echo $?'	exit=0	2s
+ten_pfp_a1_tcp_host_ssh_b	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'timeout 3 bash -c "</dev/tcp/10.91.2.1/22" 2>/dev/null; echo $?'	exit=0	4s
+ten_pfp_a1_to_internet	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 2 9.9.9.9 >/dev/null 2>&1; echo $?'	exit=0	1s
+ten_pfp_ja_to_internet	doas jexec jdt-ja ping -c 2 -t 3 9.9.9.9 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_pf_off	doas pfctl -d; doas pfctl -F all; doas kldunload pf	exit=0	0s
+ten_vlan_bridge	b=$(doas ifconfig bridge create) && doas ifconfig $b name jdt-v vlanfilter up && doas ifconfig jdt-v	exit=0	0s
+ten_vlan_move	
+	doas ifconfig jdt-a deletem tap1 deletem epair0a && doas ifconfig jdt-a inet 10.91.1.1 -alias &&
+	doas ifconfig jdt-b deletem tap2 deletem epair1a && doas ifconfig jdt-b inet 10.91.2.1 -alias &&
+	doas ifconfig jdt-v addm tap1 ifuntagged tap1 101 addm epair0a ifuntagged epair0a 101 	                     addm tap2 ifuntagged tap2 102 addm epair1a ifuntagged epair1a 102 &&
+	doas ifconfig jdt-v	exit=0	0s
+ten_vlan_gateways	
+	doas ifconfig vlan101 create vlandev jdt-v vlan 101 inet 10.91.1.1/24 up;
+	doas ifconfig vlan102 create vlandev jdt-v vlan 102 inet 10.91.2.1/24 up;
+	doas ifconfig vlan101; doas ifconfig vlan102	exit=0	0s
+ten_vlan_ja_to_a1	doas jexec jdt-ja ping -c 2 -t 2 10.91.1.10 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_vlan_a1_to_ja	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.1.20 >/dev/null 2>&1; echo $?'	exit=0	1s
+ten_vlan_ja_tcp_a1	doas jexec jdt-ja nc -z -w 2 10.91.1.10 22 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_vlan_a1_to_b1	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.2.10 >/dev/null 2>&1; echo $?'	exit=0	2s
+ten_vlan_a1_tcp_b1	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'timeout 3 bash -c "</dev/tcp/10.91.2.10/22" 2>/dev/null; echo $?'	exit=0	0s
+ten_vlan_ja_to_jb	doas jexec jdt-ja ping -c 2 -t 2 10.91.2.20 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_vlan_a1_to_jb	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.2.20 >/dev/null 2>&1; echo $?'	exit=0	1s
+ten_vlan_a1_to_gw_a	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.1.1 >/dev/null 2>&1; echo $?'	exit=0	1s
+ten_vlan_a1_to_gw_b	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.2.1 >/dev/null 2>&1; echo $?'	exit=0	1s
+ten_vlan_a1_tcp_host_ssh_b	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'timeout 3 bash -c "</dev/tcp/10.91.2.1/22" 2>/dev/null; echo $?'	exit=0	1s
+ten_vlan_a1_to_internet	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 2 9.9.9.9 >/dev/null 2>&1; echo $?'	exit=0	3s
+ten_vlan_ja_to_internet	doas jexec jdt-ja ping -c 2 -t 3 9.9.9.9 >/dev/null 2>&1; echo $?	exit=0	0s
+ten_vlan_reset	doas bhyvectl --vm=jdt-a1 --force-reset	exit=0	0s
+ten_vlan_after_reset	echo up after 15s; echo tap now: tap1; doas ifconfig jdt-a | grep member; doas ifconfig jdt-v | grep -A1 member	exit=0	0s
+ten_vlan_after_reset_reach	ssh -n -i /var/tmp/jd-capture-tenant/key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 debian@10.91.1.10 'ping -c 2 -W 1 10.91.1.20 >/dev/null 2>&1; echo to-ja=$?; ping -c 2 -W 1 10.91.1.1 >/dev/null 2>&1; echo to-gw=$?'	exit=0	2s
+ten_scale_create	t0=$(date +%s); for i in $(jot 256); do doas ifconfig bridge create >>/var/tmp/jd-capture-tenant/scale || break; done; echo created $(wc -l < /var/tmp/jd-capture-tenant/scale) in $(( $(date +%s) - t0 ))s; ifconfig -l | wc -w	exit=0	1s
+ten_scale_listing	t0=$(date +%s); ifconfig >/dev/null; echo ifconfig in $(( $(date +%s) - t0 ))s; t0=$(date +%s); ifconfig -g bridge | wc -l; echo listed in $(( $(date +%s) - t0 ))s	exit=0	0s
+ten_scale_destroy	t0=$(date +%s); for b in $(cat /var/tmp/jd-capture-tenant/scale); do doas ifconfig $b destroy; done; echo destroyed in $(( $(date +%s) - t0 ))s	exit=0	3s
+net_tenant_bridge	ifconfig -f inet:cidr jdn249	exit=0	0s
+net_bridge_group	ifconfig -g bridge	exit=0	0s

@@ -2224,6 +2224,110 @@
                 }
             }
         },
+        "/networks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Every tenant network on this host (JD-043): a bridge Jail Deck owns, `jdn\u003ci\u003e`,\nthe host's address on it as the gateway, and a vm-bhyve switch on top named\nafter the network. Read off the host: the name and tenant are in the bridge's\ndescription, the subnet is its address, the members are on it now. `range` is\nthe block subnets are allocated from (`JAILDECK_NETWORK_RANGE`). The default\nnetwork is at `/networks/default` and is not listed here.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "networks"
+                ],
+                "summary": "Tenant networks",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/networks.NetworkList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "The bridges could not be read",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "This Jail Deck has no host access wired",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "A network of its own for a tenant's guests and VNET jails (#118, JD-043), in\nfour audited steps:\n\n1. **create-network-bridge**: a bridge `jdn\u003ci\u003e`, described with the network's name\nand `tenant`, on the lowest /24 of the range that no network has and no\naddress on the host overlaps.\n2. **set-network-address**: the host's address on it, `.1`, the gateway.\n3. **create-vm-switch**: a vm-bhyve manual switch on the bridge, named after the\nnetwork: what a guest's NIC is put on. A VNET jail joins the bridge itself.\n4. **write-pf-anchor** and, when PF is up, **load-pf-anchor**: the network's NAT,\nand the rules that let it reach its own gateway and the outside and nothing\nelse of the host's or of another network's, in the same `jaildeck/vmnet`\nanchor as the default network's, so `pf.conf` needs nothing more.\n\nA step that fails takes back what the earlier ones made: a network without its\nrules would be one another tenant can reach. Measured on isengard: with\nforwarding on and no rules, the host routes one tenant's guests straight into\nanother's.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "networks"
+                ],
+                "summary": "Create a tenant network",
+                "parameters": [
+                    {
+                        "description": "The network",
+                        "name": "network",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/networks.CreateNetworkRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/networks.Network"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a network name, or not a tenant label",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "The name is a switch already, or the range is full",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "A step failed; what it made was taken back",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/networks/default": {
             "get": {
                 "security": [
@@ -2295,6 +2399,115 @@
                     },
                     "500": {
                         "description": "A step failed; done names those before it",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/networks/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "One tenant network, read off the host as the listing reads it (JD-043). `name`\nis its vm-bhyve switch -- what a guest's NIC is put on -- and `bridge` the\ninterface a VNET jail's epair joins; the two are different names on purpose,\nsince an interface name holds 15 characters at most. `default` is not a tenant\nnetwork: the default network is `GET /networks/default`.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "networks"
+                ],
+                "summary": "A tenant network",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Network name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/networks.Network"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No network by that name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Its vm-bhyve switch, its bridge, and its rules (JD-043). **Refused while anything\nis on it**: a guest whose configuration names its switch, running or not, a jail\nwhose configuration names its bridge, or any interface still a member. The\nrefusal names them. `confirm` is the network's name.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "networks"
+                ],
+                "summary": "Destroy a tenant network",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Network name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The network's name again",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/networks.NetworkRemoval"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing or mismatched confirm",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No network by that name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Something is on it",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -4503,7 +4716,7 @@
             "type": "object",
             "properties": {
                 "bridge": {
-                    "description": "Bridge is the bridge the host end of the epair joins, and is required\nfor NetworkVNET. **It is the operator's.** Jail Deck adds and removes\nits own epairs and nothing else: it never creates a bridge, never adds\na physical interface to one, and never edits rc.conf's network\nsettings (JD-017). GET /api/host reports which bridges exist.",
+                    "description": "Bridge is the bridge the host end of the epair joins, and is required\nfor NetworkVNET. It is the operator's, or a tenant network's jdn\u003ci\u003e,\nwhich Jail Deck made on POST /api/networks (JD-043). Either way the jail\nadds and removes its own epair and nothing else: creating a jail never\ncreates a bridge, never adds a physical interface to one, and never\nedits rc.conf's network settings (JD-017). GET /api/host reports which\nbridges exist, and GET /api/networks which are tenant networks'.",
                     "type": "string"
                 },
                 "gateway": {
@@ -5130,6 +5343,17 @@
                 }
             }
         },
+        "networks.CreateNetworkRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "tenant": {
+                    "type": "string"
+                }
+            }
+        },
         "networks.Default": {
             "type": "object",
             "properties": {
@@ -5214,6 +5438,59 @@
                 "usable": {
                     "description": "Usable is whether a guest on the switch reaches the host and no other\nguest: the switch, its address and its private ports are in place.",
                     "type": "boolean"
+                }
+            }
+        },
+        "networks.Network": {
+            "type": "object",
+            "properties": {
+                "bridge": {
+                    "description": "Bridge is the host's interface, jdn\u003ci\u003e: what a VNET jail's epair joins.",
+                    "type": "string"
+                },
+                "gateway": {
+                    "type": "string"
+                },
+                "members": {
+                    "description": "Members are the interfaces on the bridge now: running guests' taps and\nVNET jails' epairs.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "description": "Name is the vm-bhyve switch's: what a guest's NIC is put on.",
+                    "type": "string"
+                },
+                "subnet": {
+                    "type": "string"
+                },
+                "tenant": {
+                    "description": "Tenant is the client's own label for whose network it is, if it gave\none.",
+                    "type": "string"
+                }
+            }
+        },
+        "networks.NetworkList": {
+            "type": "object",
+            "properties": {
+                "networks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/networks.Network"
+                    }
+                },
+                "range": {
+                    "description": "Range is the block tenant networks' subnets are allocated from, one\n/24 each (JAILDECK_NETWORK_RANGE).",
+                    "type": "string"
+                }
+            }
+        },
+        "networks.NetworkRemoval": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
                 }
             }
         },

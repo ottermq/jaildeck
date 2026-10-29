@@ -58,9 +58,10 @@ func newTestApp(t *testing.T) (*App, error) {
 		StateDir: filepath.Join(root, "state"),
 		AuditLog: filepath.Join(root, "log", "audit.log"),
 
-		VMSwitch:    "jaildeck",
-		VMAddress:   "10.88.0.1/24",
-		PFAnchorDir: filepath.Join(root, "pf"),
+		VMSwitch:     "jaildeck",
+		VMAddress:    "10.88.0.1/24",
+		PFAnchorDir:  filepath.Join(root, "pf"),
+		NetworkRange: "10.92.0.0/16",
 	}
 	hash, err := auth.Hash("test-password")
 	if err != nil {

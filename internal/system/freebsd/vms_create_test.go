@@ -104,6 +104,43 @@ func TestVMCreateWithNoKeysAndDHCPPassesNeither(t *testing.T) {
 	}
 }
 
+// A console password needs Jail Deck's own user-data, passed with -u in
+// place of -k: vm create takes one or the other, and copies -u's file as it is.
+func TestVMCreateWithAPasswordPassesItsOwnUserData(t *testing.T) {
+	a, runner, _, scratch := createAdapter(t, nil)
+	userData := filepath.Join(scratch, "jaildeck-jd-live-pw.user-data")
+	want := "vm create -t jaildeck -c 1 -m 1G -s 3221225472 -C -u " + userData + " jd-live-pw"
+	runner.replay.captures = map[string]string{want: "vm_mk_create"}
+	var seen string
+	a.runner = runnerFunc(func(ctx context.Context, cmd system.Command) (system.CommandResult, error) {
+		if cmd.String() == want {
+			b, _ := os.ReadFile(userData)
+			seen = string(b)
+		}
+		return runner.Run(ctx, cmd)
+	})
+	spec := vms.CreateSpec{Name: "jd-live-pw", CPU: 1, Memory: "1G", Disk: "3221225472",
+		SSHKeys: []string{"ssh-ed25519 <key> jd-live-pw"}, PasswordHash: "$2a$10$<hash>"}
+	command, err := a.VMCreate(context.Background(), spec)
+	if err != nil || command != want {
+		t.Fatalf("VMCreate = %q, %v\nwant %q", command, err, want)
+	}
+	if seen != captured(t, "vm_pw_user_data") {
+		t.Errorf("vm create read user-data\n%s\nwant what the guest booted with\n%s", seen, captured(t, "vm_pw_user_data"))
+	}
+	if _, err := os.Stat(userData); !os.IsNotExist(err) {
+		t.Error("the user-data file outlived vm create")
+	}
+}
+
+// With no key, the password still goes in, and no empty key list does.
+func TestCloudConfigWithNoKeys(t *testing.T) {
+	got := cloudConfig(vms.CreateSpec{PasswordHash: "$2a$10$<hash>"})
+	if strings.Contains(got, "ssh_authorized_keys") || !strings.Contains(got, "password: \"$2a$10$<hash>\"\n") {
+		t.Errorf("cloudConfig = %q", got)
+	}
+}
+
 func TestVMCreateSaysWhatVMBhyveRefused(t *testing.T) {
 	a, runner, _, _ := createAdapter(t, nil)
 	runner.replay.captures = map[string]string{"vm create -t jaildeck -c 1 -m 1G -s 8G -C jd-cap-made": "vm_mk_create_taken"}

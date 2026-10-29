@@ -106,6 +106,7 @@ export interface CreateRequest {
     switch?: string
     network?: { address: string, gateway?: string, nameservers?: string[] }
     ssh_keys?: string[]
+    console_password?: string
     start?: boolean
 }
 

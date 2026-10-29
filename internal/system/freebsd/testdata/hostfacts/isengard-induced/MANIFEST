@@ -315,3 +315,4 @@ net_tenant_bridge	ifconfig -f inet:cidr jdn249	exit=0	0s
 net_bridge_group	ifconfig -g bridge	exit=0	0s
 top_switch_list	vm switch list (#128, capture-topology-induced.sh)	exit=0
 top_ifconfig	ifconfig -a -f inet:cidr, physical interfaces' addresses replaced and tunnels left out (#128, capture-topology-induced.sh)	exit=0
+vm_pw_user_data	cat /vm/jd-live-pw/.cloud-init/user-data (#152; key and hash replaced by <key> and <hash>)	exit=0	0s

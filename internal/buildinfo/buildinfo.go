@@ -19,3 +19,26 @@ func Version() string {
 	}
 	return "dev"
 }
+
+// Commit is the git revision the Go toolchain stamped into the binary, and
+// whether the tree had uncommitted changes. Empty when it stamped none: a
+// build outside a checkout, or with -buildvcs=false.
+func Commit() (revision string, modified bool) {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "", false
+	}
+	return commitOf(info.Settings)
+}
+
+func commitOf(settings []debug.BuildSetting) (revision string, modified bool) {
+	for _, s := range settings {
+		switch s.Key {
+		case "vcs.revision":
+			revision = s.Value
+		case "vcs.modified":
+			modified = s.Value == "true"
+		}
+	}
+	return revision, modified
+}

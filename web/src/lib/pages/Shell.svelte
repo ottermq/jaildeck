@@ -2,6 +2,7 @@
 import { onMount } from 'svelte'
 import { route, navigate, onNavClick, match } from '../router.svelte'
 import { auth, logout } from '../stores/auth.svelte'
+import VersionBadge from '../components/VersionBadge.svelte'
 import Dashboard from './Dashboard.svelte'
 import Jails from './Jails.svelte'
 import Jail from './Jail.svelte'
@@ -63,6 +64,7 @@ onMount(() => {
             <span class="brand">
                 <span class="brand__accent">J</span>ail<span class="brand__accent">D</span>eck
             </span>
+            <VersionBadge />
         </div>
 
         <nav class="rail__nav" aria-label="Sections">
@@ -153,6 +155,15 @@ onMount(() => {
 .rail__brand {
     padding: var(--space-5) var(--space-4) var(--space-4);
     border-bottom: 1px solid var(--rail-border);
+}
+
+/* The version sits under the logo here, and beside it in the narrow top
+   bar (#136). */
+.rail__brand {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
 }
 
 .brand {
@@ -267,7 +278,11 @@ onMount(() => {
 
     .rail__brand {
         padding: var(--space-3) var(--space-4);
+        flex-direction: row;
+        align-items: baseline;
+        gap: var(--space-3);
     }
+
 
     /* Seven sections are wider than a phone. The row scrolls on its own
        rather than widening the whole page past the viewport. */

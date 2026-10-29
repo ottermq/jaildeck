@@ -63,11 +63,12 @@ func (a *Adapter) VMSwitches(ctx context.Context) ([]string, error) {
 // VMCreate writes Jail Deck's template if it is not already there as it
 // should be, then runs
 //
-//	vm create -t jaildeck -c <cpu> -m <memory> -s <disk> -C [-k <keys>] [-n <netconfig>] <name>
+//	vm create -t jaildeck -c <cpu> -m <memory> -s <disk> -C [-k <keys> | -u <user-data>] [-n <netconfig>] <name>
 //
 // vm-bhyve writes the cloud-init seed's files from these at once, and builds
-// seed.iso from them at the guest's first start, measured. The keys file
-// lives only for the command: vm create copies the keys into the seed.
+// seed.iso from them at the guest's first start, measured. The keys file, or
+// the user-data a console password needs, lives only for the command: vm
+// create copies it into the seed.
 func (a *Adapter) VMCreate(ctx context.Context, spec vms.CreateSpec) (string, error) {
 	dir, _, err := a.vmDatastore(ctx)
 	if err != nil {
@@ -83,7 +84,17 @@ func (a *Adapter) VMCreate(ctx context.Context, spec vms.CreateSpec) (string, er
 
 	args := []string{"create", "-t", vmTemplateName, "-c", strconv.Itoa(spec.CPU), "-m", spec.Memory,
 		"-s", spec.Disk, "-C"}
-	if len(spec.SSHKeys) > 0 {
+	switch {
+	case spec.PasswordHash != "":
+		// vm create takes -u or -k, not both ("-u and -k are mutually
+		// exclusive", read in vm-core), and copies -u's file as it is.
+		userData := filepath.Join(a.vmScratchDir, "jaildeck-"+spec.Name+".user-data")
+		if err := os.WriteFile(userData, []byte(cloudConfig(spec)), 0o600); err != nil {
+			return "", fmt.Errorf("writing the guest's user-data for vm create: %w", err)
+		}
+		defer os.Remove(userData)
+		args = append(args, "-u", userData)
+	case len(spec.SSHKeys) > 0:
 		keys := filepath.Join(a.vmScratchDir, "jaildeck-"+spec.Name+".keys")
 		if err := os.WriteFile(keys, []byte(strings.Join(spec.SSHKeys, "\n")+"\n"), 0o600); err != nil {
 			return "", fmt.Errorf("writing the guest's SSH keys for vm create: %w", err)
@@ -96,6 +107,29 @@ func (a *Adapter) VMCreate(ctx context.Context, spec vms.CreateSpec) (string, er
 	}
 	args = append(args, spec.Name)
 	return a.vmLifecycle(ctx, system.Command{Name: "vm", Args: args, Timeout: vmCreateTimeout})
+}
+
+// cloudConfig is the user-data vm-bhyve would write for the keys
+// (core::create_cloud_init), with the console password beside them:
+//
+//   - password is the default user's, whatever the image calls it, and
+//     cloud-init takes it as a hash because it looks like one ($2a$...);
+//   - chpasswd's expire: false, or the first login would have to change it;
+//   - ssh_pwauth: false, so it opens the console and not SSH.
+//
+// Every value is quoted. A key was checked to be one authorized_keys line,
+// and a bcrypt hash is [./$A-Za-z0-9].
+func cloudConfig(spec vms.CreateSpec) string {
+	var b strings.Builder
+	b.WriteString("#cloud-config\nresize_rootfs: True\nmanage_etc_hosts: localhost\n")
+	if len(spec.SSHKeys) > 0 {
+		b.WriteString("ssh_authorized_keys:\n")
+		for _, key := range spec.SSHKeys {
+			fmt.Fprintf(&b, "  - %q\n", key)
+		}
+	}
+	fmt.Fprintf(&b, "password: %q\nchpasswd:\n  expire: false\nssh_pwauth: false\n", spec.PasswordHash)
+	return b.String()
 }
 
 // netconfig is vm create -n's form: key=value pairs separated by ';'. The

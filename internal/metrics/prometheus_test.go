@@ -243,6 +243,16 @@ func TestExpositionOfAnEmptyHostIsStillWellFormed(t *testing.T) {
 	requireLine(t, body, "jaildeck_jails_running 0")
 }
 
+func TestBuildInfo(t *testing.T) {
+	report := aReport()
+	report.Build = Build{Version: "v0.19.0", Commit: "e9960a1"}
+	requireLine(t, render(t, report), `jaildeck_build_info{version="v0.19.0",commit="e9960a1"} 1`)
+	// A report with no build said, as a test's, has no line for it.
+	if body := render(t, aReport()); strings.Contains(body, "jaildeck_build_info") {
+		t.Error("jaildeck_build_info with no version")
+	}
+}
+
 // --- the numbers -------------------------------------------------------
 
 func TestHostMetrics(t *testing.T) {

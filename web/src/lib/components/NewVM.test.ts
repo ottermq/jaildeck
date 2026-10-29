@@ -90,6 +90,17 @@ describe('creating a virtual machine', () => {
         expect(sent[0]).toEqual({ name: 'web', image: 'debian-13', cpu: 1, memory: '1G', start: true, ssh_keys: [], switch: 'jd-livesw' })
     })
 
+    it('sends a console password as typed, spaces and all', async () => {
+        form()
+        await screen.findByLabelText('Image')
+        await type('Name', 'web')
+        await type('Console password', ' correct horse ')
+        expect(screen.getByLabelText('Console password').getAttribute('type')).toBe('password')
+        await fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+        await waitFor(() => expect(sent.length).toBe(1))
+        expect(sent[0].console_password).toBe(' correct horse ')
+    })
+
     it('sends a pin as host CPU numbers', async () => {
         form()
         await screen.findByLabelText('Image')
@@ -127,9 +138,10 @@ describe('creating a virtual machine', () => {
         expect(sent[0].start).toBe(false)
     })
 
-    it('says a guest without a key is reachable only on its console', async () => {
+    it('says a guest without a key or a password has no way in', async () => {
         form()
-        expect(await screen.findByText(/without a key the guest is reachable only on its console/)).toBeTruthy()
+        expect(await screen.findByText(/without a key or a password there is no way in/)).toBeTruthy()
+        expect(screen.queryByText(/reachable only on its console/)).toBeNull()
     })
 
     it("shows the server's refusal and keeps the form", async () => {

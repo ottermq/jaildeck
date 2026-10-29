@@ -1,0 +1,2 @@
+jail:jdcap119:memoryuse:log=3221225472
+jail:jdcap119:maxproc:deny=100

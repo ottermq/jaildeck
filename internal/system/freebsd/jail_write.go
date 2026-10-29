@@ -162,6 +162,61 @@ func (a *Adapter) ReadConfig(_ context.Context, name string) (string, error) {
 	return string(content), nil
 }
 
+// ReplaceConfig rewrites a jail's own stanza, and only while it still says
+// old (#119).
+//
+// Written beside it under a name no reader takes -- jail(8)'s .include and
+// the discovery glob both match *.conf -- and renamed over it, so a reader
+// sees the old file or the new one and never half of either. The mode is the
+// file's own, which an operator may have changed. The compare and the rename
+// are not one step, so an edit landing between them is lost; a jail's limits
+// changed through the API while its stanza is being edited by hand is the
+// whole of that window.
+func (a *Adapter) ReplaceConfig(_ context.Context, name, old, content string) (string, error) {
+	path, err := a.confPath(name)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return path, common.NewAppError(http.StatusInternalServerError, fmt.Sprintf(
+			"could not read %s: %s", path, err))
+	}
+	have, err := os.ReadFile(path)
+	if err != nil {
+		return path, common.NewAppError(http.StatusInternalServerError, fmt.Sprintf(
+			"could not read %s: %s", path, err))
+	}
+	if string(have) != old {
+		return path, common.NewAppError(http.StatusConflict, fmt.Sprintf(
+			"%s changed while Jail Deck was changing it, and it will not overwrite that change; "+
+				"read the jail again and repeat the request", path))
+	}
+
+	temp := path + ".jaildeck.tmp"
+	file, err := os.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	if err != nil {
+		return path, common.NewAppError(http.StatusInternalServerError, fmt.Sprintf(
+			"could not create %s: %s", temp, err))
+	}
+	_, writeErr := file.WriteString(content)
+	if writeErr == nil {
+		writeErr = file.Sync()
+	}
+	if closeErr := file.Close(); writeErr == nil {
+		writeErr = closeErr
+	}
+	if writeErr == nil {
+		writeErr = os.Rename(temp, path)
+	}
+	if writeErr != nil {
+		os.Remove(temp)
+		return path, common.NewAppError(http.StatusInternalServerError, fmt.Sprintf(
+			"could not write %s: %s", path, writeErr))
+	}
+	return path, nil
+}
+
 // Autostarts reports whether rc.conf's jail_list names this jail.
 //
 //	sysrc -n jail_list
@@ -189,6 +244,7 @@ var (
 	_ jails.ConfigWriter    = (*Adapter)(nil)
 	_ jails.ConfigRemover   = (*Adapter)(nil)
 	_ jails.ConfigReader    = (*Adapter)(nil)
+	_ jails.ConfigReplacer  = (*Adapter)(nil)
 	_ jails.Autostarter     = (*Adapter)(nil)
 	_ jails.AutostartSource = (*Adapter)(nil)
 )

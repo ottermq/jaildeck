@@ -232,6 +232,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/jails/{name}/console` | a shell in it, over a WebSocket; audited, nothing typed recorded |
 | `PUT /api/jails/{name}/datasets/{child}` | create a child dataset, or converge an existing one |
 | `PATCH /api/jails/{name}/properties` | tag the jail's own dataset |
+| `PATCH /api/jails/{name}/limits` | change a jail's resource limits: live when it runs, and in its stanza; `null` removes one |
 | `PATCH /api/jails/{name}/datasets/{child}/properties` | tag one of its children |
 | `GET /api/jails/{name}/snapshots` | every snapshot of its datasets, oldest first |
 | `PUT /api/jails/{name}/snapshots/{snapshot}` | snapshot the jail and its children, atomically |

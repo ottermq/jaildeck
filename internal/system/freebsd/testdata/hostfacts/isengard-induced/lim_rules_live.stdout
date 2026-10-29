@@ -1,0 +1,2 @@
+jail:jdcap119:pcpu:deny=50
+jail:jdcap119:openfiles:deny=1000

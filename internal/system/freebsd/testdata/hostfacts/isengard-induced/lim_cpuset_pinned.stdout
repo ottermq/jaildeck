@@ -1,0 +1,8 @@
+jail 66 mask: 1
+jail 66 domain policy: first-touch mask: 0
+pid 10360 mask: 1
+pid 10360 domain policy: first-touch mask: 0
+  PID C
+10360 1
+  PID C
+10360 1

@@ -349,3 +349,47 @@ ret_set_mounted_state	zfs get -H -o name,property,value,source mountpoint,mounte
 ret_inherit_mounted	doas zfs inherit mountpoint tank/jd-cap-121/containers/j2/pg	exit=0
 ret_inherit_mounted_state	zfs get -H -o name,property,value,source mountpoint,mounted,jaildeck:mountpoint tank/jd-cap-121/containers/j2/pg; mount | grep /var/tmp/jd-cap-121 | sort	exit=0
 vm_pw_user_data	cat /vm/jd-live-pw/.cloud-init/user-data (#152; key and hash replaced by <key> and <hash>)	exit=0	0s
+lim_start	doas jail -c name=jdcap119 path=/ host.hostname=jdcap119 ip4=disable ip6=disable persist	exit=0
+lim_add_1g	doas rctl -a jail:jdcap119:memoryuse:deny=1G	exit=0
+lim_add_2g	doas rctl -a jail:jdcap119:memoryuse:deny=2G	exit=0
+lim_rules_after_2g	doas rctl jail:jdcap119	exit=0
+lim_add_log	doas rctl -a jail:jdcap119:memoryuse:log=3G	exit=0
+lim_rules_other_action	doas rctl jail:jdcap119	exit=0
+lim_add_maxproc	doas rctl -a jail:jdcap119:maxproc:deny=100	exit=0
+lim_remove_deny_only	doas rctl -a jail:jdcap119:memoryuse:deny=1G && doas rctl -a jail:jdcap119:memoryuse:log=3G && doas rctl -r jail:jdcap119:memoryuse:deny	exit=0
+lim_rules_after_remove_deny_only	doas rctl jail:jdcap119	exit=0
+lim_remove_memoryuse	doas rctl -r jail:jdcap119:memoryuse	exit=0
+lim_rules_after_remove_one	doas rctl jail:jdcap119	exit=0
+lim_remove_absent	doas rctl -r jail:jdcap119:openfiles	exit=1
+lim_remove_all	doas rctl -r jail:jdcap119	exit=0
+lim_rules_after_remove_all	doas rctl jail:jdcap119	exit=0
+lim_usage_hogs	doas rctl -u jail:jdcap119 | grep -E '^(memoryuse|maxproc|openfiles|pcpu)='	exit=0
+lim_mem_below	doas rctl -a jail:jdcap119:memoryuse:deny=32M	exit=0
+lim_mem_below_alive	doas pgrep -lj jdcap119 | sort -k2	exit=0
+lim_mem_below_new_alloc	doas jexec jdcap119 /bin/sh -c 'x=$(head -c 16777216 /dev/zero | tr "\\0" a); echo allocated ${#x}'	exit=0
+lim_mem_below_new_proc	doas jexec jdcap119 /bin/sh -c '/bin/echo forked inside; /bin/echo and again'	exit=0
+lim_mem_raise	doas rctl -a jail:jdcap119:memoryuse:deny=1G	exit=0
+lim_mem_raised_new_alloc	doas jexec jdcap119 /bin/sh -c 'x=$(head -c 16777216 /dev/zero | tr "\\0" a); echo allocated ${#x}'	exit=0
+lim_mem_clear	doas rctl -r jail:jdcap119:memoryuse	exit=0
+lim_usage_procs	doas rctl -u jail:jdcap119 | grep -E '^(memoryuse|maxproc|openfiles|pcpu)='	exit=0
+lim_maxproc_below	doas rctl -a jail:jdcap119:maxproc:deny=1	exit=0
+lim_maxproc_below_alive	doas pgrep -lj jdcap119 | sort -k2	exit=0
+lim_maxproc_below_new	doas jexec jdcap119 /bin/sh -c '/bin/echo forked inside; /bin/echo and again'	exit=2
+lim_maxproc_clear	doas rctl -r jail:jdcap119:maxproc	exit=0
+lim_openfiles	doas rctl -a jail:jdcap119:openfiles:deny=1000	exit=0
+lim_pcpu	doas rctl -a jail:jdcap119:pcpu:deny=50	exit=0
+lim_usage_pcpu	doas rctl -u jail:jdcap119 | grep -E '^(memoryuse|maxproc|openfiles|pcpu)='	exit=0
+lim_pcpu_spinner	ps -o pid,%cpu,state,command -J jdcap119 | grep 'while :' | grep -v grep	exit=0
+lim_rules_live	doas rctl jail:jdcap119	exit=0
+lim_cpuset_before	doas cpuset -g -j jdcap119; doas cpuset -g -p 10360	exit=0
+lim_cpuset_pin	doas cpuset -l 1 -j jdcap119	exit=0
+lim_cpuset_pinned	doas cpuset -g -j jdcap119; doas cpuset -g -p 10360; sleep 2; ps -o pid,cpu,lastcpu -p 10360 2>/dev/null || ps -o pid,cpu -p 10360	exit=0
+lim_cpuset_all	doas cpuset -l all -j jdcap119	exit=0
+lim_cpuset_range	doas cpuset -l 0-15 -j jdcap119	exit=0
+lim_cpuset_unpinned	doas cpuset -g -j jdcap119; doas cpuset -g -p 10360	exit=0
+lim_cpuset_too_many	doas cpuset -l 16 -j jdcap119	exit=1
+lim_stopped_add	doas rctl -a jail:jdcap119:memoryuse:deny=1G	exit=0
+lim_rules_stopped	doas rctl jail:jdcap119	exit=0
+lim_restart	doas jail -c name=jdcap119 path=/ host.hostname=jdcap119 ip4=disable ip6=disable persist	exit=0
+lim_restart_poststart_twice	doas rctl -a jail:jdcap119:memoryuse:deny=1G	exit=0
+lim_rules_restarted	doas rctl jail:jdcap119	exit=0

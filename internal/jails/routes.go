@@ -37,6 +37,10 @@ func RegisterJailRoutes(r chi.Router, h *JailHandler, extra ...func(chi.Router))
 			// whole set would strip a tag another tool had set.
 			r.Patch("/properties", h.SetProperties)
 
+			// Resource limits, changed on the jail that is there (#119):
+			// live when it runs, and in its stanza for the next start.
+			r.Patch("/limits", h.SetLimits)
+
 			// Snapshots of the jail's own dataset are taken, and destroyed,
 			// together with its children's: one zfs snapshot -r at one point
 			// in time, which is what an upgrade path needs (JD-007). Rollback

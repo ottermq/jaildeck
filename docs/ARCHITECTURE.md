@@ -103,7 +103,8 @@ internal/
   images/                       # bounded context: VM image templates, zvols in vm-bhyve's datastore (JD-037)
   firewall/                     # bounded context: PF, read-only (JD-020, JD-034)
   console/                      # the browser console (JD-042): sessions, their audit, the WebSocket bridge
-  networks/                     # bounded context: the default VM network (JD-040) — a switch, forwarding
+  names/                        # suggested names for new jails and guests, adjective-animal (#148)
+  networks/                     # bounded context: the default VM network (JD-040) and tenant networks (JD-043) — bridges, switches, forwarding
                                  # and the jaildeck/vmnet anchor file, reported part by part with owners
 
   auth/                         # bounded context: Authentication
@@ -324,8 +325,11 @@ POST   /api/vms                      # create from an image (JD-038), pinned (JD
 PUT    /api/vms/{name}               # idempotent create, or the differences (JD-041)
 GET    /api/vms/{name}/console       # WebSocket: the guest's serial console, raw (JD-042)
 DELETE /api/vms/{name}
+GET    /api/networks                 # tenant networks (JD-043); POST creates one
+GET    /api/networks/{name}          # one; DELETE destroys it, empty, with confirm
 GET    /api/networks/default         # the default VM network, part by part (JD-040)
 PUT    /api/networks/default         # ensure Jail Deck's parts of it, idempotent
+GET    /api/names/suggest            # a free adjective-animal name for a new jail or guest (#148)
 GET    /api/vm-images                # image templates and their sources (JD-037)
 PUT    /api/vm-images/{name}         # 202, then watch it (JD-008)
 DELETE /api/vm-images/{name}

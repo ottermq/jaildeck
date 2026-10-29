@@ -12,10 +12,27 @@ import (
 
 // Shells is a fake jail shell: it echoes what is typed, answers a line with
 // the little a test or a page needs -- hostname, stty size, exit -- and ends
-// when told to exit or hung up.
-type Shells struct{}
+// when told to exit or hung up. Holders are other readers on a guest's
+// console device, none unless a test says so.
+type Shells struct {
+	mu      sync.Mutex
+	holders map[string][]console.Holder
+}
 
-func NewShells() *Shells { return &Shells{} }
+func NewShells() *Shells { return &Shells{holders: map[string][]console.Holder{}} }
+
+// Hold stands in for a vm console started from a shell on the host.
+func (s *Shells) Hold(device string, holders ...console.Holder) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.holders[device] = holders
+}
+
+func (s *Shells) ConsoleHolders(_ context.Context, device string) ([]console.Holder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]console.Holder(nil), s.holders[device]...), nil
+}
 
 func (s *Shells) JailShell(_ context.Context, jail string, cols, rows uint16) (console.Terminal, error) {
 	t := newFakeTerminal(jail, cols, rows, "root@"+jail+":/ # ")

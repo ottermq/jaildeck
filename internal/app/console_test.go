@@ -151,3 +151,28 @@ func TestAGuestsConsoleThroughTheRouter(t *testing.T) {
 		t.Errorf("closed with %q after %s, want guest-stopped at once", reason, time.Since(t0))
 	}
 }
+
+// A suggested name through the router: free on the fake host, and an
+// adjective and an animal (#148).
+func TestANameIsSuggested(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatalf("create test app: %v", err)
+	}
+	router := a.Routes(testAssets())
+	cookies := login(t, router)
+	rec := do(t, router, http.MethodGet, "/api/names/suggest", cookies, nil)
+	var got struct{ Name string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || rec.Code != http.StatusOK ||
+		strings.Count(got.Name, "-") != 1 {
+		t.Fatalf("GET /api/names/suggest: %d %s", rec.Code, rec.Body)
+	}
+	for _, path := range []string{"/api/jails/" + got.Name, "/api/vms/" + got.Name} {
+		if rec := do(t, router, http.MethodGet, path, cookies, nil); rec.Code != http.StatusNotFound {
+			t.Errorf("%s answered %d: the suggestion is in use", path, rec.Code)
+		}
+	}
+	if rec := do(t, router, http.MethodGet, "/api/names/suggest", nil, nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("without a login: %d, want 401", rec.Code)
+	}
+}

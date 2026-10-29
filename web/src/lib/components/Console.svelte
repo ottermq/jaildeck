@@ -7,7 +7,7 @@ import type { FitAddon } from '@xterm/addon-fit'
 // terminal's bytes, text frames JSON control -- resize from here, closed from
 // the server. xterm.js is loaded only when a console opens, so no other page
 // pays for it.
-let { path, onclosed }: { path: string, onclosed?: (reason: string) => void } = $props()
+let { path, onclosed }: { path: string, onclosed?: (reason: string, detail: string) => void } = $props()
 
 let host: HTMLDivElement
 let term: Terminal | null = null
@@ -15,6 +15,7 @@ let fit: FitAddon | null = null
 let socket: WebSocket | null = null
 let observer: ResizeObserver | null = null
 let reason = ''
+let detail = ''
 let state = $state<'loading' | 'open' | 'closed'>('loading')
 
 const encoder = new TextEncoder()
@@ -49,7 +50,10 @@ onMount(async () => {
         if (typeof event.data === 'string') {
             try {
                 const message = JSON.parse(event.data)
-                if (message.type === 'closed') reason = message.reason ?? ''
+                if (message.type === 'closed') {
+                    reason = message.reason ?? ''
+                    detail = message.detail ?? ''
+                }
             } catch {
                 // Not ours to understand; nothing to do.
             }
@@ -59,7 +63,7 @@ onMount(async () => {
     }
     socket.onclose = () => {
         state = 'closed'
-        onclosed?.(reason)
+        onclosed?.(reason, detail)
     }
     term.onData(data => send(encoder.encode(data)))
     term.onResize(({ cols, rows }) => send(JSON.stringify({ type: 'resize', cols, rows })))

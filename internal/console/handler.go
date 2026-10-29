@@ -3,6 +3,7 @@ package console
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -53,6 +54,9 @@ type control struct {
 	Cols   uint16 `json:"cols,omitempty"`
 	Rows   uint16 `json:"rows,omitempty"`
 	Reason string `json:"reason,omitempty"`
+	// Detail says more than the reason can, when there is more to say:
+	// which process shares the console, and how to close it.
+	Detail string `json:"detail,omitempty"`
 }
 
 // Jail opens a shell in a running jail.
@@ -126,6 +130,13 @@ func (h *Handler) Jail(w http.ResponseWriter, r *http.Request) {
 // @Description  root past an exclusive lock, measured. **Closing the console does not log anyone
 // @Description  out of the guest**: a login on the serial line stays logged in.
 // @Description
+// @Description  **Another reader on the device** -- a `vm console` left open in a shell -- would get
+// @Description  half of every line the guest prints, and this console the other half. The
+// @Description  connection is then accepted and closed at once with `{"type":"closed","reason":
+// @Description  "console-shared","detail":"..."}` naming the process, rather than refused: a
+// @Description  browser cannot read a refused handshake. One that appears during a session ends it
+// @Description  the same way.
+// @Description
 // @Description  The session ends as a jail's does, and also with `guest-stopped` when the guest
 // @Description  is no longer running (looked at every 5 s: a powered-off guest gives the device's
 // @Description  reader nothing at all), or `console-closed` when the device ends. Audited as
@@ -150,11 +161,31 @@ func (h *Handler) VM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, err := h.service.OpenVM(r.Context(), chi.URLParam(r, "name"), h.principal(r))
+	var shared *SharedError
+	if errors.As(err, &shared) {
+		h.refuse(w, r, ReasonConsoleShared, shared.Message)
+		return
+	}
 	if err != nil {
 		common.HandlerError(w, err)
 		return
 	}
 	h.serve(w, r, session)
+}
+
+// refuse accepts the connection only to close it at once with a reason and
+// what to do: the one refusal a page must be able to read (#153).
+func (h *Handler) refuse(w http.ResponseWriter, r *http.Request, reason, detail string) {
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: h.origins})
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 2*time.Second)
+	defer cancel()
+	if closing, err := json.Marshal(control{Type: "closed", Reason: reason, Detail: detail}); err == nil {
+		_ = conn.Write(ctx, websocket.MessageText, closing)
+	}
+	_ = conn.Close(websocket.StatusPolicyViolation, reason)
 }
 
 // serve upgrades the request and runs the session until something ends it.

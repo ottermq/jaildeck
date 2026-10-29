@@ -1,0 +1,10 @@
+up after 15s
+tap now: tap1
+	member: epair1a flags=143<LEARNING,DISCOVER,AUTOEDGE,AUTOPTP>
+	        port 15 priority 128 path cost 2000 vlan protocol 802.1q untagged 102
+	member: tap2 flags=143<LEARNING,DISCOVER,AUTOEDGE,AUTOPTP>
+	        port 11 priority 128 path cost 2000000 vlan protocol 802.1q untagged 102
+	member: epair0a flags=143<LEARNING,DISCOVER,AUTOEDGE,AUTOPTP>
+	        port 12 priority 128 path cost 2000 vlan protocol 802.1q untagged 101
+	member: tap1 flags=143<LEARNING,DISCOVER,AUTOEDGE,AUTOPTP>
+	        port 10 priority 128 path cost 2000000 vlan protocol 802.1q untagged 101

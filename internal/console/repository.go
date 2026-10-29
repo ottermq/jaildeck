@@ -28,6 +28,17 @@ type Shells interface {
 	// opens, it echoed the guest's own output back to it as input (measured).
 	// A serial line has no size, so Resize does nothing.
 	VMConsole(ctx context.Context, device string) (Terminal, error)
+	// ConsoleHolders are the processes other than Jail Deck itself that
+	// have the device open (fstat). A second reader splits the guest's
+	// output with the first, each getting fragments (#153), and TIOCEXCL
+	// cannot keep root out (JD-042), so this is how it is found.
+	ConsoleHolders(ctx context.Context, device string) ([]Holder, error)
+}
+
+// Holder is a process with a console device open: "cu", pid 38812.
+type Holder struct {
+	Command string `json:"command"`
+	PID     int    `json:"pid"`
 }
 
 // ErrNotRunning is a jail that is not running: there is nothing to attach to.

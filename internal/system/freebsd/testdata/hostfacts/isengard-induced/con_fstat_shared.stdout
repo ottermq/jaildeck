@@ -1,0 +1,4 @@
+USER     CMD          PID   FD MOUNT      INUM MODE         SZ|DV R/W NAME
+root     cu         38812    3 /dev        392 crw--w----  nmdm-pleasant-platypus.1B rw  /dev/nmdm-pleasant-platypus.1B
+root     cu         38813    3 /dev        392 crw--w----  nmdm-pleasant-platypus.1B rw  /dev/nmdm-pleasant-platypus.1B
+root     jaildeck   21543    9 /dev        392 crw--w----  nmdm-pleasant-platypus.1B rw  /dev/nmdm-pleasant-platypus.1B

@@ -17,20 +17,23 @@ import (
 	"github.com/ottermq/jaildeck/internal/system"
 )
 
-// Settings is the default network as configured (JAILDECK_VM_*).
+// Settings is the default network as configured (JAILDECK_VM_*), and the
+// range tenant networks are allocated from (JAILDECK_NETWORK_RANGE, JD-043).
 type Settings struct {
 	Switch    string
 	Address   string
 	Egress    string
 	AnchorDir string
+	Range     string
 }
 
 type Service struct {
 	system   System
 	audit    audit.Logger
 	settings Settings
-	// ensureMu serialises ensures: two at once would both find the switch
-	// missing and both create it.
+	// ensureMu serialises everything that writes: two ensures at once would
+	// both find the switch missing, two creates could take the same /24, and
+	// the default network and the tenant networks share one anchor file.
 	ensureMu sync.Mutex
 }
 
@@ -81,11 +84,59 @@ func (s *Service) egress(ctx context.Context) (string, error) {
 	return s.system.DefaultRouteInterface(ctx)
 }
 
-// anchorContent is the anchor file Jail Deck writes for the network.
-func anchorContent(subnet netip.Prefix, egress string) string {
-	return "# Written by Jail Deck: NAT for the default VM network (JD-040).\n" +
-		"# Rewritten when it differs; edits here do not last.\n" +
-		fmt.Sprintf("nat on %s inet from %s to any -> (%s)\n", egress, subnet, egress)
+// anchorContent is the anchor file Jail Deck writes: NAT for the default
+// network (JD-040) and, for each tenant network, its NAT and the rules that
+// keep it apart (JD-043). With no tenant network it is the default network's
+// file exactly as it has always been, so a host that set the default network
+// up does not see it as changed.
+//
+// Every NAT rule comes before every filter rule: pfctl refuses a file that
+// puts translation after filtering ("Rules must be in order"), measured when
+// a second network's NAT followed the first one's rules. For each tenant
+// network, the pass to its own gateway comes before the block of everything
+// else the host has ("self") and of every other VM network: measured, the
+// block first took the gateway with it, and with it the host's own traffic to
+// the guests. The default network reaches no tenant network.
+func anchorContent(subnet netip.Prefix, defaultBridge, egress string, tenants []Network) string {
+	var b strings.Builder
+	b.WriteString("# Written by Jail Deck: NAT for the default VM network (JD-040).\n" +
+		"# Rewritten when it differs; edits here do not last.\n")
+	fmt.Fprintf(&b, "nat on %s inet from %s to any -> (%s)\n", egress, subnet, egress)
+	all := []string{subnet.String()}
+	listed := make([]Network, 0, len(tenants))
+	for _, t := range tenants {
+		if t.Subnet != "" {
+			all = append(all, t.Subnet)
+			listed = append(listed, t)
+		}
+	}
+	if len(listed) == 0 {
+		return b.String()
+	}
+	b.WriteString("\n# Tenant networks (JD-043): each reaches its own gateway and the outside,\n" +
+		"# and nothing else of the host's or of another network's. NAT first:\n" +
+		"# pfctl takes translation before filtering, or not at all.\n")
+	for _, t := range listed {
+		fmt.Fprintf(&b, "nat on %s inet from %s to any -> (%s)\n", egress, t.Subnet, egress)
+	}
+	others := func(own string) string {
+		list := make([]string, 0, len(all))
+		for _, s := range all {
+			if s != own {
+				list = append(list, s)
+			}
+		}
+		return strings.Join(append(list, "self"), ", ")
+	}
+	for _, t := range listed {
+		fmt.Fprintf(&b, "\n# %s\n", t.Name)
+		fmt.Fprintf(&b, "pass in quick on %s inet from %s to %s no state\n", t.Bridge, t.Subnet, t.Gateway)
+		fmt.Fprintf(&b, "block in quick on %s inet from %s to { %s } no state\n", t.Bridge, t.Subnet, others(t.Subnet))
+	}
+	b.WriteString("\n# The default network reaches no tenant network.\n")
+	fmt.Fprintf(&b, "block in quick on %s inet from %s to { %s } no state\n",
+		defaultBridge, subnet, strings.Join(all[1:], ", "))
+	return b.String()
 }
 
 // Default reads every part of the default network off the host.
@@ -178,8 +229,13 @@ func (s *Service) Default(ctx context.Context) (Default, error) {
 	}
 
 	// NAT: the anchor file, PF itself, the operator's pf.conf, the loaded anchor.
+	// The file is the default network's and the tenant networks' (JD-043).
 	want := ""
+	tenants, tenantsErr := s.tenantNetworks(ctx)
 	switch {
+	case tenantsErr != nil:
+		add(Part{ID: PartAnchorFile, Title: "Jail Deck's NAT rules, on disk", Owner: OwnerJailDeck, Status: PartUnknown,
+			Detail: tenantsErr.Error()})
 	case egressErr != nil:
 		add(Part{ID: PartAnchorFile, Title: "Jail Deck's NAT rules, on disk", Owner: OwnerJailDeck, Status: PartUnknown,
 			Detail: "Could not read the default route: " + egressErr.Error()})
@@ -188,7 +244,7 @@ func (s *Service) Default(ctx context.Context) (Default, error) {
 			Detail: "The host has no default route, so there is no interface to send the guests out of.",
 			Remedy: "Set JAILDECK_VM_EGRESS to the interface NAT should use."})
 	default:
-		want = anchorContent(p.Masked(), egress)
+		want = anchorContent(p.Masked(), "vm-"+s.settings.Switch, egress, tenants)
 		have, err := s.system.AnchorFile(ctx, s.anchorFile())
 		switch {
 		case err != nil:
@@ -363,7 +419,12 @@ func (s *Service) EnsureDefault(ctx context.Context) (Ensured, error) {
 		}},
 		{PartAnchorFile, OperationWriteAnchor, s.anchorFile(), func() (string, error) {
 			p, _ := s.prefix()
-			return s.system.WriteAnchorFile(ctx, s.anchorFile(), anchorContent(p.Masked(), before.Egress))
+			tenants, err := s.tenantNetworks(ctx)
+			if err != nil {
+				return "", err
+			}
+			return s.system.WriteAnchorFile(ctx, s.anchorFile(),
+				anchorContent(p.Masked(), "vm-"+s.settings.Switch, before.Egress, tenants))
 		}},
 	}
 	// A switch just created has no address and shared ports: both follow.

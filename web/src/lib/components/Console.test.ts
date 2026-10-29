@@ -78,13 +78,13 @@ describe('the console', () => {
         expect(new TextDecoder().decode(term.written[0])).toBe('root@nginx:/ # ')
         socket.onmessage?.({ data: '{"type":"closed","reason":"jail-stopped"}' })
         socket.onclose?.()
-        expect(onclosed).toHaveBeenCalledWith('jail-stopped')
+        expect(onclosed).toHaveBeenCalledWith('jail-stopped', '')
     })
 
     it('says nothing it was not told: a connection that failed has no reason', async () => {
         const { socket, onclosed } = await opened()
         socket.onclose?.()
-        expect(onclosed).toHaveBeenCalledWith('')
+        expect(onclosed).toHaveBeenCalledWith('', '')
     })
 
     it('sends nothing before the socket is open', async () => {

@@ -226,6 +226,24 @@ func (f *VMs) VMDestroy(_ context.Context, name string) (string, error) {
 	return "vm destroy -f " + name, nil
 }
 
+// GuestsOn are the guests whose NIC is on the switch, running or not: the
+// seeded running guest is on jd-capsw.
+func (f *VMs) GuestsOn(sw string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	on := make([]string, 0)
+	if sw == "jd-capsw" && !f.gone["jd-cap-running"] {
+		on = append(on, "jd-cap-running")
+	}
+	for name, m := range f.made {
+		if m.sw == sw {
+			on = append(on, name)
+		}
+	}
+	slices.Sort(on)
+	return on
+}
+
 // HostCPUs is isengard's.
 func (f *VMs) HostCPUs(context.Context) (int, error) { return 16, nil }
 

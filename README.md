@@ -7,11 +7,11 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.18.1.** Jails can be created from release templates, started,
+**Current release: v0.19.0.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API; their ZFS datasets,
 snapshots and resource usage are visible; host setup is checked; PF can be seen,
 read-only; bhyve VMs are created from cloud images with cloud-init, pinned to host CPUs, started,
-stopped and destroyed, on a default network Jail Deck sets up with NAT through PF; a jail has a shell in the
+stopped and destroyed, on a default network Jail Deck sets up with NAT through PF, or on networks of their own kept apart by PF; a jail has a shell in the
 browser, and a guest its serial console; every operation is audited, and nothing is reachable without a password or an
 API token. Releases install and upgrade with `pkg` from a signed repository. See
 [the roadmap](docs/ROADMAP.md) for what comes next.
@@ -264,6 +264,11 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/vms` | create a guest from an image: CPU and a pin to host CPUs, memory, disk, a NIC on a switch, SSH keys, a static address |
 | `PUT /api/vms/{name}` | the same, idempotent: create it, or say it already matches, or how it differs |
 | `GET /api/vms/{name}/console` | its serial console, over a WebSocket; one at a time, audited |
+| `GET /api/networks` | tenant networks: a bridge each, its subnet, gateway and members |
+| `POST /api/networks` | create one: a bridge on a free /24 of the range, a vm-bhyve switch on it, rules keeping it apart |
+| `GET /api/networks/{name}` | one tenant network |
+| `DELETE /api/networks/{name}?confirm={name}` | destroy an empty one |
+| `GET /api/names/suggest` | a free name for a new jail or guest, adjective and animal: `jolly-otter` |
 | `DELETE /api/vms/{name}?confirm={name}` | destroy a stopped guest and its disk |
 | `GET /api/vm-images` | VM image templates, and the sources they can be prepared from |
 | `GET /api/vm-images/{name}` | one image: its state, the build it was written from, the guests cloned from it |

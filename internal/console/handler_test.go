@@ -76,6 +76,7 @@ func (r *recorder) all() []audit.Entry {
 }
 
 type rig struct {
+	shells  *fake.Shells
 	guests  *guests
 	service *console.Service
 	handler *console.Handler
@@ -88,7 +89,8 @@ func newRig(t *testing.T, idle time.Duration, origins ...string) *rig {
 	t.Helper()
 	rg := &rig{audit: &recorder{}, guests: &guests{states: map[string]string{
 		"web": "/dev/nmdm-web.1B", "db": "", "odd": "/dev/ttyu0"}}}
-	rg.service = console.NewService(fake.NewShells(), jailStates{"nginx": true, "postgres": false}, rg.guests, rg.audit)
+	rg.shells = fake.NewShells()
+	rg.service = console.NewService(rg.shells, jailStates{"nginx": true, "postgres": false}, rg.guests, rg.audit)
 	rg.handler = console.NewHandler(rg.service,
 		func(*http.Request) error {
 			if rg.expired.Load() {
@@ -488,5 +490,52 @@ func TestAFailedOpenFreesTheGuestsConsole(t *testing.T) {
 	service.Finish(context.Background(), session, console.ReasonClient)
 	if first := rec.all()[0]; first.Success || !strings.Contains(first.Error, "device busy") {
 		t.Errorf("the failed open's entry = %+v", first)
+	}
+}
+
+// Another reader on the device -- a vm console left open in a shell, as in
+// #153 -- would get half of every line, and Jail Deck the other half. So the
+// console is refused, naming it -- in a closed message the page can read --
+// and nothing is audited as opened.
+func TestAConsoleAnotherReaderHasIsRefused(t *testing.T) {
+	rg := newRig(t, time.Hour)
+	rg.shells.Hold("/dev/nmdm-web.1B", console.Holder{Command: "cu", PID: 38812}, console.Holder{Command: "cu", PID: 38813})
+	// Accepted and closed at once, saying why: a browser cannot read a
+	// refused handshake.
+	refused, _, err := dial(t, rg.url+"/vms/web/console", nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, data, err := refused.conn.Read(ctx)
+	var closed struct{ Type, Reason, Detail string }
+	if err != nil || json.Unmarshal(data, &closed) != nil || closed.Reason != console.ReasonConsoleShared ||
+		!strings.Contains(closed.Detail, "cu (pid 38812), cu (pid 38813)") || !strings.Contains(closed.Detail, "~.") {
+		t.Fatalf("closed = %+v, %v", closed, err)
+	}
+	if n := len(rg.audit.all()); n != 0 {
+		t.Errorf("%d audit entries for a refused console", n)
+	}
+	// Closed in its own terminal, the console opens.
+	rg.shells.Hold("/dev/nmdm-web.1B")
+	tm, _, err := dial(t, rg.url+"/vms/web/console", nil)
+	if err != nil {
+		t.Fatalf("after the other reader went: %v", err)
+	}
+	tm.until("login: ")
+}
+
+// A reader that turns up during a session ends it, with its own reason.
+func TestAReaderThatTurnsUpEndsTheSession(t *testing.T) {
+	rg := newRig(t, time.Hour)
+	tm, _, err := dial(t, rg.url+"/vms/web/console", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.until("login: ")
+	rg.shells.Hold("/dev/nmdm-web.1B", console.Holder{Command: "cu", PID: 4242})
+	if reason := tm.closing(); reason != console.ReasonConsoleShared {
+		t.Errorf("closed with %q, want %q", reason, console.ReasonConsoleShared)
 	}
 }

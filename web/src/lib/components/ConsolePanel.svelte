@@ -27,6 +27,7 @@ const reasons: Record<string, string> = {
     'jail-stopped': 'The jail stopped, and its console with it.',
     'guest-stopped': 'The guest stopped, and its console with it.',
     'console-closed': 'The console device closed.',
+    'console-shared': 'Something else on the host opened this console too, a vm console most likely, and each reader would get only part of what the guest prints. Close it there (~. in cu), then open this one again.',
     'session-expired': 'Your login ended. Sign in again to open another console.',
     'idle': 'Closed: nothing was typed for a while.',
 }
@@ -37,8 +38,10 @@ function start() {
     open = true
 }
 
-function closed(reason: string) {
-    ended = reasons[reason] ?? 'The connection ended, or could not be made.'
+// detail, when the server gave one, says more than the reason's own words:
+// which process shares the console, and how to close it (#153).
+function closed(reason: string, detail: string) {
+    ended = detail || (reasons[reason] ?? 'The connection ended, or could not be made.')
     onended?.(reason)
 }
 </script>

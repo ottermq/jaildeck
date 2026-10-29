@@ -313,4 +313,37 @@ ten_scale_listing	t0=$(date +%s); ifconfig >/dev/null; echo ifconfig in $(( $(da
 ten_scale_destroy	t0=$(date +%s); for b in $(cat /var/tmp/jd-capture-tenant/scale); do doas ifconfig $b destroy; done; echo destroyed in $(( $(date +%s) - t0 ))s	exit=0	3s
 net_tenant_bridge	ifconfig -f inet:cidr jdn249	exit=0	0s
 net_bridge_group	ifconfig -g bridge	exit=0	0s
+ret_setup	doas zfs create -o mountpoint=/var/tmp/jd-cap-121 tank/jd-cap-121 && doas zfs create tank/jd-cap-121/containers && doas zfs create tank/jd-cap-121/containers/j1 && doas zfs create tank/jd-cap-121/retained && 	doas zfs create -o mountpoint=/var/tmp/jd-cap-121/containers/j1/var/db/pg tank/jd-cap-121/containers/j1/pg && doas sh -c 'echo kept > /var/tmp/jd-cap-121/containers/j1/var/db/pg/marker'	exit=0
+ret_before	zfs get -H -o name,property,value,source mountpoint,mounted,jaildeck:mountpoint tank/jd-cap-121/containers/j1/pg; mount | grep /var/tmp/jd-cap-121 | sort	exit=0
+ret_rename	doas zfs rename -u tank/jd-cap-121/containers/j1/pg tank/jd-cap-121/retained/j1-pg	exit=0
+ret_unmount	doas zfs unmount tank/jd-cap-121/retained/j1-pg	exit=0
+ret_mount	doas zfs mount tank/jd-cap-121/retained/j1-pg	exit=0
+ret_after_today	zfs get -H -o name,property,value,source mountpoint,mounted,jaildeck:mountpoint tank/jd-cap-121/retained/j1-pg; mount | grep /var/tmp/jd-cap-121 | sort	exit=0
+ret_destroy_jail_today	doas zfs destroy -r tank/jd-cap-121/containers/j1	exit=1
+ret_today_listing	zfs list -H -o name -r tank/jd-cap-121	exit=0
+ret_j1_again	zfs list -H -o name tank/jd-cap-121/containers/j1 >/dev/null 2>&1 || doas zfs create tank/jd-cap-121/containers/j1	exit=0
+ret_back	doas zfs unmount tank/jd-cap-121/retained/j1-pg; doas zfs rename -u tank/jd-cap-121/retained/j1-pg tank/jd-cap-121/containers/j1/pg && doas zfs mount tank/jd-cap-121/containers/j1/pg	exit=0
+ret_back_state	zfs get -H -o name,property,value,source mountpoint,mounted,jaildeck:mountpoint tank/jd-cap-121/containers/j1/pg; mount | grep /var/tmp/jd-cap-121 | sort	exit=0
+ret_fix_rename	doas zfs rename -u tank/jd-cap-121/containers/j1/pg tank/jd-cap-121/retained/j1-pg	exit=0
+ret_fix_unmount	doas zfs unmount tank/jd-cap-121/retained/j1-pg	exit=0
+ret_fix_record	doas zfs set jaildeck:mountpoint=var/db/pg tank/jd-cap-121/retained/j1-pg	exit=0
+ret_fix_inherit	doas zfs inherit mountpoint tank/jd-cap-121/retained/j1-pg	exit=0
+ret_fix_inherited	zfs get -H -o name,property,value,source mountpoint,mounted,jaildeck:mountpoint tank/jd-cap-121/retained/j1-pg; mount | grep /var/tmp/jd-cap-121 | sort	exit=0
+ret_fix_mount	zfs get -H -o value mounted tank/jd-cap-121/retained/j1-pg | grep -qx yes || doas zfs mount tank/jd-cap-121/retained/j1-pg	exit=0
+ret_fix_after	zfs get -H -o name,property,value,source mountpoint,mounted,jaildeck:mountpoint tank/jd-cap-121/retained/j1-pg; mount | grep /var/tmp/jd-cap-121 | sort	exit=0
+ret_fix_marker	cat /var/tmp/jd-cap-121/retained/j1-pg/marker	exit=0
+ret_fix_destroy_jail	doas zfs destroy -r tank/jd-cap-121/containers/j1	exit=0
+ret_j2	doas zfs create tank/jd-cap-121/containers/j2	exit=0
+ret_res_rename	doas zfs rename -u tank/jd-cap-121/retained/j1-pg tank/jd-cap-121/containers/j2/pg	exit=0
+ret_res_unmount	doas zfs unmount tank/jd-cap-121/containers/j2/pg	exit=0
+ret_res_set	doas zfs set mountpoint=/var/tmp/jd-cap-121/containers/j2/var/db/pg tank/jd-cap-121/containers/j2/pg	exit=0
+ret_res_set_state	zfs get -H -o name,property,value,source mountpoint,mounted,jaildeck:mountpoint tank/jd-cap-121/containers/j2/pg; mount | grep /var/tmp/jd-cap-121 | sort	exit=0
+ret_res_forget	doas zfs inherit jaildeck:mountpoint tank/jd-cap-121/containers/j2/pg	exit=0
+ret_res_mount	zfs get -H -o value mounted tank/jd-cap-121/containers/j2/pg | grep -qx yes || doas zfs mount tank/jd-cap-121/containers/j2/pg	exit=0
+ret_res_after	zfs get -H -o name,property,value,source mountpoint,mounted,jaildeck:mountpoint tank/jd-cap-121/containers/j2/pg; mount | grep /var/tmp/jd-cap-121 | sort	exit=0
+ret_res_marker	cat /var/tmp/jd-cap-121/containers/j2/var/db/pg/marker	exit=0
+ret_set_mounted	doas zfs set mountpoint=/var/tmp/jd-cap-121/containers/j2/srv tank/jd-cap-121/containers/j2/pg	exit=0
+ret_set_mounted_state	zfs get -H -o name,property,value,source mountpoint,mounted,jaildeck:mountpoint tank/jd-cap-121/containers/j2/pg; mount | grep /var/tmp/jd-cap-121 | sort	exit=0
+ret_inherit_mounted	doas zfs inherit mountpoint tank/jd-cap-121/containers/j2/pg	exit=0
+ret_inherit_mounted_state	zfs get -H -o name,property,value,source mountpoint,mounted,jaildeck:mountpoint tank/jd-cap-121/containers/j2/pg; mount | grep /var/tmp/jd-cap-121 | sort	exit=0
 vm_pw_user_data	cat /vm/jd-live-pw/.cloud-init/user-data (#152; key and hash replaced by <key> and <hash>)	exit=0	0s

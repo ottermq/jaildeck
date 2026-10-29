@@ -9,8 +9,11 @@ package metrics
 // a listing is what an operator opens to start a jail, and it should not pay
 // for the page that watches them.
 type Report struct {
-	Host Host        `json:"host"`
-	Jail []JailUsage `json:"jails"`
+	// Build is which Jail Deck measured, for Prometheus only: the JSON API
+	// says it at GET /api/about (#136).
+	Build Build       `json:"-"`
+	Host  Host        `json:"host"`
+	Jail  []JailUsage `json:"jails"`
 	// Configured is how many jails the host has in total, running or not,
 	// so the dashboard can say "3 of 5" without a second request.
 	Configured int `json:"configured"`
@@ -236,4 +239,11 @@ type SelfTest struct {
 	// Hours is the drive's power-on hour count when the test ran, which is
 	// how a self-test log dates itself.
 	Hours int64 `json:"hours"`
+}
+
+// Build is the binary's version and commit, as `jaildeck version` and
+// GET /api/about give them.
+type Build struct {
+	Version string
+	Commit  string
 }

@@ -33,6 +33,37 @@
                 }
             }
         },
+        "/about": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Its version as `jaildeck version` prints it, the commit it was built from, when\nit started and its state directory (#136). **Behind authentication**, like\neverything else: telling an unauthenticated visitor the exact version would\nmake it easier to aim at a known issue.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "about"
+                ],
+                "summary": "Which Jail Deck is running",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/about.About"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/audit": {
             "get": {
                 "security": [
@@ -3560,6 +3591,30 @@
         }
     },
     "definitions": {
+        "about.About": {
+            "type": "object",
+            "properties": {
+                "commit": {
+                    "description": "Commit is the git revision the binary was built from, empty when the\ntoolchain stamped none, and Modified whether that tree had changes.",
+                    "type": "string"
+                },
+                "modified": {
+                    "type": "boolean"
+                },
+                "started": {
+                    "description": "Started is when this process started serving.",
+                    "type": "string"
+                },
+                "state_dir": {
+                    "description": "StateDir is where the credential, the tokens and the sessions live\n(JAILDECK_STATE_DIR).",
+                    "type": "string"
+                },
+                "version": {
+                    "description": "Version is what `jaildeck version` prints: \"v0.19.0\" for a release\nor package build, the toolchain's stamp or \"dev\" otherwise.",
+                    "type": "string"
+                }
+            }
+        },
         "audit.Entry": {
             "type": "object",
             "properties": {

@@ -114,6 +114,21 @@ func TestVMAppliedReadsAGuestMadeFromAnImage(t *testing.T) {
 	}
 }
 
+// Jail Deck's own user-data, for a console password (#152): the keys are
+// read as before, and the hash beside them.
+func TestVMAppliedReadsThePasswordHash(t *testing.T) {
+	seed := seedFiles(t)
+	seed["user-data"] = captured(t, "vm_pw_user_data")
+	a, _, _ := appliedHost(t, "jd-cap-made", captured(t, "vm_mk_conf_networked"), seed)
+	applied, err := a.VMApplied(context.Background(), "jd-cap-made")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.PasswordHash != "$2a$10$<hash>" || !reflect.DeepEqual(applied.SSHKeys, []string{"ssh-ed25519 <key> jd-live-pw"}) {
+		t.Errorf("applied = %+v", applied)
+	}
+}
+
 // vm-bhyve writes network-config only for vm create -n: a DHCP guest has
 // user-data and meta-data, and nothing to read an address from.
 func TestVMAppliedDHCPHasNoAddress(t *testing.T) {

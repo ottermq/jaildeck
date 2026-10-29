@@ -267,7 +267,7 @@ func (f *VMs) VMApplied(_ context.Context, name string) (vms.Applied, error) {
 	if m, ok := f.made[name]; ok {
 		applied := vms.Applied{CPU: strconv.Itoa(m.spec.CPU), Memory: m.spec.Memory, Origin: m.origin,
 			DiskSize: m.disk, Seed: true, Address: m.spec.Address, Gateway: m.spec.Gateway,
-			Nameservers: m.spec.Nameservers, SSHKeys: m.spec.SSHKeys}
+			Nameservers: m.spec.Nameservers, SSHKeys: m.spec.SSHKeys, PasswordHash: m.spec.PasswordHash}
 		if len(m.pins) > 0 {
 			applied.BhyveOptions = vms.PinOptions(m.pins)
 		}

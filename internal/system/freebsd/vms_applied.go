@@ -86,7 +86,7 @@ func (a *Adapter) VMApplied(ctx context.Context, name string) (vms.Applied, erro
 	switch {
 	case err == nil:
 		applied.Seed = true
-		if applied.SSHKeys, err = parseUserDataKeys(userData); err != nil {
+		if applied.SSHKeys, applied.PasswordHash, err = parseUserData(userData); err != nil {
 			return vms.Applied{}, fmt.Errorf("reading %s's user-data: %w", name, err)
 		}
 	case !errors.Is(err, fs.ErrNotExist):
@@ -146,18 +146,21 @@ func parseVMConf(content string) map[string]string {
 	return conf
 }
 
-// parseUserDataKeys is the default user's keys from vm-bhyve's user-data:
+// parseUserData is the default user's keys from vm-bhyve's user-data, and
+// its console password's hash from Jail Deck's own (#152):
 //
 //	ssh_authorized_keys:
 //	  - ssh-ed25519 AAAA... jd-capture
-func parseUserDataKeys(content []byte) ([]string, error) {
+//	password: "$2a$10$..."
+func parseUserData(content []byte) ([]string, string, error) {
 	var userData struct {
-		Keys []string `yaml:"ssh_authorized_keys"`
+		Keys     []string `yaml:"ssh_authorized_keys"`
+		Password string   `yaml:"password"`
 	}
 	if err := yaml.Unmarshal(content, &userData); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return userData.Keys, nil
+	return userData.Keys, userData.Password, nil
 }
 
 // parseNetworkConfig reads the first NIC of vm-bhyve's network-config:

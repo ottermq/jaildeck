@@ -45,10 +45,13 @@ type CreateRequest struct {
 	Switch string `json:"switch"`
 	// Network is a static address for that NIC. Absent means DHCP.
 	Network *StaticNetwork `json:"network,omitempty"`
-	// SSHKeys go into the default user's authorized_keys. A cloud image
-	// has no password, so a guest with none is reachable only on its
-	// console.
+	// SSHKeys go into the default user's authorized_keys.
 	SSHKeys []string `json:"ssh_keys"`
+	// ConsolePassword is the default user's password, for its console only:
+	// a cloud image has none, so without it the console stops at the login
+	// prompt (#152). SSH still takes keys alone. It is hashed before it
+	// leaves Jail Deck and is never stored, logged or answered.
+	ConsolePassword string `json:"console_password,omitempty"`
 	// Start starts the guest once it is made.
 	Start bool `json:"start"`
 }
@@ -75,6 +78,9 @@ type CreateSpec struct {
 	Gateway     string
 	Nameservers []string
 	SSHKeys     []string
+	// PasswordHash is the console password as crypt(3) takes it, a bcrypt
+	// hash, or empty for none. Only Create fills it.
+	PasswordHash string
 }
 
 // Created is what POST /api/vms answers: the guest as vm-bhyve lists it.
@@ -111,7 +117,7 @@ var sshKey = regexp.MustCompile(
 
 // Create makes a guest from an image template (JD-038):
 //
-//	vm create -t jaildeck -c <cpu> -m <memory> -s <disk> -C [-k <keys>] [-n <netconfig>] <name>
+//	vm create -t jaildeck -c <cpu> -m <memory> -s <disk> -C [-k <keys> | -u <user-data>] [-n <netconfig>] <name>
 //	sysrc -f <datastore>/<name>/<name>.conf bhyve_options="-p 0:<cpu> ..."
 //	vm add -d network -s <switch> <name>
 //	zfs destroy <datastore>/<name>/disk0
@@ -130,6 +136,11 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Created, error
 	spec, image, err := s.check(ctx, req)
 	if err != nil {
 		return Created{}, err
+	}
+	if req.ConsolePassword != "" {
+		if spec.PasswordHash, err = hashConsolePassword(req.ConsolePassword); err != nil {
+			return Created{}, err
+		}
 	}
 
 	command, err := s.system.VMCreate(ctx, spec)
@@ -231,6 +242,11 @@ func (s *Service) resolve(ctx context.Context, req CreateRequest, creating bool)
 				"(type, key, and an optional comment of letters, digits and @._+-)", i)
 		}
 		spec.SSHKeys = append(spec.SSHKeys, strings.TrimSpace(key))
+	}
+	if req.ConsolePassword != "" {
+		if err := checkConsolePassword(req.ConsolePassword); err != nil {
+			return CreateSpec{}, ImageRef{}, err
+		}
 	}
 	if req.Network != nil {
 		if req.Switch == "" {

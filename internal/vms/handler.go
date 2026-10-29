@@ -182,7 +182,10 @@ func (h *Handler) operate(w http.ResponseWriter, r *http.Request,
 // @Description  1. **vm-create**: `vm create` from Jail Deck's own template (UEFI, one virtio
 // @Description     disk, no NIC) with `cpu`, `memory` and a cloud-init seed: `ssh_keys` for the
 // @Description     image's default user, the guest's name as its hostname, and `network` as a
-// @Description     static address when given (DHCP otherwise).
+// @Description     static address when given (DHCP otherwise). `console_password`, when given,
+// @Description     is the default user's password **for its console only** (SSH still takes
+// @Description     keys alone): from 8 to 72 bytes, hashed with bcrypt before it reaches the
+// @Description     seed, and never stored, logged or answered (#152).
 // @Description  2. **vm-pin-cpus**, when `cpuset` is given: vCPU i pinned to host CPU
 // @Description     `cpuset[i]`, written as `bhyve_options="-p 0:<cpu> ..."` (JD-041). One host
 // @Description     CPU per vCPU, each a different one, and each one the host has: bhyve aborts
@@ -243,8 +246,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 // @Description
 // @Description  What a guest was made with is read off the host, not from a record: its
 // @Description  vm-bhyve configuration (cpu, memory, the pin in `bhyve_options`, each NIC's
-// @Description  switch), its cloud-init seed (address, gateway, nameservers, SSH keys) and
-// @Description  disk0's clone origin and size. Defaults resolve as a create resolves them, so
+// @Description  switch), its cloud-init seed (address, gateway, nameservers, SSH keys, the
+// @Description  console password checked against its hash) and disk0's clone origin and size.
+// @Description  A password's difference says only `set`, `none` or `another`, never a value.
+// @Description  Defaults resolve as a create resolves them, so
 // @Description  a request that leaves `cpu`, `memory` or `disk` out matches the guest those
 // @Description  defaults made.
 // @Description

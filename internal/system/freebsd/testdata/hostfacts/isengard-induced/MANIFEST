@@ -313,3 +313,4 @@ ten_scale_listing	t0=$(date +%s); ifconfig >/dev/null; echo ifconfig in $(( $(da
 ten_scale_destroy	t0=$(date +%s); for b in $(cat /var/tmp/jd-capture-tenant/scale); do doas ifconfig $b destroy; done; echo destroyed in $(( $(date +%s) - t0 ))s	exit=0	3s
 net_tenant_bridge	ifconfig -f inet:cidr jdn249	exit=0	0s
 net_bridge_group	ifconfig -g bridge	exit=0	0s
+vm_pw_user_data	cat /vm/jd-live-pw/.cloud-init/user-data (#152; key and hash replaced by <key> and <hash>)	exit=0	0s

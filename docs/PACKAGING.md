@@ -35,6 +35,9 @@ make package VERSION=0.10.0
 ```
 
 The version is required and must have the form `X.Y.Z`, without a leading `v`.
+The commit is taken from git when the checkout is a repository; from a
+`git archive`, pass it as `COMMIT=<full revision>`, or the binary reports none
+(`jaildeck version --commit`, `GET /api/about`, #165).
 The same value is used in the manifest and the archive filename, which is how
 `pkg` spells versions. `jaildeck version` reports it as `vX.Y.Z`, the same shape
 as a binary built from a tag, so the two never disagree about what they are.

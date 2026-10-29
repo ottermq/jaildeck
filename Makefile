@@ -6,6 +6,9 @@ COVER_PROFILE=$(BUILD_DIR)/coverage.out
 GO?=go
 LDFLAGS?=
 VERSION?=
+# The git revision a package is built from. Optional: package.sh asks git when
+# it is empty, and a build from a `git archive` has no git to ask (#165).
+COMMIT?=
 
 # Where the API annotations live. swag is pinned in go.mod as a tool
 # dependency, so `go tool swag` needs no global install and every machine runs
@@ -105,7 +108,7 @@ install: build
 
 ## package: build and verify bin/packages/jaildeck-VERSION.pkg (native FreeBSD 15 amd64)
 package:
-	@sh packaging/freebsd/package.sh "$(VERSION)" "$(PREFIX)" "$(GO)" "$(PACKAGE_MAKE)"
+	@sh packaging/freebsd/package.sh "$(VERSION)" "$(PREFIX)" "$(GO)" "$(PACKAGE_MAKE)" "$(COMMIT)"
 
 ## clean: remove build artifacts
 clean:

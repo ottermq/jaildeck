@@ -20,15 +20,26 @@ func Version() string {
 	return "dev"
 }
 
-// Commit is the git revision the Go toolchain stamped into the binary, and
-// whether the tree had uncommitted changes. Empty when it stamped none: a
-// build outside a checkout, or with -buildvcs=false.
+// commit is injected the same way for package builds (#165):
+//
+//	-ldflags "-X github.com/ottermq/jaildeck/internal/buildinfo.commit=<sha>"
+//
+// The package is built where the toolchain may not stamp one -- in CI's
+// FreeBSD VM, or from a `git archive` with no repository at all -- and v0.20.0's
+// package reported none.
+var commit string
+
+// Commit is the git revision the binary was built from, and whether the tree
+// had uncommitted changes. What the Go toolchain stamped wins, because it
+// read the tree itself; the injected value is the fallback, and says nothing
+// about changes. Empty when there is neither.
 func Commit() (revision string, modified bool) {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "", false
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if revision, modified = commitOf(info.Settings); revision != "" {
+			return revision, modified
+		}
 	}
-	return commitOf(info.Settings)
+	return commit, false
 }
 
 func commitOf(settings []debug.BuildSetting) (revision string, modified bool) {

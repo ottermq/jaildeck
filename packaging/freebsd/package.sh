@@ -8,8 +8,21 @@ version=${1:-}
 prefix=${2:-/usr/local}
 go=${3:-go}
 make=${4:-make}
+commit=${5:-}
 printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' ||
     fail 'VERSION must be a release number such as 0.10.0 (no v prefix).'
+# The commit is injected like the version (#165): the Go toolchain stamps one
+# only when it can run git on the tree, and CI's VM has no git. Asked of git
+# here when not given, and left out, said aloud, when there is no repository.
+if [ -z "$commit" ] && command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
+    commit=$(git rev-parse HEAD)
+fi
+if [ -n "$commit" ]; then
+    printf '%s\n' "$commit" | grep -Eq '^[0-9a-f]{40}$' ||
+        fail 'COMMIT must be a full git revision, 40 hexadecimal digits.'
+else
+    echo 'package: no COMMIT given and no git repository here; the binary will report no commit.' >&2
+fi
 [ "$prefix" = /usr/local ] || fail 'only PREFIX=/usr/local is supported.'
 [ "$(uname -s)" = FreeBSD ] && [ "$(uname -m)" = amd64 ] ||
     fail 'build natively on FreeBSD 15 amd64.'
@@ -49,9 +62,10 @@ touch web/dist/.gitkeep
 # versions carry no v. One `jaildeck version` shape whichever way it was built.
 "$make" install PREFIX=/usr/local DESTDIR="$work/stage" \
     BUILD_DIR="$work/build" BINARY_NAME=jaildeck MAIN_PATH=cmd/jaildeck \
-    GO="$go" LDFLAGS="-X github.com/ottermq/jaildeck/internal/buildinfo.version=v$version"
+    GO="$go" LDFLAGS="-X github.com/ottermq/jaildeck/internal/buildinfo.version=v$version${commit:+ -X github.com/ottermq/jaildeck/internal/buildinfo.commit=$commit}"
 binary="$work/stage/usr/local/bin/jaildeck"
 [ "$("$binary" version)" = "v$version" ] || fail 'binary version does not match VERSION.'
+[ "$("$binary" version --commit)" = "$commit" ] || fail 'binary commit does not match COMMIT.'
 "$go" run ./tools/checkfrontend web/dist "$binary"
 
 # Fail closed if install ever starts staging anything outside the packing list.

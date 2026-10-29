@@ -1516,6 +1516,82 @@
                 }
             }
         },
+        "/jails/{name}/limits": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Changes the resource limits of a jail that exists, without recreating it (#119).\nOnly the limits the body names change; null removes one. 0 and \"\" are refused:\nsend null to remove a limit.\n\nA running jail gets the change at once — `rctl -a` or `rctl -r` per limit, and\n`cpuset -l \u003clist\u003e -j \u003cname\u003e` — and its stanza's limit hooks are rewritten so the\nnext start applies the same. No limit waits for a restart (measured). Both or\nneither: a kernel step that fails, or a stanza that cannot be written, takes\nback the steps already made. A stopped jail gets the stanza only.\n\nValidated as at create (JD-018). The answer is read back from the stanza and\n`rctl jail:\u003cname\u003e`, not the request (JD-011); the same request again answers\n`changed: false` and changes nothing. A lowered limit the jail already exceeds\nis done, and named in `warnings`.\n\nRefused with 409 for a jail configured outside jail.conf.d, for a stanza whose\nexec.poststart or exec.prestop carries a command Jail Deck did not write (the\nrewrite would lose it), and for a stanza changed while it was being rewritten.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jails"
+                ],
+                "summary": "Change the jail's limits",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The limits to change; null removes one",
+                        "name": "limits",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/jails.Limits"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.LimitsChange"
+                        }
+                    },
+                    "400": {
+                        "description": "A malformed limit, or rctl limits on a host without kern.racct.enable",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Configured outside jail.conf.d, or hooks Jail Deck did not write",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "Not Implemented",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/jails/{name}/properties": {
             "patch": {
                 "security": [
@@ -4801,6 +4877,46 @@
                 },
                 "vmemoryuse": {
                     "type": "string"
+                }
+            }
+        },
+        "jails.LimitsChange": {
+            "type": "object",
+            "properties": {
+                "changed": {
+                    "description": "Changed is false for a request that asked for what the jail already\nhad, which is how a repeat of the same PATCH answers.",
+                    "type": "boolean"
+                },
+                "config": {
+                    "type": "string"
+                },
+                "limits": {
+                    "description": "Limits are what the jail's stanza applies now, as it writes them.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/jails.Limits"
+                        }
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "rules": {
+                    "description": "Rules are what the kernel holds for the jail's name afterwards,\n`rctl jail:\u003cname\u003e`, in the kernel's own units.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "running": {
+                    "type": "boolean"
+                },
+                "warnings": {
+                    "description": "Warnings are things that are true of the jail after the change and\nthat the limits alone do not say, such as a limit already exceeded.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

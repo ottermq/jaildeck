@@ -656,6 +656,16 @@ Parameters Jail Deck writes itself — `path`, `host.hostname`, `ip4`, `vnet`, t
 
 Two values are validated here rather than left to the host (JD-012), because the host's own refusal says nothing useful: a size like `640X` and a cpu list like `abc`. `cpuset` answers the second with "Resource deadlock avoided".
 
+**Changing the limits of a jail that exists was built 2026-10-29** (#119): `PATCH /api/jails/{name}/limits`, measured first on isengard, 15.1-RELEASE-p5 (`capture-limits-induced.sh`, a jail rooted at `/` with no dataset):
+
+- **Every limit takes effect on a running jail at once.** None waits for a restart: a `pcpu` deny throttled a busy process to about 41% within seconds, and `cpuset -l <list> -j <name>` moved the jail's threads that were already running elsewhere. `cpuset -l all` unpins.
+- **`rctl -a` for a resource that already has a deny rule replaces it**, so a changed value is never a moment without a limit. A rule with another action, an operator's `log`, is a separate rule. **`rctl -r jail:<name>:<resource>:deny`** removes that rule alone and keeps the `log` one. Re-adding a rule that is there changes nothing, so the stanza's hooks applying it again at the next start do not double it.
+- **Lowering a limit below what the jail uses is done, and warned about, not refused.** A lower `maxproc` keeps the processes already there and refuses the next fork ("Cannot fork"). A lower `memoryuse` stopped no process and did not refuse the next allocation within the seconds watched. The answer names what the jail uses against the new limit.
+
+**This is the one rewrite of a jail's stanza Jail Deck makes, and it is bounded to the hooks it wrote.** Every `exec.poststart` and `exec.prestop` line is replaced, nothing else is touched, and a stanza whose hooks carry a command Jail Deck did not write is refused with `409` rather than have that command lost. Rewriting a generated stanza gives byte for byte the file a create with the new limits would have written, so the jail matches its new spec under `PUT` (JD-016). The file is replaced by a rename, and only while it still says what was read. The header every stanza opens with said Jail Deck never rewrites the file; it now says what it does rewrite, and a rewrite replaces the old paragraph.
+
+**Kernel first, then the stanza, and both or neither.** The kernel is the half that can refuse: a cpu the host does not have is "setaffinity: Invalid argument". So each limit is changed live, one audited step at a time, and the stanza is written only once all of them took. A step that fails, or a stanza that cannot be written, takes back the steps already made, newest first. A stopped jail gets the stanza alone, and rules still keyed to its name are named in the answer. A patch names only what changes, and `null` removes a limit. A `0` or an empty string is refused, because "absent means unchanged" makes them ambiguous where "absent means none" in a spec does not.
+
 ### Rationale
 
 **The allowlist is the API's security boundary.** A token holder can already do anything root can (JD-003), but the API should not make it *easy* to create a jail that can escape its own confinement. A denylist fails open the day jail(8) gains a parameter; an allowlist fails closed.

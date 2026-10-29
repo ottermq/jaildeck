@@ -431,3 +431,70 @@ func sortedEnvNames(env map[string]string) []string {
 	slices.Sort(names)
 	return names
 }
+
+// AddRule puts a rule in the fake kernel the way rctl does: one for the same
+// jail, resource and action replaces the one there (#119, measured).
+func (s *JailSystem) AddRule(_ context.Context, rule string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name, key, ok := ruleKey(rule)
+	if !ok {
+		return "rctl -a " + rule, fmt.Errorf("rctl: %q is not a rule", rule)
+	}
+	kept := slices.DeleteFunc(slices.Clone(s.rules[name]), func(have string) bool {
+		_, haveKey, _ := ruleKey(have)
+		return haveKey == key
+	})
+	s.rules[name] = append(kept, rule)
+	return "rctl -a " + rule, nil
+}
+
+// RemoveRule takes out the rules a jail:<name>:<resource>:<action> filter
+// matches; none is not an error, as on the real host.
+func (s *JailSystem) RemoveRule(_ context.Context, filter string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name, _, _ := ruleKey(filter + "=")
+	s.rules[name] = slices.DeleteFunc(s.rules[name], func(have string) bool {
+		return strings.HasPrefix(have, filter+"=")
+	})
+	return "rctl -r " + filter, nil
+}
+
+// SetCPUSet only answers: the fake has no scheduler to pin.
+func (s *JailSystem) SetCPUSet(_ context.Context, name, list string) (string, error) {
+	if list == "" {
+		list = "all"
+	}
+	return "cpuset -l " + list + " -j " + name, nil
+}
+
+// RuleUsage is a small jail's worth of use, under any limit a test is likely
+// to set.
+func (s *JailSystem) RuleUsage(context.Context, string) (map[string]int64, error) {
+	return map[string]int64{"memoryuse": 48 << 20, "vmemoryuse": 512 << 20, "maxproc": 12, "openfiles": 96}, nil
+}
+
+// ReplaceConfig rewrites a stanza WriteConfig recorded, while it still says
+// old.
+func (s *JailSystem) ReplaceConfig(_ context.Context, name, old, content string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	path := "/fake/etc/jail.conf.d/" + name + ".conf"
+	if have, ok := s.configs[name]; !ok || have != old {
+		return path, fmt.Errorf("%s changed while Jail Deck was changing it", path)
+	}
+	s.configs[name] = content
+	return path, nil
+}
+
+// ruleKey splits jail:<name>:<resource>:<action>=<amount> into the name and
+// the part a replacing rule shares.
+func ruleKey(rule string) (name, key string, ok bool) {
+	subject, _, hasAmount := strings.Cut(rule, "=")
+	parts := strings.Split(subject, ":")
+	if !hasAmount || len(parts) != 4 || parts[0] != "jail" {
+		return "", "", false
+	}
+	return parts[1], subject, true
+}

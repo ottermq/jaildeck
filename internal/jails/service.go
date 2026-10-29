@@ -99,6 +99,11 @@ type Dependencies struct {
 	ConfigReader    ConfigReader
 	AutostartSource AutostartSource
 	CloneOrigin     CloneOrigin
+
+	// The two changing an existing jail's limits needs (#119), with
+	// ConfigReader and Rctl. Absent, only that call is refused, with 501.
+	Limits         LimitChanger
+	ConfigReplacer ConfigReplacer
 }
 
 type JailService struct {
@@ -124,6 +129,8 @@ type JailService struct {
 	autostartSource AutostartSource
 	cloneOrigin     CloneOrigin
 	exec            JailExecutor
+	limits          LimitChanger
+	configReplacer  ConfigReplacer
 	// consoles are the jail's open shells (JD-042), hung up before it stops.
 	consoles ConsoleHangup
 }
@@ -163,6 +170,8 @@ func NewJailService(deps Dependencies) *JailService {
 		autostartSource: deps.AutostartSource,
 		cloneOrigin:     deps.CloneOrigin,
 		exec:            deps.Exec,
+		limits:          deps.Limits,
+		configReplacer:  deps.ConfigReplacer,
 	}
 }
 

@@ -1,0 +1,3 @@
+jail:jdcap119:memoryuse:deny=1073741824
+jail:jdcap119:pcpu:deny=50
+jail:jdcap119:openfiles:deny=1000

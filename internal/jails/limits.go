@@ -16,6 +16,9 @@ import (
 // not start at all, because jail(8) destroys a jail whose poststart fails.
 // An adapter applying them afterwards could only have managed the second by
 // stopping a jail it had just started.
+//
+// Changing them on a jail that exists is the one exception (#119): the kernel
+// is changed at once and the hooks are rewritten to match (limits_change.go).
 type Limits struct {
 	// MemoryUse is resident memory and VMemoryUse is address space. Both are
 	// a byte count with an optional K, M, G or T suffix, in either case --

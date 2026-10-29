@@ -21,11 +21,7 @@ import (
 // own parser only strips '#' -- and a file this writes that it cannot read back
 // is a file that disappears from the jail listing.
 var confTemplate = template.Must(template.New("jail.conf").Parse(
-	`# Written by Jail Deck when the jail was created.
-#
-# Jail Deck does not rewrite this file afterwards, so anything changed here is
-# kept. It is read back on every listing: a jail is what the host says it is,
-# not what Jail Deck remembers (JD-011).
+	"# Written by Jail Deck when the jail was created.\n#\n" + confHeader + `
 
 {{ .Name }} {
 {{- if ne .Mode "vnet" }}
@@ -86,6 +82,14 @@ var confTemplate = template.Must(template.New("jail.conf").Parse(
 {{- end }}
 }
 `))
+
+// confHeader is the paragraph every stanza opens with, saying what Jail Deck
+// does to the file after writing it. A rewrite puts it in place of the
+// paragraph older stanzas carry (headerBefore).
+const confHeader = `# Jail Deck rewrites only the limit hooks it wrote here, and only when asked to
+# change the jail's limits; anything else changed here is kept. It is read back
+# on every listing: a jail is what the host says it is, not what Jail Deck
+# remembers (JD-011).`
 
 // confData is what the template reads. A struct of its own rather than the
 // Spec, so the template cannot reach a field that has not been validated and

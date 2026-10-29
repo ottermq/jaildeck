@@ -2006,3 +2006,76 @@ What follows from that:
 - The device was raw while the session held it (`-icanon -echo -ixon`), and a return got `<name> login:` back.
 - Another origin got a `403`, and a second session a `409`.
 - **Jail Deck stopping the guest closes its console first.** A guest powered off from the host's shell was caught by the session's own look at `vm list` and closed with `guest-stopped` 2.9 s later. Either way, no nmdm device was left behind.
+
+---
+
+## JD-043 — Tenant Networks: a Bridge Each, Kept Apart by PF in Jail Deck's Anchor
+
+**Status:** Locked — 2026-10-28. Measured on isengard with two throwaway tenants, each a bridge with a VNET jail and a Debian guest on it (`capture-tenant-network-induced.sh`). The three ownership lines below were approved by the owner. Second step of #118.
+
+Otter Cloud runs several instances per tenant that must reach each other and the outside, and no other tenant's. JD-040 gave a node one default network with private ports, which keeps every guest apart, including a tenant's own. This record gives each tenant **a network of its own**, created and destroyed through the API.
+
+### What was measured
+
+| | inside a tenant (guest↔jail) | across tenants | the other tenant's gateway, the host's SSH there | the internet |
+| --- | --- | --- | --- | --- |
+| a bridge each, forwarding on, no PF | reaches | **reaches**: the host routes it | **reaches** | no |
+| + one tenant's rules: pass to own gateway, then block the rest | reaches | **blocked** | **blocked** | **reaches**, through NAT |
+| the same rules with the block first | reaches | blocked | blocked | — the host's own traffic to its guests was blocked too: SSH from the host stopped working |
+| VLANs on one bridge (`vlanfilter`, 15.1), no PF | reaches | **reaches**: routed again | reaches | no |
+
+- **Isolation is PF's, whichever layout is used.** With forwarding on, which a network of guests needs, the host routes one tenant into another. VLANs separate the link layer only.
+- **The order of a tenant's two rules matters.** The pass to its own gateway has to come before the block of `self` and of other networks. With the block first, it also caught the replies to the host's own traffic.
+- **VLAN filtering works on 15.1:**
+  - per-member untagged VLANs keep the members apart;
+  - the host's gateways work as `vlan(4)` interfaces on the bridge;
+  - a guest's reboot keeps its tap, still in its VLAN.
+
+  But a `vm start` makes a new tap, which vm-bhyve adds to its switch's bridge with no VLAN. Jail Deck would have to tag it at every start, and until it did, the tap would sit untagged on the shared bridge.
+- **Bridges are cheap:** 256 were created in 1 s and destroyed in 3 s, and listing them was instant.
+- **vm-bhyve's manual switch** puts guests on a bridge it neither creates nor destroys. `vm switch destroy` takes it out of `switch_list` and **leaves its `bridge_<name>` line in `system.conf`**, which Jail Deck removes.
+- **`ifconfig bridge create name … description … up` isn't atomic,** and an `inet` after those options is refused ("bad value"). Measured: the call failed with the bridge already made, named and described. So the address is a second command, and a failed create destroys what is there.
+
+### Who owns what
+
+Approved by the owner:
+
+1. **Jail Deck creates and owns a bridge per tenant network:** `jdn<i>`, the host's address on it as the gateway, and a vm-bhyve manual switch on it named after the network. Only on `POST /api/networks`, never on its own.
+2. **Jail Deck allocates the subnet:** the lowest `/24` of `JAILDECK_NETWORK_RANGE` (default `10.92.0.0/16`) that no network has and no address on the host overlaps. **What the network is, is kept on the host** (JD-011): its name and tenant in the bridge's description (`jaildeck:network=<name>;tenant=<tenant>`), its subnet in the bridge's address.
+3. **Jail Deck writes the rules into its own anchor file.** It never edits `pf.conf`. The rules go into the **same file as the default network's NAT, `jaildeck/vmnet`**, so the three lines from JD-040 already load them and the operator adds nothing. With no tenant network, the file is exactly what JD-040 wrote, so a host that set up the default network doesn't see it as changed.
+
+### The rules, per network
+
+```
+nat on <egress> inet from <subnet> to any -> (<egress>)
+pass in quick on jdn<i> inet from <subnet> to <gateway> no state
+block in quick on jdn<i> inet from <subnet> to { <every other VM network>, self } no state
+```
+
+Every network's NAT line comes first, then every network's filter rules: **pfctl refuses a file whose translation comes after filtering** ("Rules must be in order"). That was measured, when the first build wrote each network's NAT beside its own rules: the second network to be created failed to load, and the rollback took it back. The default network gets one more rule: `block in quick on vm-<switch> inet from <its subnet> to { <every tenant network> } no state`.
+
+**Checked live, 2026-10-28:**
+- Two networks were created through the API, with PF loaded as an operator would load it.
+- Each network's guest reached its own jail, its own gateway, the internet and DNS.
+- Each was blocked from the other network, both ways, from the other's gateway, and from the default network's gateway.
+- The destroy of a network in use was refused, naming its guest and its jail.
+- After everything was destroyed, the host's interfaces, `system.conf` and `rc.conf` were as before. **A network's members reach each other**: its ports aren't private, unlike the default network's. That's what a tenant's own instances need.
+
+### The API
+
+- `GET /api/networks` lists the networks with their `range`; `GET /api/networks/{name}` reads one.
+- **`POST /api/networks`** takes a `name` (lowercase, at most 32; `default` is taken) and an optional `tenant` label. It runs, audited:
+  1. `create-network-bridge`;
+  2. `set-network-address`;
+  3. `create-vm-switch`;
+  4. `write-pf-anchor`, and `load-pf-anchor` when PF is up.
+
+  **A step that fails takes back the earlier ones,** and the anchor file goes back to what it was: a network without its rules is one others can reach.
+- **`DELETE /api/networks/{name}?confirm=`** is refused while anything is on the network: a guest whose configuration names its switch, running or not, a jail whose configuration names its bridge, or any member still on the bridge. The refusal names them.
+- A guest joins a network with `POST /api/vms` and `"switch": "<network>"`. A VNET jail joins with its spec's `network.bridge: "jdn<i>"`. Addresses are still given by the client.
+
+### Not yet
+
+- **Jail Deck picking a member's address,** and creating a jail or guest "on a network" rather than on a bridge or switch: #118's next step.
+- **The interface's view of every network** (#128).
+- **Inbound connections** (port forwards) to a tenant's instances.

@@ -85,10 +85,12 @@ type Network struct {
 	Interface string `json:"interface,omitempty"`
 
 	// Bridge is the bridge the host end of the epair joins, and is required
-	// for NetworkVNET. **It is the operator's.** Jail Deck adds and removes
-	// its own epairs and nothing else: it never creates a bridge, never adds
-	// a physical interface to one, and never edits rc.conf's network
-	// settings (JD-017). GET /api/host reports which bridges exist.
+	// for NetworkVNET. It is the operator's, or a tenant network's jdn<i>,
+	// which Jail Deck made on POST /api/networks (JD-043). Either way the jail
+	// adds and removes its own epair and nothing else: creating a jail never
+	// creates a bridge, never adds a physical interface to one, and never
+	// edits rc.conf's network settings (JD-017). GET /api/host reports which
+	// bridges exist, and GET /api/networks which are tenant networks'.
 	Bridge string `json:"bridge,omitempty"`
 	// Private makes the host end a private member of the bridge.
 	//

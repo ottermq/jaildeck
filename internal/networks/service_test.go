@@ -25,11 +25,18 @@ type host struct {
 	files      map[string]string
 	fail       map[string]error
 	ran        []string
+	// Tenant networks (JD-043): the jdn bridges, other addresses on the
+	// host, and who uses what.
+	bridges     map[string]*TenantBridge
+	addresses   []netip.Prefix
+	switchUsers map[string][]string
+	bridgeUsers map[string][]string
 }
 
 func freshHost() *host {
 	return &host{forwarding: "0", gateway: "NO", egress: "em0", files: map[string]string{}, fail: map[string]error{},
-		pf: PF{RulesFile: "/etc/pf.conf"}}
+		pf: PF{RulesFile: "/etc/pf.conf"}, bridges: map[string]*TenantBridge{},
+		switchUsers: map[string][]string{}, bridgeUsers: map[string][]string{}}
 }
 
 func (h *host) do(call string) error {
@@ -53,6 +60,75 @@ func (h *host) CreateSwitch(_ context.Context, name string) (string, error) {
 	}
 	h.switches = append(h.switches, Switch{Name: name, Type: "standard", Bridge: "vm-" + name})
 	return "vm switch create " + name, nil
+}
+
+func (h *host) TenantBridges(context.Context) ([]TenantBridge, error) {
+	if err := h.fail["bridges"]; err != nil {
+		return nil, err
+	}
+	list := make([]TenantBridge, 0, len(h.bridges))
+	for _, b := range h.bridges {
+		list = append(list, *b)
+	}
+	slices.SortFunc(list, func(a, b TenantBridge) int { return strings.Compare(a.Name, b.Name) })
+	return list, nil
+}
+
+func (h *host) AddressesInUse(context.Context) ([]netip.Prefix, error) {
+	in := slices.Clone(h.addresses)
+	for _, b := range h.bridges {
+		if b.Address.IsValid() {
+			in = append(in, b.Address.Masked())
+		}
+	}
+	return in, nil
+}
+
+func (h *host) CreateTenantBridge(_ context.Context, bridge, description string) (string, error) {
+	err := h.do("bridge " + bridge)
+	// Not atomic, as measured: the bridge is there even when it failed.
+	h.bridges[bridge] = &TenantBridge{Name: bridge, Description: description}
+	return "ifconfig bridge create name " + bridge, err
+}
+
+func (h *host) SetBridgeAddress(_ context.Context, bridge, address string) (string, error) {
+	if err := h.do("inet " + address); err != nil {
+		return "ifconfig " + bridge + " inet " + address, err
+	}
+	h.bridges[bridge].Address = netip.MustParsePrefix(address)
+	return "ifconfig " + bridge + " inet " + address, nil
+}
+
+func (h *host) DestroyBridge(_ context.Context, bridge string) (string, error) {
+	if err := h.do("unbridge " + bridge); err != nil {
+		return "ifconfig " + bridge + " destroy", err
+	}
+	delete(h.bridges, bridge)
+	return "ifconfig " + bridge + " destroy", nil
+}
+
+func (h *host) CreateManualSwitch(_ context.Context, name, bridge string) (string, error) {
+	if err := h.do("manual " + name); err != nil {
+		return "vm switch create -t manual", err
+	}
+	h.switches = append(h.switches, Switch{Name: name, Type: "manual", Bridge: bridge})
+	return "vm switch create -t manual -b " + bridge + " " + name, nil
+}
+
+func (h *host) DestroySwitch(_ context.Context, name string) (string, error) {
+	if err := h.do("unswitch " + name); err != nil {
+		return "vm switch destroy " + name, err
+	}
+	h.switches = slices.DeleteFunc(h.switches, func(s Switch) bool { return s.Name == name })
+	return "vm switch destroy " + name, nil
+}
+
+func (h *host) SwitchUsers(_ context.Context, name string) ([]string, error) {
+	return h.switchUsers[name], nil
+}
+
+func (h *host) BridgeUsers(_ context.Context, bridge string) ([]string, error) {
+	return h.bridgeUsers[bridge], nil
 }
 
 func (h *host) sw(name string) *Switch {
@@ -136,7 +212,8 @@ func (r *recorder) ops() []string {
 	return out
 }
 
-var settings = Settings{Switch: "jaildeck", Address: "10.88.0.1/24", AnchorDir: "/usr/local/etc/jaildeck/pf"}
+var settings = Settings{Switch: "jaildeck", Address: "10.88.0.1/24", AnchorDir: "/usr/local/etc/jaildeck/pf",
+	Range: "10.92.0.0/16"}
 
 func service(h *host) (*Service, *recorder) {
 	rec := &recorder{}

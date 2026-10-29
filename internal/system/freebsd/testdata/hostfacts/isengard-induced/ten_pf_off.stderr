@@ -1,0 +1,10 @@
+pf disabled
+Ethernet rules cleared
+rules cleared
+nat cleared
+0 tables deleted.
+rules cleared
+7 states cleared
+source tracking entries cleared
+pf: statistics cleared
+pf: interface flags reset

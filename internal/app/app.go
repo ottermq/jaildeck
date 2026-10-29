@@ -164,6 +164,7 @@ func New(cfg *config.Config) (*App, error) {
 	if n, ok := networkSystem.(*fake.Networks); ok {
 		if v, ok := vmSystem.(*fake.VMs); ok {
 			v.SwitchesFrom(n)
+			n.GuestsFrom(v.GuestsOn)
 		}
 	}
 
@@ -315,7 +316,8 @@ func NewNetworkSystem(adapter string) (networks.System, error) {
 
 // NetworkSettings is the default VM network as configured.
 func NetworkSettings(cfg *config.Config) networks.Settings {
-	return networks.Settings{Switch: cfg.VMSwitch, Address: cfg.VMAddress, Egress: cfg.VMEgress, AnchorDir: cfg.PFAnchorDir}
+	return networks.Settings{Switch: cfg.VMSwitch, Address: cfg.VMAddress, Egress: cfg.VMEgress, AnchorDir: cfg.PFAnchorDir,
+		Range: cfg.NetworkRange}
 }
 
 // newImageSystem selects the VM image implementation (JD-037).

@@ -1,0 +1,14 @@
+vlan101: flags=8843<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST> metric 0 mtu 1496
+	options=0
+	ether 58:9c:fc:10:d1:26
+	inet 10.91.1.1 netmask 0xffffff00 broadcast 10.91.1.255
+	groups: vlan
+	vlan: 101 vlanproto: 802.1q vlanpcp: 0 parent interface: jdt-v
+	nd6 options=29<PERFORMNUD,IFDISABLED,AUTO_LINKLOCAL>
+vlan102: flags=8843<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST> metric 0 mtu 1496
+	options=0
+	ether 58:9c:fc:10:d1:26
+	inet 10.91.2.1 netmask 0xffffff00 broadcast 10.91.2.255
+	groups: vlan
+	vlan: 102 vlanproto: 802.1q vlanpcp: 0 parent interface: jdt-v
+	nd6 options=29<PERFORMNUD,IFDISABLED,AUTO_LINKLOCAL>

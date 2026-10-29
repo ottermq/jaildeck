@@ -23,9 +23,10 @@ func TestLoadConfig(t *testing.T) {
 				AuditLog: "/var/log/jaildeck/audit.log",
 				LogLevel: "info",
 
-				VMSwitch:    "jaildeck",
-				VMAddress:   "10.88.0.1/24",
-				PFAnchorDir: "/usr/local/etc/jaildeck/pf",
+				VMSwitch:     "jaildeck",
+				VMAddress:    "10.88.0.1/24",
+				PFAnchorDir:  "/usr/local/etc/jaildeck/pf",
+				NetworkRange: "10.92.0.0/16",
 
 				ConsoleIdle: 30 * time.Minute,
 			},
@@ -41,10 +42,11 @@ func TestLoadConfig(t *testing.T) {
 				LogLevel: "debug",
 				ZFSPool:  "tank",
 
-				VMSwitch:    "tenant0",
-				VMAddress:   "10.90.0.1/24",
-				VMEgress:    "igb0",
-				PFAnchorDir: "/tmp/jaildeck-pf",
+				VMSwitch:     "tenant0",
+				VMAddress:    "10.90.0.1/24",
+				VMEgress:     "igb0",
+				PFAnchorDir:  "/tmp/jaildeck-pf",
+				NetworkRange: "10.93.0.0/16",
 
 				ConsoleIdle:    5 * time.Minute,
 				ConsoleOrigins: []string{"jaildeck.example.org", "*.example.org"},
@@ -58,10 +60,11 @@ func TestLoadConfig(t *testing.T) {
 				LogLevel: "debug",
 				ZFSPool:  "tank",
 
-				VMSwitch:    "tenant0",
-				VMAddress:   "10.90.0.1/24",
-				VMEgress:    "igb0",
-				PFAnchorDir: "/tmp/jaildeck-pf",
+				VMSwitch:     "tenant0",
+				VMAddress:    "10.90.0.1/24",
+				VMEgress:     "igb0",
+				PFAnchorDir:  "/tmp/jaildeck-pf",
+				NetworkRange: "10.93.0.0/16",
 
 				ConsoleIdle:    5 * time.Minute,
 				ConsoleOrigins: []string{"jaildeck.example.org", "*.example.org"},
@@ -82,6 +85,7 @@ func TestLoadConfig(t *testing.T) {
 			t.Setenv("JAILDECK_VM_ADDRESS", tt.env.VMAddress)
 			t.Setenv("JAILDECK_VM_EGRESS", tt.env.VMEgress)
 			t.Setenv("JAILDECK_PF_ANCHOR_DIR", tt.env.PFAnchorDir)
+			t.Setenv("JAILDECK_NETWORK_RANGE", tt.env.NetworkRange)
 			idle := ""
 			if tt.env.ConsoleIdle != 0 {
 				idle = tt.env.ConsoleIdle.String()

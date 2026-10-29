@@ -447,13 +447,13 @@ A Linux VM can be created from an image with cloud-init, reached over the bridge
 
 ## Next: VM Networks (#118)
 
-**Status:** step 1 done in v0.17.0. Step 2 not started.
+**Status:** step 1 done in v0.17.0. Step 2: tenant networks built, unreleased; addresses and creating on a network next.
 
 Goal: every guest on a network without a root shell, and, for Otter Cloud, a network per tenant.
 
 - **a default network**, ensured on an explicit step and reported part by part (JD-040). *Built 2026-10-28: `GET` and `PUT /api/networks/default`, `jaildeck init vm-network`, and a panel on the VMs page. Jail Deck owns one switch with private ports and the host's address, IP forwarding now and at boot, and the NAT rules in the file behind `jaildeck/vmnet`. PF and three lines of `pf.conf` stay the operator's, shown with their remedy. The create form defaults to it. Checked end to end on isengard: two guests on it reached the internet and the host, and not each other.*
 - addresses allocated by Jail Deck, so the form needn't ask and a guest's page can say where to connect
-- networks per tenant as a resource: a bridge or a VLAN each, a subnet from a range, nothing between networks, refused while in use
+- networks per tenant as a resource: a bridge or a VLAN each, a subnet from a range, nothing between networks, refused while in use. *Built 2026-10-28 (JD-043): a bridge each, measured against VLANs on one bridge, which route between tenants just the same and need every new tap tagged; `/api/networks` creates, lists and destroys them; their rules share the default network's anchor file, so `pf.conf` needs nothing more.*
 - a read-only view of every network (#128)
 
 ---

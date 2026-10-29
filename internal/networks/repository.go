@@ -82,6 +82,28 @@ type System interface {
 	// names the bridge.
 	SwitchUsers(ctx context.Context, name string) ([]string, error)
 	BridgeUsers(ctx context.Context, bridge string) ([]string, error)
+
+	// Interfaces is every interface on the host, from one ifconfig: what
+	// the Networks view reads its bridges and their members from (#128).
+	Interfaces(ctx context.Context) ([]Interface, error)
+}
+
+// Interface is one of the host's interfaces as ifconfig prints it.
+type Interface struct {
+	Name        string
+	Description string
+	Addresses   []netip.Prefix
+	// Groups are ifconfig's: a bridge is in "bridge".
+	Groups []string
+	// Members are a bridge's.
+	Members []BridgeMember
+}
+
+// BridgeMember is one member line of a bridge: the interface and whether
+// its port is private.
+type BridgeMember struct {
+	Name    string
+	Private bool
 }
 
 // TenantBridge is one jdn<i> bridge as the host has it.

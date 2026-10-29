@@ -313,6 +313,8 @@ ten_scale_listing	t0=$(date +%s); ifconfig >/dev/null; echo ifconfig in $(( $(da
 ten_scale_destroy	t0=$(date +%s); for b in $(cat /var/tmp/jd-capture-tenant/scale); do doas ifconfig $b destroy; done; echo destroyed in $(( $(date +%s) - t0 ))s	exit=0	3s
 net_tenant_bridge	ifconfig -f inet:cidr jdn249	exit=0	0s
 net_bridge_group	ifconfig -g bridge	exit=0	0s
+top_switch_list	vm switch list (#128, capture-topology-induced.sh)	exit=0
+top_ifconfig	ifconfig -a -f inet:cidr, physical interfaces' addresses replaced and tunnels left out (#128, capture-topology-induced.sh)	exit=0
 ret_setup	doas zfs create -o mountpoint=/var/tmp/jd-cap-121 tank/jd-cap-121 && doas zfs create tank/jd-cap-121/containers && doas zfs create tank/jd-cap-121/containers/j1 && doas zfs create tank/jd-cap-121/retained && 	doas zfs create -o mountpoint=/var/tmp/jd-cap-121/containers/j1/var/db/pg tank/jd-cap-121/containers/j1/pg && doas sh -c 'echo kept > /var/tmp/jd-cap-121/containers/j1/var/db/pg/marker'	exit=0
 ret_before	zfs get -H -o name,property,value,source mountpoint,mounted,jaildeck:mountpoint tank/jd-cap-121/containers/j1/pg; mount | grep /var/tmp/jd-cap-121 | sort	exit=0
 ret_rename	doas zfs rename -u tank/jd-cap-121/containers/j1/pg tank/jd-cap-121/retained/j1-pg	exit=0

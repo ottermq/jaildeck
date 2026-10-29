@@ -2803,6 +2803,43 @@
                 }
             }
         },
+        "/topology": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The host's bridges and vm-bhyve's switches, each with its addresses, whose it\nis (`kind`: the `default` network, a `tenant` network, or the `operator`'s)\nand its members, attributed to their jail or guest by the description their\nstart wrote: `jail:\u003cname\u003e` on a VNET jail's epair (JD-030),\n`vmnet/\u003cguest\u003e/\u003cn\u003e/\u003cswitch\u003e` on a guest's tap (JD-035). Anything else on a\nbridge is `other`. `private` is the bridge's flag on that port (#128).\n\n**A switch whose bridge does not exist yet** -- vm-bhyve makes a standard\nswitch's bridge at `vm init`, at boot -- is listed with `exists: false` and no\n`name`, not left out.\n\n`nat` is whether Jail Deck's own anchor translates the bridge's subnet:\n`loaded`, `not-loaded`, or `unknown` when PF is not enabled or the bridge has\nno address. NAT the operator wrote into pf.conf is not read.\n\nRead-only, and read off the host at every request: two commands, `ifconfig\n-a` and `vm switch list`, plus PF's anchor when PF is on.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "networks"
+                ],
+                "summary": "Every network an instance can be on",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/networks.Topology"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "The host's interfaces could not be read",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/vm-images": {
             "get": {
                 "security": [
@@ -5398,6 +5435,53 @@
                 }
             }
         },
+        "networks.Bridge": {
+            "type": "object",
+            "properties": {
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "exists": {
+                    "type": "boolean"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/networks.Member"
+                    }
+                },
+                "name": {
+                    "description": "Name is the bridge's interface, empty for a switch whose bridge does\nnot exist yet: vm-bhyve makes a standard switch's bridge at vm init, at\nboot, and lists the switch with no interface until then (measured).",
+                    "type": "string"
+                },
+                "nat": {
+                    "type": "string"
+                },
+                "network": {
+                    "description": "Network and Tenant are a tenant network's, from its description.",
+                    "type": "string"
+                },
+                "switch": {
+                    "description": "Switch is the vm-bhyve switch on it, and SwitchType its type; empty\nfor a bridge no switch uses, as a VNET jail's may be.",
+                    "type": "string"
+                },
+                "switch_type": {
+                    "type": "string"
+                },
+                "tenant": {
+                    "type": "string"
+                }
+            }
+        },
         "networks.CreateNetworkRequest": {
             "type": "object",
             "properties": {
@@ -5496,6 +5580,28 @@
                 }
             }
         },
+        "networks.Member": {
+            "type": "object",
+            "properties": {
+                "instance": {
+                    "description": "Instance is the jail's or the guest's name; NIC the guest's NIC number.",
+                    "type": "string"
+                },
+                "interface": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "nic": {
+                    "type": "string"
+                },
+                "private": {
+                    "description": "Private is the bridge's private flag on this port: private ports\nreach the host and not each other.",
+                    "type": "boolean"
+                }
+            }
+        },
         "networks.Network": {
             "type": "object",
             "properties": {
@@ -5588,6 +5694,17 @@
                 "PartFail",
                 "PartUnknown"
             ]
+        },
+        "networks.Topology": {
+            "type": "object",
+            "properties": {
+                "bridges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/networks.Bridge"
+                    }
+                }
+            }
         },
         "storage.RetainedDataset": {
             "type": "object",

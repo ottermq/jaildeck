@@ -275,6 +275,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/vm-images/{name}` | one image: its state, the build it was written from, the guests cloned from it |
 | `PUT /api/vm-images/{name}` | prepare one from a source — `202`, then watch it |
 | `DELETE /api/vm-images/{name}?confirm={name}` | remove one no guest uses |
+| `GET /api/topology` | every bridge and vm-bhyve switch, its addresses and NAT, and the jails and guests on it |
 | `GET /api/networks/default` | the default VM network, part by part, with whose each part is and the remedy |
 | `PUT /api/networks/default` | set up Jail Deck's parts of it: switch, address, private ports, forwarding, NAT rules |
 

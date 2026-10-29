@@ -20,6 +20,74 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.20.0 — 2026-10-29
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.20.0)
+
+**A way in at the console, and a map of the networks.** A guest made from a cloud image can be
+given a **console password** (#152), so its serial console gets past the login prompt while SSH
+stays key-only. A read-only **Networks** page shows every bridge and switch on the host and what
+is on each (#128). The interface says **which Jail Deck is running** (#136), and retaining a
+jail's child dataset that has its **own mountpoint** no longer leaves it mounted in the jail it
+left (#121).
+
+Nothing to act on when upgrading: no new setting, and nothing in `pf.conf` or `rc.conf`.
+
+### Added
+
+- **A console password for cloud-image guests** (#159, closing #152): **Create a VM** has a
+  **Console password** field.
+  - With one, Jail Deck writes the guest's cloud-init user-data itself: vm-bhyve's own lines, the
+    keys, and a bcrypt hash of the password for the image's default user, with
+    `ssh_pwauth: false`. **The password opens the console, not SSH.**
+  - It is never stored, logged or answered; the audit records `vm create … -u <file>`. Without a
+    password nothing changes.
+- **A Networks page** (#162, closing #128), read-only, between VMs and Operations.
+  - Each bridge and vm-bhyve switch shows its kind (the default network, a tenant network, or the
+    operator's own), its addresses, and whether Jail Deck's NAT rules translate it.
+  - What is on it: a jail's epair links to the jail, a guest's tap to the guest. A switch whose
+    bridge is not made yet says vm-bhyve makes it at `vm init`.
+- **Which Jail Deck is running** (#160, closing #136): the version under the logo on every page
+  (a release links to its notes), and a Jail Deck block at the end of the Host page with the
+  commit, when it started, and the state directory.
+
+### Fixed
+
+- **Retaining a child dataset with its own mountpoint** (#161, closing #121). A child whose
+  `mountpoint` was set on itself (a database at `/var/db/postgres`) kept it through the move,
+  stayed mounted inside the jail it left, and made that jail's `zfs destroy -r` fail "busy".
+  Retain now records the path in `jaildeck:mountpoint`, relative to the jail, and inherits;
+  restore puts it back inside the new jail, so a jail of another name gets it at the same place.
+  A dataset that was not mounted is left not mounted. A child that inherits its mountpoint moves
+  as before.
+
+### API
+
+- **`console_password`** on `POST` and `PUT /api/vms` (#159): 8 to 72 bytes, no control
+  characters, refused without being repeated. `PUT` checks it against the guest's seed, and a
+  difference says only `set`, `none` or `another`. Additive.
+- **`GET /api/about`** (#160): `version`, `commit`, `modified`, `started`, `state_dir`.
+- **`GET /api/topology`** (#162): every bridge and switch, and what is on it. Not under
+  `/api/networks`, where it would hide a tenant network named `topology`.
+- **Retain and restore answer `409`** (#161), before anything runs, for a child whose own
+  mountpoint is outside its jail, and for a recorded path that climbs out of the new one.
+- **`jaildeck_build_info{version,commit} 1`** on the Prometheus endpoint (#160).
+
+### Internal
+
+- **The measurements are kept as captures:** the console-password seed as `vm_pw_user_data`,
+  `capture-retain-mountpoint-induced.sh` with its `ret_*` outputs, and
+  `capture-topology-induced.sh` with `top_ifconfig` and `top_switch_list`.
+- **JD-038 and JD-025 amended** with what was measured: vm-bhyve takes `-u` or `-k`, never both;
+  `zfs set` and `zfs inherit mountpoint` mount the dataset on their own.
+
+### Known
+
+- **A retained child's own children with local mountpoints** are moved as before, not handled
+  (#121).
+
+---
+
 ## v0.19.0 — 2026-10-29
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.19.0)

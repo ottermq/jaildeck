@@ -27,12 +27,24 @@ const ExpositionContentType = "text/plain; version=0.0.4; charset=utf-8"
 func WriteExposition(w io.Writer, report Report) error {
 	out := &exposition{w: newWriter(w)}
 
+	out.build(report.Build)
 	out.host(report.Host)
 	out.pools(report.Host.Pools)
 	out.jails(report)
 	out.disks(report.Disks)
 
 	return out.w.Flush()
+}
+
+// build is the usual *_build_info convention: always 1, the facts in the
+// labels, so a dashboard can join on it and see a host left on an old
+// release (#136).
+func (e *exposition) build(build Build) {
+	if build.Version == "" {
+		return
+	}
+	e.gauge("jaildeck_build_info", "Which Jail Deck is running: its version and the commit it was built from. Always 1.")
+	e.value(labels{{"version", build.Version}, {"commit", build.Commit}}, 1)
 }
 
 func (e *exposition) host(host Host) {

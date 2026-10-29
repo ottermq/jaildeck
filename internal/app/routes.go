@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/ottermq/jaildeck/internal/about"
 	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/auth"
 	"github.com/ottermq/jaildeck/internal/common"
@@ -46,6 +47,7 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 			images.RegisterImageRoutes(r, a.imageHandler)
 			networks.RegisterNetworkRoutes(r, a.networkHandler)
 			names.RegisterNameRoutes(r, a.nameHandler)
+			about.RegisterAboutRoutes(r, a.aboutHandler)
 			storage.RegisterStorageRoutes(r, a.storageHandler)
 			templates.RegisterTemplateRoutes(r, a.templateHandler)
 		})

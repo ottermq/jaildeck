@@ -50,6 +50,8 @@ Keep the sidebar simple — avoid too many sections before the features justify 
 
 Built: **Dashboard**, **Jails**, **Templates**, **VMs**, **Operations**, **Firewall**, **Host**. A section stays highlighted on its detail pages, so `/jails/ottermq` keeps Jails lit.
 
+**The version** sits under the logo, small and muted, from `GET /api/about` (#136): a release (`v0.19.0`) links to its notes, any other build is only named. It is there on every page and takes room from none; it is not beside "Signed in", which is about the session, not the software. On a narrow screen it sits beside the logo. The **Host** page ends with a **Jail Deck** block for when something needs debugging: the version, the commit it was built from (and whether that tree had changes), when it started, and its state directory.
+
 On a narrow screen the sections become a row across the top, and seven of them are wider than a phone: the row scrolls sideways on its own, and the page does not. Measured at 390px wide: the six sections before VMs already took 486px of links, and the rail, sized to them, made the whole page scroll sideways.
 
 Still on the sketch above: Storage, Logs, Settings. Possible later: Snapshots (if it earns a page separate from a jail's), Tasks (once long-running operations exist), Services, Packages, System.

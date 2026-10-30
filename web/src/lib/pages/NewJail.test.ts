@@ -31,8 +31,14 @@ vi.mock('../stores/jails.svelte', async (original) => ({
     }),
 }))
 
+// Jail Deck's networks the form offers a VNET jail (JD-047); none unless a
+// test sets them.
+let networks: { name: string, bridge: string, switch: string, subnet: string, gateway: string }[] = []
+vi.mock('../stores/networks.svelte', () => ({ ownNetworks: vi.fn(async () => networks) }))
+
 beforeEach(() => {
     sent.length = 0
+    networks = []
 })
 
 // A Svelte binding listens for `input`; setting .value alone does nothing.
@@ -61,6 +67,28 @@ async function submit(): Promise<JailSpec> {
 }
 
 describe('the create form', () => {
+    it('puts a vnet jail on a Jail Deck network by name, its address left to it', async () => {
+        networks = [{ name: 'platform', bridge: 'jdn1', switch: 'platform', subnet: '10.92.1.0/24', gateway: '10.92.1.1' }]
+        await openForm()
+        await choose(screen.getByLabelText('Mode'), 'vnet')
+        const on = await screen.findByLabelText('On') as HTMLSelectElement
+        expect(on.value).toBe('platform')
+        expect(screen.queryByLabelText('Bridge')).toBeNull()
+        expect((screen.getByLabelText('Address') as HTMLInputElement).placeholder).toBe('picked by Jail Deck')
+        expect((screen.getByLabelText('Gateway') as HTMLInputElement).placeholder).toBe('10.92.1.1')
+        expect((await submit()).network).toEqual({ mode: 'vnet', name: 'platform' })
+    })
+
+    it('puts a vnet jail on another bridge, typed in', async () => {
+        networks = [{ name: 'platform', bridge: 'jdn1', switch: 'platform', subnet: '10.92.1.0/24', gateway: '10.92.1.1' }]
+        await openForm()
+        await choose(screen.getByLabelText('Mode'), 'vnet')
+        await choose(await screen.findByLabelText('On'), '')
+        await type(screen.getByLabelText('Bridge'), 'bridge0')
+        await type(screen.getByLabelText('Address'), '10.0.0.5/24')
+        expect((await submit()).network).toEqual({ mode: 'vnet', bridge: 'bridge0', ip4: '10.0.0.5/24' })
+    })
+
     it('sends the minimal spec for a form left as it opened', async () => {
         await openForm()
         expect(await submit()).toEqual({

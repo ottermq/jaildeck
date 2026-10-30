@@ -4,8 +4,8 @@ import NameField from './NameField.svelte'
 import { createVM } from '../stores/vms.svelte'
 import type { Created, CreateRequest } from '../stores/vms.svelte'
 import { listImages } from '../stores/vmImages.svelte'
-import { getDefaultNetwork } from '../stores/networks.svelte'
-import type { DefaultNetwork } from '../stores/networks.svelte'
+import { getDefaultNetwork, ownNetworks } from '../stores/networks.svelte'
+import type { DefaultNetwork, OwnNetwork } from '../stores/networks.svelte'
 import type { Image } from '../stores/vmImages.svelte'
 import { ApiError } from '../services/api'
 import { formatBytes } from '../utils'
@@ -22,19 +22,20 @@ let { switches, oncreated, oncancel }: {
 let images = $state<Image[] | null>(null)
 let imagesError = $state('')
 
-// The default network (JD-040) is offered first. It has no DHCP server, so a
-// guest on it is given a static address, with the host as its gateway.
+// Jail Deck's own networks, the default one (JD-040) first, are offered
+// before the operator's switches. None has a DHCP server, so a guest on one
+// is given its address by Jail Deck, with the host as its gateway (JD-047).
 let defaultNet = $state<DefaultNetwork | null>(null)
+let networks = $state<OwnNetwork[]>([])
 
 onMount(async () => {
     try {
-        const net = await getDefaultNetwork()
-        if (net.usable && switches.includes(net.switch)) {
-            defaultNet = net
-            vmSwitch = net.switch
-        }
+        const [net, own] = await Promise.all([getDefaultNetwork().catch(() => null), ownNetworks()])
+        networks = own.filter(n => switches.includes(n.switch))
+        if (net?.usable && switches.includes(net.switch)) defaultNet = net
+        if (networks.length > 0) vmSwitch = networks[0].switch
     } catch {
-        // No default network to offer; the form works without it.
+        // No networks to offer; the form works without them.
     }
     try {
         const listing = await listImages()
@@ -57,7 +58,7 @@ let pins = $state('')
 // does not change it.
 // svelte-ignore state_referenced_locally
 let vmSwitch = $state(switches[0] ?? '')
-let addressing = $state<'dhcp' | 'static'>('dhcp')
+let addressing = $state<'dhcp' | 'static' | 'picked'>('dhcp')
 let address = $state('')
 let gateway = $state('')
 let nameservers = $state('')
@@ -67,22 +68,25 @@ let start = $state(true)
 
 let chosen = $derived(images?.find(i => i.name === image))
 let onDefault = $derived(defaultNet !== null && vmSwitch === defaultNet.switch)
-// An example address in the default network's subnet, not the host's.
+// The Jail Deck network the chosen switch is, if it is one.
+let network = $derived(networks.find(n => n.switch === vmSwitch))
+// An example address in the network's subnet, not the host's.
 let addressExample = $derived.by(() => {
-    if (!onDefault || !defaultNet) return '10.0.0.5/24'
-    const octets = defaultNet.gateway.split('.')
+    if (!network) return '10.0.0.5/24'
+    const octets = network.gateway.split('.')
     octets[3] = octets[3] === '10' ? '11' : '10'
-    return `${octets.join('.')}/${defaultNet.subnet.split('/')[1]}`
+    return `${octets.join('.')}/${network.subnet.split('/')[1]}`
 })
-let orderedSwitches = $derived(defaultNet
-    ? [defaultNet.switch, ...switches.filter(s => s !== defaultNet!.switch)]
-    : switches)
+let orderedSwitches = $derived([
+    ...networks.map(n => n.switch),
+    ...switches.filter(s => !networks.some(n => n.switch === s)),
+])
 
+// On a Jail Deck network the address is picked unless one is typed; on an
+// operator's switch it is DHCP unless one is typed.
 $effect(() => {
-    if (onDefault && defaultNet) {
-        addressing = 'static'
-        if (gateway === '') gateway = defaultNet.gateway
-    }
+    if (network && addressing === 'dhcp') addressing = 'picked'
+    if (!network && addressing === 'picked') addressing = 'dhcp'
 })
 let busy = $state(false)
 let error = $state('')
@@ -117,11 +121,13 @@ async function submit(event: Event) {
     }
     if (vmSwitch !== '') {
         req.switch = vmSwitch
+        const servers = split(nameservers, /[\s,]+/)
         if (addressing === 'static') {
             req.network = { address: address.trim() }
             if (gateway.trim() !== '') req.network.gateway = gateway.trim()
-            const servers = split(nameservers, /[\s,]+/)
             if (servers.length > 0) req.network.nameservers = servers
+        } else if (addressing === 'picked' && servers.length > 0) {
+            req.network = { nameservers: servers }
         }
     }
     try {
@@ -189,7 +195,8 @@ async function submit(event: Event) {
                 <label for="vm-switch">Network</label>
                 <select id="vm-switch" bind:value={vmSwitch}>
                     {#each orderedSwitches as s (s)}
-                        <option value={s}>{s === defaultNet?.switch ? `on the default network (${s})` : `on switch ${s}`}</option>
+                        {@const n = networks.find(n => n.switch === s)}
+                        <option value={s}>{n ? (n.name === 'default' ? `on the default network (${s})` : `on network ${n.name}`) : `on switch ${s}`}</option>
                     {/each}
                     <option value="">no network</option>
                 </select>
@@ -198,7 +205,9 @@ async function submit(event: Event) {
                 <fieldset class="field">
                     <legend>Address</legend>
                     <div class="radios">
-                        {#if !onDefault}
+                        {#if network}
+                            <label><input type="radio" bind:group={addressing} value="picked" /> Picked by Jail Deck</label>
+                        {:else}
                             <label><input type="radio" bind:group={addressing} value="dhcp" /> DHCP</label>
                         {/if}
                         <label><input type="radio" bind:group={addressing} value="static" /> Static</label>
@@ -206,11 +215,13 @@ async function submit(event: Event) {
                 </fieldset>
             {/if}
         </div>
-        {#if onDefault && defaultNet}
+        {#if network}
             <p class="hint">
-                The default network has no DHCP: give the guest an address in <code>{defaultNet.subnet}</code>
-                other than the host’s, with <code>{defaultNet.gateway}</code> as its gateway. It reaches the
-                host{defaultNet.ready ? ' and the outside' : ''}, and no other guest.
+                {network.name === 'default' ? 'The default network' : `The network ${network.name}`} has no DHCP:
+                Jail Deck gives the guest the lowest free address of <code>{network.subnet}</code>, with
+                <code>{network.gateway}</code> as its gateway, unless you give a static one that is free there.
+                {#if onDefault && defaultNet}It reaches the host{defaultNet.ready ? ' and the outside' : ''}, and no
+                    other guest.{/if}
             </p>
         {/if}
         {#if switches.length === 0}
@@ -219,17 +230,20 @@ async function submit(event: Event) {
                 operator's, made with <code>vm switch create</code>.
             </p>
         {/if}
-        {#if vmSwitch !== '' && addressing === 'static'}
+        {#if vmSwitch !== '' && addressing !== 'dhcp'}
             <div class="form__row">
-                <div class="field">
-                    <label for="vm-address">Address</label>
-                    <input id="vm-address" bind:value={address} placeholder={addressExample}
-                           autocomplete="off" spellcheck="false" required />
-                </div>
-                <div class="field">
-                    <label for="vm-gateway">Gateway</label>
-                    <input id="vm-gateway" bind:value={gateway} placeholder="10.0.0.1" autocomplete="off" spellcheck="false" />
-                </div>
+                {#if addressing === 'static'}
+                    <div class="field">
+                        <label for="vm-address">Address</label>
+                        <input id="vm-address" bind:value={address} placeholder={addressExample}
+                               autocomplete="off" spellcheck="false" required />
+                    </div>
+                    <div class="field">
+                        <label for="vm-gateway">Gateway</label>
+                        <input id="vm-gateway" bind:value={gateway} placeholder={network?.gateway ?? '10.0.0.1'}
+                               autocomplete="off" spellcheck="false" />
+                    </div>
+                {/if}
                 <div class="field field--grow">
                     <label for="vm-nameservers">Nameservers</label>
                     <input id="vm-nameservers" bind:value={nameservers} placeholder="10.0.0.1"

@@ -60,6 +60,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Limits changed in place** (v0.21.0): an existing jail's limits changed without recreating it, live when it runs (#119); the commit stamped in packaged builds (#165)
 - **The end of a retain** (v0.22.0): a retained dataset, or one child of a jail, destroyed with its snapshots through the API and the interface (#120)
 - **Instances at scale** (v0.23.0): one list of jails and guests with search, filters and grouping by label kept in the URL, and bulk start, stop, restart and snapshot (#129); guest labels as ZFS user properties (JD-044); guest snapshots, crash-consistent while running (#174, JD-045)
+- **Addresses on Jail Deck's networks** (v0.24.0): a jail or guest on the default or a tenant network gets the lowest free address, from what the host's stanzas, seeds and ARP table say is taken, an address asked for refused when taken, a jail created on a network by name, and the addresses in use shown (#118 step 3, JD-047)
 
 ---
 
@@ -452,12 +453,12 @@ A Linux VM can be created from an image with cloud-init, reached over the bridge
 
 ## Next: VM Networks (#118)
 
-**Status:** step 1 done in v0.17.0. Step 2, tenant networks, done in v0.19.0, and the view of every network in v0.20.0. Addresses and creating on a network next.
+**Status:** done. Step 1 in v0.17.0; step 2, tenant networks, in v0.19.0, and the view of every network in v0.20.0; step 3, addresses picked by Jail Deck and creating on a network, in v0.24.0 (JD-047).
 
 Goal: every guest on a network without a root shell, and, for Otter Cloud, a network per tenant.
 
 - **a default network**, ensured on an explicit step and reported part by part (JD-040). *Built 2026-10-28: `GET` and `PUT /api/networks/default`, `jaildeck init vm-network`, and a panel on the VMs page. Jail Deck owns one switch with private ports and the host's address, IP forwarding now and at boot, and the NAT rules in the file behind `jaildeck/vmnet`. PF and three lines of `pf.conf` stay the operator's, shown with their remedy. The create form defaults to it. Checked end to end on isengard: two guests on it reached the internet and the host, and not each other.*
-- addresses allocated by Jail Deck, so the form needn't ask and a guest's page can say where to connect
+- addresses allocated by Jail Deck, so the form needn't ask and a guest's page can say where to connect. *Built 2026-10-30 (JD-047): on Jail Deck's own networks, the lowest free address, from what the host's stanzas, seeds and the bridge's ARP table say is taken, one create per network at a time; an address asked for is checked and refused, naming its holder, when taken. A jail names a network with `network.name`. The network's view lists its addresses, and a guest's page says where to connect.*
 - networks per tenant as a resource: a bridge or a VLAN each, a subnet from a range, nothing between networks, refused while in use. *Built 2026-10-28 (JD-043): a bridge each, measured against VLANs on one bridge, which route between tenants just the same and need every new tap tagged; `/api/networks` creates, lists and destroys them; their rules share the default network's anchor file, so `pf.conf` needs nothing more.*
 - a read-only view of every network (#128). *Done in v0.20.0: a Networks page from `GET /api/topology`, every bridge and switch with its kind, addresses, NAT and what is on it.*
 

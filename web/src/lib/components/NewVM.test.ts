@@ -13,10 +13,19 @@ let answer: Created | Error
 
 vi.mock('../stores/vmImages.svelte', () => ({ listImages: vi.fn(async () => images) }))
 let defaultNet: unknown
+let tenants: { name: string, bridge: string, switch: string, subnet: string, gateway: string }[]
 vi.mock('../stores/networks.svelte', () => ({
     getDefaultNetwork: vi.fn(async () => {
         if (defaultNet instanceof Error) throw defaultNet
         return defaultNet
+    }),
+    ownNetworks: vi.fn(async () => {
+        const own = [...tenants]
+        if (!(defaultNet instanceof Error)) {
+            const d = defaultNet as { switch: string, subnet: string, gateway: string }
+            own.unshift({ name: 'default', bridge: `vm-${d.switch}`, switch: d.switch, subnet: d.subnet, gateway: d.gateway })
+        }
+        return own
     }),
 }))
 vi.mock('../stores/vms.svelte', async (original) => ({
@@ -40,6 +49,7 @@ beforeEach(() => {
     }
     sent = []
     defaultNet = new Error('no default network')
+    tenants = []
     answer = { name: 'jd-live-web', datastore: 'default', state: 'running', autostart: false, image: 'debian-13' }
 })
 
@@ -154,7 +164,7 @@ describe('creating a virtual machine', () => {
         expect(created).not.toHaveBeenCalled()
     })
 
-    it('offers the default network first, with no DHCP and the host as gateway', async () => {
+    it('offers the default network first, its address picked by Jail Deck', async () => {
         defaultNet = { switch: 'jaildeck', address: '10.88.0.1/24', subnet: '10.88.0.0/24', gateway: '10.88.0.1',
             usable: true, ready: true, parts: [] }
         form(['jd-livesw', 'jaildeck'])
@@ -162,15 +172,47 @@ describe('creating a virtual machine', () => {
         await waitFor(() => expect(net.value).toBe('jaildeck'))
         expect(net.options[0].textContent).toBe('on the default network (jaildeck)')
         expect(screen.queryByLabelText('DHCP')).toBeNull()
-        expect((screen.getByLabelText('Gateway') as HTMLInputElement).value).toBe('10.88.0.1')
+        expect((screen.getByLabelText('Picked by Jail Deck') as HTMLInputElement).checked).toBe(true)
+        expect(screen.queryByLabelText('Address')).toBeNull()
         expect(screen.getByText(/The default network has no DHCP/)).toBeTruthy()
+        await type('Name', 'web')
+        await fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+        await waitFor(() => expect(sent.length).toBe(1))
+        expect(sent[0].switch).toBe('jaildeck')
+        expect(sent[0].network).toBeUndefined()
+    })
+
+    it('takes a static address on a network, with its gateway the default', async () => {
+        defaultNet = { switch: 'jaildeck', address: '10.88.0.1/24', subnet: '10.88.0.0/24', gateway: '10.88.0.1',
+            usable: true, ready: true, parts: [] }
+        form(['jaildeck'])
+        await waitFor(() => expect((screen.getByLabelText('Network') as HTMLSelectElement).value).toBe('jaildeck'))
+        await fireEvent.click(screen.getByLabelText('Static'))
         expect((screen.getByLabelText('Address') as HTMLInputElement).placeholder).toBe('10.88.0.10/24')
+        expect((screen.getByLabelText('Gateway') as HTMLInputElement).placeholder).toBe('10.88.0.1')
         await type('Name', 'web')
         await type('Address', '10.88.0.10/24')
         await fireEvent.click(screen.getByRole('button', { name: 'Create' }))
         await waitFor(() => expect(sent.length).toBe(1))
-        expect(sent[0].switch).toBe('jaildeck')
-        expect(sent[0].network).toEqual({ address: '10.88.0.10/24', gateway: '10.88.0.1' })
+        expect(sent[0].network).toEqual({ address: '10.88.0.10/24' })
+    })
+
+    it('names a tenant network, and sends only the nameservers when the address is picked', async () => {
+        tenants = [{ name: 'platform', bridge: 'jdn1', switch: 'platform', subnet: '10.92.1.0/24', gateway: '10.92.1.1' }]
+        form(['jd-livesw', 'platform'])
+        const net = await screen.findByLabelText('Network') as HTMLSelectElement
+        await waitFor(() => expect(net.value).toBe('platform'))
+        expect(net.options[0].textContent).toBe('on network platform')
+        expect(screen.getByText(/The network platform has no DHCP/)).toBeTruthy()
+        await type('Name', 'web')
+        await type('Nameservers', '9.9.9.9')
+        await fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+        await waitFor(() => expect(sent.length).toBe(1))
+        expect(sent[0]).toMatchObject({ switch: 'platform', network: { nameservers: ['9.9.9.9'] } })
+
+        // An operator's switch is DHCP again.
+        await fireEvent.change(net, { target: { value: 'jd-livesw' } })
+        expect((screen.getByLabelText('DHCP') as HTMLInputElement).checked).toBe(true)
     })
 
     it('points at the images when none is ready', async () => {

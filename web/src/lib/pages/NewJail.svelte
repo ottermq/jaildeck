@@ -3,6 +3,8 @@ import { onMount } from 'svelte'
 import NameField from '../components/NameField.svelte'
 import { navigate, onNavClick } from '../router.svelte'
 import { listTemplates } from '../stores/templates.svelte'
+import { ownNetworks } from '../stores/networks.svelte'
+import type { OwnNetwork } from '../stores/networks.svelte'
 import type { Template } from '../stores/templates.svelte'
 import { createJail, partialCreate } from '../stores/jails.svelte'
 import type { Created, JailSpec, NetworkMode } from '../stores/jails.svelte'
@@ -21,6 +23,10 @@ let mode = $state<NetworkMode>('disable')
 let ip4 = $state('')
 let iface = $state('')
 let bridge = $state('')
+// One of Jail Deck's networks, whose addresses it gives (JD-047); empty for
+// a bridge of the operator's, typed in.
+let networks = $state<OwnNetwork[]>([])
+let onNetwork = $state('')
 let isPrivate = $state(false)
 let gateway = $state('')
 
@@ -69,9 +75,17 @@ async function load() {
     }
 }
 
-onMount(() => {
+onMount(async () => {
     load()
+    try {
+        networks = await ownNetworks()
+        onNetwork = networks[0]?.name ?? ''
+    } catch {
+        // No networks to offer; a bridge can still be typed in.
+    }
 })
+
+let network = $derived(networks.find(n => n.name === onNetwork))
 
 function addChild() {
     children = [...children, { id: nextRow++, name: '', properties: {} }]
@@ -91,7 +105,7 @@ function removeTag(id: number) {
 
 function spec(): JailSpec {
     return buildSpec({
-        name, template, hostname, mode, ip4, iface, bridge, isPrivate, gateway,
+        name, template, hostname, mode, ip4, iface, bridge, network: onNetwork, isPrivate, gateway,
         autostart, start, limits, paramValues, children, tags,
     })
 }
@@ -203,6 +217,11 @@ let stoppedAt = $derived(failed?.failed_at)
             {/each}
         </ol>
 
+        {#if report.address}
+            <p class="hint">
+                Its address is <code>{report.address}</code> on the network <code>{report.network}</code>.
+            </p>
+        {/if}
         {#if report.epair}
             <p class="hint">
                 Its epair is <code>{report.epair}</code>{#if report.epair_removed}, which was destroyed
@@ -297,20 +316,33 @@ let stoppedAt = $derived(failed?.failed_at)
                                spellcheck="false" placeholder="em0" />
                     </div>
                 {:else if mode === 'vnet'}
-                    <div class="field field--grow">
-                        <label for="bridge">Bridge</label>
-                        <input id="bridge" bind:value={bridge} required autocomplete="off"
-                               spellcheck="false" placeholder="bridge0" />
-                    </div>
+                    {#if networks.length > 0}
+                        <div class="field field--grow">
+                            <label for="vnet-network">On</label>
+                            <select id="vnet-network" bind:value={onNetwork}>
+                                {#each networks as n (n.name)}
+                                    <option value={n.name}>network {n.name} ({n.subnet})</option>
+                                {/each}
+                                <option value="">another bridge</option>
+                            </select>
+                        </div>
+                    {/if}
+                    {#if !network}
+                        <div class="field field--grow">
+                            <label for="bridge">Bridge</label>
+                            <input id="bridge" bind:value={bridge} required autocomplete="off"
+                                   spellcheck="false" placeholder="bridge0" />
+                        </div>
+                    {/if}
                     <div class="field field--grow">
                         <label for="vnet-ip4">Address</label>
-                        <input id="vnet-ip4" bind:value={ip4} autocomplete="off"
-                               spellcheck="false" placeholder="10.77.0.23/24 — or DHCP inside" />
+                        <input id="vnet-ip4" bind:value={ip4} autocomplete="off" spellcheck="false"
+                               placeholder={network ? 'picked by Jail Deck' : '10.77.0.23/24 — or DHCP inside'} />
                     </div>
                     <div class="field field--grow">
                         <label for="gateway">Gateway</label>
                         <input id="gateway" bind:value={gateway} autocomplete="off"
-                               spellcheck="false" placeholder="10.77.0.1" />
+                               spellcheck="false" placeholder={network?.gateway ?? '10.77.0.1'} />
                     </div>
                 {/if}
             </div>
@@ -324,9 +356,16 @@ let stoppedAt = $derived(failed?.failed_at)
                     <input type="checkbox" bind:checked={isPrivate} />
                     Private member of the bridge
                 </label>
+                {#if network}
+                    <p class="hint">
+                        Jail Deck gives it the lowest free address of <code>{network.subnet}</code>, and
+                        <code>{network.gateway}</code> as its gateway, unless you give them. An address you
+                        give has to be free there.
+                    </p>
+                {/if}
                 <p class="hint">
-                    The bridge is yours: Jail Deck adds and removes its own epairs and
-                    nothing else, and never creates one. <strong>Private</strong> stops this jail
+                    {network ? 'Its bridge is Jail Deck’s' : 'The bridge is yours'}: Jail Deck adds and removes its own epairs and
+                    nothing else, and creating a jail never creates one. <strong>Private</strong> stops this jail
                     reaching the <em>other private members</em> — measured on 15.1-RELEASE-p5, a
                     private member still reaches non-private ones and the bridge itself.
                 </p>

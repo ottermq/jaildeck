@@ -615,6 +615,12 @@ A jail spec may ask for VNET networking:
 - **A VNET jail's loopback starts down.** The stanza brings `lo0` up, sets the address and adds the route *before* `/bin/sh /etc/rc`, so the services rc starts find an interface that is already configured.
 - **`private` isolates private members from each other, and only from each other.** Measured: private→private is blocked, private→non-private works, private→the bridge works. The sentence above is accurate only where every jail on the bridge asks for it; a jail sharing a bridge with a non-private member is not isolated from it.
 
+**Amended 2026-10-30 — a host may filter bridge members.** Every measurement above, and those in JD-040 and JD-043, was taken with `net.link.bridge.pfil_member=0` and `pfil_bridge=0`, FreeBSD's defaults. With these defaults, PF never sees traffic between two members of one bridge, only traffic the host routes. A host may set `pfil_member=1` so that its own `pf.conf` can filter between members of one bridge, for example between two jails of one tenant. Jail Deck neither reads nor sets either sysctl. Per bridge(4), with `pfil_member=1`:
+- bridged packets pass PF on the member interfaces (the epair's host end, a guest's tap), so the main ruleset applies to them;
+- Jail Deck's anchor is unaffected: its filter rules are `on <bridge>`, which still matches only routed traffic;
+- **"reaches" in these records then means "reaches unless the host's own rules say otherwise".** A private→non-private or non-private↔non-private path on one bridge can be blocked by a rule in `pf.conf` that names no interface. Nothing becomes reachable that was blocked: `private` still blocks private→private at the bridge.
+- the setting is host-wide, so it applies to every bridge, the default VM network's included, and every bridged packet a stateful rule passes gets a state entry.
+
 A VNET jail sets no `ip4.addr`, so neither `jls` nor its configuration reports an address for it and the jail listing shows none. The address is in the jail's own stack. A stanza cannot carry it as metadata either: an assignment jail(8) does not recognise is a hard error (`unknown parameter`), measured.
 
 ### Rationale
@@ -2113,6 +2119,7 @@ Every network's NAT line comes first, then every network's filter rules: **pfctl
 - Each was blocked from the other network, both ways, from the other's gateway, and from the default network's gateway.
 - The destroy of a network in use was refused, naming its guest and its jail.
 - After everything was destroyed, the host's interfaces, `system.conf` and `rc.conf` were as before. **A network's members reach each other**: its ports aren't private, unlike the default network's. That's what a tenant's own instances need.
+- **A host filtering bridge members** (`net.link.bridge.pfil_member=1`, see JD-017's amendment of 2026-10-30) may block some of a network's members from each other with its own `pf.conf`. Jail Deck's rules are unchanged by it, and the anchor still keeps networks apart.
 
 ### The API
 
@@ -2125,11 +2132,11 @@ Every network's NAT line comes first, then every network's filter rules: **pfctl
 
   **A step that fails takes back the earlier ones,** and the anchor file goes back to what it was: a network without its rules is one others can reach.
 - **`DELETE /api/networks/{name}?confirm=`** is refused while anything is on the network: a guest whose configuration names its switch, running or not, a jail whose configuration names its bridge, or any member still on the bridge. The refusal names them.
-- A guest joins a network with `POST /api/vms` and `"switch": "<network>"`. A VNET jail joins with its spec's `network.bridge: "jdn<i>"`. Addresses are still given by the client.
+- A guest joins a network with `POST /api/vms` and `"switch": "<network>"`. A VNET jail joins with its spec's `network.bridge: "jdn<i>"`. Addresses are still given by the client. *Since JD-047, a jail can name the network instead (`network.name`), and Jail Deck picks the address on either.*
 
 ### Not yet
 
-- **Jail Deck picking a member's address,** and creating a jail or guest "on a network" rather than on a bridge or switch: #118's next step.
+- **Jail Deck picking a member's address,** and creating a jail or guest "on a network" rather than on a bridge or switch. *Done in JD-047.*
 - **The interface's view of every network** (#128).
 - **Inbound connections** (port forwards) to a tenant's instances.
 
@@ -2233,3 +2240,82 @@ A console is root on a guest or in a jail. A platform with tenants (Otter Cloud)
 
 - Scopes on the plain API, such as read-only or per-domain. The model allows them, and none are added.
 - Editing a token's scopes. A token is revoked and made again.
+
+---
+
+## JD-047 — A Member's Address: Picked by Jail Deck From What the Host Says Is Taken
+
+**Status:** Locked — 2026-10-30. Owner's decisions on #118's third step. Measured on isengard (`capture-network-addresses-induced.sh`), and checked live there through the API.
+
+Until now a client gave every member of a network its address, and nothing stopped two members from getting the same one. On its own networks (the default one and tenant ones) Jail Deck now picks the address, and refuses one that's taken.
+
+### What was measured
+
+- **An address that has said nothing is not in the bridge's ARP table.** A configured jail that sent no traffic was missing, and the gateway was there, `permanent`.
+- **An address that has talked is in the table, with an expiry** of `net.link.ether.inet.max_age`, 1200 s. That includes an address set by hand inside the jail.
+- **A bridge that isn't there is exit 1** from `arp -an -i`.
+
+So ARP can't be the record of what's taken; it only adds what no configuration says, while it's recent.
+
+### What is in use
+
+The union of four sources, read off the host at every reservation (JD-011):
+
+1. **Every jail stanza's addresses**: every IPv4 address in `/etc/jail.conf` and every `jail.conf.d` file, comments left out, named after the jail.
+2. **Every guest's seed**: the address in each `<datastore>/<guest>/.cloud-init/network-config`.
+3. **The gateway, the subnet's own address and its broadcast.**
+4. **The bridge's ARP table**: what has talked recently, apart from the permanent and incomplete entries. It's listed as "seen", with no owner.
+
+**If any source can't be read, the create is refused**, and nothing is made. Without that source, the lowest free address is a guess.
+
+### Which address
+
+- **Not given:** the lowest free address from the bottom of the subnet, skipping the gateway, so .2 on a network whose gateway is .1. **409** when none is left.
+- **Given:** it must be in the subnet, and not the gateway, the network or broadcast address (**400**). It must be free (**409**, naming the holder: `10.92.1.10 on the network "platform" is in use by jail otter-db`). A prefix other than the network's is 400. A /32 is taken as the network's prefix.
+- **The gateway** is the network's when the spec leaves it empty. A gateway given is kept.
+- **Nameservers stay the client's.** Jail Deck runs no resolver.
+- **IPv6 isn't allocated.**
+
+### When
+
+- **Only on Jail Deck's own networks**: a tenant network, or the default network while its switch has its address. On an operator's bridge or switch, everything stays as the spec says.
+- **A jail can name the network**: `network: {"mode": "vnet", "name": "platform"}` in place of `bridge`. **Exactly one of the two.** A jail on a network's bridge (`bridge: "jdn1"`) gets an address the same way. A guest still names a switch: a network's switch is named after the network.
+- **A guest on a network** with no `network` field gets the picked address and the gateway. `network` with only `nameservers` keeps those. **`network` without an address on an operator's switch is 400**: there is nothing to pick from.
+- **`PUT`, the ensure, compares the address the member already has.** It never picks another: the same spec twice is no difference. An address outside the network is told apart, as `want: an address of <subnet>`.
+
+### One at a time per network
+
+**A per-network lock is held from the read until the stanza or seed is written.** A second create on the same network waits, then reads the first one's address in that file. Networks don't wait for each other. A refusal lets the lock go at once. The lock only covers Jail Deck's own creates; anything else that writes a stanza at the same moment can still collide, as with every other host fact.
+
+### Shown
+
+- **`GET /api/networks/{name}`** and the list have `addresses`: each address in use, its kind (`jail`, `guest`, `seen`) and its holder. `GET /api/networks/default` has them too. **`null` means they couldn't be read, and `[]` means none.** The view itself still answers.
+- **The topology** gives Jail Deck's bridges `in_use`, so the Networks page lists them.
+- **A VNET jail's address** is read from its stanza's `ifconfig epair<N>b inet …` line, so the jail listing shows it. `jls` has none for a VNET jail.
+- **A guest's detail has `address`** from its seed, shown as **Connect to**.
+- **The create answers** say `network` and `address`.
+
+### Checked along the way
+
+The jail spec's `ip4`, `gateway`, `interface` and `bridge` were written into the stanza unchecked. **They're now checked for their shape before anything runs**: an address, an IPv4 gateway, an interface name. A value carrying `"; exec.prestart += …` is 400.
+
+**Checked live, 2026-10-30, on isengard:**
+- A throwaway tenant network was created.
+- A jail by network name got .2; a guest on its switch got .3.
+- `PUT` with the same spec, by name or by bridge, changed nothing.
+- Refused, with nothing written:
+  - a jail asking for otter-db's address on `platform`;
+  - the gateway;
+  - both `bridge` and `name`;
+  - an unknown name, answered with the names there are;
+  - a guest asking for the jail's address;
+  - an injected `ip4`.
+- The views showed both members.
+- Destroying the network was refused while they were on it.
+- After everything was destroyed through the API, the anchor file, `system.conf`, `rc.conf` and `pf.conf` were as before.
+
+### Not yet
+
+- **IPv6.**
+- **Freeing an address** needs nothing: destroying the jail or guest removes its stanza or seed. An address that is only in ARP stays taken until its entry expires.
+- **Moving a member** to another address or network.

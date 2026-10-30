@@ -34,6 +34,9 @@ export interface SpecForm {
     ip4: string
     iface: string
     bridge: string
+    // network is one of Jail Deck's networks by name, in place of bridge:
+    // the jail is given its address there unless ip4 says (JD-047).
+    network?: string
     isPrivate: boolean
     gateway: string
     autostart: boolean
@@ -102,13 +105,15 @@ export function typed(value: string | number | null | undefined): string {
 export function buildSpec(form: SpecForm): JailSpec {
     const { name, template, hostname, mode, ip4, iface, bridge, isPrivate, gateway,
         autostart, start, limits, paramValues, children, tags } = form
+    const onNetwork = form.network ?? ''
     const network: JailSpec['network'] = { mode }
     if (mode === 'alias') {
         network.ip4 = ip4.trim()
         network.interface = iface.trim()
     }
     if (mode === 'vnet') {
-        network.bridge = bridge.trim()
+        if (onNetwork) network.name = onNetwork
+        else network.bridge = bridge.trim()
         if (isPrivate) network.private = true
         if (ip4.trim()) network.ip4 = ip4.trim()
         if (gateway.trim()) network.gateway = gateway.trim()

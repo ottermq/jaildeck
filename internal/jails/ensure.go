@@ -137,6 +137,13 @@ func (s *JailService) compare(ctx context.Context, jail Jail, spec Spec) (Ensure
 	}
 	result.Autostart = autostarts
 
+	// On a Jail Deck network, the address a spec leaves to it is the one
+	// the jail has.
+	placed, err := s.placeExisting(ctx, &spec, content)
+	if err != nil {
+		return result, err
+	}
+
 	// The jail's path as the host reports it, and the epair the existing
 	// stanza already claims. Allocating a fresh unit here would make every
 	// VNET jail look changed, over a unit nothing would ever use -- and the
@@ -147,7 +154,7 @@ func (s *JailService) compare(ctx context.Context, jail Jail, spec Spec) (Ensure
 		return result, err
 	}
 
-	differences := make([]Difference, 0)
+	differences := append(make([]Difference, 0), placed...)
 	if spec.Template != origin {
 		differences = append(differences, Difference{
 			Field: "template", Want: spec.Template, Have: origin})

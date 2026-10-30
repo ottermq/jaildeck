@@ -3,6 +3,7 @@ package fake
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"slices"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ottermq/jaildeck/internal/jails"
+	"github.com/ottermq/jaildeck/internal/networks"
 	"github.com/ottermq/jaildeck/internal/system"
 )
 
@@ -29,6 +31,8 @@ type JailSystem struct {
 	jails   map[string]jails.Jail
 	order   []string
 	configs map[string]string
+	// bridgesFrom are the fake network host's bridges, when joined.
+	bridgesFrom func() []string
 	// autostart is the fake's jail_list. Nothing reports it yet; it is kept
 	// so the fake cannot claim an autostart it did not record.
 	autostart map[string]bool
@@ -102,7 +106,12 @@ func (s *JailSystem) List(ctx context.Context) ([]jails.Jail, error) {
 	defer s.mu.Unlock()
 	list := make([]jails.Jail, 0, len(s.order))
 	for _, name := range s.order {
-		list = append(list, s.jails[name])
+		jail := s.jails[name]
+		// A VNET jail's address is its stanza's, as the real adapter reads it.
+		if m := inetRE.FindStringSubmatch(s.configs[name]); jail.IP == "" && m != nil {
+			jail.IP, _, _ = strings.Cut(m[1], "/")
+		}
+		list = append(list, jail)
 	}
 	return list, nil
 }
@@ -246,11 +255,26 @@ func (s *JailSystem) Autostarts(_ context.Context, name string) (bool, error) {
 	return s.autostart[name], nil
 }
 
-// Bridges is the operator-owned bridge a vnet jail can ask for. One, so a
-// spec naming any other bridge is refused the way a real host would refuse
-// it (JD-017).
+// Bridges is the operator-owned bridge a vnet jail can ask for, so a spec
+// naming any other bridge is refused the way a real host would refuse it
+// (JD-017), and, when joined, the fake network host's bridges.
 func (s *JailSystem) Bridges(context.Context) ([]string, error) {
-	return []string{"bridge0"}, nil
+	s.mu.Lock()
+	more := s.bridgesFrom
+	s.mu.Unlock()
+	bridges := []string{"bridge0"}
+	if more != nil {
+		bridges = append(bridges, more()...)
+	}
+	return bridges, nil
+}
+
+// BridgesFrom joins the fake network host, whose networks' bridges a jail
+// can be put on.
+func (s *JailSystem) BridgesFrom(bridges func() []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.bridgesFrom = bridges
 }
 
 // FreeEpairUnit hands out the lowest unit no stanza here already claims,
@@ -292,6 +316,23 @@ func (s *JailSystem) RemoveJailEpair(_ context.Context, name string) (string, er
 }
 
 var epairUnitRE = regexp.MustCompile(`\bepair(\d+)`)
+
+// AddressesIn are the addresses of subnet the stanzas here give their jails.
+func (s *JailSystem) AddressesIn(subnet netip.Prefix) []networks.Use {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	uses := make([]networks.Use, 0)
+	for name, content := range s.configs {
+		for _, match := range inetRE.FindAllStringSubmatch(content, -1) {
+			if p, err := netip.ParsePrefix(match[1]); err == nil && subnet.Contains(p.Addr()) {
+				uses = append(uses, networks.Use{Address: p.Addr().String(), Kind: networks.UseJail, Name: name})
+			}
+		}
+	}
+	return uses
+}
+
+var inetRE = regexp.MustCompile(`epair[0-9]+b inet (\S+) up`)
 
 // RacctEnabled: the fake host accounts, so a spec with limits is not refused
 // for the host's sake. There is a readiness check for the other answer.

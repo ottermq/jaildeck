@@ -20,6 +20,11 @@ const (
 	defaultJailConfDir = defaultJailConf + ".d"
 )
 
+// vnetAddressRE is the address a VNET jail's stanza gives its end of the
+// epair, as Jail Deck writes it: the jail has no ip4.addr, so neither jls nor
+// the stanza's settings report one (JD-017, JD-047).
+var vnetAddressRE = regexp.MustCompile(`^exec\.start\s*\+=\s*"ifconfig epair[0-9]+b inet ([0-9.]+)(/[0-9]+)? up"\s*;`)
+
 var assignmentRE = regexp.MustCompile(`^\s*([a-zA-Z0-9_.-]+)\s*=\s*"?([^";]+)"?\s*;`)
 
 func (a *Adapter) listConfiguredJails() ([]jails.Jail, error) {
@@ -117,6 +122,11 @@ func mergeJails(configured, running []jails.Jail) []jails.Jail {
 		matched := false
 		for idx, configured := range merged {
 			if configured.Name == running.Name {
+				// A running VNET jail has no address jls can report; the
+				// one its stanza gives is the one it has.
+				if running.IP == "" {
+					running.IP = configured.IP
+				}
 				merged[idx] = running
 				matched = true
 			}
@@ -189,6 +199,7 @@ func parseJailConf(content string, inherited map[string]string) ([]jails.Jail, m
 	var jailSlice []jails.Jail
 	var name string
 	values := map[string]string{}
+	vnetAddress := ""
 
 	// setting returns the raw value for key in the current block, falling back
 	// to the inherited defaults.
@@ -217,6 +228,11 @@ func parseJailConf(content string, inherited map[string]string) ([]jails.Jail, m
 		// so only genuinely unrecognised syntax is reported. A line can be both
 		// an assignment and the end of a block, hence a flag rather than if/else.
 		understood := false
+
+		if m := vnetAddressRE.FindStringSubmatch(line); m != nil && name != "" {
+			understood = true
+			vnetAddress = m[1]
+		}
 
 		matches := assignmentRE.FindStringSubmatch(line)
 		if len(matches) == 3 {
@@ -259,9 +275,13 @@ func parseJailConf(content string, inherited map[string]string) ([]jails.Jail, m
 			if jail.Hostname == "" {
 				jail.Hostname = name
 			}
+			if jail.IP == "" {
+				jail.IP = vnetAddress
+			}
 			jailSlice = append(jailSlice, jail)
 			name = ""
 			values = map[string]string{}
+			vnetAddress = ""
 		}
 
 		if !understood {

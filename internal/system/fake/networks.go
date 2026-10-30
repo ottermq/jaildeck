@@ -28,6 +28,9 @@ type Networks struct {
 	// says which guests are on a switch: the fake VM host's, when joined.
 	bridges map[string]*networks.TenantBridge
 	guests  func(sw string) []string
+	// addresses are the fake jail and VM hosts', when joined: the addresses
+	// their stanzas and seeds give.
+	addresses []func(subnet netip.Prefix) []networks.Use
 }
 
 func NewNetworks() *Networks {
@@ -47,6 +50,45 @@ func (f *Networks) GuestsFrom(guests func(sw string) []string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.guests = guests
+}
+
+// AddressesFrom joins a fake host that gives instances addresses: the jail
+// host's stanzas, the VM host's seeds.
+func (f *Networks) AddressesFrom(uses func(subnet netip.Prefix) []networks.Use) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.addresses = append(f.addresses, uses)
+}
+
+// AddressUses is what the joined hosts' configurations say; the fake bridge
+// has no ARP table.
+func (f *Networks) AddressUses(_ context.Context, subnet netip.Prefix, _ string) ([]networks.Use, error) {
+	f.mu.Lock()
+	sources := slices.Clone(f.addresses)
+	f.mu.Unlock()
+	uses := make([]networks.Use, 0)
+	for _, from := range sources {
+		uses = append(uses, from(subnet)...)
+	}
+	return uses, nil
+}
+
+// BridgeNames are the bridges the networks here are on: the switches' and
+// the tenant networks'.
+func (f *Networks) BridgeNames() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	names := make([]string, 0)
+	for _, sw := range f.switches {
+		if sw.Bridge != "" {
+			names = append(names, sw.Bridge)
+		}
+	}
+	for name := range f.bridges {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
 }
 
 // EnablePF stands in for the operator enabling PF with pf.conf including

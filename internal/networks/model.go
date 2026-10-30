@@ -66,6 +66,10 @@ type Default struct {
 	// Ready is whether every part passes, NAT included.
 	Ready bool   `json:"ready"`
 	Parts []Part `json:"parts"`
+	// Addresses are the subnet's addresses in use, and by what (JD-047):
+	// null until the switch has its address, or when they could not be
+	// read.
+	Addresses []Use `json:"addresses"`
 }
 
 // Ensured is what PUT /api/networks/default answers: the network afterwards,

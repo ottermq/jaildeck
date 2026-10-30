@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -85,5 +86,35 @@ func TestMetricsIsNotServedBySPAFallback(t *testing.T) {
 	body := do(t, router, http.MethodGet, "/metrics", login(t, router), nil).Body.String()
 	if strings.Contains(strings.ToLower(body), "<!doctype html") {
 		t.Error("/metrics returned the SPA document")
+	}
+}
+
+// #126: a running guest is in the JSON report with what its bhyve process
+// costs, and stopped ones are not.
+func TestMetricsReportTheRunningGuests(t *testing.T) {
+	a, err := newTestApp(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := a.Routes(testAssets())
+	cookies := login(t, router)
+	rec := do(t, router, http.MethodGet, "/api/metrics", cookies, nil)
+	var report struct {
+		Guests []struct {
+			Guest          string  `json:"guest"`
+			PCPU           float64 `json:"pcpu"`
+			MemoryResident int64   `json:"memory_resident"`
+			Error          string  `json:"error"`
+		} `json:"guests"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil {
+		t.Fatalf("decode: %v\n%s", err, rec.Body)
+	}
+	if len(report.Guests) != 1 {
+		t.Fatalf("guests = %+v", report.Guests)
+	}
+	g := report.Guests[0]
+	if g.Guest != "jd-cap-running" || g.Error != "" || g.MemoryResident != 41967616 || g.PCPU <= 0 {
+		t.Errorf("guest = %+v", g)
 	}
 }

@@ -29,6 +29,8 @@ type Service struct {
 	usage JailUsageSource
 	jails JailSource
 	disks DiskSource
+	// guests is optional: a Jail Deck built without the vms domain has none.
+	guests GuestSource
 
 	mu       sync.Mutex
 	previous *reading
@@ -42,6 +44,9 @@ type reading struct {
 func NewService(host HostMetrics, usage JailUsageSource, jails JailSource, disks DiskSource) *Service {
 	return &Service{host: host, usage: usage, jails: jails, disks: disks}
 }
+
+// SetGuests adds the running guests to every report (#126).
+func (s *Service) SetGuests(guests GuestSource) { s.guests = guests }
 
 // Report reads the host and every running jail.
 //
@@ -60,7 +65,7 @@ func (s *Service) Report(ctx context.Context) (Report, error) {
 	}
 	commit, _ := buildinfo.Commit()
 	report := Report{Build: Build{Version: buildinfo.Version(), Commit: commit},
-		Host: host, Jail: make([]JailUsage, 0), Disks: make([]Disk, 0)}
+		Host: host, Jail: make([]JailUsage, 0), Guests: make([]GuestUsage, 0), Disks: make([]Disk, 0)}
 
 	// Disks are read before the jails and never fail the report. A host
 	// without smartmontools has none to read, and a smartctl unhappy about
@@ -73,6 +78,19 @@ func (s *Service) Report(ctx context.Context) (Report, error) {
 			report.DisksUnavailable = err.Error()
 		} else if disks != nil {
 			report.Disks = disks
+		}
+	}
+
+	// Guests, like disks, never fail the report: a host without vm-bhyve
+	// has none, and one that cannot be read is said rather than blanked.
+	if s.guests != nil {
+		guests, err := s.guests.GuestUsage(ctx)
+		if err != nil {
+			common.Logger(ctx, "metrics").Warn("reporting without guests", slog.Any("err", err))
+			report.GuestsUnavailable = err.Error()
+		} else if guests != nil {
+			sort.Slice(guests, func(i, j int) bool { return guests[i].Guest < guests[j].Guest })
+			report.Guests = guests
 		}
 	}
 

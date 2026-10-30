@@ -268,7 +268,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/jails/{name}/stop` | |
 | `POST /api/jails/{name}/restart` | |
 | `GET /api/audit` | operation history, newest first |
-| `GET /api/metrics` | host and per-jail resource usage, and disk health |
+| `GET /api/metrics` | host, per-jail and per-guest resource usage, and disk health |
 | `GET /api/firewall` | PF's state, rules with counters, NAT, anchors and tables, read-only |
 | `GET /api/firewall/tables/{name}` | one table's addresses |
 | `GET /api/firewall/log` | the most recent pflog lines |
@@ -526,6 +526,10 @@ here writes `rate()`: bytes, seconds and ratios. Two that are worth knowing:
 
 - **`jaildeck_jail_cpu_cores`** is cores, not `pcpu`'s percent-of-one-core — a jail on two
   whole cores reads `2` here and `200` in the JSON.
+- **`jaildeck_guest_cpu_cores`** and **`jaildeck_guest_memory_bytes`** are a running guest's
+  bhyve process, in the same units. The memory is bhyvectl's resident count, which grows as
+  the guest touches memory and does not shrink when the guest frees it; the process's own
+  resident size leaves guest memory out.
 - **`jaildeck_host_cpu_seconds_total`** is converted with `kern.clockrate`'s **`stathz`**,
   not its `hz`. On this hardware those are 127 and 1000, so dividing by the wrong one is
   an eightfold error. The raw `jaildeck_host_cpu_ticks_total` is published alongside it,

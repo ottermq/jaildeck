@@ -24,6 +24,7 @@ beforeEach(() => {
             pools: [],
         },
         jails: [],
+        guests: [],
         configured: 0,
         disks: [],
     }

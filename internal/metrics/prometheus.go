@@ -31,6 +31,7 @@ func WriteExposition(w io.Writer, report Report) error {
 	out.host(report.Host)
 	out.pools(report.Host.Pools)
 	out.jails(report)
+	out.guests(report.Guests)
 	out.disks(report.Disks)
 
 	return out.w.Flush()
@@ -205,6 +206,36 @@ func (e *exposition) jails(report Report) {
 		readable, func(jail JailUsage) (float64, bool) {
 			return float64(jail.CPUTime), jail.CPUTime > 0
 		})
+}
+
+// guests are the running VM guests (#126), in the units the jails use.
+func (e *exposition) guests(guests []GuestUsage) {
+	e.gauge("jaildeck_guests_running", "VM guests that are up.")
+	e.value(nil, float64(len(guests)))
+	if len(guests) == 0 {
+		return
+	}
+	e.gauge("jaildeck_guest_readable", "1 when this guest's usage could be read.")
+	for _, guest := range guests {
+		e.value(labels{{"guest", guest.Guest}}, boolean(guest.Error == ""))
+	}
+	readable := make([]GuestUsage, 0, len(guests))
+	for _, guest := range guests {
+		if guest.Error == "" {
+			readable = append(readable, guest)
+		}
+	}
+	if len(readable) == 0 {
+		return
+	}
+	e.gauge("jaildeck_guest_cpu_cores", "Cores the guest's bhyve process uses, as a decaying average.")
+	for _, guest := range readable {
+		e.value(labels{{"guest", guest.Guest}}, guest.PCPU/100)
+	}
+	e.gauge("jaildeck_guest_memory_bytes", "Guest memory the host has given it, from bhyvectl.")
+	for _, guest := range readable {
+		e.value(labels{{"guest", guest.Guest}}, float64(guest.MemoryResident))
+	}
 }
 
 func (e *exposition) disks(disks []Disk) {

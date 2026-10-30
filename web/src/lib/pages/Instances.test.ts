@@ -43,8 +43,15 @@ vi.mock('../stores/vms.svelte', async (original) => ({
         return { ...listing.vms.find(v => v.name === name)!, forced: name === 'web' }
     }),
 }))
+let readings = 0
 vi.mock('../stores/metrics.svelte', () => ({
-    getMetrics: vi.fn(async () => ({ jails: [{ jail: 'web', source: 'rctl', pcpu: 12.5, memoryuse: 41943040, processes: 3 }] })),
+    getMetrics: vi.fn(async () => {
+        readings++
+        return {
+            jails: [{ jail: 'web', source: 'rctl', pcpu: 12.5, memoryuse: 41943040, processes: 3 }],
+            guests: [{ guest: 'web', pcpu: 95.5 + readings, memory_resident: 410562560 }],
+        }
+    }),
 }))
 vi.mock('../stores/confirm.svelte', () => ({
     ask: vi.fn(async (c: { title: string, items?: string[] }) => {
@@ -70,6 +77,7 @@ beforeEach(() => {
     asked = []
     snapshotAnswer = { snapshot: 'p/j/db@x', created: ['p/j/db@x'], destroyed: [] }
     history.replaceState({}, '', '/instances')
+    readings = 0
 })
 
 function rowNames(): string[] {
@@ -87,7 +95,28 @@ describe('Instances', () => {
         expect(rowNames()).toEqual(['batch', 'db', 'web', 'web'])
         expect(screen.getByText('12.5%')).toBeTruthy()
         expect(screen.getByText('40M', { exact: false })).toBeTruthy()
-        expect(screen.getByText('512M')).toBeTruthy()
+        // A running guest's usage from its bhyve process (#126); a stopped
+        // one's size.
+        expect(screen.getByText('96.5%')).toBeTruthy()
+        expect(screen.getByText('392M', { exact: false })).toBeTruthy()
+        expect(screen.getByText('256M')).toBeTruthy()
+    })
+
+    it('draws the last readings beside the usage, from what the page has read', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true })
+        try {
+            const { container } = render(Instances)
+            await screen.findByText('Showing 4 of 4')
+            // One reading is a point, not a line.
+            expect(container.querySelectorAll('svg.spark')).toHaveLength(0)
+            await vi.advanceTimersByTimeAsync(5000)
+            await screen.findByText('97.5%')
+            // CPU and memory for the running jail and the running guest.
+            expect(container.querySelectorAll('svg.spark')).toHaveLength(4)
+            expect(screen.getByRole('img', { name: /^CPU over the last 5 s: low 96\.5%, high 97\.5%, now 97\.5%$/ })).toBeTruthy()
+        } finally {
+            vi.useRealTimers()
+        }
     })
 
     it('starts from the filters in the address and keeps them there', async () => {

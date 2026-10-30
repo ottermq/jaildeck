@@ -157,3 +157,13 @@ func (h *HostMetrics) Disks(context.Context) ([]metrics.Disk, error) {
 }
 
 var _ metrics.DiskSource = (*HostMetrics)(nil)
+
+// ProcessCPU answers every pid with a share of a core that moves between
+// calls, for the same reason the ticks do.
+func (h *HostMetrics) ProcessCPU(_ context.Context, pids []int) (map[int]float64, error) {
+	out := make(map[int]float64, len(pids))
+	for _, pid := range pids {
+		out[pid] = 20 + rand.Float64()*60
+	}
+	return out, nil
+}

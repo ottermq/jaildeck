@@ -2367,3 +2367,45 @@ An **Inspect** panel on a jail's page and on a guest's page, one component for b
 
 - **Editing any of it.** Changing a jail's limits is `PATCH /limits` (#119); everything else stays on the API that made it.
 - **A guest in a datastore other than the default one.**
+
+## JD-050 — A Guest's Usage, and the Lists' Trailing Window
+
+**Status:** Locked — 2026-10-30. Decided in #126's implementation, open to the owner's review in its PR. Measured on isengard with a throwaway guest.
+
+### What was measured
+
+A Debian guest with two vCPUs and 1G, idle, then with one and two vCPUs busy, then with 600 MB touched, each over 20 s:
+
+| | bhyve `ps` pcpu | `rctl -u process:` pcpu | CPU time used | `rctl` memoryuse | bhyvectl resident (`vm info`) |
+|---|---|---|---|---|---|
+| idle | 0.0 | 0 | 0.05 s | 208M | 391M |
+| one vCPU busy | 95.5 | 100 | 20 s | 208M | 391M |
+| two vCPUs busy | 195.5 | 200 | 40 s | 208M | 391M |
+| 600 MB touched | 4.3 | 0 | 0.07 s | 208M | 972M |
+
+- **The bhyve process's CPU is the guest's.** `ps` and `rctl` agree with each other and with the CPU time actually used.
+- **The process's resident size is not the guest's memory.** It stayed at 208M while the guest used 600 MB more. Guest memory belongs to the vmm object, which `ps` and `rctl` don't count. bhyvectl's count, which `vm info` prints and Jail Deck already shows on a guest's page, is the one that moved.
+
+### What is reported
+
+`GET /api/metrics` has a `guests` list, one entry per running guest:
+- `pcpu` from `ps -o pid= -o pcpu= -p <every guest's pid>`, one call for all of them. This is percent of one core, as a jail's is. `ps` rather than `rctl`, because it needs no accounting and reads every guest at once.
+- `memory_resident` from `vm info`, one call per running guest.
+
+A guest whose process ended between the listing and the read, or whose `vm info` failed, carries an `error`, as a jail does. The rest of the report is not affected. A host without vm-bhyve has `[]`.
+
+The memory **grows and doesn't shrink**: the host gives a guest pages as it touches them and doesn't take them back when the guest frees them. It is what the guest costs the host, not what the guest thinks it uses.
+
+The Prometheus endpoint carries the same in its units: `jaildeck_guest_cpu_cores` and `jaildeck_guest_memory_bytes` (JD-033).
+
+### The trailing window is the page's
+
+JD-031 refuses a sampler on the server, and that still holds. The Instances page reads the metrics every five seconds while its tab is shown and keeps the last 24 readings of each running instance in memory: two minutes. Opening the page starts the line, and a reload starts it again. An instance that stops, or can't be read, loses its line, so a restart isn't drawn as continuous with the run before it. Anything longer is Prometheus's job.
+
+Only the usage is read again. A row's state changes when someone acts on it, and the list reloads then.
+
+### Not yet
+
+- **A guest's I/O and network rates.** `vm info` has the counters, so a rate needs two readings, as the host CPU does.
+- **Sparklines on the Jails and VMs pages.** The Instances list is the one meant for many.
+

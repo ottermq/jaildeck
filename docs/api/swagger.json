@@ -5913,6 +5913,26 @@
                 }
             }
         },
+        "metrics.GuestUsage": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "description": "Error says this one guest could not be read.",
+                    "type": "string"
+                },
+                "guest": {
+                    "type": "string"
+                },
+                "memory_resident": {
+                    "description": "MemoryResident is the guest's memory the host has given it so far, in\nbytes. It grows as the guest touches memory and does not shrink when\nthe guest frees it.",
+                    "type": "integer"
+                },
+                "pcpu": {
+                    "description": "PCPU is percent of one core, as a jail's is: a guest with two busy\nvCPUs reads 200. From `ps`, a decaying average.",
+                    "type": "number"
+                }
+            }
+        },
         "metrics.Host": {
             "type": "object",
             "properties": {
@@ -6065,6 +6085,16 @@
                 },
                 "disks_unavailable": {
                     "description": "DisksUnavailable says why Disks is empty when it is not because the\nhost has none: smartctl not installed, not on the service's PATH, or\nrefusing to list devices. JD-032 promised a host without disk health\nwould say why; until this field it only said nothing (#95).",
+                    "type": "string"
+                },
+                "guests": {
+                    "description": "Guests is every running VM guest (#126). Empty on a host without\nvm-bhyve, and GuestsUnavailable says why when it is not that.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.GuestUsage"
+                    }
+                },
+                "guests_unavailable": {
                     "type": "string"
                 },
                 "host": {

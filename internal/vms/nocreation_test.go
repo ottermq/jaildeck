@@ -29,3 +29,6 @@ func (noCreation) VMPinCPUs(context.Context, string, []int) (string, error) {
 func (noCreation) VMApplied(context.Context, string) (Applied, error) {
 	return Applied{}, errNotScripted
 }
+func (noCreation) VMDatasets(context.Context) (map[string]string, error) {
+	return nil, errNotScripted
+}

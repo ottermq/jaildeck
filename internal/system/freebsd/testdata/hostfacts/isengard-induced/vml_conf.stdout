@@ -1,0 +1,9 @@
+loader="uefi"
+cpu=1
+memory=256M
+disk0_type="virtio-blk"
+disk0_name="disk0"
+disk0_dev="sparse-zvol"
+uuid="6b8eb9d6-d452-11f1-b463-e80688cecc46"
+network0_mac="58:9c:fc:0d:45:ef"
+otter_tenant="acme"

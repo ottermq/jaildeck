@@ -222,3 +222,31 @@ func writeIfChanged(path string, content []byte) error {
 	}
 	return os.WriteFile(path, content, 0o644)
 }
+
+// VMDatasets maps every datastore in `vm datastore list` to its ZFS dataset,
+// empty for one that is a plain directory (JD-044):
+//
+//	NAME            TYPE        PATH                      ZFS DATASET
+//	default         zfs         /vm                       tank/vm
+func (a *Adapter) VMDatasets(ctx context.Context) (map[string]string, error) {
+	result, err := a.runHost(ctx, system.Command{Name: "vm", Args: []string{"datastore", "list"}, Timeout: vmTimeout})
+	if err != nil {
+		return nil, err
+	}
+	return parseDatastores(result.Stdout), nil
+}
+
+func parseDatastores(out string) map[string]string {
+	stores := map[string]string{}
+	for i, line := range nonEmptyLines(out) {
+		fields := strings.Fields(line)
+		if i == 0 && len(fields) > 0 && fields[0] == "NAME" || len(fields) < 3 {
+			continue
+		}
+		stores[fields[0]] = ""
+		if len(fields) >= 4 && fields[3] != "-" {
+			stores[fields[0]] = fields[3]
+		}
+	}
+	return stores
+}

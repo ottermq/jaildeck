@@ -1,0 +1,23 @@
+------------------------
+Virtual Machine: jd-cap-129
+------------------------
+  state: running (29354)
+  datastore: default
+  loader: uefi
+  uuid: 6b8eb9d6-d452-11f1-b463-e80688cecc46
+  cpu: 1
+  memory: 256M
+  memory-resident: 41967616 (40.023M)
+
+  console-ports
+    com1: /dev/nmdm-jd-cap-129.1B
+
+  virtual-disk
+    number: 0
+    device-type: sparse-zvol
+    emulation: virtio-blk
+    options: -
+    system-path: /dev/zvol/tank/vm/jd-cap-129/disk0
+    bytes-size: 1073741824 (1.000G)
+    bytes-used: 57344 (56.000K)
+

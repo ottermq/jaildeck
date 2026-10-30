@@ -2132,3 +2132,32 @@ Every network's NAT line comes first, then every network's filter rules: **pfctl
 - **Jail Deck picking a member's address,** and creating a jail or guest "on a network" rather than on a bridge or switch: #118's next step.
 - **The interface's view of every network** (#128).
 - **Inbound connections** (port forwards) to a tenant's instances.
+
+---
+
+## JD-044 — A Guest's Labels: ZFS User Properties on Its Dataset
+
+**Status:** Locked — 2026-10-30. Measured on isengard with a throwaway guest (`capture-vm-labels-induced.sh`). First part of #129.
+
+An automation client finds its jails again from the listing alone, by the ZFS user properties it set on each jail's dataset (JD-023). A guest had nothing like that, so a client that ran both had to remember which guests were its own. This record gives a guest the same kind of label, in the same place, read and written the same way.
+
+### What was measured
+
+- **A guest's dataset is `<datastore's dataset>/<name>`** (`tank/vm/<guest>`), with its disks as volumes beneath it (`disk0`). `vm datastore list` gives each datastore's dataset; a datastore that is a plain directory has none.
+- **A user property on that dataset:**
+  - can be set while the guest runs;
+  - survives a start, a stop and a `vm rename`, because a rename is a `zfs rename`;
+  - goes with a `vm destroy`;
+  - is inherited by the guest's disks.
+- **One `zfs get -r` reads every guest's labels**, so a listing costs one command, not one per guest.
+- **A key written into the guest's config with `sysrc -f`** survives too, but **neither `vm info` nor `vm list` shows it**. Reading it back means a file per guest, and vm-bhyve would carry a key it doesn't know. That's why ZFS was chosen.
+
+### What Jail Deck does
+
+- **`GET /api/vms` and `GET /api/vms/{name}` carry `properties`:** the guest dataset's own user properties, with `source` local, so the disks' inherited copies aren't counted twice. Always an object: empty for a guest with no labels, or one in a datastore that isn't on ZFS. **A failure to read them costs the labels, not the listing**; it is logged as a warning.
+- **`PATCH /api/vms/{name}/properties`** takes `{"otter:tenant": "acme", "otter:tier": null}`, as JD-023 does for a jail: a string sets, `""` included, and `null` inherits the property away. Only user properties (a name with a colon). It answers the labels the guest carries afterwards. It is audited, and runs whether or not the guest is running.
+- **A guest in a datastore not on ZFS is refused with 409**, naming the datastore. There is nowhere to keep the label, and a config key would be the second mechanism this record turned down.
+
+### Not yet
+
+- **The instances view across jails and guests** (search, filter and group by a label, bulk actions): #129's second part.

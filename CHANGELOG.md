@@ -20,7 +20,17 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.25.0 — 2026-10-30
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.25.0)
+
+**Inspect.** A jail's or guest's files as the host has them, on its page, read only, a password's
+hash masked (#127). And a fix: a guest's directory is now private to root, where its seed's ISO
+could be read by any local account (#152).
+
+**Act on this when upgrading:** a guest made before the upgrade keeps its directory as it was.
+Run `chmod 0700 <datastore>/<guest>` for each one, `/vm/<guest>` on the default datastore; a guest
+made with a console password matters most. No new setting, and nothing in `pf.conf` or `rc.conf`.
 
 ### Added
 

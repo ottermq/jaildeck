@@ -20,6 +20,26 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+### Added
+
+- **Reclaimable storage** (#125, JD-049). The Host page lists what storage nothing uses holds:
+  templates nothing is cloned from, VM images no guest uses, retained datasets, a jail's own
+  snapshots older than a chosen age (30 days by default), and the archives Jail Deck downloaded,
+  with the total and each kind's share. Each item can be removed, and each kind at once behind one
+  confirmation, except retained datasets, removed one at a time. Removing goes through the
+  existing endpoints, so their refusals still apply. Snapshots another tool takes and prunes
+  (`zrepl_`, `autosnap_`, `zfs-auto-snap`) are never listed, only counted. Archives are listed
+  for their size and not removed.
+
+### API
+
+- **`GET /api/host/reclaimable`** (new, read only): `items` with `kind`, `name`, `size`, `why`
+  and `remove` (the method and path, `confirm` included, of the existing endpoint that removes
+  it; absent for an archive), `total`, `kinds`, `snapshot_age_days`, `skipped_snapshots` and
+  `problems`. `?older_than_days=` (1–3650) sets the snapshot age; anything else is 400.
+
 ## v0.25.0 — 2026-10-30
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.25.0)

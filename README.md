@@ -234,6 +234,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/host/readiness` | what the host has and lacks for jails, VNET, limits and VMs, each with its remedy |
 | `GET /api/host/layout` | whether the jails dataset layout exists |
 | `PUT /api/host/layout` | create the missing layout datasets, adopting what is there |
+| `GET /api/host/reclaimable` | what storage nothing uses holds: unused templates and images, retained datasets, old snapshots, downloaded archives; each with the request that removes it (`?older_than_days=`, default 30) |
 | `GET /api/jails` | every jail, running or merely configured, with its ZFS datasets |
 | `GET /api/jails/{name}` | one of them, same shape |
 | `GET /api/jails/{name}/configuration` | its own stanza as it is on disk, and the rctl rules keyed to its name |

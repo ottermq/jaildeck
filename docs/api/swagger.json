@@ -502,6 +502,52 @@
                 }
             }
         },
+        "/host/reclaimable": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Read now, from ZFS and the file system (#125, JD-049). Removes nothing.\n\n- **templates** that nothing is cloned from and nothing holds;\n- **VM images** that no guest's disk is cloned from;\n- **retained datasets**, every one: kept past their jail on purpose, and\nlisted so that the purpose is remembered;\n- **snapshots** of a jail's own dataset older than `older_than_days` (30 by\ndefault). Snapshots another tool takes and prunes, `zrepl_`, `autosnap_`\nand `zfs-auto-snap`, are never listed, and `skipped_snapshots` counts them;\n- **downloaded archives**: a release's `base.txz` and an image's archive.\nPreparing again downloads them again. No endpoint removes one.\n\nEach item has its `size`, why it counts, and `remove`: the existing endpoint,\nconfirm included, which keeps its own refusals. A source that cannot be read\nis named in `problems`, and the rest are still listed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "host"
+                ],
+                "summary": "What storage nothing uses",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "Snapshot age, in days, from 1 to 3650",
+                        "name": "older_than_days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/housekeeping.Report"
+                        }
+                    },
+                    "400": {
+                        "description": "older_than_days out of range",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/jails": {
             "get": {
                 "security": [
@@ -4730,6 +4776,92 @@
                     "items": {
                         "$ref": "#/definitions/host.Check"
                     }
+                }
+            }
+        },
+        "housekeeping.Item": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "type": "string"
+                },
+                "jail": {
+                    "description": "Jail is whose a snapshot is.",
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is what the removal takes: a template's or an image's name, a\nretained dataset's short name, a snapshot's dataset@snapshot, an\narchive's path.",
+                    "type": "string"
+                },
+                "remove": {
+                    "description": "Remove is the request that removes it, confirm included. Absent for\nwhat has no endpoint: an archive.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/housekeeping.Request"
+                        }
+                    ]
+                },
+                "size": {
+                    "description": "Size is what removing it would give back, as ZFS or the file system\ncounts it: a dataset's used, a snapshot's used summed over the jail's\ndatasets that share its name, a file's size. Blocks still shared with\nsomething else are not counted.",
+                    "type": "integer"
+                },
+                "why": {
+                    "description": "Why it counts as unused, in words.",
+                    "type": "string"
+                }
+            }
+        },
+        "housekeeping.Report": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/housekeeping.Item"
+                    }
+                },
+                "kinds": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                },
+                "problems": {
+                    "description": "Problems are the sources that could not be read. The rest are still\nlisted: one unreadable kind does not hide the others.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "skipped_snapshots": {
+                    "description": "SkippedSnapshots counts the old snapshots left out because another\ntool takes and prunes them (zrepl, sanoid, zfs-auto-snapshot), by the\nprefix that marks them. Removing one of those breaks that tool.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "snapshot_age_days": {
+                    "description": "SnapshotAge is how old, in days, a snapshot has to be to be listed.",
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "Total is the sum of every item's size; Kinds is it by kind.",
+                    "type": "integer"
+                }
+            }
+        },
+        "housekeeping.Request": {
+            "type": "object",
+            "properties": {
+                "method": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
                 }
             }
         },

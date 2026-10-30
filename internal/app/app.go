@@ -16,6 +16,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/console"
 	"github.com/ottermq/jaildeck/internal/firewall"
 	"github.com/ottermq/jaildeck/internal/host"
+	"github.com/ottermq/jaildeck/internal/housekeeping"
 	"github.com/ottermq/jaildeck/internal/images"
 	"github.com/ottermq/jaildeck/internal/jails"
 	"github.com/ottermq/jaildeck/internal/metrics"
@@ -34,6 +35,7 @@ var ErrNoCredential = errors.New("no operator credential configured")
 
 type App struct {
 	authHandler     *auth.AuthHandler
+	housekeeping    *housekeeping.Handler
 	jailHandler     *jails.JailHandler
 	consoleHandler  *console.Handler
 	nameHandler     *names.Handler
@@ -208,8 +210,21 @@ func New(cfg *config.Config) (*App, error) {
 	nameHandler := names.NewHandler(names.NewSuggester(
 		namesInUse{jails: jailService, vms: vmService, templates: templateService}))
 
+	archives, err := newArchiveSource(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	housekeepingHandler := housekeeping.NewHandler(housekeeping.NewService(housekeeping.Sources{
+		Templates: housekeepingTemplates{templates: templateService},
+		Images:    housekeepingImages{images: imageService},
+		Retained:  housekeepingRetained{storage: storageService},
+		Snapshots: housekeepingSnapshots{jails: jailService},
+		Archives:  archives,
+	}))
+
 	return &App{
 		authHandler:     authHandler,
+		housekeeping:    housekeepingHandler,
 		consoleHandler:  consoleHandler,
 		nameHandler:     nameHandler,
 		aboutHandler:    about.NewHandler(time.Now(), cfg.StateDir),
@@ -346,6 +361,18 @@ func NetworkSettings(cfg *config.Config) networks.Settings {
 }
 
 // newImageSystem selects the VM image implementation (JD-037).
+func newArchiveSource(adapter string) (housekeeping.ArchiveSource, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewArchiveAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewArchives(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
+}
+
 func newImageSystem(adapter string) (images.ImageSystem, error) {
 	switch adapter {
 	case config.AdapterFreeBSD:

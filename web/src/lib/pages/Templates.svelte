@@ -2,11 +2,11 @@
 import { onMount } from 'svelte'
 import { onDestroy } from 'svelte'
 import {
-    listTemplates, listRetained, lineage, deriveTemplate, removeTemplate, prepareRelease,
+    listTemplates, listRetained, lineage, deriveTemplate, removeTemplate, prepareRelease, destroyRetained,
 } from '../stores/templates.svelte'
 import type { Template, RetainedDataset, Blocked } from '../stores/templates.svelte'
 import { listJails, restoreDataset } from '../stores/jails.svelte'
-import type { JailData } from '../stores/jails.svelte'
+import type { JailData, DatasetBlock } from '../stores/jails.svelte'
 import { ApiError } from '../services/api'
 import { onNavClick } from '../router.svelte'
 import { ask } from '../stores/confirm.svelte'
@@ -180,6 +180,41 @@ async function remove(template: Template) {
         }
         delete blocked[template.name]
         note = `Removed ${removal.template}.`
+    })
+}
+
+// ---- destroy a retained dataset -------------------------------------------
+
+// Keyed by the dataset's full name, like the restore form, so a refusal stays
+// beside the row it belongs to.
+let retainedBlocked = $state<Record<string, DatasetBlock>>({})
+
+async function destroy(dataset: RetainedDataset) {
+    const count = dataset.snapshots.length
+    const confirmed = await ask({
+        title: `Destroy the retained dataset ${dataset.short}?`,
+        lines: [
+            'This is the end of a retain: the data is gone, and no restore can bring it back.',
+            count === 0
+                ? 'It has no snapshots.'
+                : `Its ${count === 1 ? 'snapshot goes' : `${count} snapshots go`} with it:`,
+        ],
+        items: count > 0 ? dataset.snapshots : undefined,
+        verb: 'Destroy',
+        typed: dataset.short,
+    })
+    if (!confirmed) return
+
+    await run(`destroy-${dataset.name}`, async () => {
+        const result = await destroyRetained(dataset.short)
+        if (result.blocked) {
+            retainedBlocked[dataset.name] = result.blocked
+            return
+        }
+        delete retainedBlocked[dataset.name]
+        note = `Destroyed ${result.dataset}` + (result.snapshots.length > 0
+            ? ` and ${result.snapshots.length === 1 ? 'its snapshot' : `${result.snapshots.length} snapshots`}.`
+            : '.')
     })
 }
 
@@ -425,14 +460,50 @@ async function restore(event: Event, dataset: RetainedDataset) {
                             <td><code>{dataset.name}</code></td>
                             <td class="num">{formatBytes(dataset.used)}</td>
                             <td class="actions-col">
-                                <button
-                                    type="button"
-                                    class="btn btn--small"
-                                    disabled={!!busy || jails.length === 0 || restoring === dataset.name}
-                                    onclick={() => startRestore(dataset)}
-                                >Restore</button>
+                                <div class="actions">
+                                    <button
+                                        type="button"
+                                        class="btn btn--small"
+                                        disabled={!!busy || jails.length === 0 || restoring === dataset.name}
+                                        onclick={() => startRestore(dataset)}
+                                    >Restore</button>
+                                    <button
+                                        type="button"
+                                        class="btn btn--small btn--danger"
+                                        disabled={!!busy}
+                                        onclick={() => destroy(dataset)}
+                                    >{busy === `destroy-${dataset.name}` ? 'Destroying…' : 'Destroy'}</button>
+                                </div>
                             </td>
                         </tr>
+                        {#if actionError[`destroy-${dataset.name}`]}
+                            <tr class="row-form">
+                                <td colspan="4">
+                                    <p class="notice notice--error" role="alert">
+                                        {actionError[`destroy-${dataset.name}`]}
+                                    </p>
+                                </td>
+                            </tr>
+                        {/if}
+                        {#if retainedBlocked[dataset.name]}
+                            {@const block = retainedBlocked[dataset.name]}
+                            <tr class="row-form">
+                                <td colspan="4">
+                                    <div class="refusal" role="alert">
+                                        <p class="refusal__reason">{block.reason}</p>
+                                        <ul class="items">
+                                            {#each [...block.children, ...block.clones, ...block.holds] as item (item)}
+                                                <li><code>{item}</code></li>
+                                            {/each}
+                                        </ul>
+                                        <div class="form__actions">
+                                            <button type="button" class="btn btn--small"
+                                                    onclick={() => delete retainedBlocked[dataset.name]}>Dismiss</button>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        {/if}
                         {#if restoring === dataset.name}
                             <tr class="row-form">
                                 <td colspan="4">
@@ -480,7 +551,8 @@ async function restore(event: Event, dataset: RetainedDataset) {
         </div>
         <p class="hint">
             Datasets kept past the jails that held them. Destroying a jail takes its children
-            with it, so anything worth keeping is moved out first.
+            with it, so anything worth keeping is moved out first. Destroying one here takes
+            its snapshots too, and is refused while a snapshot has a hold or a clone.
         </p>
     {:else if retained !== null}
         <p class="notice">Nothing retained. Datasets appear here when they outlive their jail.</p>
@@ -582,6 +654,10 @@ async function restore(event: Event, dataset: RetainedDataset) {
 
 .actions-col {
     text-align: right;
+}
+
+.actions-col .actions {
+    justify-content: flex-end;
 }
 
 /* A refusal is not an error: nothing ran, and what it names is the answer. */

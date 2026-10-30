@@ -1,5 +1,6 @@
 import { api, ApiError } from "../services/api";
-import type { JailData } from "./jails.svelte";
+import type { JailData, DatasetDestroy } from "./jails.svelte";
+import { datasetDestroyCall } from "./jails.svelte";
 
 // Template is a FreeBSD userland a jail is cloned from.
 //
@@ -62,6 +63,8 @@ export interface RetainedDataset {
     mountpoint: string
     used: number
     referenced: number
+    // What destroying it would take with it, oldest first.
+    snapshots: string[]
 }
 
 export async function listTemplates(): Promise<Template[]> {
@@ -74,6 +77,13 @@ export async function getTemplate(name: string): Promise<TemplateDetail> {
 
 export async function listRetained(): Promise<RetainedDataset[]> {
     return await api<RetainedDataset[]>('/retained')
+}
+
+// destroyRetained ends a retain (#120): the dataset and its snapshots. confirm
+// is the short name, the one GET /retained answers and a restore asks for.
+export async function destroyRetained(short: string): Promise<DatasetDestroy> {
+    const query = new URLSearchParams({ confirm: short })
+    return await datasetDestroyCall(`/retained/${encodeURIComponent(short)}?${query}`)
 }
 
 // lineage arranges templates parent-before-child with a depth for each, so a

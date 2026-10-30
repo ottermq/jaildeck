@@ -393,3 +393,39 @@ lim_rules_stopped	doas rctl jail:jdcap119	exit=0
 lim_restart	doas jail -c name=jdcap119 path=/ host.hostname=jdcap119 ip4=disable ip6=disable persist	exit=0
 lim_restart_poststart_twice	doas rctl -a jail:jdcap119:memoryuse:deny=1G	exit=0
 lim_rules_restarted	doas rctl jail:jdcap119	exit=0
+des_setup	doas zfs create -o mountpoint=/var/tmp/jd-cap-120 tank/jd-cap-120 && doas zfs create tank/jd-cap-120/containers && doas zfs create tank/jd-cap-120/containers/j1 && 	doas zfs create tank/jd-cap-120/containers/j1/data && doas zfs create tank/jd-cap-120/retained && doas zfs create tank/jd-cap-120/retained/kept	exit=0
+des_before	zfs list -H -o name -t all -r tank/jd-cap-120	exit=0
+des_child_snap	doas zfs snapshot tank/jd-cap-120/containers/j1/data@one && doas zfs snapshot tank/jd-cap-120/containers/j1/data@two	exit=0
+des_child_bare	doas zfs destroy tank/jd-cap-120/containers/j1/data	exit=1
+des_child_dry	doas zfs destroy -nvr tank/jd-cap-120/containers/j1/data	exit=0
+des_child_r	doas zfs destroy -r tank/jd-cap-120/containers/j1/data	exit=0
+des_after_child	zfs list -H -o name -t all -r tank/jd-cap-120	exit=0
+des_child_again	doas zfs destroy -r tank/jd-cap-120/containers/j1/data	exit=1
+des_hold	doas zfs snapshot tank/jd-cap-120/retained/kept@one && doas zfs hold jd-cap tank/jd-cap-120/retained/kept@one	exit=0
+des_held_r	doas zfs destroy -r tank/jd-cap-120/retained/kept	exit=1
+des_holds	zfs holds -H tank/jd-cap-120/retained/kept@one	exit=0
+des_release	doas zfs release jd-cap tank/jd-cap-120/retained/kept@one	exit=0
+des_clone	doas zfs clone tank/jd-cap-120/retained/kept@one tank/jd-cap-120/containers/from-kept	exit=0
+des_cloned_r	doas zfs destroy -r tank/jd-cap-120/retained/kept	exit=1
+des_clones	zfs get -H -o value clones tank/jd-cap-120/retained/kept@one	exit=0
+des_unclone	doas zfs destroy tank/jd-cap-120/containers/from-kept	exit=0
+des_nested	doas zfs create tank/jd-cap-120/retained/kept/inner	exit=0
+des_nested_dry	doas zfs destroy -nvr tank/jd-cap-120/retained/kept	exit=0
+des_nested_bare	doas zfs destroy tank/jd-cap-120/retained/kept	exit=1
+des_nested_r	doas zfs destroy -r tank/jd-cap-120/retained/kept	exit=0
+des_after_retained	zfs list -H -o name -t all -r tank/jd-cap-120	exit=0
+des_run_child	doas zfs create tank/jd-cap-120/containers/j1/data && doas sh -c 'echo kept > /var/tmp/jd-cap-120/containers/j1/data/marker'	exit=0
+des_run_start	doas jail -c name=jd-cap-120 path=/var/tmp/jd-cap-120/containers/j1 persist ip4=disable ip6=disable	exit=0
+des_run_destroy	doas zfs destroy -r tank/jd-cap-120/containers/j1/data	exit=0
+des_run_after	jls -j jd-cap-120 name; ls -A /var/tmp/jd-cap-120/containers/j1; mount | grep -c /var/tmp/jd-cap-120/containers/j1/data	exit=1
+des_run_stop	doas jail -r jd-cap-120	exit=0
+des_busy_child	doas zfs create tank/jd-cap-120/containers/j1/data && doas zfs snapshot tank/jd-cap-120/containers/j1/data@one	exit=0
+des_busy_destroy	doas zfs destroy -r tank/jd-cap-120/containers/j1/data	exit=1
+des_busy_destroy_left	zfs list -H -o name -t all -r tank/jd-cap-120	exit=0
+des_busy_after	doas zfs destroy -r tank/jd-cap-120/containers/j1/data	exit=0
+des_busy2_child	doas zfs create tank/jd-cap-120/containers/j1/data && doas zfs snapshot tank/jd-cap-120/containers/j1/data@one	exit=0
+des_busy2_unmount	doas zfs unmount tank/jd-cap-120/containers/j1/data	exit=1
+des_busy2_unmount_left	zfs list -H -o name -t all -r tank/jd-cap-120	exit=0
+des_busy2_unmount_free	doas zfs unmount tank/jd-cap-120/containers/j1/data	exit=0
+des_busy2_destroy	doas zfs destroy -r tank/jd-cap-120/containers/j1/data	exit=0
+des_end	zfs list -H -o name -t all -r tank/jd-cap-120	exit=0

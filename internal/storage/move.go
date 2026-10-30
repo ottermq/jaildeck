@@ -180,6 +180,29 @@ func (s *Service) RetainedDatasets(ctx context.Context) ([]Dataset, error) {
 	return retained, nil
 }
 
+// RetainedSnapshots names the snapshots of every retained dataset, by
+// dataset: what a destroy of one would take with it (#120), listed before it
+// is confirmed. One zfs list per pool, not one per dataset.
+func (s *Service) RetainedSnapshots(ctx context.Context) (map[string][]string, error) {
+	roots, err := s.roots(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byDataset := make(map[string][]string)
+	for _, root := range roots {
+		// Nothing retained on this pool, the same answer RetainedDatasets
+		// takes from the same failure.
+		snapshots, err := s.SnapshotsOf(ctx, retainedParent(root))
+		if err != nil {
+			continue
+		}
+		for _, snapshot := range snapshots {
+			byDataset[snapshot.Dataset] = append(byDataset[snapshot.Dataset], snapshot.Name)
+		}
+	}
+	return byDataset, nil
+}
+
 // moveDataset renames and then carries the mount across, in that order.
 //
 // The three commands are separate on purpose. zfs rename without -u does all

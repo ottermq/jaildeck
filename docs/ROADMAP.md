@@ -57,6 +57,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Exec audited truthfully** (v0.18.1): an exec's audit entry carries its command's exit code, timeout and duration (#141)
 - **Tenant networks** (v0.19.0): a network per tenant, a bridge on its own `/24` with a switch on it, kept apart by PF (#118 step 2, JD-043); names suggested for new jails and guests (#148); a shared guest console refused, naming who holds it (#153)
 - **A way in, and a map** (v0.20.0): a console password for cloud-image guests (#152), a Networks page (#128), the running version shown (#136), a retained child keeping its own mountpoint (#121)
+- **Limits changed in place** (v0.21.0): an existing jail's limits changed without recreating it, live when it runs (#119); the commit stamped in packaged builds (#165)
 
 ---
 

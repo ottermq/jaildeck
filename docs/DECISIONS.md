@@ -2367,3 +2367,59 @@ An **Inspect** panel on a jail's page and on a guest's page, one component for b
 
 - **Editing any of it.** Changing a jail's limits is `PATCH /limits` (#119); everything else stays on the API that made it.
 - **A guest in a datastore other than the default one.**
+
+## JD-052 — Live State: An Event Stream on Top of the Reads
+
+**Status:** Proposed — 2026-10-30. The design note #124 asks for, for the owner to decide before any code. Timings measured on isengard, read only.
+
+Pages read their state when they open, and poll only while something long runs (JD-008). With several operators and automations acting at once, a page goes stale without saying so. JD-008 left room for server-sent events "on top rather than replacing" polling. This is that.
+
+### What the stream is
+
+**`GET /api/events`, `text/event-stream`, behind the same authentication as every other read.** A session cookie or a token, over TCP or the socket. No new scope: everything an event names, the principal can already read.
+
+**Events are hints, not state.** Each one names what changed, and the client reads it again through the existing endpoints. The API's contract stays the reads; a client that ignores the stream loses nothing but freshness. There is one shape of the truth, not two that can disagree.
+
+```
+id: 7f3c-1042
+event: operation
+data: {"operation":"jail-stop","target":"web","success":true,"request_id":"…"}
+
+id: 7f3c-1043
+event: state
+data: {"kind":"vm","name":"batch","from":"running","to":"stopped","seen":"observed"}
+```
+
+### Where events come from
+
+1. **Jail Deck's own operations, as they are audited.** A wrapper around the audit logger publishes an entry once it is written, never before. The audit log stays the record (JD-011), and an event never claims what the log does not hold. The entry is what `/api/audit` already shows, so nothing new is revealed.
+2. **Changes made elsewhere, by comparison.** A `service jail stop` in a shell, or a guest that powers itself off. While at least one client is subscribed, one goroutine reads `jls` and `vm list` every 10 s and emits a `state` event for each difference from its last reading, marked `"seen":"observed"`. Measured on isengard: `jls` under 10 ms and `vm list` 60 ms, so 10 s costs well under 1% of one core. With no subscribers it doesn't run, and its last reading is dropped: derived state, not kept (JD-011).
+3. **Progress of long work.** A template's or image's `running` step (JD-008) is already in memory. A step change emits `progress`.
+
+Usage figures are not events. The Instances list reads `/api/metrics` on its own (JD-050).
+
+### Reconnection and missed events
+
+- **Ids are `<boot>-<sequence>`.** `boot` is random per process start; `sequence` counts up.
+- **The last 256 events are kept in memory.** A reconnect with `Last-Event-ID` from the same boot, still in that ring, is sent what it missed. Otherwise the first event is `reset`: read everything again. A restart, a long sleep, or a ring that wrapped all land there. The client's answer is a reload, which is what it does today.
+- **A heartbeat comment every 15 s**, so a proxy doesn't close an idle stream and a client can tell a quiet host from a dead connection.
+- **A slow client is cut off, not waited for.** Each subscriber has a bounded queue. One that fills is closed after a `reset`, so it reloads when it reconnects. At most 32 streams at once; the 33rd gets 503.
+
+### Per connection, rechecked
+
+A stream belongs to the connection, not to a session or a token, and carries the same events for everyone. It is closed when its session expires or its token is revoked, checked at each heartbeat, so a revoked token stops hearing within 15 s. The server's `WriteTimeout` is already unset (JD-014). Middleware must pass `http.Flusher` through, and the request log writes its line when the stream closes.
+
+### The interface
+
+One `EventSource` for the whole app, opened after sign-in. Each store refetches what an event names: a list, a row, a badge. EventSource reconnects on its own, with `Last-Event-ID`. While the stream is down, pages behave as they do now: they read on open and poll during long work. A small "live" or "not live" marker in the rail shows which.
+
+### Not yet
+
+- **A filter on the stream** (`?kind=vm`). Events are small, and a client can ignore what it doesn't want.
+- **Webhooks or any delivery off the host.** The stream is for clients that are connected.
+- **History.** The audit log is history; the stream is now.
+
+### Open
+
+- The comparison interval: 10 s is a guess at "soon enough". It could follow the subscriber count, or be a setting.
+- Whether `state` events from Jail Deck's own operations should be suppressed when the `operation` event already says the same thing.

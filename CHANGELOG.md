@@ -20,6 +20,52 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.23.0 — 2026-10-30
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.23.0)
+
+**Instances at scale.** Jails and guests are in one list, found by name, state or label, and
+acted on several at once (#129). Guests get labels and snapshots, as jails have.
+
+Nothing to act on when upgrading: no new setting, and nothing in `pf.conf` or `rc.conf`.
+
+### Added
+
+- **The Instances page** (#175, closing #129): `/instances`, second in the menu. Jails and guests
+  in one list, with state, kind, labels, CPU and memory.
+  - A running jail's CPU and memory are what it is using; a guest's are what it was given. The
+    headers say so.
+  - Search by name; filter by kind, state and labels (`otter:tenant=acme, otter:tier`); click a
+    label to filter on it; group by a label key; sort by name, kind or state. **The filters are
+    kept in the address**, so a view can be bookmarked.
+- **Bulk start, stop, restart and snapshot** (#175): one confirmation that names each instance it
+  will act on, four at a time, and **each instance's result shown separately** as it finishes.
+  - What an action does not apply to is skipped, with the reason per instance.
+  - What a filter hides leaves the selection, so nothing is acted on that was not on screen.
+  - It is the existing per-instance call, made once per instance and audited as before.
+- **Guest labels** (#173): ZFS user properties on the guest's dataset, as a jail is tagged
+  (JD-044). A **Tags** panel on the guest's page, the jail page's own, now one component.
+- **Guest snapshots** (#176, closing #174): the guest's dataset and its disks at one point in
+  time. **A running guest is snapshotted as it is, and said to be crash-consistent** (JD-045).
+  The Instances page's bulk Snapshot covers guests, each result saying which it got.
+
+### API
+
+- **`properties`** on each guest in `GET /api/vms` and on `GET /api/vms/{name}` (#173): the
+  guest dataset's own user properties, always an object. Additive.
+- **`PATCH /api/vms/{name}/properties`** (#173): as the jail route, a string sets and `null`
+  removes; `409` for a guest in a datastore not on ZFS. Additive.
+- **`PUT /api/vms/{name}/snapshots/{snapshot}`** (#176): `201` with `snapshot`, `created` and
+  `consistency` (`crash-consistent` or `consistent`); `200` with `existed` when it was already
+  there, with no consistency claimed; `409` for a datastore not on ZFS. Additive.
+
+### Internal
+
+- **The measurements are kept as captures:** `capture-vm-labels-induced.sh` (`vml_*`) and
+  `capture-vm-snapshot-induced.sh` (`vsn_*`). **JD-044** (guest labels: ZFS over a config key that
+  `vm info` does not show) and **JD-045** (guest snapshots) record them.
+- The fake host's running guest has a `disk0` volume, as a real guest does.
+
 ## v0.22.0 — 2026-10-30
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.22.0)

@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { Snippet } from 'svelte'
 import Console from './Console.svelte'
+import { mayOpenConsole } from '../stores/auth.svelte'
 
 // The Console panel of a jail's or a guest's page (JD-042): a button that
 // opens the terminal, the terminal while it lasts, and why it closed, in
@@ -50,7 +51,7 @@ function closed(reason: string, detail: string) {
     <div class="panel__head">
         <h2 id="console-heading">Console</h2>
         {#if !open}
-            {#if running}
+            {#if running && mayOpenConsole()}
                 <button type="button" class="btn btn--small" onclick={start}>{openLabel}</button>
             {/if}
         {:else if ended !== null}
@@ -64,6 +65,13 @@ function closed(reason: string, detail: string) {
             <button type="button" class="btn btn--small" onclick={() => (open = false)}>Close</button>
         {/if}
     </div>
+    {#if !mayOpenConsole()}
+        <!-- Said rather than hidden: a missing button reads as a bug. -->
+        <p class="notice" role="status">
+            The browser console is turned off on this host (<code>JAILDECK_CONSOLE_UI=off</code>).
+            A platform that manages it opens consoles through its own API token.
+        </p>
+    {/if}
     {#if open}
         {#key run}
             <Console {path} onclosed={closed} />

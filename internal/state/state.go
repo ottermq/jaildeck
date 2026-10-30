@@ -26,6 +26,12 @@ type Token struct {
 	Name      string    `json:"name"`
 	Hash      string    `json:"hash"`
 	CreatedAt time.Time `json:"created_at"`
+	// Scopes are what the token may do beyond the plain API (#178). Nil is a
+	// token made before scopes existed, which keeps every one so that no
+	// client breaks on upgrade; a token made since has a list, empty or not.
+	// No omitempty: an empty list and no list at all mean different things,
+	// and JSON keeps them apart only as [] and null.
+	Scopes []string `json:"scopes"`
 }
 
 type Store struct {

@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -123,7 +123,7 @@ func TestRunPasswd_ReplacesCredentialAndPreservesTokens(t *testing.T) {
 		if ok, err := auth.Verify(password, st.PasswordHash); err != nil || !ok {
 			t.Errorf("Verify(current password) = %v, %v, want true, nil", ok, err)
 		}
-		if !slices.Equal(st.APITokens, tokens) {
+		if !reflect.DeepEqual(st.APITokens, tokens) {
 			t.Errorf("APITokens = %v, want %v", st.APITokens, tokens)
 		}
 		if password == "replacement-password" {

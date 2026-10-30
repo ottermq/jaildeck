@@ -4,6 +4,10 @@ export interface Principal {
     kind: 'session' | 'token'
     name: string
     expires_at?:string // absent for tokens; Go sends omitempty
+    // What it may do beyond the plain API (#178): "console" unless the host
+    // has turned the browser console off (JAILDECK_CONSOLE_UI=off, #155).
+    // Absent from a server older than scopes, which had no such switch.
+    scopes?: string[]
 }    
 
 export const auth = $state<{ principal: Principal | null; checked: boolean}>({
@@ -47,4 +51,10 @@ export async function logout(): Promise<void> {
         await api<void>('/auth/logout',{method:'POST'})
     } catch  {}
     onUnauthenticated()
+}
+
+// Whether this login may open a console. A server from before scopes said
+// nothing, and every login could.
+export function mayOpenConsole(): boolean {
+    return auth.principal?.scopes?.includes('console') ?? true
 }

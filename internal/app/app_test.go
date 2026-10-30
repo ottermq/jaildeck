@@ -52,6 +52,12 @@ func TestNew_SucceedsWithCredential(t *testing.T) {
 }
 
 func newTestApp(t *testing.T) (*App, error) {
+	return newTestAppWith(t, nil, nil)
+}
+
+// newTestAppWith is newTestApp with the configuration changed and tokens in
+// the state beside the password.
+func newTestAppWith(t *testing.T, tweak func(*config.Config), tokens []state.Token) (*App, error) {
 	root := t.TempDir()
 	cfg := &config.Config{
 		Adapter:  config.AdapterFake,
@@ -67,7 +73,10 @@ func newTestApp(t *testing.T) (*App, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := state.NewStore(cfg.StateDir).Save(state.State{PasswordHash: hash}); err != nil {
+	if tweak != nil {
+		tweak(cfg)
+	}
+	if err := state.NewStore(cfg.StateDir).Save(state.State{PasswordHash: hash, APITokens: tokens}); err != nil {
 		t.Fatalf("seeding credential: %v", err)
 	}
 

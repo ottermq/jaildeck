@@ -29,6 +29,15 @@ versions' release notes stay there. GitHub numbering started again at #1.
   vm-bhyve configuration and cloud-init seed. Read off the host when the panel is opened, read
   only, each file with a Copy button. **A console password's hash is masked.**
 
+### Fixed
+
+- **A guest's directory could be read by any local account** (#152). Its seed's `user-data` is
+  0600, but `vm create` leaves the directory 0755 and the first start writes the seed's ISO into
+  it 0644, so a console password's hash could be read from the ISO. **A create now makes the
+  directory 0700** before the guest can start, audited as `vm-make-private`; vm-bhyve keeps the
+  mode, measured. **A guest made before the upgrade keeps its directory as it was:** run
+  `chmod 0700 <datastore>/<guest>` for each one (`/vm/<guest>` on the default datastore).
+
 ### API
 
 - **`GET /api/jails/{name}/configuration`**: `file` (`path`, `present`, `content`, `truncated`),
@@ -38,11 +47,16 @@ versions' release notes stay there. GitHub numbering started again at #1.
   each with `name`, `path`, `present`, `content`, `truncated` and `masked`. The value of every
   `password`, `passwd`, `hashed_passwd` and `plain_text_passwd` key is replaced with `(masked)`.
   A file past 64 KiB is cut there. Additive.
+- **`POST` and `PUT /api/vms`** run one more step, `vm-make-private`, right after `vm-create`; a
+  failure there destroys the guest again, as a later step's does.
 
 ### Internal
 
 - **The measurements are kept as a capture:** `capture-vm-configuration-induced.sh` (`vcf_*`),
   what a guest's directory holds and with what modes. **JD-048** records the view.
+- `capture-vm-private-dir-induced.sh` (`vpd_*`): what a plain account reads of a guest's directory,
+  before and after it is made private, and that vm-bhyve keeps the mode. JD-038's amendment of
+  2026-10-30 records it.
 
 ## v0.24.0 — 2026-10-30
 

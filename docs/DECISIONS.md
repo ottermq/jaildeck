@@ -1848,6 +1848,8 @@ Everything that can be refused is refused before `vm create`: the name (vm-bhyve
 
 This is a break-glass login, not a way in for everyday use: on a platform with tenants, whoever creates the guest sets it, and an operator opening the console reaches a login prompt (jaildeck#155, otter_cloud#142).
 
+**Amended 2026-10-30 — the guest's directory is made private.** The seed's `user-data` is 0600, but the directory around it was not: `vm create` leaves it 0755, and the first start writes `seed.iso` into it 0644, with `user-data` inside. Measured as a plain account (`capture-vm-private-dir-induced.sh`, `vpd_*`): the configuration and the ISO could be read, and the hash with it. **A create now makes the directory 0700 right after `vm create`** (`vm-make-private`, audited), before anything can start the guest, and a failure there destroys the guest again, as any later step's does. vm-bhyve keeps the mode across starts and stops, and `vm start`, `vm list` and `vm destroy` work as before, measured. Every guest gets it, password or not: the configuration and seed are root's business. **A guest made before this keeps its directory as it was**; `chmod 0700 <datastore>/<guest>` does the same by hand.
+
 ---
 
 ## JD-039 — A Signed Package Repository: CI Builds and Attests, a Host Pulls, Verifies and Signs

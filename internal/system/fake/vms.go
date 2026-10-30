@@ -263,6 +263,12 @@ func (f *VMs) AddressesIn(subnet netip.Prefix) []networks.Use {
 // HostCPUs is isengard's.
 func (f *VMs) HostCPUs(context.Context) (int, error) { return 16, nil }
 
+// VMMakePrivate is what the adapter's chmod would print; the fake has no
+// directory to change.
+func (f *VMs) VMMakePrivate(_ context.Context, name string) (string, error) {
+	return "chmod 0700 /zroot/vm/" + name, nil
+}
+
 func (f *VMs) VMPinCPUs(_ context.Context, name string, cpus []int) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

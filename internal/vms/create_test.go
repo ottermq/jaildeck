@@ -100,6 +100,10 @@ func (m *maker) VMReplaceDisk(_ context.Context, name, snapshot string, size int
 
 func (m *maker) HostCPUs(context.Context) (int, error) { return m.hostCPUs, m.fail["ncpu"] }
 
+func (m *maker) VMMakePrivate(_ context.Context, name string) (string, error) {
+	return "chmod 0700 " + name, m.step("private")
+}
+
 func (m *maker) VMPinCPUs(_ context.Context, name string, cpus []int) (string, error) {
 	command := "sysrc -f " + name + ".conf bhyve_options=" + PinOptions(cpus)
 	if err := m.step("pin"); err != nil {
@@ -176,7 +180,7 @@ func TestCreateRunsEveryStepInOrderAndAuditsThem(t *testing.T) {
 	if created.Name != "jd-cap-made" || created.Image != "debian-13" || created.State != StateStopped {
 		t.Errorf("created = %+v", created)
 	}
-	if !slices.Equal(m.calls, []string{"create", "network", "disk"}) {
+	if !slices.Equal(m.calls, []string{"create", "private", "network", "disk"}) {
 		t.Errorf("calls = %v", m.calls)
 	}
 	spec := m.specs[0]
@@ -190,6 +194,7 @@ func TestCreateRunsEveryStepInOrderAndAuditsThem(t *testing.T) {
 	}
 	want := []string{
 		"vm-create vm create jd-cap-made ok",
+		"vm-make-private chmod 0700 jd-cap-made ok",
 		"vm-add-network vm add -d network -s jd-capsw jd-cap-made ok",
 		"vm-replace-disk zfs clone tank/vm/.images/debian-13@base ok",
 	}
@@ -223,7 +228,7 @@ func TestCreateStartsWhenAsked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.State != StateRunning || !slices.Equal(m.calls, []string{"create", "disk", "start"}) {
+	if created.State != StateRunning || !slices.Equal(m.calls, []string{"create", "private", "disk", "start"}) {
 		t.Errorf("created = %+v, calls = %v", created, m.calls)
 	}
 	if got := rec.summary(); got[len(got)-1] != "vm-start vm start web ok" {
@@ -246,7 +251,7 @@ func TestAStartThatFailsLeavesTheGuest(t *testing.T) {
 // --- a step that fails -------------------------------------------------------
 
 func TestAStepThatFailsDestroysTheGuestAgain(t *testing.T) {
-	for _, step := range []string{"network", "disk"} {
+	for _, step := range []string{"private", "network", "disk"} {
 		t.Run(step, func(t *testing.T) {
 			m := newMaker()
 			m.fail[step] = errors.New("exit status 1: boom")

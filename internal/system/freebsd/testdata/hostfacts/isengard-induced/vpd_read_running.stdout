@@ -1,0 +1,4 @@
+refused /vm/jd-cap-priv/jd-cap-priv.conf
+refused /vm/jd-cap-priv/seed.iso
+refused /vm/jd-cap-priv/.cloud-init/user-data
+hash not read

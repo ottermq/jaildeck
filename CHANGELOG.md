@@ -25,9 +25,12 @@ versions' release notes stay there. GitHub numbering started again at #1.
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.23.0)
 
 **Instances at scale.** Jails and guests are in one list, found by name, state or label, and
-acted on several at once (#129). Guests get labels and snapshots, as jails have.
+acted on several at once (#129). Guests get labels and snapshots, as jails have. API tokens get
+scopes, and a console can be opened saying on whose behalf and why (#155, #178).
 
-Nothing to act on when upgrading: no new setting, and nothing in `pf.conf` or `rc.conf`.
+Nothing to act on when upgrading: existing tokens keep every scope, and the browser console stays
+on. **A token made after the upgrade needs `--scope console` to open a console.** One new
+optional setting, `JAILDECK_CONSOLE_UI`; nothing in `pf.conf` or `rc.conf`.
 
 ### Added
 
@@ -49,6 +52,15 @@ Nothing to act on when upgrading: no new setting, and nothing in `pf.conf` or `r
   time. **A running guest is snapshotted as it is, and said to be crash-consistent** (JD-045).
   The Instances page's bulk Snapshot covers guests, each result saying which it got.
 
+- **Token scopes** (#179, closing #178): `jaildeck token add <name> --scope console`. The one
+  scope is `console`; a token without it is refused a console with 403. A token made before
+  scopes keeps every one, and `token list` shows each token's scopes.
+- **`JAILDECK_CONSOLE_UI=off`** (#179, #155): the browser session can no longer open a console,
+  and a token with the `console` scope still can, for a host a platform manages. Anything but
+  `on` or `off` is taken as off. The console panel says the console is off rather than hiding it.
+- **Who opened a console, and why** (#179, #155): optional `actor` and `reason` on both console
+  endpoints, recorded verbatim on the `console-open` audit entry. Never required.
+
 ### API
 
 - **`properties`** on each guest in `GET /api/vms` and on `GET /api/vms/{name}` (#173): the
@@ -59,12 +71,20 @@ Nothing to act on when upgrading: no new setting, and nothing in `pf.conf` or `r
   `consistency` (`crash-consistent` or `consistent`); `200` with `existed` when it was already
   there, with no consistency claimed; `409` for a datastore not on ZFS. Additive.
 
+- **`scopes`** on `GET /api/auth/me` (#179). Additive.
+- **`actor` and `reason`** query parameters on `GET /api/jails/{name}/console` and
+  `GET /api/vms/{name}/console` (#179): `400` when out of shape. **`403`** for a token without the
+  `console` scope, or a browser session with `JAILDECK_CONSOLE_UI=off`. The audit's
+  `console-open` entry gains `actor` and `open_reason`. Additive for existing tokens.
+
 ### Internal
 
 - **The measurements are kept as captures:** `capture-vm-labels-induced.sh` (`vml_*`) and
   `capture-vm-snapshot-induced.sh` (`vsn_*`). **JD-044** (guest labels: ZFS over a config key that
   `vm info` does not show) and **JD-045** (guest snapshots) record them.
 - The fake host's running guest has a `disk0` volume, as a real guest does.
+- **JD-046** records token scopes, the console switch, and the actor and reason. The state file's
+  tokens gain `scopes`, written as `[]` or a list for a new token and left `null` for an old one.
 
 ## v0.22.0 — 2026-10-30
 

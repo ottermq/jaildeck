@@ -12,7 +12,7 @@ stopped, restarted and destroyed from the browser or the API, and their limits c
 snapshots and resource usage are visible, and a dataset kept past its jail can be restored or destroyed; host setup is checked; PF can be seen,
 read-only; bhyve VMs are created from cloud images with cloud-init, with a console password if wanted, pinned to host CPUs, started,
 stopped, labelled, snapshotted and destroyed, on a default network Jail Deck sets up with NAT through PF, or on networks of their own kept apart by PF, and every network and what is on it can be seen; a jail has a shell in the
-browser, and a guest its serial console; jails and guests are found in one list by name, state or label, and started, stopped, restarted or snapshotted several at once; every operation is audited, and nothing is reachable without a password or an
+browser, and a guest its serial console; jails and guests are found in one list by name, state or label, and started, stopped, restarted or snapshotted several at once; every operation is audited, a console with who opened it and why when the client says, and nothing is reachable without a password or an
 API token. Releases install and upgrade with `pkg` from a signed repository. See
 [the roadmap](docs/ROADMAP.md) for what comes next.
 

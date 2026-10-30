@@ -615,6 +615,12 @@ A jail spec may ask for VNET networking:
 - **A VNET jail's loopback starts down.** The stanza brings `lo0` up, sets the address and adds the route *before* `/bin/sh /etc/rc`, so the services rc starts find an interface that is already configured.
 - **`private` isolates private members from each other, and only from each other.** Measured: private→private is blocked, private→non-private works, private→the bridge works. The sentence above is accurate only where every jail on the bridge asks for it; a jail sharing a bridge with a non-private member is not isolated from it.
 
+**Amended 2026-10-30 — a host may filter bridge members.** Every measurement above, and those in JD-040 and JD-043, was taken with `net.link.bridge.pfil_member=0` and `pfil_bridge=0`, FreeBSD's defaults. With these defaults, PF never sees traffic between two members of one bridge, only traffic the host routes. A host may set `pfil_member=1` so that its own `pf.conf` can filter between members of one bridge, for example between two jails of one tenant. Jail Deck neither reads nor sets either sysctl. Per bridge(4), with `pfil_member=1`:
+- bridged packets pass PF on the member interfaces (the epair's host end, a guest's tap), so the main ruleset applies to them;
+- Jail Deck's anchor is unaffected: its filter rules are `on <bridge>`, which still matches only routed traffic;
+- **"reaches" in these records then means "reaches unless the host's own rules say otherwise".** A private→non-private or non-private↔non-private path on one bridge can be blocked by a rule in `pf.conf` that names no interface. Nothing becomes reachable that was blocked: `private` still blocks private→private at the bridge.
+- the setting is host-wide, so it applies to every bridge, the default VM network's included, and every bridged packet a stateful rule passes gets a state entry.
+
 A VNET jail sets no `ip4.addr`, so neither `jls` nor its configuration reports an address for it and the jail listing shows none. The address is in the jail's own stack. A stanza cannot carry it as metadata either: an assignment jail(8) does not recognise is a hard error (`unknown parameter`), measured.
 
 ### Rationale
@@ -2113,6 +2119,7 @@ Every network's NAT line comes first, then every network's filter rules: **pfctl
 - Each was blocked from the other network, both ways, from the other's gateway, and from the default network's gateway.
 - The destroy of a network in use was refused, naming its guest and its jail.
 - After everything was destroyed, the host's interfaces, `system.conf` and `rc.conf` were as before. **A network's members reach each other**: its ports aren't private, unlike the default network's. That's what a tenant's own instances need.
+- **A host filtering bridge members** (`net.link.bridge.pfil_member=1`, see JD-017's amendment of 2026-10-30) may block some of a network's members from each other with its own `pf.conf`. Jail Deck's rules are unchanged by it, and the anchor still keeps networks apart.
 
 ### The API
 

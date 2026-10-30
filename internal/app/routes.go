@@ -15,6 +15,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/common"
 	"github.com/ottermq/jaildeck/internal/firewall"
 	"github.com/ottermq/jaildeck/internal/host"
+	"github.com/ottermq/jaildeck/internal/housekeeping"
 	"github.com/ottermq/jaildeck/internal/images"
 	"github.com/ottermq/jaildeck/internal/jails"
 	"github.com/ottermq/jaildeck/internal/metrics"
@@ -38,7 +39,9 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 			jails.RegisterJailRoutes(r, a.jailHandler, func(r chi.Router) {
 				r.Get("/console", a.consoleHandler.Jail)
 			})
-			host.RegisterHostRoutes(r, a.hostHandler)
+			host.RegisterHostRoutes(r, a.hostHandler, func(r chi.Router) {
+				housekeeping.RegisterRoutes(r, a.housekeeping)
+			})
 			audit.RegisterAuditRoutes(r, a.auditHandler)
 			metrics.RegisterMetricsRoutes(r, a.metricsHandler)
 			firewall.RegisterFirewallRoutes(r, a.firewallHandler)

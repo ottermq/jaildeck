@@ -2367,3 +2367,39 @@ An **Inspect** panel on a jail's page and on a guest's page, one component for b
 
 - **Editing any of it.** Changing a jail's limits is `PATCH /limits` (#119); everything else stays on the API that made it.
 - **A guest in a datastore other than the default one.**
+
+## JD-049 — Housekeeping: What Nothing Uses, Listed With How to Remove It
+
+**Status:** Locked — 2026-10-30. Decided in #125's implementation, open to the owner's review in its PR. Checked live on isengard, read only.
+
+Templates, images, retained datasets, snapshots and downloaded archives each hold storage, and nothing said which of them nothing uses any more. `GET /api/host/reclaimable` does: read at request time from ZFS and the file system (JD-011), never stored.
+
+### It reads; the existing endpoints remove
+
+The report gives each item the request that removes it, `confirm` included: `DELETE /api/templates/{name}`, `/api/vm-images/{name}`, `/api/retained/{name}`, `/api/jails/{jail}/snapshots/{snapshot}`. There is no bulk endpoint. A removal is that endpoint's, with its refusals and its audit entry, so a template something was cloned from after the report was read is still refused, and housekeeping can't take what another thing depends on. The interface sends them one at a time.
+
+### What counts as unused
+
+- **A template** with no clones and no holds, and not being prepared. One that isn't ready (a preparation that failed) is listed and says so.
+- **A VM image** that no guest's disk is cloned from, and not being prepared.
+- **Every retained dataset.** Each was kept on purpose, so each is listed, as a reminder that it is still there. The interface removes them one at a time, never all at once.
+- **A snapshot of a jail's own dataset older than `older_than_days`**, 30 by default, 1 to 3650. Its size is summed over the jail's datasets with a snapshot of the same name, since the destroy takes them together (JD-024). A child dataset's snapshot alone is not listed.
+- **A downloaded archive in Jail Deck's own paths**: `media/<release>/base.txz` and an image source's archive in `<datastore>/.images`. A file an operator put elsewhere, or in an older layout, is not guessed at. No endpoint removes an archive; it is listed so its size is known.
+
+### Other tools' snapshots are never listed
+
+Snapshots named `zrepl_…`, `autosnap_…` (sanoid) or `zfs-auto-snap…` are taken and pruned by another tool. Removing one by hand breaks that tool's replication or its retention, so they are left out and counted in `skipped_snapshots`. On isengard almost every snapshot under the jails tree is zrepl's.
+
+### Sizes
+
+A dataset's `used`, a snapshot's `used`, a file's size: what ZFS or the file system says removing it would give back. Blocks still shared with something else are not counted, so the total is a lower bound, and removing one item can make another's size grow.
+
+### A source that can't be read
+
+Each kind is read on its own. One that fails is named in `problems`, and the others are still listed.
+
+### Not yet
+
+- **Archives' removal.** Preparing a release or an image again downloads it again, so an archive is the cheapest thing to remove, and the one where a wrong path costs most. Left to the operator.
+- **A schedule.** Nothing is ever removed without someone asking.
+

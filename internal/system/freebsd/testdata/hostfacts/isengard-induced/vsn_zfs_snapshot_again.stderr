@@ -1,0 +1,3 @@
+cannot create snapshot 'tank/vm/jd-cap-174@jd-a': dataset already exists
+cannot create snapshot 'tank/vm/jd-cap-174/disk0@jd-a': dataset already exists
+no snapshots were created

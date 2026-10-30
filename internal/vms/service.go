@@ -31,6 +31,8 @@ type Service struct {
 	consoles ConsoleHangup
 	// properties reads and writes the guests' labels (JD-044).
 	properties PropertyStore
+	// snapshots takes a guest's snapshot through ZFS (JD-045).
+	snapshots SnapshotTaker
 }
 
 // ConsoleHangup closes a guest's console session before Jail Deck stops it.

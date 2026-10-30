@@ -458,3 +458,15 @@ vml_conf_remove	doas sysrc -f /vm/jd-cap-129r/jd-cap-129r.conf -x otter_tenant	e
 vml_after_remove	zfs get -H -o property,value -s local all tank/vm/jd-cap-129r; grep -c otter /vm/jd-cap-129r/jd-cap-129r.conf	exit=1
 vml_destroy	doas vm destroy -f jd-cap-129r	exit=0
 vml_after_destroy	zfs list -H -o name -r tank/vm | grep jd-cap; ls -A /vm | grep jd-cap	exit=1
+vsn_create	doas vm create -t jd-capture -s 1G jd-cap-174	exit=0
+vsn_start	doas vm start jd-cap-174; sleep 3; ls /dev/vmm	exit=0
+vsn_zfs_snapshot_running	doas zfs snapshot -r tank/vm/jd-cap-174@jd-a	exit=0
+vsn_list_after	zfs list -H -t snapshot -o name,used,refer -r tank/vm/jd-cap-174	exit=0
+vsn_still_running	doas vm list | awk '$1 == "jd-cap-174"'; ls /dev/vmm	exit=0
+vsn_info_after	doas vm info jd-cap-174	exit=0
+vsn_zfs_snapshot_again	doas zfs snapshot -r tank/vm/jd-cap-174@jd-a	exit=1
+vsn_vm_snapshot_forced	doas vm snapshot -f jd-cap-174@jd-b	exit=0
+vsn_list_both	zfs list -H -t snapshot -o name -r tank/vm/jd-cap-174	exit=0
+vsn_poweroff	doas vm poweroff -f jd-cap-174; sleep 3; ls /dev/vmm	exit=1
+vsn_destroy	doas vm destroy -f jd-cap-174	exit=0
+vsn_after_destroy	zfs list -H -t all -o name -r tank/vm | grep jd-cap-174	exit=1

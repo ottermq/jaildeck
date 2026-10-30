@@ -134,6 +134,24 @@ export async function setVMTags(
     })
 }
 
+// What a guest snapshot is worth (JD-045): crash-consistent when bhyve was
+// running the guest, its disks as a power cut would leave them.
+export type Consistency = 'consistent' | 'crash-consistent'
+
+export interface VMSnapshotResult {
+    snapshot: string
+    // The guest's dataset and each disk volume, at one point in time.
+    created: string[]
+    // Already there; nothing ran, and its consistency is not known.
+    existed?: boolean
+    consistency?: Consistency
+}
+
+export async function createVMSnapshot(name: string, short: string): Promise<VMSnapshotResult> {
+    return await api<VMSnapshotResult>(
+        `/vms/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(short)}`, { method: 'PUT' })
+}
+
 export async function destroyVM(name: string): Promise<{ name: string }> {
     const query = new URLSearchParams({ confirm: name })
     return await api<{ name: string }>(`/vms/${encodeURIComponent(name)}?${query}`, { method: 'DELETE' })

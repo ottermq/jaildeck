@@ -165,6 +165,7 @@ func New(cfg *config.Config) (*App, error) {
 	}
 	vmService := vms.NewService(vmSystem, vmImageCatalog{images: imageService}, auditLogger)
 	vmService.SetProperties(storageService)
+	vmService.SetSnapshots(storage.NewGuestSnapshots(storageService))
 	vmHandler := vms.NewHandler(vmService)
 	// On a real host the switches are one thing; the two fakes are joined so
 	// fake mode behaves the same.

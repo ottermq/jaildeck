@@ -32,6 +32,12 @@ vi.mock('../stores/jails.svelte', async (original) => ({
 vi.mock('../stores/vms.svelte', async (original) => ({
     ...(await original<typeof import('../stores/vms.svelte')>()),
     listVMs: vi.fn(async () => structuredClone(listing)),
+    createVMSnapshot: vi.fn(async (name: string, short: string) => {
+        calls.push(`vm snapshot ${name}@${short}`)
+        const running = listing.vms.find(v => v.name === name)!.state === 'running'
+        return { snapshot: `tank/vm/${name}@${short}`, created: [`tank/vm/${name}@${short}`, `tank/vm/${name}/disk0@${short}`],
+            consistency: running ? 'crash-consistent' : 'consistent' }
+    }),
     runVMOperation: vi.fn(async (name: string, op: VMOperation) => {
         calls.push(`vm ${op} ${name}`)
         return { ...listing.vms.find(v => v.name === name)!, forced: name === 'web' }
@@ -129,16 +135,20 @@ describe('Instances', () => {
         expect(screen.queryByText(/Restart of/)).toBeNull()
     })
 
-    it('snapshots the jails only, and says why each guest was left out', async () => {
+    it('snapshots jails and guests, and says which guest snapshot is crash-consistent', async () => {
         render(Instances)
         await selectAll()
         await fireEvent.click(screen.getByRole('button', { name: 'Snapshot…' }))
         await fireEvent.input(screen.getByLabelText('Snapshot name'), { target: { value: 'nightly' } })
         await fireEvent.click(screen.getByRole('button', { name: 'Snapshot' }))
         await screen.findByText('Snapshot of 4 instances')
-        expect(asked[0].title).toBe('Snapshot 2 jails as @nightly?')
-        await waitFor(() => expect(calls.sort()).toEqual(['jail snapshot db@nightly', 'jail snapshot web@nightly']))
-        expect(screen.getAllByText(/Guest snapshots are not in the API yet/)).toHaveLength(2)
+        expect(asked[0].title).toBe('Snapshot 4 instances as @nightly?')
+        expect(asked[0].lines?.join(' ')).toContain('crash-consistent')
+        await waitFor(() => expect(calls.sort()).toEqual([
+            'jail snapshot db@nightly', 'jail snapshot web@nightly', 'vm snapshot batch@nightly', 'vm snapshot web@nightly',
+        ]))
+        expect(await screen.findByText('tank/vm/web@nightly, with 1 disk. Crash-consistent: taken while the guest ran.')).toBeTruthy()
+        expect(screen.getByText('tank/vm/batch@nightly, with 1 disk. Consistent: the guest was stopped.')).toBeTruthy()
     })
 
     it('drops from the selection what a filter hides', async () => {

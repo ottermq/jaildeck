@@ -3,7 +3,7 @@ import { onMount } from 'svelte'
 import { SvelteSet } from 'svelte/reactivity'
 import { onNavClick } from '../router.svelte'
 import { createSnapshot, listJails, runJailOperation } from '../stores/jails.svelte'
-import { listVMs, runVMOperation } from '../stores/vms.svelte'
+import { createVMSnapshot, listVMs, runVMOperation } from '../stores/vms.svelte'
 import type { VMBhyveState } from '../stores/vms.svelte'
 import { getMetrics } from '../stores/metrics.svelte'
 import { ask } from '../stores/confirm.svelte'
@@ -163,7 +163,9 @@ function confirmLines(op: BulkOperation, acting: Instance[], skipped: Instance[]
         if (guests) lines.push('A guest is sent the ACPI power button and given a minute; one that has not stopped by then is powered off, and loses what it had not written.')
     }
     if (op === 'snapshot') {
-        lines.push(`Each jail's own dataset and its children, as @${short}, at one point in time per jail. A jail that already has @${short} is left as it is.`)
+        if (jails) lines.push(`A jail's own dataset and its children are taken as @${short}, at one point in time per jail.`)
+        if (guests) lines.push(`A guest's dataset and its disks are taken as @${short}. A running guest is taken as it is: crash-consistent, its disks as a power cut would leave them, without what was still in its memory.`)
+        lines.push(`An instance that already has @${short} is left as it is.`)
     }
     if (skipped.length > 0) {
         lines.push(`${plural(skipped.length, 'selected instance')} ${skipped.length === 1 ? 'is' : 'are'} left alone; the results say why.`)
@@ -175,6 +177,15 @@ function confirmLines(op: BulkOperation, acting: Instance[], skipped: Instance[]
 class Blocked extends Error {}
 
 async function work(i: Instance, op: BulkOperation, short: string): Promise<{ detail?: string, warn?: boolean } | void> {
+    if (op === 'snapshot' && i.kind === 'vm') {
+        const r = await createVMSnapshot(i.name, short)
+        if (r.existed) return { detail: `${r.snapshot} was already there; nothing was taken.` }
+        const disks = r.created.length - 1
+        const what = disks > 0 ? `${r.snapshot}, with ${plural(disks, 'disk')}` : r.snapshot
+        return r.consistency === 'crash-consistent'
+            ? { detail: `${what}. Crash-consistent: taken while the guest ran.` }
+            : { detail: `${what}. Consistent: the guest was stopped.` }
+    }
     if (op === 'snapshot') {
         const r = await createSnapshot(i.name, '', short)
         if (r.blocked) throw new Blocked(r.blocked.reason)
@@ -207,7 +218,7 @@ async function bulk(op: BulkOperation) {
     if (acting.length > 0) {
         const confirmed = await ask({
             title: op === 'snapshot'
-                ? `Snapshot ${plural(acting.length, 'jail')} as @${short}?`
+                ? `Snapshot ${plural(acting.length, 'instance')} as @${short}?`
                 : `${verbs[op]} ${plural(acting.length, 'instance')}?`,
             lines: confirmLines(op, acting, skipped, short),
             items: acting.map(i => `${i.name} (${kindWord(i)})`),

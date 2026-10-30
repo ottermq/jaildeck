@@ -23,6 +23,9 @@ func (noCreation) VMReplaceDisk(context.Context, string, string, int64) (string,
 }
 func (noCreation) VMDestroy(context.Context, string) (string, error) { return "", errNotScripted }
 func (noCreation) HostCPUs(context.Context) (int, error)             { return 0, errNotScripted }
+func (noCreation) VMMakePrivate(context.Context, string) (string, error) {
+	return "", errNotScripted
+}
 func (noCreation) VMPinCPUs(context.Context, string, []int) (string, error) {
 	return "", errNotScripted
 }

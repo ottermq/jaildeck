@@ -20,6 +20,7 @@ const (
 	OperationCreate      = "vm-create"
 	OperationAddNetwork  = "vm-add-network"
 	OperationReplaceDisk = "vm-replace-disk"
+	OperationMakePrivate = "vm-make-private"
 	OperationDestroy     = "vm-destroy"
 )
 
@@ -160,6 +161,14 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Created, error
 	s.log(ctx, OperationCreate, spec.Name, command, err)
 	if err != nil {
 		return Created{}, operationError("create", spec.Name, err)
+	}
+	// Before anything else, and before any start: the seed can carry a
+	// console password's hash, and the ISO the first start builds from it is
+	// world-readable in a world-readable directory -- measured (vpd_*).
+	command, err = s.system.VMMakePrivate(ctx, spec.Name)
+	s.log(ctx, OperationMakePrivate, spec.Name, command, err)
+	if err != nil {
+		return Created{}, s.undo(ctx, spec.Name, "make its directory private", err)
 	}
 	if len(spec.CPUSet) > 0 {
 		command, err = s.system.VMPinCPUs(ctx, spec.Name, spec.CPUSet)

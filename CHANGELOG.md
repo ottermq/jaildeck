@@ -20,6 +20,22 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+### Fixed
+
+- **A guest's directory could be read by any local account** (#152). Its seed's `user-data` is
+  0600, but `vm create` leaves the directory 0755 and the first start writes the seed's ISO into
+  it 0644, so a console password's hash could be read from the ISO. **A create now makes the
+  directory 0700** before the guest can start, audited as `vm-make-private`; vm-bhyve keeps the
+  mode, measured. **A guest made before the upgrade keeps its directory as it was:** run
+  `chmod 0700 <datastore>/<guest>` for each one (`/vm/<guest>` on the default datastore).
+
+### API
+
+- **`POST` and `PUT /api/vms`** run one more step, `vm-make-private`, right after `vm-create`; a
+  failure there destroys the guest again, as a later step's does.
+
 ## v0.24.0 — 2026-10-30
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.24.0)

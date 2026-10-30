@@ -538,6 +538,27 @@ host's epairs were as many as before. The host ran with `net.link.bridge.pfil_me
 - **A bridge that is not there is exit 1**, `arp: interface jdnope0 does not exist`
   (`nad_arp_nosuch`).
 
+## A guest's directory, made private (#152)
+
+`capture-vm-private-dir-induced.sh`, run 2026-10-30 on isengard into `isengard-induced/` with the
+prefix `vpd_`, **changes the host**, and runs as a user that is not root, because what that user
+can read is the point. It makes a throwaway guest, `jd-cap-priv`, on an empty 1G sparse disk
+with no image and no switch, from a user-data file as Jail Deck writes one for a console
+password (`vm create -u`), its hash a placeholder in bcrypt's shape. It starts it and powers it
+off, makes its directory 0700, starts and powers it off twice more, and destroys it and the
+template again; `system.conf` was as before.
+
+**What that settled:**
+
+- **As `vm create` and the first start leave it, the directory is 0755 and `seed.iso` 0644**
+  (`vpd_mode_as_made`). A plain account reads the configuration and `seed.iso`, and the seed's
+  user-data with it, though `user-data` itself is 0600 (`vpd_read_as_made`).
+- **Made 0700, nothing in it can be read by that account**, stopped or running
+  (`vpd_read_private`, `vpd_read_running`).
+- **vm-bhyve keeps the mode**: 0700 while running and after two more starts and stops
+  (`vpd_mode_running`, `vpd_mode_after_restarts`), and `vm start`, `vm list` and `vm destroy`
+  work as before (`vpd_list_running`, `vpd_list_restarted`, `vpd_destroy`).
+
 ## Disk health (#83)
 
 Captured 2026-10-25, on `isengard` and `rohan` only. `rivendell` and the VM were not

@@ -186,17 +186,20 @@ func (h *Handler) operate(w http.ResponseWriter, r *http.Request,
 // @Description     is the default user's password **for its console only** (SSH still takes
 // @Description     keys alone): from 8 to 72 bytes, hashed with bcrypt before it reaches the
 // @Description     seed, and never stored, logged or answered (#152).
-// @Description  2. **vm-pin-cpus**, when `cpuset` is given: vCPU i pinned to host CPU
+// @Description  2. **vm-make-private**: the guest's directory is made root's alone (0700), so its
+// @Description     configuration, its seed and the seed's ISO cannot be read by other local
+// @Description     accounts. vm-bhyve keeps the mode across starts — measured.
+// @Description  3. **vm-pin-cpus**, when `cpuset` is given: vCPU i pinned to host CPU
 // @Description     `cpuset[i]`, written as `bhyve_options="-p 0:<cpu> ..."` (JD-041). One host
 // @Description     CPU per vCPU, each a different one, and each one the host has: bhyve aborts
 // @Description     on a CPU it lacks only at start, while `vm start` still exits 0 — measured.
-// @Description  3. **vm-add-network**: one NIC on `switch`, when given, with the MAC the seed
+// @Description  4. **vm-add-network**: one NIC on `switch`, when given, with the MAC the seed
 // @Description     matches it by. **The switch must exist**: vm-bhyve accepts one that does not,
 // @Description     and the guest then boots with a NIC attached to nothing — measured.
-// @Description  4. **vm-replace-disk**: the disk vm create made is replaced by a clone of the
+// @Description  5. **vm-replace-disk**: the disk vm create made is replaced by a clone of the
 // @Description     image's `@base` at `disk`, `volmode=dev`. The guest grows its own root
 // @Description     filesystem into it on first boot.
-// @Description  5. **vm-start**, when `start` is true, confirmed as `POST /vms/{name}/start` is.
+// @Description  6. **vm-start**, when `start` is true, confirmed as `POST /vms/{name}/start` is.
 // @Description
 // @Description  Everything is checked first: the name, sizes, keys, addresses, that the image
 // @Description  is ready, that `disk` is at least its size, that the name is free and the

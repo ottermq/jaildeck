@@ -60,6 +60,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Limits changed in place** (v0.21.0): an existing jail's limits changed without recreating it, live when it runs (#119); the commit stamped in packaged builds (#165)
 - **The end of a retain** (v0.22.0): a retained dataset, or one child of a jail, destroyed with its snapshots through the API and the interface (#120)
 - **Instances at scale** (v0.23.0): one list of jails and guests with search, filters and grouping by label kept in the URL, and bulk start, stop, restart and snapshot (#129); guest labels as ZFS user properties (JD-044); guest snapshots, crash-consistent while running (#174, JD-045)
+- **Addresses on Jail Deck's networks** (v0.24.0): a jail or guest on the default or a tenant network gets the lowest free address, from what the host's stanzas, seeds and ARP table say is taken, an address asked for refused when taken, a jail created on a network by name, and the addresses in use shown (#118 step 3, JD-047)
 
 ---
 
@@ -452,7 +453,7 @@ A Linux VM can be created from an image with cloud-init, reached over the bridge
 
 ## Next: VM Networks (#118)
 
-**Status:** step 1 done in v0.17.0. Step 2, tenant networks, done in v0.19.0, and the view of every network in v0.20.0. Step 3, addresses picked by Jail Deck and creating on a network, built (JD-047).
+**Status:** done. Step 1 in v0.17.0; step 2, tenant networks, in v0.19.0, and the view of every network in v0.20.0; step 3, addresses picked by Jail Deck and creating on a network, in v0.24.0 (JD-047).
 
 Goal: every guest on a network without a root shell, and, for Otter Cloud, a network per tenant.
 

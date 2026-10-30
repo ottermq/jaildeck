@@ -20,7 +20,18 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.24.0 — 2026-10-30
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.24.0)
+
+**Addresses on Jail Deck's networks.** A jail or guest created on the default network or a tenant
+network no longer needs an address: Jail Deck picks the lowest free one and refuses one that is
+taken, naming who has it (#118). A jail can be created on a network by its name, and each network
+shows the addresses in use.
+
+Nothing to act on when upgrading: no new setting, and nothing in `pf.conf` or `rc.conf`. **A jail
+spec whose `ip4`, `gateway`, `interface` or `bridge` is not shaped as one is now refused with 400**,
+where it used to be written into the stanza.
 
 ### Added
 

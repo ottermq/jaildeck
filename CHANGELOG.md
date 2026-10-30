@@ -20,6 +20,56 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.21.0 — 2026-10-29
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.21.0)
+
+**Limits changed in place.** A jail's resource limits can be changed without recreating it
+(#119): a running jail gets the change at once, and its stanza so the next start applies the
+same. A packaged Jail Deck now says **which commit it was built from** (#165).
+
+Nothing to act on when upgrading: no new setting, and nothing in `pf.conf` or `rc.conf`.
+
+### Added
+
+- **Changing an existing jail's limits** (#166, closing #119): `PATCH /api/jails/{name}/limits`.
+  - Only the limits named change; `null` removes one. All of the create-time limits:
+    `memoryuse`, `vmemoryuse`, `maxproc`, `openfiles`, `pcpu` and `cpuset`.
+  - A running jail gets each change live, one audited `rctl -a`, `rctl -r` or `cpuset` at a time,
+    and then the stanza's limit hooks are rewritten. A step the host refuses, or a stanza that
+    cannot be written, takes back the steps already made, so the jail runs as it did.
+  - A stopped jail gets the stanza only.
+  - Lowering a limit below what the jail already uses is done and named in `warnings`, not
+    refused: a lower `maxproc` keeps the processes that run and refuses the next fork.
+
+### Fixed
+
+- **A packaged build reported no commit** (#167, closing #165). The package build ran without
+  git, so the Go toolchain stamped none, and `GET /api/about`, the Host page and
+  `jaildeck_build_info` showed an empty commit. `make package` now injects it like the version
+  (`COMMIT=`, taken from git when there is a repository), and the build fails if the binary
+  disagrees.
+
+### API
+
+- **`PATCH /api/jails/{name}/limits`** (#166). Answers what the stanza and `rctl` say afterwards,
+  `changed`, the rules applied and any `warnings`; the same request again answers
+  `changed: false`. `400` for an unknown limit, a malformed one, or `0` and `""` (send `null`).
+  `409` for a jail configured outside `jail.conf.d`, a stanza whose `exec.poststart` or
+  `exec.prestop` carries a command Jail Deck did not write, and a stanza changed while it was
+  being rewritten. Additive.
+
+### Internal
+
+- **`jaildeck version --commit`** prints the revision alone, and `package.sh` checks the built
+  binary with it, as it already checks the version (#167).
+- **The measurements are kept as captures:** `capture-limits-induced.sh` with its `lim_*`
+  outputs. **JD-018 amended** with what was measured: every limit applies to a running jail at
+  once, `rctl -a` replaces a deny rule, and a stanza's header now says which lines Jail Deck
+  rewrites.
+
+---
+
 ## v0.20.0 — 2026-10-29
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.20.0)

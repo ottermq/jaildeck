@@ -130,7 +130,7 @@ func (s *Session) end(reason string) bool {
 
 // OpenJail starts a shell in a running jail and records it. The size is the
 // page's terminal, so the shell's first prompt already fits it.
-func (s *Service) OpenJail(ctx context.Context, name, principal string, cols, rows uint16) (*Session, error) {
+func (s *Service) OpenJail(ctx context.Context, name string, opener Opener, cols, rows uint16) (*Session, error) {
 	if s.shells == nil {
 		return nil, common.NewAppError(http.StatusNotImplemented,
 			"this Jail Deck is running without the host access a console needs")
@@ -147,12 +147,13 @@ func (s *Service) OpenJail(ctx context.Context, name, principal string, cols, ro
 	terminal, err := s.shells.JailShell(ctx, name, cols, rows)
 	command := "jexec -l " + name + " /bin/sh -l"
 	s.log(ctx, audit.Entry{Operation: OperationOpen, Target: target, Command: command,
-		Principal: principal, Success: err == nil, Error: errorText(err)})
+		Principal: opener.Principal, Actor: opener.Actor, OpenReason: opener.Reason,
+		Success: err == nil, Error: errorText(err)})
 	if err != nil {
 		return nil, common.NewAppError(http.StatusInternalServerError,
 			fmt.Sprintf("could not open a shell in %s: %v", strconv.Quote(name), err))
 	}
-	session := &Session{Terminal: terminal, target: target, principal: principal,
+	session := &Session{Terminal: terminal, target: target, principal: opener.Principal,
 		opened: s.now(), service: s, ended: make(chan struct{}), outputEnded: ReasonShellExited}
 	s.mu.Lock()
 	s.sessions[session] = struct{}{}
@@ -164,7 +165,7 @@ func (s *Service) OpenJail(ctx context.Context, name, principal string, cols, ro
 // guest: the device has one reader, and two sessions would each get half of
 // what the guest prints. An outside `vm console` or cu can still attach --
 // TIOCEXCL does not stop root (measured) -- and that is said, not prevented.
-func (s *Service) OpenVM(ctx context.Context, name, principal string) (*Session, error) {
+func (s *Service) OpenVM(ctx context.Context, name string, opener Opener) (*Session, error) {
 	if s.shells == nil || s.guests == nil {
 		return nil, common.NewAppError(http.StatusNotImplemented,
 			"this Jail Deck is running without the host access a console needs")
@@ -212,13 +213,14 @@ func (s *Service) OpenVM(ctx context.Context, name, principal string) (*Session,
 	target := "vm/" + name
 	terminal, err := s.shells.VMConsole(ctx, device)
 	s.log(ctx, audit.Entry{Operation: OperationOpen, Target: target, Command: "open " + device,
-		Principal: principal, Success: err == nil, Error: errorText(err)})
+		Principal: opener.Principal, Actor: opener.Actor, OpenReason: opener.Reason,
+		Success: err == nil, Error: errorText(err)})
 	if err != nil {
 		release()
 		return nil, common.NewAppError(http.StatusInternalServerError,
 			fmt.Sprintf("could not open %s's console: %v", strconv.Quote(name), err))
 	}
-	session := &Session{Terminal: terminal, target: target, principal: principal, opened: s.now(),
+	session := &Session{Terminal: terminal, target: target, principal: opener.Principal, opened: s.now(),
 		service: s, ended: make(chan struct{}), outputEnded: ReasonConsoleClosed, release: release}
 	s.mu.Lock()
 	s.sessions[session] = struct{}{}

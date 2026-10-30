@@ -2198,3 +2198,38 @@ A snapshot of a running guest holds its disks as a power cut would have left the
 
 - Listing, rolling back and destroying a guest's snapshots. A rollback needs the guest stopped and a decision on newer snapshots, as JD-024 made for jails.
 - A Snapshots panel on the guest's page.
+
+---
+
+## JD-046 — Token Scopes, and Who Opened a Console and Why
+
+**Status:** Locked — 2026-10-30. Owner's decisions on #155: scopes have their own issue (#178), and a managed host can turn the browser console off.
+
+A console is root on a guest or in a jail. A platform with tenants (Otter Cloud) has to be able to say afterwards who opened one, on whose behalf, and why. Until now, any token could open every console, and the audit recorded only the token or session.
+
+### Scopes
+
+- **A token has a list of scopes** in the state file beside its hash (`scopes`), saying what it may do beyond the plain API. **The only scope is `console`.**
+- **A token made before scopes existed has no list, and keeps every scope.** No client breaks on upgrade. The state file keeps the difference as `null` (no list) and `[]` (none), which is why the field has no `omitempty`. A save and a load keep it, tested.
+- **A token made since has exactly what it was given**: `jaildeck token add <name> --scope console`, or nothing. Least privilege, so a token for a monitoring script can't open a shell. A scope that doesn't exist is refused at creation, not stored as a typo that grants nothing. `token list` shows each token's scopes.
+- **The operator's browser session has every scope**, less the console when `JAILDECK_CONSOLE_UI=off`.
+- **A missing scope is 403, naming the token and the scope**, and how to make a token that has it. It's checked before the WebSocket upgrade, so a client reads a plain HTTP refusal and nothing opens.
+- **`GET /api/auth/me` answers `scopes`.** The interface offers no console where it would be refused, and says why.
+
+### `JAILDECK_CONSOLE_UI`
+
+`on` by default. `off` keeps the browser session from opening a console, and a token with the `console` scope still opens one. **Anything other than `on` or `off` is taken as off, with a warning**: the switch exists to turn something away, and a typo shouldn't leave it open. Other settings keep their default when they don't parse.
+
+### Who and why
+
+- **`actor` and `reason`**, optional query parameters on both console endpoints. A WebSocket upgrade has no body, and a browser can't set a header on one.
+  - **`actor`** is on whose behalf, as the client names them: up to 128 bytes of letters, digits and `-._:@/+`. That fits a platform's user id or an email.
+  - **`reason`** is why, in the client's words: up to 256 bytes of printable UTF-8, spaces and any script included, no control characters.
+- **Out of shape is refused with 400**, before anything opens. That is how `X-Request-Id` is treated, not sanitised: the values are written verbatim into a line of JSON.
+- **They're recorded on `console-open` as `actor` and `open_reason`.** The entry's `reason` already means why a session ended, on `console-close`, so the reason given at open gets a name of its own. `console-close` is unchanged.
+- **Jail Deck never requires them.** Requiring a reason is the platform's policy (#155): Jail Deck knows no tenants. The platform's rule holds because only its token has the console scope.
+
+### Not yet
+
+- Scopes on the plain API, such as read-only or per-domain. The model allows them, and none are added.
+- Editing a token's scopes. A token is revoked and made again.

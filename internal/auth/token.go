@@ -46,7 +46,10 @@ func MatchToken(presented string, tokens []state.Token) (state.Token, bool) {
 	return state.Token{}, false
 }
 
-func AddToken(tokens []state.Token, name string, now time.Time) ([]state.Token, string, error) {
+// AddToken makes a token with exactly the scopes given, none if none are: a
+// token made since scopes exist has a list, so that it is never mistaken for
+// one made before them, which keeps every scope (#178).
+func AddToken(tokens []state.Token, name string, scopes []string, now time.Time) ([]state.Token, string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return tokens, "", ErrMissingTokenName
@@ -64,7 +67,10 @@ func AddToken(tokens []state.Token, name string, now time.Time) ([]state.Token, 
 		return tokens, "", err
 	}
 	hash := HashToken(plainToken)
-	tokens = append(tokens, state.Token{Name: name, Hash: hash, CreatedAt: now})
+	if scopes == nil {
+		scopes = []string{}
+	}
+	tokens = append(tokens, state.Token{Name: name, Hash: hash, CreatedAt: now, Scopes: scopes})
 	return tokens, plainToken, nil
 }
 

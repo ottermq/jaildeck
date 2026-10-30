@@ -196,7 +196,8 @@ lines would have none at all.
 jaildeck                      run the server
 jaildeck version
 jaildeck passwd [--stdin]     set the operator password
-jaildeck token add <name>     generate a token and print it once
+jaildeck token add <name> [--scope console]
+                              generate a token and print it once
 jaildeck token list
 jaildeck token revoke <name>
 ```
@@ -208,6 +209,16 @@ be redirected on its own:
 jaildeck token add ci > /root/ci.token
 ```
 
+**Scopes** (#178): a token can use the plain API, and only what its scopes add beyond it.
+The one scope is `console`, a shell in a jail or a guest's serial console, which is root.
+A token made without `--scope` can't open one, and is refused with 403. A token made
+before scopes existed keeps every scope, and `token list` shows it as
+`all (made before scopes)`. Scopes can't be edited: revoke the token and make it again.
+
+On a host a platform manages, `JAILDECK_CONSOLE_UI=off` keeps the browser session from
+opening a console, so the platform's own token, made with `--scope console`, is the only
+way in through Jail Deck (#155).
+
 ## The API
 
 Every endpoint lives under `/api`. Any other path serves the web interface, so a request
@@ -217,7 +228,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | --- | --- |
 | `POST /api/auth/login` | password in, session cookie out |
 | `POST /api/auth/logout` | |
-| `GET /api/auth/me` | the current principal and when the session expires |
+| `GET /api/auth/me` | the current principal, when the session expires, and its `scopes` |
 | `GET /api/about` | which Jail Deck is running: version, commit, when it started, its state directory |
 | `GET /api/` | redirects to `/api/jails`, for a client that guessed the base path |
 | `GET /api/host/readiness` | what the host has and lacks for jails, VNET, limits and VMs, each with its remedy |
@@ -229,7 +240,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `PUT /api/jails/{name}` | the same, idempotently: `201` made, `200` already matching, `409` with a diff |
 | `DELETE /api/jails/{name}` | stop and destroy it, with `confirm=` |
 | `POST /api/jails/{name}/exec` | run a command inside it, with a capped timeout and capped output |
-| `GET /api/jails/{name}/console` | a shell in it, over a WebSocket; audited, nothing typed recorded |
+| `GET /api/jails/{name}/console` | a shell in it, over a WebSocket; audited, nothing typed recorded; the `console` scope; optional `actor` and `reason`, recorded |
 | `PUT /api/jails/{name}/datasets/{child}` | create a child dataset, or converge an existing one |
 | `DELETE /api/jails/{name}/datasets/{child}?confirm={child}` | destroy one child and its snapshots, leaving the jail; the jail must be stopped |
 | `PATCH /api/jails/{name}/properties` | tag the jail's own dataset |
@@ -269,7 +280,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `PUT /api/vms/{name}/snapshots/{snapshot}` | snapshot a guest and its disks; a running one is taken as it is and the answer says `crash-consistent` |
 | `POST /api/vms` | create a guest from an image: CPU and a pin to host CPUs, memory, disk, a NIC on a switch, SSH keys, a static address |
 | `PUT /api/vms/{name}` | the same, idempotent: create it, or say it already matches, or how it differs |
-| `GET /api/vms/{name}/console` | its serial console, over a WebSocket; one at a time, audited |
+| `GET /api/vms/{name}/console` | its serial console, over a WebSocket; one at a time, audited; the `console` scope; optional `actor` and `reason`, recorded |
 | `GET /api/networks` | tenant networks: a bridge each, its subnet, gateway and members |
 | `POST /api/networks` | create one: a bridge on a free /24 of the range, a vm-bhyve switch on it, rules keeping it apart |
 | `GET /api/networks/{name}` | one tenant network |

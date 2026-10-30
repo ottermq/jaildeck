@@ -24,6 +24,11 @@ type Entry struct {
 	Principal  string `json:"principal,omitempty"`
 	DurationMS int64  `json:"duration_ms,omitempty"`
 	Reason     string `json:"reason,omitempty"`
+	// What the client said about a console it opened (#155): on whose
+	// behalf, and why. Verbatim, never required; a platform with tenants
+	// matches them to its own record. On console-open entries only.
+	Actor      string `json:"actor,omitempty"`
+	OpenReason string `json:"open_reason,omitempty"`
 }
 
 type Logger interface {

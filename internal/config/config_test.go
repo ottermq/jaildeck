@@ -192,3 +192,22 @@ func TestConsoleIdle(t *testing.T) {
 		}
 	}
 }
+
+// JAILDECK_CONSOLE_UI is on unless it says off, and anything it says that is
+// neither is off: a typo must not leave the browser console open (#155).
+func TestConsoleUISwitch(t *testing.T) {
+	for _, tt := range []struct {
+		value string
+		off   bool
+	}{
+		{"", false}, {"on", false}, {"ON", false}, {" on ", false},
+		{"off", true}, {"Off", true}, {"of", true}, {"no", true}, {"false", true},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			t.Setenv("JAILDECK_CONSOLE_UI", tt.value)
+			if got := LoadConfig().NoConsoleUI; got != tt.off {
+				t.Errorf("JAILDECK_CONSOLE_UI=%q: NoConsoleUI = %t, want %t", tt.value, got, tt.off)
+			}
+		})
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -129,6 +130,9 @@ func TestRunToken_InvalidArguments(t *testing.T) {
 		{name: "add missing name", args: []string{"add"}, message: "usage:"},
 		{name: "revoke missing name", args: []string{"revoke"}, message: "usage:"},
 		{name: "add extra", args: []string{"add", "backup", "extra"}, want: ErrUnexpectedArgs},
+		{name: "add unknown scope", args: []string{"add", "backup", "--scope", "root"}, message: "is not a scope"},
+		{name: "add scope without a value", args: []string{"add", "backup", "--scope"}, message: "usage:"},
+		{name: "add unknown flag", args: []string{"add", "backup", "--all"}, message: "unknown flag"},
 		{name: "list extra", args: []string{"list", "extra"}, want: ErrUnexpectedArgs},
 		{name: "revoke extra", args: []string{"revoke", "backup", "extra"}, want: ErrUnexpectedArgs},
 	} {
@@ -191,5 +195,49 @@ func TestRunToken_FreshInstall(t *testing.T) {
 				t.Errorf("list output = %q, want \"\"", out.String())
 			}
 		})
+	}
+}
+
+// A token is made with the scopes asked for, in either order of flag and
+// name, and none when none are asked for (#178). The list says which.
+func TestRunToken_Scopes(t *testing.T) {
+	dir := t.TempDir()
+	old := state.Token{Name: "old", Hash: auth.HashToken("old-secret"), CreatedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
+	if err := state.NewStore(dir).Save(state.State{APITokens: []state.Token{old}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"add", "otter", "--scope", "console"},
+		{"add", "--scope=console", "otter2"},
+		{"add", "ci"},
+	} {
+		if err := runToken(args, io.Discard, io.Discard, dir); err != nil {
+			t.Fatalf("%q: %v", args, err)
+		}
+	}
+	st, err := state.NewStore(dir).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]string{}
+	for _, token := range st.APITokens {
+		got[token.Name] = token.Scopes
+	}
+	want := map[string][]string{"old": nil, "otter": {"console"}, "otter2": {"console"}, "ci": {}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("scopes = %#v, want %#v", got, want)
+	}
+
+	var out bytes.Buffer
+	if err := runToken([]string{"list"}, &out, io.Discard, dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{"old", "all (made before scopes)", "otter", "console", "ci"} {
+		if !strings.Contains(out.String(), line) {
+			t.Errorf("list = %q, missing %q", out.String(), line)
+		}
+	}
+	if !regexp.MustCompile(`(?m)^ci\s+\S+\s+-\s*$`).MatchString(out.String()) {
+		t.Errorf("list = %q, want ci's scopes as -", out.String())
 	}
 }

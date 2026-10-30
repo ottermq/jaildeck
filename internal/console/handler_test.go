@@ -76,13 +76,14 @@ func (r *recorder) all() []audit.Entry {
 }
 
 type rig struct {
-	shells  *fake.Shells
-	guests  *guests
-	service *console.Service
-	handler *console.Handler
-	audit   *recorder
-	expired atomic.Bool
-	url     string
+	shells    *fake.Shells
+	guests    *guests
+	service   *console.Service
+	handler   *console.Handler
+	audit     *recorder
+	expired   atomic.Bool
+	forbidden atomic.Bool
+	url       string
 }
 
 func newRig(t *testing.T, idle time.Duration, origins ...string) *rig {
@@ -98,7 +99,13 @@ func newRig(t *testing.T, idle time.Duration, origins ...string) *rig {
 			}
 			return nil
 		},
-		func(*http.Request) string { return "session" }, idle, origins)
+		func(*http.Request) string { return "session" },
+		func(*http.Request) error {
+			if rg.forbidden.Load() {
+				return common.NewAppError(http.StatusForbidden, "no console scope")
+			}
+			return nil
+		}, idle, origins)
 	console.SetHeartbeat(rg.handler, 20*time.Millisecond)
 	console.SetGuestWatch(rg.service, 20*time.Millisecond)
 	r := chi.NewRouter()
@@ -362,7 +369,7 @@ func TestAConsoleOutlivesTheServersReadTimeout(t *testing.T) {
 // also makes the shell's read fail, and the bridge may report that instead.
 func TestTheFirstReasonIsTheOneAudited(t *testing.T) {
 	rg := newRig(t, time.Hour)
-	session, err := rg.service.OpenJail(context.Background(), "nginx", "token:otter", 80, 24)
+	session, err := rg.service.OpenJail(context.Background(), "nginx", console.Opener{Principal: "token:otter"}, 80, 24)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,10 +487,10 @@ func TestAFailedOpenFreesTheGuestsConsole(t *testing.T) {
 	rec := &recorder{}
 	g := &guests{states: map[string]string{"web": "/dev/nmdm-web.1B"}}
 	service := console.NewService(&failingConsoles{Shells: fake.NewShells()}, jailStates{}, g, rec)
-	if _, err := service.OpenVM(context.Background(), "web", "session"); err == nil {
+	if _, err := service.OpenVM(context.Background(), "web", console.Opener{Principal: "session"}); err == nil {
 		t.Fatal("the first open succeeded")
 	}
-	session, err := service.OpenVM(context.Background(), "web", "session")
+	session, err := service.OpenVM(context.Background(), "web", console.Opener{Principal: "session"})
 	if err != nil {
 		t.Fatalf("after a failed open: %v", err)
 	}
@@ -537,5 +544,66 @@ func TestAReaderThatTurnsUpEndsTheSession(t *testing.T) {
 	rg.shells.Hold("/dev/nmdm-web.1B", console.Holder{Command: "cu", PID: 4242})
 	if reason := tm.closing(); reason != console.ReasonConsoleShared {
 		t.Errorf("closed with %q, want %q", reason, console.ReasonConsoleShared)
+	}
+}
+
+// A principal without the console scope, and an actor or a reason out of
+// shape, are refused before anything opens, on both kinds (#155).
+func TestScopeAndWhoAreCheckedBeforeTheUpgrade(t *testing.T) {
+	rg := newRig(t, time.Hour)
+	refused := func(path string, code int) {
+		t.Helper()
+		_, resp, err := dial(t, rg.url+path, nil)
+		if err == nil || resp == nil || resp.StatusCode != code {
+			got := 0
+			if resp != nil {
+				got = resp.StatusCode
+			}
+			t.Errorf("%s: %d, %v; want %d", path, got, err, code)
+		}
+	}
+	rg.forbidden.Store(true)
+	refused("/jails/nginx/console", http.StatusForbidden)
+	refused("/vms/web/console", http.StatusForbidden)
+	rg.forbidden.Store(false)
+	for _, query := range []string{
+		"actor=" + strings.Repeat("a", console.MaxActorLen+1),
+		"actor=alice%20smith",
+		"actor=x%0Ay",
+		"reason=" + strings.Repeat("r", console.MaxReasonLen+1),
+		"reason=line%0Abreak",
+		"reason=%FF",
+	} {
+		refused("/jails/nginx/console?"+query, http.StatusBadRequest)
+		refused("/vms/web/console?"+query, http.StatusBadRequest)
+	}
+	if n := len(rg.audit.all()); n != 0 {
+		t.Errorf("%d audit entries; a refused console opens nothing", n)
+	}
+}
+
+// What the client says is recorded verbatim on the open entry, and only
+// there; the close entry stays as it was (#155).
+func TestTheActorAndReasonAreAudited(t *testing.T) {
+	rg := newRig(t, time.Hour)
+	for _, tc := range []struct{ path, target string }{
+		{"/jails/nginx/console", "jail/nginx"},
+		{"/vms/web/console", "vm/web"},
+	} {
+		before := len(rg.audit.all())
+		tm, _, err := dial(t, rg.url+tc.path+"?actor=u:42%40acme&reason=ticket%20OT-17%3A%20disk%20full%2C%20%C3%A9t%C3%A9", nil)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.path, err)
+		}
+		_ = tm.conn.Close(websocket.StatusNormalClosure, "")
+		eventually(t, tc.path+" audited", func() bool { return len(rg.audit.all()) == before+2 })
+		entries := rg.audit.all()
+		open, closed := entries[before], entries[before+1]
+		if open.Target != tc.target || open.Actor != "u:42@acme" || open.OpenReason != "ticket OT-17: disk full, été" {
+			t.Errorf("%s open entry = %+v, want the actor and reason verbatim", tc.path, open)
+		}
+		if closed.Actor != "" || closed.OpenReason != "" {
+			t.Errorf("%s close entry = %+v, want neither", tc.path, closed)
+		}
 	}
 }

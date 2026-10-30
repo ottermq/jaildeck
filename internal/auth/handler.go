@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/ottermq/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/state"
 )
 
 const (
@@ -45,6 +46,9 @@ type Principal struct {
 	Kind      PrincipalKind `json:"kind"`
 	Name      string        `json:"name"`
 	ExpiresAt *time.Time    `json:"expires_at,omitempty"`
+	// What it may do beyond the plain API (#178), so the interface can leave
+	// out what it cannot use.
+	Scopes []Scope `json:"scopes"`
 }
 
 type PrincipalKind string //session | token
@@ -55,6 +59,8 @@ const (
 
 type AuthHandler struct {
 	service *AuthService
+	// sessionWithout are scopes the browser session does not get (#155).
+	sessionWithout []Scope
 }
 
 func NewAuthHandler(service *AuthService) *AuthHandler {
@@ -139,17 +145,19 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 				Kind:      kindSession,
 				Name:      "",
 				ExpiresAt: &session.ExpiresAt,
+				Scopes:    h.sessionScopes(),
 			},
 		})
 		return
 	}
-	name, ok := TokenNameFromContext(r.Context())
+	token, ok := tokenFromContext(r.Context())
 	if ok {
 		common.WriteJSON(w, http.StatusOK, MeResponse{
 			Principal{
 				Kind:      kindToken,
-				Name:      name,
+				Name:      token.Name,
 				ExpiresAt: nil,
+				Scopes:    TokenScopes(token),
 			},
 		})
 		return
@@ -175,7 +183,7 @@ func (h *AuthHandler) RequireAuth(next http.Handler) http.Handler {
 				common.HandlerError(w, err)
 				return
 			}
-			ctx := context.WithValue(r.Context(), bearerKey{}, token.Name)
+			ctx := context.WithValue(r.Context(), bearerKey{}, token)
 			next.ServeHTTP(w, withPrincipalLogged(r.WithContext(ctx), kindToken, token.Name))
 			return
 		}
@@ -229,8 +237,13 @@ func SessionFromContext(ctx context.Context) (Session, bool) {
 }
 
 func TokenNameFromContext(ctx context.Context) (string, bool) {
-	name, ok := ctx.Value(bearerKey{}).(string)
-	return name, ok
+	token, ok := tokenFromContext(ctx)
+	return token.Name, ok
+}
+
+func tokenFromContext(ctx context.Context) (state.Token, bool) {
+	token, ok := ctx.Value(bearerKey{}).(state.Token)
+	return token, ok
 }
 
 func newSessionCookie(value string, maxAge int) *http.Cookie {

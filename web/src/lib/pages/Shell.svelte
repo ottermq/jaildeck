@@ -4,6 +4,7 @@ import { route, navigate, onNavClick, match } from '../router.svelte'
 import { auth, logout } from '../stores/auth.svelte'
 import VersionBadge from '../components/VersionBadge.svelte'
 import Dashboard from './Dashboard.svelte'
+import Instances from './Instances.svelte'
 import Jails from './Jails.svelte'
 import Jail from './Jail.svelte'
 import NewJail from './NewJail.svelte'
@@ -26,6 +27,7 @@ let sessionExpiry = $derived(
 
 const menu = [
     { label: 'Dashboard', href: '/dashboard' },
+    { label: 'Instances', href: '/instances' },
     { label: 'Jails', href: '/jails' },
     { label: 'Templates', href: '/templates' },
     { label: 'VMs', href: '/vms' },
@@ -95,6 +97,8 @@ onMount(() => {
     <main class="main">
         {#if route.path === '/dashboard'}
             <Dashboard />
+        {:else if route.path === '/instances'}
+            <Instances />
         {:else if route.path === '/jails'}
             <Jails />
         <!-- Before the :name match, so /jails/new is the form. A jail really

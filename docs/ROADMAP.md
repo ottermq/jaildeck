@@ -59,6 +59,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **A way in, and a map** (v0.20.0): a console password for cloud-image guests (#152), a Networks page (#128), the running version shown (#136), a retained child keeping its own mountpoint (#121)
 - **Limits changed in place** (v0.21.0): an existing jail's limits changed without recreating it, live when it runs (#119); the commit stamped in packaged builds (#165)
 - **The end of a retain** (v0.22.0): a retained dataset, or one child of a jail, destroyed with its snapshots through the API and the interface (#120)
+- **Instances at scale** (v0.23.0): one list of jails and guests with search, filters and grouping by label kept in the URL, and bulk start, stop, restart and snapshot (#129); guest labels as ZFS user properties (JD-044); guest snapshots, crash-consistent while running (#174, JD-045)
 
 ---
 

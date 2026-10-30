@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/base64"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -79,7 +80,7 @@ func TestMatchToken(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, ok := MatchToken(tt.presented, tt.tokens)
-			if ok != tt.wantOK || got != tt.want {
+			if ok != tt.wantOK || !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("MatchToken = (%+v, %t), want (%+v, %t)", got, ok, tt.want, tt.wantOK)
 			}
 		})
@@ -104,12 +105,12 @@ func TestAddToken(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			tokens := slices.Clone(original)
-			got, plaintext, err := AddToken(tokens, tt.input, now)
+			got, plaintext, err := AddToken(tokens, tt.input, nil, now)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("AddToken error = %v, want %v", err, tt.wantErr)
 			}
 			if tt.wantErr != nil {
-				if !slices.Equal(got, original) {
+				if !reflect.DeepEqual(got, original) {
 					t.Errorf("tokens on error = %+v, want %+v", got, original)
 				}
 				if plaintext != "" {
@@ -120,14 +121,14 @@ func TestAddToken(t *testing.T) {
 			if len(got) != len(original)+1 {
 				t.Fatalf("token count = %d, want %d", len(got), len(original)+1)
 			}
-			if !slices.Equal(got[:len(original)], original) {
+			if !reflect.DeepEqual(got[:len(original)], original) {
 				t.Errorf("existing tokens changed: %+v", got)
 			}
 			if plaintext == "" {
 				t.Fatal("AddToken returned empty plaintext")
 			}
-			want := state.Token{Name: "new token", Hash: HashToken(plaintext), CreatedAt: now}
-			if added := got[len(original)]; added != want {
+			want := state.Token{Name: "new token", Hash: HashToken(plaintext), CreatedAt: now, Scopes: []string{}}
+			if added := got[len(original)]; !reflect.DeepEqual(added, want) {
 				t.Errorf("added token = %+v, want %+v", added, want)
 			}
 			for _, token := range got {
@@ -165,15 +166,15 @@ func TestRevokeToken(t *testing.T) {
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("RevokeToken error = %v, want %v", err, tt.wantErr)
 			}
-			if !slices.Equal(got, tt.want) {
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("RevokeToken = %+v, want %+v", got, tt.want)
 			}
-			if !slices.Equal(tokens, original) {
+			if !reflect.DeepEqual(tokens, original) {
 				t.Errorf("caller's tokens changed: %+v, want %+v", tokens, original)
 			}
 			if err == nil && len(got) > 0 {
 				got[0].Name = "changed"
-				if !slices.Equal(tokens, original) {
+				if !reflect.DeepEqual(tokens, original) {
 					t.Errorf("result aliases caller's tokens: %+v", tokens)
 				}
 			}

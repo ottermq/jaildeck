@@ -58,6 +58,30 @@ type VMSystem interface {
 	// VMApplied reads back what a guest in the default datastore was made
 	// with (JD-041). ErrNoSuchVM when it has no configuration there.
 	VMApplied(ctx context.Context, name string) (Applied, error)
+
+	// VMDatasets maps each datastore vm-bhyve has to its ZFS dataset, empty
+	// for one that is a plain directory. A guest's dataset is that dataset
+	// plus its name, which is where its labels live (JD-044).
+	VMDatasets(ctx context.Context) (map[string]string, error)
+}
+
+// PropertyStore reads and writes ZFS user properties, which are a guest's
+// labels as they are a jail's (JD-044). The storage domain's, defined here so
+// that vms needs nothing of the storage package.
+type PropertyStore interface {
+	// UserPropertiesOf is each dataset's own user properties, by dataset.
+	UserPropertiesOf(ctx context.Context, datasets []string) (map[string]map[string]string, error)
+	// SetUserProperties sets and removes (nil) user properties on one
+	// dataset, audited, and answers what it carries afterwards.
+	SetUserProperties(ctx context.Context, dataset string, properties map[string]*string) (map[string]string, error)
+}
+
+// SnapshotTaker takes one dataset's snapshot recursively: a guest's own and
+// its disk volumes beneath it, at one point in time -- what vm snapshot -f
+// runs (JD-045). The storage domain's, as PropertyStore is. Idempotent: a
+// snapshot already there is answered, not retaken.
+type SnapshotTaker interface {
+	SnapshotDataset(ctx context.Context, dataset, short string) (SnapshotResult, error)
 }
 
 // Applied is what a guest was made with, read off the host: its vm-bhyve

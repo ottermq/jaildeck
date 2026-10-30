@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -57,6 +58,9 @@ func New(cfg *config.Config) (*App, error) {
 	sessions := auth.NewSessionStore()
 	authService := auth.NewAuthService(authState, sessions)
 	authHandler := auth.NewAuthHandler(authService)
+	if cfg.NoConsoleUI {
+		authHandler.SetSessionWithout(auth.ScopeConsole)
+	}
 
 	auditLogger, err := setupAuditLog(cfg.AuditLog)
 	if err != nil {
@@ -164,6 +168,8 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 	vmService := vms.NewService(vmSystem, vmImageCatalog{images: imageService}, auditLogger)
+	vmService.SetProperties(storageService)
+	vmService.SetSnapshots(storage.NewGuestSnapshots(storageService))
 	vmHandler := vms.NewHandler(vmService)
 	// On a real host the switches are one thing; the two fakes are joined so
 	// fake mode behaves the same.
@@ -185,6 +191,7 @@ func New(cfg *config.Config) (*App, error) {
 	jailService.SetConsoles(consoleService)
 	vmService.SetConsoles(consoleService)
 	consoleHandler := console.NewHandler(consoleService, authHandler.Recheck, auth.PrincipalOf,
+		func(r *http.Request) error { return authHandler.Allow(r, auth.ScopeConsole) },
 		cfg.ConsoleIdle, cfg.ConsoleOrigins)
 
 	nameHandler := names.NewHandler(names.NewSuggester(

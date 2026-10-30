@@ -32,7 +32,9 @@ type Handler struct {
 	recheck func(*http.Request) error
 	// principal names who opened the session, for the audit log.
 	principal func(*http.Request) string
-	idle      time.Duration
+	// allow refuses a principal without the console scope (#155, #178).
+	allow func(*http.Request) error
+	idle  time.Duration
 	// origins are the extra hosts a page may connect from, past the
 	// library's own check that the Origin is the Host.
 	origins []string
@@ -42,9 +44,29 @@ type Handler struct {
 // NewHandler takes the idle timeout, which output and pings do not reset:
 // only what the operator types does.
 func NewHandler(service *Service, recheck func(*http.Request) error, principal func(*http.Request) string,
-	idle time.Duration, origins []string) *Handler {
-	return &Handler{service: service, recheck: recheck, principal: principal, idle: idle,
+	allow func(*http.Request) error, idle time.Duration, origins []string) *Handler {
+	return &Handler{service: service, recheck: recheck, principal: principal, allow: allow, idle: idle,
 		origins: origins, tick: heartbeat}
+}
+
+// admit is every check a console makes before anything opens, in order: a
+// WebSocket at all, from this host's pages, by a principal with the console
+// scope, saying nothing out of shape about who and why. Each refusal is plain
+// HTTP, which a client can read; none of it starts a shell.
+func (h *Handler) admit(r *http.Request) (Opener, error) {
+	if !isUpgrade(r) {
+		return Opener{}, common.NewAppError(http.StatusBadRequest,
+			"this is a WebSocket endpoint; connect with a WebSocket client")
+	}
+	// A page from another origin carries the operator's cookie too, and must
+	// not get as far as starting a shell.
+	if err := h.checkOrigin(r); err != nil {
+		return Opener{}, err
+	}
+	if err := h.allow(r); err != nil {
+		return Opener{}, err
+	}
+	return openerOf(r, h.principal(r))
 }
 
 // control is a text frame. From the page: resize. From the server, last of
@@ -77,16 +99,21 @@ type control struct {
 // @Description  kernel's hang-up and end, with no `console-close` entry.
 // @Description
 // @Description  Audited as `console-open` and `console-close`, with who opened it, how long it
-// @Description  lasted and why it ended. **Nothing typed or printed is recorded.** The
+// @Description  lasted and why it ended. **Nothing typed or printed is recorded.** `actor` and
+// @Description  `reason`, when given, are recorded verbatim on `console-open` (#155). A token needs
+// @Description  the `console` scope; a browser session is refused when `JAILDECK_CONSOLE_UI=off`. The
 // @Description  `Origin` must be this host's. A browser authenticates with its session cookie;
 // @Description  an API token works for clients that can send the header.
 // @Tags         jails
 // @Param        name  path   string  true   "Jail name"
 // @Param        cols  query  int     false  "Columns, 1 to 1000"
 // @Param        rows  query  int     false  "Rows, 1 to 1000"
+// @Param        actor   query  string  false  "On whose behalf, recorded in the audit: letters, digits, -._:@/+, up to 128"
+// @Param        reason  query  string  false  "Why, recorded in the audit: printable text, up to 256 bytes"
 // @Success      101  "Switching protocols"
-// @Failure      400  {object}  common.ErrorResponse  "Not a WebSocket request, or a size out of range"
+// @Failure      400  {object}  common.ErrorResponse  "Not a WebSocket request, a size out of range, or an actor or reason out of shape"
 // @Failure      401  {object}  common.ErrorResponse
+// @Failure      403  {object}  common.ErrorResponse  "A token without the console scope, or the browser console turned off"
 // @Failure      404  {object}  common.ErrorResponse  "No such jail"
 // @Failure      409  {object}  common.ErrorResponse  "The jail is not running"
 // @Security     BearerAuth
@@ -97,18 +124,12 @@ func (h *Handler) Jail(w http.ResponseWriter, r *http.Request) {
 		common.HandlerError(w, err)
 		return
 	}
-	if !isUpgrade(r) {
-		common.HandlerError(w, common.NewAppError(http.StatusBadRequest,
-			"this is a WebSocket endpoint; connect with a WebSocket client"))
-		return
-	}
-	// Before anything opens: a page from another origin carries the
-	// operator's cookie too, and must not get as far as starting a shell.
-	if err := h.checkOrigin(r); err != nil {
+	opener, err := h.admit(r)
+	if err != nil {
 		common.HandlerError(w, err)
 		return
 	}
-	session, err := h.service.OpenJail(r.Context(), chi.URLParam(r, "name"), h.principal(r), cols, rows)
+	session, err := h.service.OpenJail(r.Context(), chi.URLParam(r, "name"), opener, cols, rows)
 	if err != nil {
 		common.HandlerError(w, err)
 		return
@@ -142,25 +163,24 @@ func (h *Handler) Jail(w http.ResponseWriter, r *http.Request) {
 // @Description  reader nothing at all), or `console-closed` when the device ends. Audited as
 // @Description  `console-open` and `console-close`; nothing typed or printed is recorded.
 // @Tags         vms
-// @Param        name  path  string  true  "Guest name"
+// @Param        name    path   string  true   "Guest name"
+// @Param        actor   query  string  false  "On whose behalf, recorded in the audit: letters, digits, -._:@/+, up to 128"
+// @Param        reason  query  string  false  "Why, recorded in the audit: printable text, up to 256 bytes"
 // @Success      101  "Switching protocols"
-// @Failure      400  {object}  common.ErrorResponse  "Not a WebSocket request"
+// @Failure      400  {object}  common.ErrorResponse  "Not a WebSocket request, or an actor or reason out of shape"
 // @Failure      401  {object}  common.ErrorResponse
+// @Failure      403  {object}  common.ErrorResponse  "A token without the console scope, or the browser console turned off"
 // @Failure      404  {object}  common.ErrorResponse  "No such guest"
 // @Failure      409  {object}  common.ErrorResponse  "The guest is not running, or a console is open on it already"
 // @Security     BearerAuth
 // @Router       /vms/{name}/console [get]
 func (h *Handler) VM(w http.ResponseWriter, r *http.Request) {
-	if !isUpgrade(r) {
-		common.HandlerError(w, common.NewAppError(http.StatusBadRequest,
-			"this is a WebSocket endpoint; connect with a WebSocket client"))
-		return
-	}
-	if err := h.checkOrigin(r); err != nil {
+	opener, err := h.admit(r)
+	if err != nil {
 		common.HandlerError(w, err)
 		return
 	}
-	session, err := h.service.OpenVM(r.Context(), chi.URLParam(r, "name"), h.principal(r))
+	session, err := h.service.OpenVM(r.Context(), chi.URLParam(r, "name"), opener)
 	var shared *SharedError
 	if errors.As(err, &shared) {
 		h.refuse(w, r, ReasonConsoleShared, shared.Message)

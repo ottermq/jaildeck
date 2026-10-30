@@ -88,3 +88,29 @@ describe('the console panel', () => {
         expect(await screen.findByText(/cu \(pid 38812\)/)).toBeTruthy()
     })
 })
+
+describe('ConsolePanel on a host with the browser console off', () => {
+    afterEach(async () => {
+        const { auth } = await import('../stores/auth.svelte')
+        auth.principal = null
+    })
+
+    it('offers no console and says why (#155)', async () => {
+        const { auth } = await import('../stores/auth.svelte')
+        auth.principal = { kind: 'session', name: '', scopes: [] }
+        render(ConsolePanel, { path: '/api/jails/web/console', running: true, openLabel: 'Open the console' })
+        expect(screen.queryByRole('button', { name: 'Open the console' })).toBeNull()
+        expect(screen.getByText(/turned off on this host/)).toBeTruthy()
+    })
+
+    it('offers it with the console scope, and when the server says nothing of scopes', async () => {
+        const { auth } = await import('../stores/auth.svelte')
+        for (const principal of [{ kind: 'session' as const, name: '', scopes: ['console'] }, { kind: 'session' as const, name: '' }]) {
+            auth.principal = principal
+            const { unmount } = render(ConsolePanel, { path: '/api/jails/web/console', running: true, openLabel: 'Open the console' })
+            expect(screen.getByRole('button', { name: 'Open the console' })).toBeTruthy()
+            expect(screen.queryByText(/turned off on this host/)).toBeNull()
+            unmount()
+        }
+    })
+})

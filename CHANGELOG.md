@@ -20,6 +20,72 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.23.0 — 2026-10-30
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.23.0)
+
+**Instances at scale.** Jails and guests are in one list, found by name, state or label, and
+acted on several at once (#129). Guests get labels and snapshots, as jails have. API tokens get
+scopes, and a console can be opened saying on whose behalf and why (#155, #178).
+
+Nothing to act on when upgrading: existing tokens keep every scope, and the browser console stays
+on. **A token made after the upgrade needs `--scope console` to open a console.** One new
+optional setting, `JAILDECK_CONSOLE_UI`; nothing in `pf.conf` or `rc.conf`.
+
+### Added
+
+- **The Instances page** (#175, closing #129): `/instances`, second in the menu. Jails and guests
+  in one list, with state, kind, labels, CPU and memory.
+  - A running jail's CPU and memory are what it is using; a guest's are what it was given. The
+    headers say so.
+  - Search by name; filter by kind, state and labels (`otter:tenant=acme, otter:tier`); click a
+    label to filter on it; group by a label key; sort by name, kind or state. **The filters are
+    kept in the address**, so a view can be bookmarked.
+- **Bulk start, stop, restart and snapshot** (#175): one confirmation that names each instance it
+  will act on, four at a time, and **each instance's result shown separately** as it finishes.
+  - What an action does not apply to is skipped, with the reason per instance.
+  - What a filter hides leaves the selection, so nothing is acted on that was not on screen.
+  - It is the existing per-instance call, made once per instance and audited as before.
+- **Guest labels** (#173): ZFS user properties on the guest's dataset, as a jail is tagged
+  (JD-044). A **Tags** panel on the guest's page, the jail page's own, now one component.
+- **Guest snapshots** (#176, closing #174): the guest's dataset and its disks at one point in
+  time. **A running guest is snapshotted as it is, and said to be crash-consistent** (JD-045).
+  The Instances page's bulk Snapshot covers guests, each result saying which it got.
+
+- **Token scopes** (#179, closing #178): `jaildeck token add <name> --scope console`. The one
+  scope is `console`; a token without it is refused a console with 403. A token made before
+  scopes keeps every one, and `token list` shows each token's scopes.
+- **`JAILDECK_CONSOLE_UI=off`** (#179, #155): the browser session can no longer open a console,
+  and a token with the `console` scope still can, for a host a platform manages. Anything but
+  `on` or `off` is taken as off. The console panel says the console is off rather than hiding it.
+- **Who opened a console, and why** (#179, #155): optional `actor` and `reason` on both console
+  endpoints, recorded verbatim on the `console-open` audit entry. Never required.
+
+### API
+
+- **`properties`** on each guest in `GET /api/vms` and on `GET /api/vms/{name}` (#173): the
+  guest dataset's own user properties, always an object. Additive.
+- **`PATCH /api/vms/{name}/properties`** (#173): as the jail route, a string sets and `null`
+  removes; `409` for a guest in a datastore not on ZFS. Additive.
+- **`PUT /api/vms/{name}/snapshots/{snapshot}`** (#176): `201` with `snapshot`, `created` and
+  `consistency` (`crash-consistent` or `consistent`); `200` with `existed` when it was already
+  there, with no consistency claimed; `409` for a datastore not on ZFS. Additive.
+
+- **`scopes`** on `GET /api/auth/me` (#179). Additive.
+- **`actor` and `reason`** query parameters on `GET /api/jails/{name}/console` and
+  `GET /api/vms/{name}/console` (#179): `400` when out of shape. **`403`** for a token without the
+  `console` scope, or a browser session with `JAILDECK_CONSOLE_UI=off`. The audit's
+  `console-open` entry gains `actor` and `open_reason`. Additive for existing tokens.
+
+### Internal
+
+- **The measurements are kept as captures:** `capture-vm-labels-induced.sh` (`vml_*`) and
+  `capture-vm-snapshot-induced.sh` (`vsn_*`). **JD-044** (guest labels: ZFS over a config key that
+  `vm info` does not show) and **JD-045** (guest snapshots) record them.
+- The fake host's running guest has a `disk0` volume, as a real guest does.
+- **JD-046** records token scopes, the console switch, and the actor and reason. The state file's
+  tokens gain `scopes`, written as `[]` or a list for a new token and left `null` for an old one.
+
 ## v0.22.0 — 2026-10-30
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.22.0)

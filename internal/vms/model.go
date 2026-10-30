@@ -64,6 +64,11 @@ type VM struct {
 	// from 1.
 	Autostart      bool `json:"autostart"`
 	AutostartOrder int  `json:"autostart_order,omitempty"`
+
+	// Properties are the guest's labels: the ZFS user properties set on its
+	// own dataset, as a jail's are on its own (JD-044). Empty for a guest in
+	// a datastore that is not on ZFS, which has nowhere to keep one.
+	Properties map[string]string `json:"properties"`
 }
 
 // Detail is GET /api/vms/{name}: the guest's row, and what `vm info` adds.

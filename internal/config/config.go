@@ -65,6 +65,11 @@ type Config struct {
 	// rewrites Host: "jaildeck.example.org", "*.example.org".
 	ConsoleIdle    time.Duration
 	ConsoleOrigins []string
+	// NoConsoleUI keeps the browser session from opening a console:
+	// JAILDECK_CONSOLE_UI=off (#155), on a host a platform manages, whose own
+	// token with the console scope is then the only way in through Jail
+	// Deck. Negative so that the zero value is the default, on.
+	NoConsoleUI bool
 }
 
 func LoadConfig() *Config {
@@ -92,6 +97,7 @@ func LoadConfig() *Config {
 
 		ConsoleIdle:    getDuration("JAILDECK_CONSOLE_IDLE", 30*time.Minute),
 		ConsoleOrigins: getList("JAILDECK_CONSOLE_ORIGINS"),
+		NoConsoleUI:    !getSwitch("JAILDECK_CONSOLE_UI", true),
 	}
 }
 
@@ -108,6 +114,22 @@ func getDuration(key string, defaultValue time.Duration) time.Duration {
 		return defaultValue
 	}
 	return d
+}
+
+// getSwitch reads "on" or "off". Anything else is off and says so: these
+// switches turn something away, and a typo should not leave it open.
+func getSwitch(key string, defaultValue bool) bool {
+	switch value := strings.ToLower(strings.TrimSpace(os.Getenv(key))); value {
+	case "":
+		return defaultValue
+	case "on":
+		return true
+	case "off":
+		return false
+	default:
+		slog.Warn("a setting that is neither on nor off is taken as off", "key", key, "value", value)
+		return false
+	}
 }
 
 // getList reads a comma-separated list, nil when unset.

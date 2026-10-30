@@ -48,11 +48,11 @@ Keep the sidebar simple — avoid too many sections before the features justify 
 
 ## Navigation
 
-Built: **Dashboard**, **Jails**, **Templates**, **VMs**, **Networks**, **Operations**, **Firewall**, **Host**. A section stays highlighted on its detail pages, so `/jails/ottermq` keeps Jails lit.
+Built: **Dashboard**, **Instances**, **Jails**, **Templates**, **VMs**, **Networks**, **Operations**, **Firewall**, **Host**. A section stays highlighted on its detail pages, so `/jails/ottermq` keeps Jails lit.
 
 **The version** sits under the logo, small and muted, from `GET /api/about` (#136): a release (`v0.19.0`) links to its notes, any other build is only named. It is there on every page and takes room from none; it is not beside "Signed in", which is about the session, not the software. On a narrow screen it sits beside the logo. The **Host** page ends with a **Jail Deck** block for when something needs debugging: the version, the commit it was built from (and whether that tree had changes), when it started, and its state directory.
 
-On a narrow screen the sections become a row across the top, and eight of them are wider than a phone: the row scrolls sideways on its own, and the page does not. Measured at 390px wide: the six sections before VMs already took 486px of links, and the rail, sized to them, made the whole page scroll sideways.
+On a narrow screen the sections become a row across the top, and nine of them are wider than a phone: the row scrolls sideways on its own, and the page does not. Measured at 390px wide: the six sections before VMs already took 486px of links, and the rail, sized to them, made the whole page scroll sideways.
 
 Still on the sketch above: Storage, Logs, Settings. Possible later: Snapshots (if it earns a page separate from a jail's), Tasks (once long-running operations exist), Services, Packages, System.
 
@@ -81,6 +81,24 @@ Disks are listed whether or not a pool stands on them, since a spare can fail to
 The page polls every five seconds, which is also the window the host's CPU percentage is measured over, and the header carries a **Keep refreshing** checkbox — an operator reading a row should be able to stop it moving.
 
 A jail that could not be read shows its reason in place of its figures; the rest of the page still renders. Nothing on this page is stored, and the footnote says where a chart over time will come from instead.
+
+### Instances page
+
+Purpose: jails and guests in one list, at dozens and later hundreds, and acting on several at once (#129). Built at `/instances`.
+
+**One row per instance**: a checkbox, state, kind, name (linked to its own page), labels, CPU and memory. **CPU and memory mean different things for the two kinds, and the headers say so on hover**: a running jail's are what it is using, from the metrics report (percent of one core, memory in use); a guest's are what it was given (vCPUs, configured memory). A stopped jail has neither. A failed metrics read blanks the jails' usage and says so, without hiding the list.
+
+**Filters**: a name search, kind, state (the states present), labels, and **Group by** a label key. Labels are comma-separated terms that must all hold — `key=value` for that value, a bare `key` for any — commas because a ZFS value may contain a space. Clicking a label in a row adds it to the filter. Grouping puts each value under its own heading with a count and a checkbox for the group, and the instances without the key last. Name, kind and state sort from their headers. **Every filter is in the address** (`?kind=vm&label=otter:tenant%3Dacme&group=otter:tier`), replaced rather than pushed so Back is not a walk through keystrokes, and only what differs from the defaults is written.
+
+**Bulk actions** — Start, Stop, Restart, Snapshot — sit in a bar that appears with a selection and stays at the top while scrolling. **A bulk action is the existing per-instance call made once per instance**, a few at a time (four: a guest's stop can take its minute), each audited as it always is; nothing new on the server. Before it runs:
+
+- **What does not apply is left out, per instance and with the reason**: a start skips what is running, a stop and a restart what is not, a guest in its boot loader or held by another host is skipped for what it is doing.
+- **One confirmation for the set**, naming each instance it will act on and its kind, with the stop deadline when guests are among them and how many selected instances are left alone.
+- **What a filter hides leaves the selection**, so nothing is stopped that was not on screen when Stop was pressed.
+
+**Each instance's result is reported separately**, as it finishes, in a panel above the list: queued, running, done, failed with the API's words, or skipped with the reason. A guest powered off after its minute is done in amber, saying so. One failing does not hide the others. The list is read again afterwards, however it went.
+
+**Snapshot** asks for a name (it starts as `jd-YYYYMMDD-HHMM`). A jail's is its recursive snapshot, the jail page's own call. A guest's is its dataset and its disks (JD-045), **taken in any state and said to be what it is**: the confirmation says a running guest is taken crash-consistent, and each guest's result says "Crash-consistent: taken while the guest ran" or "Consistent: the guest was stopped". An instance that already has the snapshot is reported and left alone.
 
 ### Jails page
 
@@ -116,7 +134,7 @@ The one value the form will not quietly discard is a mistyped limit: `Number('ab
 At `/jails/{name}`, reached from the jail's name on the list (JD-028). Built:
 
 - header — name, status badge, JID, hostname, IP
-- **Console** — while the jail runs (JD-042): **Open a shell** puts a terminal (xterm.js) on the page, sized to it, attached to `jexec -l <jail> /bin/sh -l` over a WebSocket. It stays as long as the shell does. When it closes, the reason is said in words, and the terminal stays visible, dimmed. "The jail stopped" also re-reads the jail, because the stop may have come from elsewhere. **Open again** appears only while the jail still runs. The hint under it says that the session is audited, that **nothing typed or shown is recorded**, and what closes it. Measured in headless Chrome: the fit gives `stty size` the panel's own size, and at 390px the page doesn't scroll sideways.
+- **Console** — while the jail runs (JD-042): **Open a shell** puts a terminal (xterm.js) on the page, sized to it, attached to `jexec -l <jail> /bin/sh -l` over a WebSocket. It stays as long as the shell does. When it closes, the reason is said in words, and the terminal stays visible, dimmed. "The jail stopped" also re-reads the jail, because the stop may have come from elsewhere. **Open again** appears only while the jail still runs. The hint under it says that the session is audited, that **nothing typed or shown is recorded**, and what closes it. **On a host with the browser console turned off** (`JAILDECK_CONSOLE_UI=off`, #155), the login's `scopes` from `/api/auth/me` lack `console`: the panel offers no button and says the console is off on this host and that a platform opens consoles through its own token. The page doesn't just hide it, because a missing button reads as a bug. Measured in headless Chrome: the fit gives `stty size` the panel's own size, and at 390px the page doesn't scroll sideways.
 - **Datasets** — every dataset of the jail, the one mounted at the jail's own path marked as such, with mountpoint, used/referenced/available (JD-022), and the native ZFS properties it sets itself (JD-023)
 - **Tags** — the jail's `user:property` ZFS tags, its own and never a child's
 - **Snapshots** — newest first, ordered by transaction group rather than by time (JD-024); fetched separately and allowed to fail on its own
@@ -181,7 +199,9 @@ Purpose: what vm-bhyve's guests are doing, and starting and stopping them (JD-01
 
 The list is a table: state, name, CPU, memory, loader, datastore, and whether the guest starts at boot with its place in `vm_list`. Only `running` is green. `bootloader` and `locked` are amber, and a locked guest names the host holding it. CPU and memory the API could not read are a dash.
 
-A guest's page has its configuration (with resident memory beside the configured amount while it runs, and the host CPUs it is pinned to beside its CPU count), its console — **Open the console** while it runs, the same panel as a jail's (`ConsolePanel`), with the device it attaches to, and the two things an operator must know: one console at a time here while `vm console` can still attach alongside, and closing it logs no one out of the guest — its network interfaces and its disks. **A stopped guest's missing console is explained, not left blank**: the console belongs to the bhyve instance. The tap is labelled as this run's, because vm-bhyve makes a new one on every start.
+A guest's page has its configuration (with resident memory beside the configured amount while it runs, and the host CPUs it is pinned to beside its CPU count), its console — **Open the console** while it runs, the same panel as a jail's (`ConsolePanel`), with the device it attaches to, and the two things an operator must know: one console at a time here while `vm console` can still attach alongside, and closing it logs no one out of the guest — its network interfaces, its disks and its **Tags**. **A stopped guest's missing console is explained, not left blank**: the console belongs to the bhyve instance. The tap is labelled as this run's, because vm-bhyve makes a new one on every start.
+
+**Tags** are the jail page's panel, one component (`TagsPanel`) for both: the ZFS user properties on the guest's dataset (JD-044), added, edited and removed in place, with a confirmation before a remove. The hint says where they live, so that a rename keeps them and a destroy takes them. A guest in a datastore that isn't on ZFS has its refusal shown in the form.
 
 **Start, Stop and Restart** sit at the end of each row and beside the guest's name on its page — one component, `VMActions`, for both. A running guest offers Stop and Restart, a stopped one Start, and a suspended one **Resume**, which is what vm-bhyve's start does to it. A guest in its boot loader or locked by another host offers nothing and says why ("Booting — try again once it is running", "Held by orthanc"), because the API would refuse.
 

@@ -46,6 +46,14 @@ func NewStorageSystem() *StorageSystem {
 			{Name: "zroot/jails/nginx/logs", Mountpoint: "/fake/jail/nginx/logs", Used: 412 << 20, Available: 400 * gib, Referenced: 412 << 20},
 			{Name: "zroot/jails/redis", Mountpoint: "/fake/jail/redis", Used: 740 << 20, Available: 400 * gib, Referenced: 1208 << 20},
 			{Name: "zroot/backup", Mountpoint: "none", Used: 31 * gib, Available: 400 * gib, Referenced: 96 << 10},
+			// vm-bhyve's default datastore and the fake guests' datasets,
+			// where their labels live (JD-044).
+			{Name: "zroot/vm", Mountpoint: "/fake/vm", Used: 3 * gib, Available: 400 * gib, Referenced: 96 << 10},
+			{Name: "zroot/vm/jd-cap-running", Mountpoint: "/fake/vm/jd-cap-running", Used: 2 * gib, Available: 400 * gib, Referenced: 96 << 10},
+			// Its disk, a volume beneath it, which a guest snapshot takes at the
+			// same point in time (JD-045). A volume has no mountpoint.
+			{Name: "zroot/vm/jd-cap-running/disk0", Mountpoint: "-", Used: 2 * gib, Available: 400 * gib, Referenced: 56 << 10},
+			{Name: "zroot/vm/jd-cap-stopped", Mountpoint: "/fake/vm/jd-cap-stopped", Used: 1 * gib, Available: 400 * gib, Referenced: 96 << 10},
 		},
 		properties: []storage.Property{
 			// A native property set locally, which the colon rule drops: every
@@ -58,6 +66,7 @@ func NewStorageSystem() *StorageSystem {
 			// properties and not a child's.
 			{Dataset: "zroot/jails/nginx/logs", Name: "otter:retention", Value: "14d"},
 			{Dataset: "zroot/jails/redis", Name: "otter:instance", Value: "cache-01"},
+			{Dataset: "zroot/vm/jd-cap-running", Name: "otter:tenant", Value: "acme"},
 		},
 	}
 	system.seedSnapshots()

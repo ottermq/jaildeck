@@ -429,3 +429,44 @@ des_busy2_unmount_left	zfs list -H -o name -t all -r tank/jd-cap-120	exit=0
 des_busy2_unmount_free	doas zfs unmount tank/jd-cap-120/containers/j1/data	exit=0
 des_busy2_destroy	doas zfs destroy -r tank/jd-cap-120/containers/j1/data	exit=0
 des_end	zfs list -H -o name -t all -r tank/jd-cap-120	exit=0
+vml_datastore	doas vm datastore list	exit=0
+vml_create	doas vm create -t jd-capture -s 1G jd-cap-129	exit=0
+vml_layout	zfs list -H -o name,type -r tank/vm/jd-cap-129; ls -A /vm/jd-cap-129	exit=0
+vml_zfs_set	doas zfs set otter:tenant=acme otter:instance=web-01 tank/vm/jd-cap-129	exit=0
+vml_zfs_get	zfs get -H -o name,property,value,source -s local all tank/vm/jd-cap-129	exit=0
+vml_zfs_get_disk	zfs get -H -o name,property,value,source otter:tenant tank/vm/jd-cap-129/disk0	exit=0
+vml_zfs_get_recursive_list	zfs get -H -r -t filesystem -o name,value otter:tenant tank/vm	exit=0
+vml_conf_set	doas sysrc -f /vm/jd-cap-129/jd-cap-129.conf otter_tenant=acme	exit=0
+vml_conf	cat /vm/jd-cap-129/jd-cap-129.conf	exit=0
+vml_info_stopped	doas vm info jd-cap-129	exit=0
+vml_list	doas vm list	exit=0
+vml_start	doas vm start jd-cap-129 </dev/null	exit=0
+vml_running	doas vm list | awk -v g=jd-cap-129 '$1 == g'; ls /dev/vmm	exit=0
+vml_info_running	doas vm info jd-cap-129	exit=0
+vml_zfs_set_running	doas zfs set otter:tier=frontend tank/vm/jd-cap-129	exit=0
+vml_snapshot_running	doas vm snapshot jd-cap-129	exit=1
+vml_snapshot_running_forced	doas vm snapshot -f jd-cap-129	exit=0
+vml_snapshots_after_running	zfs list -H -t snapshot -o name -r tank/vm/jd-cap-129	exit=0
+vml_poweroff	doas vm poweroff -f jd-cap-129	exit=0
+vml_snapshot_stopped	doas vm snapshot jd-cap-129@jdcap	exit=0
+vml_snapshots_after_stopped	zfs list -H -t snapshot -o name -r tank/vm/jd-cap-129	exit=0
+vml_after_stop	zfs get -H -o property,value -s local all tank/vm/jd-cap-129; grep otter /vm/jd-cap-129/jd-cap-129.conf	exit=0
+vml_rename	doas vm rename jd-cap-129 jd-cap-129r	exit=0
+vml_after_rename	zfs get -H -o name,property,value -s local all tank/vm/jd-cap-129r; cat /vm/jd-cap-129r/jd-cap-129r.conf; zfs list -H -t snapshot -o name -r tank/vm/jd-cap-129r	exit=0
+vml_zfs_inherit	doas zfs inherit otter:tenant tank/vm/jd-cap-129r	exit=0
+vml_conf_remove	doas sysrc -f /vm/jd-cap-129r/jd-cap-129r.conf -x otter_tenant	exit=0
+vml_after_remove	zfs get -H -o property,value -s local all tank/vm/jd-cap-129r; grep -c otter /vm/jd-cap-129r/jd-cap-129r.conf	exit=1
+vml_destroy	doas vm destroy -f jd-cap-129r	exit=0
+vml_after_destroy	zfs list -H -o name -r tank/vm | grep jd-cap; ls -A /vm | grep jd-cap	exit=1
+vsn_create	doas vm create -t jd-capture -s 1G jd-cap-174	exit=0
+vsn_start	doas vm start jd-cap-174; sleep 3; ls /dev/vmm	exit=0
+vsn_zfs_snapshot_running	doas zfs snapshot -r tank/vm/jd-cap-174@jd-a	exit=0
+vsn_list_after	zfs list -H -t snapshot -o name,used,refer -r tank/vm/jd-cap-174	exit=0
+vsn_still_running	doas vm list | awk '$1 == "jd-cap-174"'; ls /dev/vmm	exit=0
+vsn_info_after	doas vm info jd-cap-174	exit=0
+vsn_zfs_snapshot_again	doas zfs snapshot -r tank/vm/jd-cap-174@jd-a	exit=1
+vsn_vm_snapshot_forced	doas vm snapshot -f jd-cap-174@jd-b	exit=0
+vsn_list_both	zfs list -H -t snapshot -o name -r tank/vm/jd-cap-174	exit=0
+vsn_poweroff	doas vm poweroff -f jd-cap-174; sleep 3; ls /dev/vmm	exit=1
+vsn_destroy	doas vm destroy -f jd-cap-174	exit=0
+vsn_after_destroy	zfs list -H -t all -o name -r tank/vm | grep jd-cap-174	exit=1

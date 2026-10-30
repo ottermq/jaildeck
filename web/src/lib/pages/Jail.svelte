@@ -15,6 +15,7 @@ import { onNavClick, navigate } from '../router.svelte'
 import { ask } from '../stores/confirm.svelte'
 import { formatBytes, normalizeEmptyValue } from '../utils'
 import ConsolePanel from '../components/ConsolePanel.svelte'
+import TagsPanel from '../components/TagsPanel.svelte'
 
 let { name }: { name: string } = $props()
 
@@ -65,7 +66,6 @@ function describe(err: unknown, fallback: string): string {
 // a refquota is counted separately on purpose (JD-007).
 let root = $derived(jail?.datasets?.find(d => d.mountpoint === jail?.path))
 let children = $derived(jail?.datasets?.filter(d => d !== root) ?? [])
-let tags = $derived(Object.entries(jail?.properties ?? {}).sort(([a], [b]) => a.localeCompare(b)))
 
 // Newest first: the one you are looking for is almost always the last one
 // taken. The server returns them oldest first, ordered by transaction group.
@@ -108,56 +108,6 @@ async function run(key: string, call: () => Promise<unknown>): Promise<boolean> 
         busy = ''
         await load()
     }
-}
-
-// ---- tags -------------------------------------------------------------
-
-let addingTag = $state(false)
-let newTagName = $state('')
-let newTagValue = $state('')
-let editingTag = $state('')
-let editedValue = $state('')
-
-function startAddTag() {
-    addingTag = true
-    newTagName = ''
-    newTagValue = ''
-    delete actionError['tag-add']
-}
-
-async function addTag(event: Event) {
-    event.preventDefault()
-    if (await run('tag-add', () => setTags(name, { [newTagName.trim()]: newTagValue }))) {
-        addingTag = false
-    }
-}
-
-function startEditTag(property: string, value: string) {
-    editingTag = property
-    editedValue = value
-    delete actionError['tag-edit']
-}
-
-async function saveTag(event: Event) {
-    event.preventDefault()
-    if (await run('tag-edit', () => setTags(name, { [editingTag]: editedValue }))) {
-        editingTag = ''
-    }
-}
-
-async function removeTag(property: string) {
-    const confirmed = await ask({
-        title: `Remove ${property} from ${name}?`,
-        lines: [
-            'The property is inherited away rather than set empty, so the jail stops carrying it at all.',
-            'An automation client that finds its jails by this tag will stop finding this one.',
-        ],
-        verb: 'Remove',
-    })
-    if (!confirmed) return
-    // Null, not "": removing a property and setting it to the empty string are
-    // different states, and the API draws that line.
-    await run('tag-remove', () => setTags(name, { [property]: null }))
 }
 
 // ---- datasets ---------------------------------------------------------
@@ -958,117 +908,24 @@ async function retain(event: Event, dataset: Dataset) {
         {/if}
     </section>
 
-    <section class="panel">
-        <div class="panel__head">
-            <h2>Tags</h2>
-            {#if jail.path}
-                <button type="button" class="btn btn--small" onclick={startAddTag} disabled={addingTag}>
-                    Add a tag
-                </button>
-            {/if}
-        </div>
-
-        {#if addingTag}
-            <form class="form" onsubmit={addTag}>
-                <div class="form__row">
-                    <div class="field">
-                        <label for="tag-name">Property</label>
-                        <input id="tag-name" bind:value={newTagName} placeholder="otter:instance"
-                               autocomplete="off" spellcheck="false" required />
-                    </div>
-                    <div class="field field--grow">
-                        <label for="tag-value">Value</label>
-                        <input id="tag-value" bind:value={newTagValue} autocomplete="off" spellcheck="false" />
-                    </div>
-                </div>
-                <p class="hint">
-                    A ZFS user property: the name has to contain a colon, which is what tells
-                    one from a native property. The value is passed through untouched.
-                </p>
-                {#if actionError['tag-add']}
-                    <p class="notice notice--error" role="alert">{actionError['tag-add']}</p>
-                {/if}
-                <div class="form__actions">
-                    <button type="button" class="btn btn--small" onclick={() => (addingTag = false)}>Cancel</button>
-                    <button type="submit" class="btn btn--small btn--primary" disabled={busy === 'tag-add'}>
-                        {busy === 'tag-add' ? 'Setting…' : 'Set'}
-                    </button>
-                </div>
-            </form>
-        {/if}
-
-        {#if actionError['tag-remove']}
-            <p class="notice notice--error" role="alert">{actionError['tag-remove']}</p>
-        {/if}
-
-        {#if tags.length === 0}
-            <p class="notice">
-                No ZFS user properties on this jail's own dataset. An automation client sets
-                these — <code>otter:instance</code> and the like — and finds its jails again
-                from the listing alone.
-            </p>
-        {:else}
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Property</th>
-                            <th>Value</th>
-                            <th class="actions-col">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {#each tags as [property, value] (property)}
-                            <tr>
-                                <td class="name"><code>{property}</code></td>
-                                <td>
-                                    {#if editingTag === property}
-                                        <form class="inline-edit" onsubmit={saveTag}>
-                                            <input bind:value={editedValue} autocomplete="off" spellcheck="false"
-                                                   aria-label={`Value for ${property}`} />
-                                            <button type="submit" class="btn btn--small btn--primary" disabled={busy === 'tag-edit'}>
-                                                {busy === 'tag-edit' ? 'Saving…' : 'Save'}
-                                            </button>
-                                            <button type="button" class="btn btn--small" onclick={() => (editingTag = '')}>Cancel</button>
-                                        </form>
-                                    {:else}
-                                        {value}
-                                    {/if}
-                                </td>
-                                <td class="actions-col">
-                                    <div class="actions">
-                                        <button
-                                            type="button"
-                                            class="btn btn--small"
-                                            disabled={!!busy || editingTag === property}
-                                            onclick={() => startEditTag(property, value)}
-                                        >Edit</button>
-                                        <button
-                                            type="button"
-                                            class="btn btn--small btn--danger"
-                                            disabled={!!busy}
-                                            onclick={() => removeTag(property)}
-                                        >Remove</button>
-                                    </div>
-                                </td>
-                            </tr>
-                            {#if editingTag === property && actionError['tag-edit']}
-                                <tr class="row-form">
-                                    <td colspan="3">
-                                        <p class="notice notice--error" role="alert">{actionError['tag-edit']}</p>
-                                    </td>
-                                </tr>
-                            {/if}
-                        {/each}
-                    </tbody>
-                </table>
-            </div>
-            <p class="hint">
-                A jail reports its own dataset's properties, never a child's — otherwise one
-                jail with three children would look like four instances.
-            </p>
-        {/if}
-    </section>
+    <TagsPanel
+        {name}
+        noun="jail"
+        properties={jail.properties}
+        save={tags => setTags(name, tags)}
+        changed={load}
+        canAdd={!!jail.path}
+    >
+        {#snippet empty()}
+            No ZFS user properties on this jail's own dataset. An automation client sets
+            these — <code>otter:instance</code> and the like — and finds its jails again
+            from the listing alone.
+        {/snippet}
+        {#snippet hint()}
+            A jail reports its own dataset's properties, never a child's — otherwise one
+            jail with three children would look like four instances.
+        {/snippet}
+    </TagsPanel>
 
     <section class="panel">
         <div class="panel__head">
@@ -1424,13 +1281,6 @@ async function retain(event: Event, dataset: Dataset) {
 
 .field--grow {
     flex: 1 1 14rem;
-}
-
-.inline-edit {
-    display: flex;
-    gap: var(--space-2);
-    align-items: center;
-    flex-wrap: wrap;
 }
 
 .row-form td {

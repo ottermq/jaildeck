@@ -1,0 +1,4 @@
+otter:tier	frontend
+otter:tenant	acme
+otter:instance	web-01
+otter_tenant="acme"

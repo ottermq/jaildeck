@@ -2132,3 +2132,104 @@ Every network's NAT line comes first, then every network's filter rules: **pfctl
 - **Jail Deck picking a member's address,** and creating a jail or guest "on a network" rather than on a bridge or switch: #118's next step.
 - **The interface's view of every network** (#128).
 - **Inbound connections** (port forwards) to a tenant's instances.
+
+---
+
+## JD-044 — A Guest's Labels: ZFS User Properties on Its Dataset
+
+**Status:** Locked — 2026-10-30. Measured on isengard with a throwaway guest (`capture-vm-labels-induced.sh`). First part of #129.
+
+An automation client finds its jails again from the listing alone, by the ZFS user properties it set on each jail's dataset (JD-023). A guest had nothing like that, so a client that ran both had to remember which guests were its own. This record gives a guest the same kind of label, in the same place, read and written the same way.
+
+### What was measured
+
+- **A guest's dataset is `<datastore's dataset>/<name>`** (`tank/vm/<guest>`), with its disks as volumes beneath it (`disk0`). `vm datastore list` gives each datastore's dataset; a datastore that is a plain directory has none.
+- **A user property on that dataset:**
+  - can be set while the guest runs;
+  - survives a start, a stop and a `vm rename`, because a rename is a `zfs rename`;
+  - goes with a `vm destroy`;
+  - is inherited by the guest's disks.
+- **One `zfs get -r` reads every guest's labels**, so a listing costs one command, not one per guest.
+- **A key written into the guest's config with `sysrc -f`** survives too, but **neither `vm info` nor `vm list` shows it**. Reading it back means a file per guest, and vm-bhyve would carry a key it doesn't know. That's why ZFS was chosen.
+
+### What Jail Deck does
+
+- **`GET /api/vms` and `GET /api/vms/{name}` carry `properties`:** the guest dataset's own user properties, with `source` local, so the disks' inherited copies aren't counted twice. Always an object: empty for a guest with no labels, or one in a datastore that isn't on ZFS. **A failure to read them costs the labels, not the listing**; it is logged as a warning.
+- **`PATCH /api/vms/{name}/properties`** takes `{"otter:tenant": "acme", "otter:tier": null}`, as JD-023 does for a jail: a string sets, `""` included, and `null` inherits the property away. Only user properties (a name with a colon). It answers the labels the guest carries afterwards. It is audited, and runs whether or not the guest is running.
+- **A guest in a datastore not on ZFS is refused with 409**, naming the datastore. There is nowhere to keep the label, and a config key would be the second mechanism this record turned down.
+
+### Not yet
+
+- **The instances view across jails and guests** (search, filter and group by a label, bulk actions): #129's second part, in `docs/UI.md`.
+- **A guest snapshot through the API**: JD-045.
+
+---
+
+## JD-045 — A Guest's Snapshot: Taken Running, Said to Be Crash-Consistent
+
+**Status:** Locked — 2026-10-30. Decided by the owner; measured on isengard with a throwaway guest (`capture-vm-snapshot-induced.sh`, and the `vml_snapshot_*` outputs of JD-044's capture). #174.
+
+The Instances page snapshots many instances at once (#129), and a guest had no snapshot in the API. vm-bhyve has one, `vm snapshot`, which refuses a running guest: "must be powered off first (use -f to override)".
+
+### What was measured
+
+- **`vm snapshot -f` on a running guest is `zfs snapshot -r` of the guest's dataset**: the dataset and its `disk0` volume, under one name, at one point in time. Without a name it uses a timestamp; `vm snapshot <guest>@<name>` takes one.
+- **`zfs snapshot -r` run directly does the same**, on a running guest: the same two snapshots. The guest stays running (`vm list`, `vm info`, `/dev/vmm`), and vm-bhyve notices nothing.
+- **The same name twice is refused by zfs**, with nothing created ("dataset already exists", "no snapshots were created").
+- **`vm destroy` takes a guest's snapshots with it.**
+
+### The decision
+
+**A running guest is snapshotted as it is, and the answer says it is crash-consistent.** Owner's decision, from three options:
+- refuse a running guest as vm-bhyve does;
+- take it and say what it is;
+- stop, snapshot, start.
+
+A snapshot of a running guest holds its disks as a power cut would have left them, without what was still in the guest's memory. That is enough to go back to before a change, which is what a bulk snapshot is for. It shouldn't be trusted as a backup. Refusing would make a bulk snapshot of running guests do nothing. Stopping each guest first is a different operation, with a minute's downtime per guest.
+
+### What Jail Deck does
+
+- **`PUT /api/vms/{name}/snapshots/{snapshot}`** runs `zfs snapshot -r` on `<datastore's dataset>/<name>`, through the jail route's own storage call: the same name check, the same audit line (`create-snapshot`), and the same idempotency (JD-016). It answers **201** when taken, and **200 with `existed`** when the snapshot was already there, in which case nothing ran.
+- **`consistency`** is `crash-consistent` unless the guest was stopped, read just before the snapshot: running, in its boot loader, suspended, or locked by another host all mean bhyve may be writing. It's `consistent` for a stopped guest, and **left out when the snapshot already existed**, because nobody recorded the state it was taken in.
+- **409** for a guest in a datastore that isn't on ZFS, which has no dataset to snapshot. 404 and 400 as for every guest route.
+- Directly through zfs rather than `vm snapshot -f`: one code path for jails and guests, and the idempotency and audit come with it.
+
+### Not yet
+
+- Listing, rolling back and destroying a guest's snapshots. A rollback needs the guest stopped and a decision on newer snapshots, as JD-024 made for jails.
+- A Snapshots panel on the guest's page.
+
+---
+
+## JD-046 — Token Scopes, and Who Opened a Console and Why
+
+**Status:** Locked — 2026-10-30. Owner's decisions on #155: scopes have their own issue (#178), and a managed host can turn the browser console off.
+
+A console is root on a guest or in a jail. A platform with tenants (Otter Cloud) has to be able to say afterwards who opened one, on whose behalf, and why. Until now, any token could open every console, and the audit recorded only the token or session.
+
+### Scopes
+
+- **A token has a list of scopes** in the state file beside its hash (`scopes`), saying what it may do beyond the plain API. **The only scope is `console`.**
+- **A token made before scopes existed has no list, and keeps every scope.** No client breaks on upgrade. The state file keeps the difference as `null` (no list) and `[]` (none), which is why the field has no `omitempty`. A save and a load keep it, tested.
+- **A token made since has exactly what it was given**: `jaildeck token add <name> --scope console`, or nothing. Least privilege, so a token for a monitoring script can't open a shell. A scope that doesn't exist is refused at creation, not stored as a typo that grants nothing. `token list` shows each token's scopes.
+- **The operator's browser session has every scope**, less the console when `JAILDECK_CONSOLE_UI=off`.
+- **A missing scope is 403, naming the token and the scope**, and how to make a token that has it. It's checked before the WebSocket upgrade, so a client reads a plain HTTP refusal and nothing opens.
+- **`GET /api/auth/me` answers `scopes`.** The interface offers no console where it would be refused, and says why.
+
+### `JAILDECK_CONSOLE_UI`
+
+`on` by default. `off` keeps the browser session from opening a console, and a token with the `console` scope still opens one. **Anything other than `on` or `off` is taken as off, with a warning**: the switch exists to turn something away, and a typo shouldn't leave it open. Other settings keep their default when they don't parse.
+
+### Who and why
+
+- **`actor` and `reason`**, optional query parameters on both console endpoints. A WebSocket upgrade has no body, and a browser can't set a header on one.
+  - **`actor`** is on whose behalf, as the client names them: up to 128 bytes of letters, digits and `-._:@/+`. That fits a platform's user id or an email.
+  - **`reason`** is why, in the client's words: up to 256 bytes of printable UTF-8, spaces and any script included, no control characters.
+- **Out of shape is refused with 400**, before anything opens. That is how `X-Request-Id` is treated, not sanitised: the values are written verbatim into a line of JSON.
+- **They're recorded on `console-open` as `actor` and `open_reason`.** The entry's `reason` already means why a session ended, on `console-close`, so the reason given at open gets a name of its own. `console-close` is unchanged.
+- **Jail Deck never requires them.** Requiring a reason is the platform's policy (#155): Jail Deck knows no tenants. The platform's rule holds because only its token has the console scope.
+
+### Not yet
+
+- Scopes on the plain API, such as read-only or per-domain. The model allows them, and none are added.
+- Editing a token's scopes. A token is revoked and made again.

@@ -25,6 +25,9 @@ export interface VM {
     // In rc.conf's vm_list, which rc.d/vm starts at boot, at this place.
     autostart: boolean
     autostart_order?: number
+    // ZFS user properties on the guest's dataset: the labels an automation
+    // client sets (JD-044). Empty for a guest in a datastore not on ZFS.
+    properties: Record<string, string>
 }
 
 export interface Listing {
@@ -119,6 +122,36 @@ export async function createVM(req: CreateRequest): Promise<Created> {
 }
 
 // Destroys a stopped guest and its disk. confirm is its name.
+// Null removes a label; anything else sets it, the empty string included.
+// Answers every label the guest carries afterwards.
+export async function setVMTags(
+    name: string,
+    tags: Record<string, string | null>,
+): Promise<Record<string, string>> {
+    return await api<Record<string, string>>(`/vms/${encodeURIComponent(name)}/properties`, {
+        method: 'PATCH',
+        body: JSON.stringify(tags),
+    })
+}
+
+// What a guest snapshot is worth (JD-045): crash-consistent when bhyve was
+// running the guest, its disks as a power cut would leave them.
+export type Consistency = 'consistent' | 'crash-consistent'
+
+export interface VMSnapshotResult {
+    snapshot: string
+    // The guest's dataset and each disk volume, at one point in time.
+    created: string[]
+    // Already there; nothing ran, and its consistency is not known.
+    existed?: boolean
+    consistency?: Consistency
+}
+
+export async function createVMSnapshot(name: string, short: string): Promise<VMSnapshotResult> {
+    return await api<VMSnapshotResult>(
+        `/vms/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(short)}`, { method: 'PUT' })
+}
+
 export async function destroyVM(name: string): Promise<{ name: string }> {
     const query = new URLSearchParams({ confirm: name })
     return await api<{ name: string }>(`/vms/${encodeURIComponent(name)}?${query}`, { method: 'DELETE' })

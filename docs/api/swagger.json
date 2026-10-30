@@ -829,7 +829,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Upgrades to a WebSocket attached to `jexec -l \u003cname\u003e /bin/sh -l` on a PTY\n(JD-042). **Binary frames** carry the terminal's bytes, both ways. **Text frames**\ncarry JSON: `{\"type\":\"resize\",\"cols\":120,\"rows\":40}` from the client, and\n`{\"type\":\"closed\",\"reason\":\"...\"}` from the server just before it closes.\n\n`cols` and `rows` in the query are the terminal's size to start with (80×24 if\nabsent). The session ends when the client goes, the shell exits, the jail\nstops, the login that opened it expires or is revoked, or nothing has been\ntyped for the idle timeout (`JAILDECK_CONSOLE_IDLE`); the closing reason is one\nof `client`, `shell-exited`, `jail-stopped`, `session-expired`, `idle`.\nStopping, restarting or destroying the jail hangs its consoles up first, so the\nstop does not wait on them. When the service itself stops, its shells get the\nkernel's hang-up and end, with no `console-close` entry.\n\nAudited as `console-open` and `console-close`, with who opened it, how long it\nlasted and why it ended. **Nothing typed or printed is recorded.** The\n`Origin` must be this host's. A browser authenticates with its session cookie;\nan API token works for clients that can send the header.",
+                "description": "Upgrades to a WebSocket attached to `jexec -l \u003cname\u003e /bin/sh -l` on a PTY\n(JD-042). **Binary frames** carry the terminal's bytes, both ways. **Text frames**\ncarry JSON: `{\"type\":\"resize\",\"cols\":120,\"rows\":40}` from the client, and\n`{\"type\":\"closed\",\"reason\":\"...\"}` from the server just before it closes.\n\n`cols` and `rows` in the query are the terminal's size to start with (80×24 if\nabsent). The session ends when the client goes, the shell exits, the jail\nstops, the login that opened it expires or is revoked, or nothing has been\ntyped for the idle timeout (`JAILDECK_CONSOLE_IDLE`); the closing reason is one\nof `client`, `shell-exited`, `jail-stopped`, `session-expired`, `idle`.\nStopping, restarting or destroying the jail hangs its consoles up first, so the\nstop does not wait on them. When the service itself stops, its shells get the\nkernel's hang-up and end, with no `console-close` entry.\n\nAudited as `console-open` and `console-close`, with who opened it, how long it\nlasted and why it ended. **Nothing typed or printed is recorded.** `actor` and\n`reason`, when given, are recorded verbatim on `console-open` (#155). A token needs\nthe `console` scope; a browser session is refused when `JAILDECK_CONSOLE_UI=off`. The\n`Origin` must be this host's. A browser authenticates with its session cookie;\nan API token works for clients that can send the header.",
                 "tags": [
                     "jails"
                 ],
@@ -853,6 +853,18 @@
                         "description": "Rows, 1 to 1000",
                         "name": "rows",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "On whose behalf, recorded in the audit: letters, digits, -._:@/+, up to 128",
+                        "name": "actor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Why, recorded in the audit: printable text, up to 256 bytes",
+                        "name": "reason",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -860,13 +872,19 @@
                         "description": "Switching protocols"
                     },
                     "400": {
-                        "description": "Not a WebSocket request, or a size out of range",
+                        "description": "Not a WebSocket request, a size out of range, or an actor or reason out of shape",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "A token without the console scope, or the browser console turned off",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -3594,6 +3612,18 @@
                         "name": "name",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "On whose behalf, recorded in the audit: letters, digits, -._:@/+, up to 128",
+                        "name": "actor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Why, recorded in the audit: printable text, up to 256 bytes",
+                        "name": "reason",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -3601,7 +3631,89 @@
                         "description": "Switching protocols"
                     },
                     "400": {
-                        "description": "Not a WebSocket request",
+                        "description": "Not a WebSocket request, or an actor or reason out of shape",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "A token without the console scope, or the browser console turned off",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such guest",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "The guest is not running, or a console is open on it already",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/vms/{name}/properties": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets ZFS user properties on the guest's own dataset, \u003cdatastore's dataset\u003e/\u003cname\u003e,\nthe way a jail is tagged (JD-044). They are what the listing reads back as the\nguest's properties, and what `zfs get` shows on the host. vm-bhyve carries them\nthrough a rename and destroys them with the guest.\n\nPATCH: these merge. A null value removes the property via zfs inherit. Only user\nproperties -- the name must contain a colon -- and the value is passed through.\nA running guest can be labelled.\n\n409 for a guest in a datastore that is not on ZFS, which has nowhere to keep one.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "vms"
+                ],
+                "summary": "Label the guest",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Guest name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Property names to values; null removes",
+                        "name": "properties",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The guest's labels now",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "A name that is not a user property",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -3619,7 +3731,7 @@
                         }
                     },
                     "409": {
-                        "description": "The guest is not running, or a console is open on it already",
+                        "description": "Its datastore is not on ZFS, or vm-bhyve is not ready",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -3690,6 +3802,77 @@
                     },
                     "504": {
                         "description": "Timed out and may not have completed",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/vms/{name}/snapshots/{snapshot}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "zfs snapshot -r on the guest's dataset, \u003cdatastore's dataset\u003e/\u003cname\u003e: the\nguest and every disk volume beneath it at ONE point in time, which is what\nvm snapshot -f runs (JD-045). A running guest is snapshotted as it is, and\nconsistency says so: crash-consistent while bhyve runs it, its disks as a\npower cut would leave them; consistent when it was stopped.\n\n201 when taken, 200 with existed=true when it was already there, as for a\njail, so the retry after a timeout does not raise zfs's \"dataset already\nexists\". 409 for a guest in a datastore that is not on ZFS.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "vms"
+                ],
+                "summary": "Snapshot a guest",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Guest name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot name, the part after the @",
+                        "name": "snapshot",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Already there",
+                        "schema": {
+                            "$ref": "#/definitions/vms.SnapshotResult"
+                        }
+                    },
+                    "201": {
+                        "description": "Taken",
+                        "schema": {
+                            "$ref": "#/definitions/vms.SnapshotResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a snapshot name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such guest",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Its datastore is not on ZFS, or vm-bhyve is not ready",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -3866,6 +4049,10 @@
         "audit.Entry": {
             "type": "object",
             "properties": {
+                "actor": {
+                    "description": "What the client said about a console it opened (#155): on whose\nbehalf, and why. Verbatim, never required; a platform with tenants\nmatches them to its own record. On console-open entries only.",
+                    "type": "string"
+                },
                 "command": {
                     "type": "string"
                 },
@@ -3877,6 +4064,9 @@
                 },
                 "exit_code": {
                     "type": "integer"
+                },
+                "open_reason": {
+                    "type": "string"
                 },
                 "operation": {
                     "type": "string"
@@ -3941,6 +4131,13 @@
                 },
                 "name": {
                     "type": "string"
+                },
+                "scopes": {
+                    "description": "What it may do beyond the plain API (#178), so the interface can leave\nout what it cannot use.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/auth.Scope"
+                    }
                 }
             }
         },
@@ -3953,6 +4150,15 @@
             "x-enum-varnames": [
                 "kindSession",
                 "kindToken"
+            ]
+        },
+        "auth.Scope": {
+            "type": "string",
+            "enum": [
+                "console"
+            ],
+            "x-enum-varnames": [
+                "ScopeConsole"
             ]
         },
         "common.ErrorResponse": {
@@ -6267,6 +6473,17 @@
                 }
             }
         },
+        "vms.Consistency": {
+            "type": "string",
+            "enum": [
+                "consistent",
+                "crash-consistent"
+            ],
+            "x-enum-varnames": [
+                "Consistent",
+                "CrashConsistent"
+            ]
+        },
         "vms.CreateRequest": {
             "type": "object",
             "properties": {
@@ -6361,6 +6578,13 @@
                 "pid": {
                     "type": "integer"
                 },
+                "properties": {
+                    "description": "Properties are the guest's labels: the ZFS user properties set on its\nown dataset, as a jail's are on its own (JD-044). Empty for a guest in\na datastore that is not on ZFS, which has nowhere to keep one.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "state": {
                     "type": "string"
                 },
@@ -6431,6 +6655,13 @@
                 },
                 "pid": {
                     "type": "integer"
+                },
+                "properties": {
+                    "description": "Properties are the guest's labels: the ZFS user properties set on its\nown dataset, as a jail's are on its own (JD-044). Empty for a guest in\na datastore that is not on ZFS, which has nowhere to keep one.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "state": {
                     "type": "string"
@@ -6528,6 +6759,13 @@
                 },
                 "pid": {
                     "type": "integer"
+                },
+                "properties": {
+                    "description": "Properties are the guest's labels: the ZFS user properties set on its\nown dataset, as a jail's are on its own (JD-044). Empty for a guest in\na datastore that is not on ZFS, which has nowhere to keep one.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "state": {
                     "type": "string"
@@ -6630,6 +6868,13 @@
                 "pid": {
                     "type": "integer"
                 },
+                "properties": {
+                    "description": "Properties are the guest's labels: the ZFS user properties set on its\nown dataset, as a jail's are on its own (JD-044). Empty for a guest in\na datastore that is not on ZFS, which has nowhere to keep one.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "state": {
                     "type": "string"
                 },
@@ -6643,6 +6888,34 @@
             "type": "object",
             "properties": {
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "vms.SnapshotResult": {
+            "type": "object",
+            "properties": {
+                "consistency": {
+                    "description": "From the guest's state read just before the snapshot.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/vms.Consistency"
+                        }
+                    ]
+                },
+                "created": {
+                    "description": "Every snapshot taken: the guest's dataset and each disk volume.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "existed": {
+                    "description": "The snapshot was already there and nothing ran (JD-016). Its\nconsistency is then unknown, and left out.",
+                    "type": "boolean"
+                },
+                "snapshot": {
+                    "description": "dataset@short, the guest's own.",
                     "type": "string"
                 }
             }
@@ -6696,6 +6969,13 @@
                 },
                 "pid": {
                     "type": "integer"
+                },
+                "properties": {
+                    "description": "Properties are the guest's labels: the ZFS user properties set on its\nown dataset, as a jail's are on its own (JD-044). Empty for a guest in\na datastore that is not on ZFS, which has nowhere to keep one.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "state": {
                     "type": "string"

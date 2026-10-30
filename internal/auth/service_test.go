@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"reflect"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -265,7 +266,7 @@ func TestAuthServiceAuthenticateToken(t *testing.T) {
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("AuthenticateToken() error = %v, want %v", err, tt.wantErr)
 			}
-			if got != tt.want {
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("AuthenticateToken() token = %+v, want %+v", got, tt.want)
 			}
 			if calls != 1 {
@@ -283,7 +284,7 @@ func TestAuthServiceRevokeToken(t *testing.T) {
 	}), NewSessionStore())
 
 	got, err := service.AuthenticateToken(context.Background(), "jd_ok")
-	if err != nil || got != tok {
+	if err != nil || !reflect.DeepEqual(got, tok) {
 		t.Fatalf("AuthenticateToken() = %+v, %v; want %+v, nil", got, err, tok)
 	}
 
@@ -294,7 +295,7 @@ func TestAuthServiceRevokeToken(t *testing.T) {
 	if !errors.Is(err, ErrUnauthenticated) {
 		t.Errorf("after revocation error = %v, want ErrUnauthenticated", err)
 	}
-	if got != (state.Token{}) {
+	if !reflect.DeepEqual(got, state.Token{}) {
 		t.Errorf("after revocation token = %+v, want zero", got)
 	}
 }

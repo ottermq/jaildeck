@@ -2367,3 +2367,68 @@ An **Inspect** panel on a jail's page and on a guest's page, one component for b
 
 - **Editing any of it.** Changing a jail's limits is `PATCH /limits` (#119); everything else stays on the API that made it.
 - **A guest in a datastore other than the default one.**
+
+## JD-051 — Running Without Root: What doas Can and Cannot Narrow
+
+**Status:** Proposed — 2026-10-30. The study #156 asks for, for the owner to decide. Nothing changed on any host. The measurements below are reads, run as an unprivileged account on isengard, plus FreeBSD's own manuals (`doas.conf(5)` from doas 6.4, `zfs-allow(8)`).
+
+JD-001 runs Jail Deck as root. #156 asks whether it could run as a `jaildeck` user that reaches root only through `doas`, for a known set of commands.
+
+### What Jail Deck runs
+
+From the FreeBSD adapter, by command, with what an unprivileged account got on isengard:
+
+| Command | Used for | Unprivileged |
+|---|---|---|
+| `zfs` (30 call sites), `zpool` | datasets, clones, snapshots, properties | `list` and `get` work; every change needs root or `zfs allow` |
+| `service jail`, `jexec` | start, stop, exec, the console's PTY | root (jail(2), jail_attach(2)) |
+| `vm` (20) | every guest operation | refused: "virtual machines can only be managed by root"; `/dev/vmmctl` is 0600 root |
+| `ifconfig` (11) | bridges, epairs, groups | `-g` reads work; create and destroy need root |
+| `pfctl` (6) | Jail Deck's anchors, the firewall view | refused: `/dev/pf` is 0600 root, reads included |
+| `rctl` (5), `cpuset -j` | limits, and usage where accounting is on | refused, reads included (`rctl -u`) |
+| `sysrc` (7) | `rc.conf`, vm-bhyve's `system.conf` | reads work; writes need root |
+| `fetch`, `sha256`/`sha512`, `tar`, `cp`, `mv`, `rm`, `mkdir` | releases and images under Jail Deck's own directories | work with ownership of those directories |
+| `pkg -j`, `freebsd-update -b` | preparing templates | root |
+| `smartctl`, `devfs rule showsets`, `tcpdump -r` on pflog | disk health, readiness, the firewall log | `devfs` refused; pflog is 0600 |
+| `ps`, `sysctl`, `jls`, `dmesg`, `arp`, `route`, `geom`, `glabel` | metrics, readiness, listings | work (`see_other_uids=1`, `unprivileged_read_msgbuf=1` on isengard) |
+
+Beside the commands, it writes files that root later acts on: jail stanzas in `/etc/jail.conf.d`, the PF anchor files, guest configurations and cloud-init seeds, and it opens the guests' nmdm devices.
+
+### What doas can express
+
+A rule is `permit [nopass] user cmd <command> [args <exact arguments>]`. `cmd` without `args` allows **any** arguments, and `args` matches the whole argument list **exactly**: no patterns, no prefixes. The last matching rule wins.
+
+So the rule that would work, `permit nopass jaildeck cmd /sbin/zfs`, is root's reach over every pool (`zfs destroy -r` anything, `zfs set mountpoint=` over `/etc`). And the rule that would be narrow can't name a dataset that doesn't exist yet. The same holds for `vm`, `jexec`, `service`, `pfctl` and `rctl`. Their arguments are names chosen at request time.
+
+The usual answer is a **root-owned wrapper per operation**, such as `jaildeck-zfs-clone <template> <jail>`, that checks its arguments before running the command. Jail Deck already checks every argument in Go before it runs anything. A wrapper set would be that validation again, in shell, as the security boundary, and it would have to keep up with every new command the adapter learns.
+
+### What can be delegated instead
+
+- **`zfs allow`** on Jail Deck's own trees covers create, destroy, snapshot, clone, promote, rename, rollback, hold, release and user properties. **But not the mount**, which every create and clone does: FreeBSD mounts as a user only with `vfs.usermount=1` (0 on isengard), on a mountpoint the user owns, and forces `nosuid` on user mounts. A jail root mounted `nosuid` breaks `su`, `passwd` and `ping` inside the jail.
+- **A devfs rule** could give a group `/dev/pf` or the nmdm devices. `/dev/pf` is not scoped by anchor, though: whoever can open it can flush the host's whole ruleset.
+- **Group ownership of the files Jail Deck writes** is the one that looks cheap and isn't. A jail stanza can carry `exec.prestart`, which jail(8) runs as root. Whoever can write `/etc/jail.conf.d` can run anything as root at the next start. The same goes for `rc.conf`, which rc(8) sources as shell.
+
+### What it would cost
+
+- One doas rule or one wrapper for every host command, now about thirty-five call sites, with each new feature adding more.
+- The package shipping and upgrading `doas.conf` or the wrappers, on a host whose `doas.conf` is the operator's (isengard's is one line, `permit nopass :wheel`).
+- Fixtures and fault tests for a refused escalation on every path.
+- And the gain is smaller than it looks: a token still does what Jail Deck does, which is jails, datasets, PF anchors and guests. The JD-001 amendments (tokens and sessions are root-equivalent) would still hold in practice, because the operations are root's whichever account starts them.
+
+### Options
+
+| Option | What it gives | What it costs |
+|---|---|---|
+| **A. Keep JD-001** | nothing new | nothing; the risk stays where JD-001 put it |
+| **B. doas rules per command** | a log line per escalation | root-equivalent rules (`cmd zfs`), or a wrapper set that re-does the Go validation in shell |
+| **C. Privilege separation:** an unprivileged process for HTTP, sessions, tokens and the UI, and a small root helper on a local socket that only accepts the operations the API already has, typed and checked again | a bug in request parsing, the UI, or a library on the HTTP side no longer runs as root; the helper's surface is the operation list, not a shell | a second process, a protocol between the two, and every operation crossing it; the package installs a user and a socket |
+| **D. C, with `zfs allow` for what needs no mount** | snapshots, properties and holds without the helper | two paths for ZFS; the mount still goes through the helper |
+
+### Proposed
+
+**A, amended now; C as the direction when the threat model calls for it.** doas (B) doesn't narrow what matters. The commands' arguments are names chosen at request time, and doas matches exact strings. Group-writable configuration is root by another door. C puts the boundary where a bug is most likely, in the HTTP and parsing side, without a rule per command. It is the shape OpenBSD's own daemons use. It should be its own issue, sized after Otter Cloud's operator model is settled. That is the separate question #156 names: whether a platform's operators get system users of their own.
+
+### Not decided here
+
+- Whether Otter Cloud's operators get system users of their own (#156's last point). It changes C's helper: one caller, or several with their own rights.
+- The helper's protocol, and whether the console's PTY and nmdm streams cross it or are passed as file descriptors.

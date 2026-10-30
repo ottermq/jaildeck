@@ -1,0 +1,1 @@
+cannot destroy snapshot tank/jd-cap-120/retained/kept@one: it's being held. Run 'zfs holds -r tank/jd-cap-120/retained/kept@one' to see holders.

@@ -1,0 +1,4 @@
+cannot destroy 'tank/jd-cap-120/containers/j1/data': filesystem has children
+use '-r' to destroy the following datasets:
+tank/jd-cap-120/containers/j1/data@one
+tank/jd-cap-120/containers/j1/data@two

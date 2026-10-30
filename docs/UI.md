@@ -121,7 +121,7 @@ At `/jails/{name}`, reached from the jail's name on the list (JD-028). Built:
 - **Tags** — the jail's `user:property` ZFS tags, its own and never a child's
 - **Snapshots** — newest first, ordered by transaction group rather than by time (JD-024); fetched separately and allowed to fail on its own
 
-Acting on it (JD-029): a tag can be added, edited and removed; a child dataset can be created with its native properties, or retained past the jail; a snapshot can be taken, rolled back to, or destroyed. Each opens a form where the thing is, or a confirmation when it cannot be undone, and each refetches the jail when it is done.
+Acting on it (JD-029): a tag can be added, edited and removed; a child dataset can be created with its native properties, retained past the jail, or destroyed with its snapshots while the jail is stopped (#120); a snapshot can be taken, rolled back to, or destroyed. Each opens a form where the thing is, or a confirmation when it cannot be undone, and each refetches the jail when it is done.
 
 A refused snapshot operation is shown under its row, in the warning colour, naming what stood in the way. A rollback refused over newer snapshots offers them back once — "destroy them and roll back" — because that is the one refusal the API lets a client accept.
 
@@ -143,7 +143,7 @@ Purpose: the userlands a jail is cloned from — the thing jail creation depends
 - **Retained datasets** below: the datasets that outlived their jail (JD-025), on the same page because they answer the same question
 - a page per template at `/templates/{name}`: where it lives, and **what depends on it** — the jails cloned from it, the templates derived from it, anything else, and holds — which is what a removal would have to refuse over
 
-Acting on it (JD-029): a template can be **derived** from a ready one with packages, and **removed** — from the list or from its own page, which navigates back when the template is gone. A removal refused over clones or holds is shown where the template is, with the `zfs promote` way out. A **retained dataset can be restored** under any jail, under any name.
+Acting on it (JD-029): a template can be **derived** from a ready one with packages, and **removed** — from the list or from its own page, which navigates back when the template is gone. A removal refused over clones or holds is shown where the template is, with the `zfs promote` way out. A **retained dataset can be restored** under any jail, under any name, or **destroyed** with its snapshots, which the confirmation lists first; a destroy refused over a hold, a clone or a dataset of its own is shown where the dataset is (#120).
 
 Preparing a release is there: a form for the release, a **State** column, and the running step with its elapsed time beneath it. The page polls while anything is in flight and stops when nothing is. A release is prepared end to end from here — fetched, unpacked, brought to its patch level and sealed — with the stage and its elapsed time visible throughout. Still open: a release picker sourced from `download.freebsd.org` or manual version entry, depending on how "which releases are supported" resolves (`docs/SPEC.md`).
 

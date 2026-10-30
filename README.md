@@ -231,6 +231,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/jails/{name}/exec` | run a command inside it, with a capped timeout and capped output |
 | `GET /api/jails/{name}/console` | a shell in it, over a WebSocket; audited, nothing typed recorded |
 | `PUT /api/jails/{name}/datasets/{child}` | create a child dataset, or converge an existing one |
+| `DELETE /api/jails/{name}/datasets/{child}?confirm={child}` | destroy one child and its snapshots, leaving the jail; the jail must be stopped |
 | `PATCH /api/jails/{name}/properties` | tag the jail's own dataset |
 | `PATCH /api/jails/{name}/limits` | change a jail's resource limits: live when it runs, and in its stanza; `null` removes one |
 | `PATCH /api/jails/{name}/datasets/{child}/properties` | tag one of its children |
@@ -243,7 +244,8 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/jails/{name}/datasets/{child}/snapshots/{snapshot}/rollback` | |
 | `POST /api/jails/{name}/datasets/{child}/retain` | move a dataset out of the jail |
 | `POST /api/jails/{name}/datasets/{child}/restore` | move a retained one back in |
-| `GET /api/retained` | datasets being kept past their jails |
+| `GET /api/retained` | datasets being kept past their jails, with their snapshots |
+| `DELETE /api/retained/{name}?confirm={name}` | destroy a retained dataset and its snapshots |
 | `GET /api/templates` | templates, their readiness and their lineage |
 | `GET /api/templates/{name}` | one, with every jail and template cloned from it |
 | `PUT /api/templates/{name}` | derive one from another, plus packages |
@@ -388,6 +390,20 @@ separate, deliberate step.
 that path at that moment — stop it first. Leaving the move half done is worse: a dataset still
 mounted inside a jail makes the jail undestroyable, with `zfs destroy` answering
 `pool or dataset is busy`.
+
+**When it is no longer wanted,** it is destroyed with its snapshots, and so can a child the jail
+no longer needs, without the jail:
+
+```sh
+curl -X DELETE '.../api/retained/ottermq-data?confirm=ottermq-data'
+curl -X DELETE '.../api/jails/ottermq/datasets/cache?confirm=cache'
+```
+
+Both refuse with `409`, before anything runs, while a snapshot has a hold or a dependent clone,
+or while the dataset has datasets of its own, which `zfs destroy -r` would take without a word.
+A child is refused while its jail runs: zfs would unmount it from under the jail without
+complaint. The dataset is unmounted on its own first, because `zfs destroy -r` refused as busy
+has already destroyed the snapshots (JD-025).
 
 `<pool>/jails/retained` is created the first time one is needed and is not part of the layout
 readiness check — a host that has never retained anything is not missing something.

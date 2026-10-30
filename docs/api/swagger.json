@@ -967,6 +967,76 @@
                         }
                     }
                 }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "One child of the jail and its snapshots, without destroying the jail (#120):\nzfs destroy -r, never -R. confirm repeats the child's name.\n\nRefused with 409 while the jail runs: zfs destroys a child mounted in a running\njail without complaint when nothing has a file open on it, and the jail loses\nthat path (measured). Stop the jail first, as for a jail's destroy.\n\nRefused with 409, before anything runs, while a snapshot of it has a hold or a\ndependent clone, and when it has datasets of its own, which -r would take\nsilently. The answer names each, and the snapshots that would go. Retain a child\ninstead to keep it.\n\n404 when the child is not there, so a client repeating the call after a\ntimeout can tell it is gone.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "storage"
+                ],
+                "summary": "Destroy a child dataset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The child dataset's name in the jail",
+                        "name": "child",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The child's name again",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.DatasetDestroy"
+                        }
+                    },
+                    "400": {
+                        "description": "No confirm, or one that does not match",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail or child",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "A hold, a clone, or a dataset of its own is in the way; or the jail runs",
+                        "schema": {
+                            "$ref": "#/definitions/jails.DatasetDestroy"
+                        }
+                    }
+                }
             }
         },
         "/jails/{name}/datasets/{child}/properties": {
@@ -2629,7 +2699,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Everything under \u003cpool\u003e/jails/retained, with the short name a restore\nasks for. Without this a client that retained something has no way to find\nit again, and the whole point of retaining is that the jail it belonged to\nis gone (JD-025).\n\nEmpty on a host that has never retained anything, rather than an error:\nthe retained dataset is created on demand.",
+                "description": "Everything under \u003cpool\u003e/jails/retained, with the short name a restore\nasks for. Without this a client that retained something has no way to find\nit again, and the whole point of retaining is that the jail it belonged to\nis gone (JD-025).\n\nEmpty on a host that has never retained anything, rather than an error:\nthe retained dataset is created on demand. Each names its snapshots, which a\ndestroy would take with it.",
                 "produces": [
                     "application/json"
                 ],
@@ -2651,6 +2721,71 @@
                         "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/retained/{name}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The end of a retain (#120): \u003cpool\u003e/jails/retained/\u003cname\u003e and its snapshots,\nwith zfs destroy -r, never -R. name is the short name from GET /retained, and\nconfirm repeats it, as a jail's destroy repeats the jail's name.\n\nRefused with 409, before anything runs, while a snapshot of it has a hold or a\ndependent clone, and when it has datasets of its own: zfs destroy -r would take\nthose silently, and they are not what was named. The answer names each, and the\nsnapshots that would go.\n\n404 when there is nothing retained under the name, so a client repeating the\ncall after a timeout can tell it is gone.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "storage"
+                ],
+                "summary": "Destroy a retained dataset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The short name from GET /retained",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The same name again",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/storage.DatasetDestroy"
+                        }
+                    },
+                    "400": {
+                        "description": "No confirm, or one that does not match",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Nothing retained under that name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "A hold, a clone, or a dataset of its own is in the way",
+                        "schema": {
+                            "$ref": "#/definitions/storage.DatasetDestroy"
                         }
                     }
                 }
@@ -4510,6 +4645,32 @@
                 }
             }
         },
+        "jails.DatasetBlock": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "clones": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "holds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
         "jails.DatasetChange": {
             "type": "object",
             "properties": {
@@ -4532,6 +4693,26 @@
                 },
                 "dataset": {
                     "type": "string"
+                }
+            }
+        },
+        "jails.DatasetDestroy": {
+            "type": "object",
+            "properties": {
+                "blocked": {
+                    "$ref": "#/definitions/jails.DatasetBlock"
+                },
+                "dataset": {
+                    "type": "string"
+                },
+                "destroyed": {
+                    "type": "boolean"
+                },
+                "snapshots": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -5822,6 +6003,57 @@
                 }
             }
         },
+        "storage.DatasetBlock": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "clones": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "holds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.DatasetDestroy": {
+            "type": "object",
+            "properties": {
+                "blocked": {
+                    "description": "Blocked is set when something kept on purpose is in the way. Nothing\nran: the dataset is still there, as it was.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/storage.DatasetBlock"
+                        }
+                    ]
+                },
+                "dataset": {
+                    "type": "string"
+                },
+                "destroyed": {
+                    "type": "boolean"
+                },
+                "snapshots": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "storage.RetainedDataset": {
             "type": "object",
             "properties": {
@@ -5836,6 +6068,13 @@
                 },
                 "short": {
                     "type": "string"
+                },
+                "snapshots": {
+                    "description": "Snapshots are what destroying it would take with it (#120), oldest\nfirst, so a confirmation can name them.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "used": {
                     "type": "integer"

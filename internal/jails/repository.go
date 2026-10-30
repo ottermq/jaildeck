@@ -179,6 +179,30 @@ type DatasetMover interface {
 	Restore(ctx context.Context, jailPath, name, child string) (DatasetMove, error)
 }
 
+// DatasetDestroy is what destroying one of a jail's children took, or what
+// stopped it (#120): the storage domain's answer, in this domain's terms.
+type DatasetDestroy struct {
+	Dataset   string        `json:"dataset"`
+	Snapshots []string      `json:"snapshots"`
+	Destroyed bool          `json:"destroyed"`
+	Blocked   *DatasetBlock `json:"blocked,omitempty"`
+}
+
+// DatasetBlock names what kept a child from being destroyed: datasets of its
+// own, dependent clones, holds. Nothing ran.
+type DatasetBlock struct {
+	Reason   string   `json:"reason"`
+	Children []string `json:"children"`
+	Clones   []string `json:"clones"`
+	Holds    []string `json:"holds"`
+}
+
+// ChildDestroyer destroys one child of a jail and its snapshots, leaving the
+// jail (#120). Until it, only destroying the whole jail removed a child.
+type ChildDestroyer interface {
+	DestroyChild(ctx context.Context, jailPath, child string) (DatasetDestroy, error)
+}
+
 // Reclone is what replacing a jail's root did, or got as far as doing.
 type Reclone struct {
 	Root string `json:"root"`

@@ -312,6 +312,59 @@ func (h *JailHandler) setProperties(w http.ResponseWriter, r *http.Request, chil
 	common.WriteJSON(w, http.StatusOK, found)
 }
 
+// SetLimits changes the jail's resource limits.
+//
+// @Summary      Change the jail's limits
+// @Description  Changes the resource limits of a jail that exists, without recreating it (#119).
+// @Description  Only the limits the body names change; null removes one. 0 and "" are refused:
+// @Description  send null to remove a limit.
+// @Description
+// @Description  A running jail gets the change at once — `rctl -a` or `rctl -r` per limit, and
+// @Description  `cpuset -l <list> -j <name>` — and its stanza's limit hooks are rewritten so the
+// @Description  next start applies the same. No limit waits for a restart (measured). Both or
+// @Description  neither: a kernel step that fails, or a stanza that cannot be written, takes
+// @Description  back the steps already made. A stopped jail gets the stanza only.
+// @Description
+// @Description  Validated as at create (JD-018). The answer is read back from the stanza and
+// @Description  `rctl jail:<name>`, not the request (JD-011); the same request again answers
+// @Description  `changed: false` and changes nothing. A lowered limit the jail already exceeds
+// @Description  is done, and named in `warnings`.
+// @Description
+// @Description  Refused with 409 for a jail configured outside jail.conf.d, for a stanza whose
+// @Description  exec.poststart or exec.prestop carries a command Jail Deck did not write (the
+// @Description  rewrite would lose it), and for a stanza changed while it was being rewritten.
+// @Tags         jails
+// @Accept       json
+// @Produce      json
+// @Param        name    path      string  true  "Jail name"
+// @Param        limits  body      Limits  true  "The limits to change; null removes one"
+// @Success      200     {object}  LimitsChange
+// @Failure      400     {object}  common.ErrorResponse  "A malformed limit, or rctl limits on a host without kern.racct.enable"
+// @Failure      401     {object}  common.ErrorResponse
+// @Failure      404     {object}  common.ErrorResponse
+// @Failure      409     {object}  common.ErrorResponse  "Configured outside jail.conf.d, or hooks Jail Deck did not write"
+// @Failure      501     {object}  common.ErrorResponse
+// @Security     BearerAuth
+// @Router       /jails/{name}/limits [patch]
+func (h *JailHandler) SetLimits(w http.ResponseWriter, r *http.Request) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	var patch LimitsPatch
+	if err := decodeJSON(r, &patch); err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	change, err := h.service.SetLimits(r.Context(), name, patch)
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, change)
+}
+
 // decodeJSON reads a request body, refusing a field the target does not have.
 // A client that misspells "properties" should hear about it rather than have
 // its request silently do nothing.

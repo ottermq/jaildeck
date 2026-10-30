@@ -13,6 +13,29 @@ import (
 	"github.com/ottermq/jaildeck/internal/config"
 )
 
+// `jaildeck version --commit` is what package.sh checks a build against
+// (#165): the revision alone, an empty line when there is none.
+func TestVersionCommit(t *testing.T) {
+	if os.Getenv("JAILDECK_TEST_VERSION_COMMIT_HELPER") == "1" {
+		os.Args = []string{"jaildeck", "version", "--commit"}
+		main()
+		os.Exit(0)
+	}
+	t.Setenv("JAILDECK_TEST_VERSION_COMMIT_HELPER", "1")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.CommandContext(t.Context(), executable, "-test.run=^TestVersionCommit$").CombinedOutput()
+	if err != nil {
+		t.Fatalf("version --commit: %v\n%s", err, output)
+	}
+	revision, _ := buildinfo.Commit()
+	if string(output) != revision+"\n" {
+		t.Errorf("output = %q, want %q", output, revision+"\n")
+	}
+}
+
 func TestVersionWithoutCredential(t *testing.T) {
 	if os.Getenv("JAILDECK_TEST_VERSION_HELPER") == "1" {
 		os.Args = []string{"jaildeck", "version"}

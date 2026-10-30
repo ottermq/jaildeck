@@ -88,6 +88,80 @@ func (a *Adapter) RemoveJailRules(ctx context.Context, name string) (string, err
 	return cmd.String(), err
 }
 
+// cpusetTimeout bounds a cpuset call, one syscall like an rctl one.
+const cpusetTimeout = 15 * time.Second
+
+// AddRule puts one rule in the kernel (#119).
+//
+//	rctl -a jail:<name>:<resource>:deny=<amount>
+//
+// Measured: a rule for a resource and action that already has one replaces
+// it, so changing a value never leaves the jail without the limit.
+func (a *Adapter) AddRule(ctx context.Context, rule string) (string, error) {
+	if err := checkRuleSubject(rule); err != nil {
+		return "", err
+	}
+	cmd := system.Command{Name: "rctl", Args: []string{"-a", rule}, Timeout: rctlTimeout}
+	_, err := a.runHost(ctx, cmd)
+	return cmd.String(), err
+}
+
+// RemoveRule takes the rules a filter matches out of the kernel.
+//
+//	rctl -r jail:<name>:<resource>:deny
+//
+// With the action in the filter only the deny rule goes; an operator's log
+// rule for the same resource stays (measured). No match exits 1 with "No such
+// process", reported as success for the same reason RemoveJailRules does.
+func (a *Adapter) RemoveRule(ctx context.Context, filter string) (string, error) {
+	if err := checkRuleSubject(filter); err != nil {
+		return "", err
+	}
+	cmd := system.Command{Name: "rctl", Args: []string{"-r", filter}, Timeout: rctlTimeout}
+	result, err := a.runHost(ctx, cmd)
+	if exited(result, err) && strings.Contains(result.Stderr, "No such process") {
+		return cmd.String(), nil
+	}
+	return cmd.String(), err
+}
+
+// SetCPUSet pins a running jail, or unpins it with an empty list.
+//
+//	cpuset -l <list> -j <name>
+//	cpuset -l all -j <name>
+//
+// Measured: the jail's threads already running move at once, and a cpu the
+// host does not have is "setaffinity: Invalid argument".
+func (a *Adapter) SetCPUSet(ctx context.Context, name, list string) (string, error) {
+	if err := checkJailName(name); err != nil {
+		return "", err
+	}
+	if list == "" {
+		list = "all"
+	}
+	cmd := system.Command{Name: "cpuset", Args: []string{"-l", list, "-j", name}, Timeout: cpusetTimeout}
+	_, err := a.runHost(ctx, cmd)
+	return cmd.String(), err
+}
+
+// RuleUsage is what the jail uses of each resource, `rctl -u jail:<name>`.
+func (a *Adapter) RuleUsage(ctx context.Context, name string) (map[string]int64, error) {
+	return a.rctlUsage(ctx, name)
+}
+
+// checkRuleSubject holds a rule or a filter to the one shape Jail Deck
+// writes, jail:<name>:..., so neither can reach another jail's rules or every
+// rule on the host.
+func checkRuleSubject(rule string) error {
+	rest, ok := strings.CutPrefix(rule, "jail:")
+	name, _, found := strings.Cut(rest, ":")
+	if !ok || !found {
+		return common.NewAppError(http.StatusBadRequest, fmt.Sprintf(
+			"%q is not a rule for one jail", rule))
+	}
+	return checkJailName(name)
+}
+
 // checkJailName is the one guard a jail name passes before it becomes part
 // of a command here.
 //
@@ -133,5 +207,6 @@ func (a *Adapter) DevfsRulesetNumbers(ctx context.Context) ([]int, error) {
 
 var (
 	_ jails.RctlSystem         = (*Adapter)(nil)
+	_ jails.LimitChanger       = (*Adapter)(nil)
 	_ jails.DevfsRulesetSource = (*Adapter)(nil)
 )

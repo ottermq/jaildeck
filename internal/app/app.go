@@ -113,6 +113,8 @@ func New(cfg *config.Config) (*App, error) {
 		ConfigReader:    jailAdapter.configReader,
 		AutostartSource: jailAdapter.autostartSource,
 		CloneOrigin:     jailStorage,
+		Limits:          jailAdapter.limits,
+		ConfigReplacer:  jailAdapter.configReplacer,
 	})
 	jailHandler := jails.NewJailHandler(jailService)
 
@@ -405,6 +407,8 @@ type jailAdapters struct {
 	usage           metrics.JailUsageSource
 	exec_           jails.JailExecutor
 	configReader    jails.ConfigReader
+	limits          jails.LimitChanger
+	configReplacer  jails.ConfigReplacer
 	autostartSource jails.AutostartSource
 }
 
@@ -417,12 +421,14 @@ func newJailAdapters(adapter string) (jailAdapters, error) {
 		a := freebsd.NewAdapter(system.NewExecCommandRunner())
 		return jailAdapters{system: a, config: a, remover: a, autostart: a,
 			bridges: a, epairs: a, epair: a, rctl: a, devfsRulesets: a,
-			configReader: a, autostartSource: a, usage: a, exec_: a}, nil
+			configReader: a, autostartSource: a, usage: a, exec_: a,
+			limits: a, configReplacer: a}, nil
 	case config.AdapterFake:
 		f := fake.NewJailSystem()
 		return jailAdapters{system: f, config: f, remover: f, autostart: f,
 			bridges: f, epairs: f, epair: f, rctl: f, devfsRulesets: f,
-			configReader: f, autostartSource: f, usage: f, exec_: f}, nil
+			configReader: f, autostartSource: f, usage: f, exec_: f,
+			limits: f, configReplacer: f}, nil
 	default:
 		return jailAdapters{}, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

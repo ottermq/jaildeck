@@ -40,6 +40,11 @@ jobs:
         with:
           ref: ${{ env.TAG }}
 
+      # Read here, from the tag's checkout: the VM has no git, so the Go
+      # toolchain stamps no commit there (#165).
+      - name: Commit of the tag
+        run: echo "COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
       - name: Version from the tag
         run: |
           case "$TAG" in
@@ -53,12 +58,12 @@ jobs:
         with:
           release: "15.1"
           arch: x86_64
-          envs: VERSION
+          envs: VERSION COMMIT
           prepare: |
             pkg install -y go gmake node26 npm-node26
           run: |
             freebsd-version
-            gmake package VERSION="$VERSION"
+            gmake package VERSION="$VERSION" COMMIT="$COMMIT"
 
       - name: Checksum
         run: |

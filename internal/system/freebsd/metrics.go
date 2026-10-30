@@ -201,9 +201,28 @@ func (a *Adapter) PoolUsage(ctx context.Context) ([]metrics.Pool, error) {
 // is one command either way and a field the report does not carry today is
 // one line to add rather than another round trip.
 func (a *Adapter) JailUsage(ctx context.Context, name string) (metrics.JailUsage, error) {
-	subject, err := rctlSubject(name)
+	fields, err := a.rctlUsage(ctx, name)
 	if err != nil {
 		return metrics.JailUsage{}, err
+	}
+	return metrics.JailUsage{
+		Source:     metrics.SourceRctl,
+		PCPU:       float64(fields["pcpu"]),
+		MemoryUse:  fields["memoryuse"],
+		Processes:  int(fields["maxproc"]),
+		VMemoryUse: fields["vmemoryuse"],
+		OpenFiles:  fields["openfiles"],
+		CPUTime:    fields["cputime"],
+	}, nil
+}
+
+// rctlUsage reads `rctl -u jail:<name>` into its fields. Shared by the
+// metrics report and by a limits change, which compares a lowered limit with
+// what the jail uses.
+func (a *Adapter) rctlUsage(ctx context.Context, name string) (map[string]int64, error) {
+	subject, err := rctlSubject(name)
+	if err != nil {
+		return nil, err
 	}
 	result, err := a.runHost(ctx, system.Command{
 		Name:    "rctl",
@@ -211,7 +230,7 @@ func (a *Adapter) JailUsage(ctx context.Context, name string) (metrics.JailUsage
 		Timeout: rctlTimeout,
 	})
 	if err != nil {
-		return metrics.JailUsage{}, err
+		return nil, err
 	}
 
 	fields := map[string]int64{}
@@ -226,15 +245,7 @@ func (a *Adapter) JailUsage(ctx context.Context, name string) (metrics.JailUsage
 		}
 		fields[strings.TrimSpace(key)] = parsed
 	}
-	return metrics.JailUsage{
-		Source:     metrics.SourceRctl,
-		PCPU:       float64(fields["pcpu"]),
-		MemoryUse:  fields["memoryuse"],
-		Processes:  int(fields["maxproc"]),
-		VMemoryUse: fields["vmemoryuse"],
-		OpenFiles:  fields["openfiles"],
-		CPUTime:    fields["cputime"],
-	}, nil
+	return fields, nil
 }
 
 // JailProcessUsage sums the jail's processes, for a host where the kernel is

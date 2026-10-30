@@ -87,6 +87,38 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, detail)
 }
 
+// Configuration returns a guest's files as the host has them.
+//
+// @Summary      Show a guest's configuration as the host has it
+// @Description  vm-bhyve's `<name>.conf` and the cloud-init seed's `meta-data`, `user-data` and
+// @Description  `network-config`, read off the default datastore now (#127, JD-048). Read only.
+// @Description
+// @Description  A file that is not there is listed with `present: false`. A file past 64 KiB is
+// @Description  cut there and says `truncated`. **The value of every `password`, `passwd`,
+// @Description  `hashed_passwd` and `plain_text_passwd` key is masked**, and `masked` names
+// @Description  them: a console password's hash can be guessed at offline. `seed.iso`, built
+// @Description  from these at the first start, is not shown.
+// @Tags         vms
+// @Produce      json
+// @Param        name  path  string  true  "Guest name, as listed"
+// @Success      200  {object}  Configuration
+// @Failure      400  {object}  common.ErrorResponse  "Not a vm-bhyve guest name"
+// @Failure      401  {object}  common.ErrorResponse
+// @Failure      404  {object}  common.ErrorResponse  "No such guest, or none in the default datastore"
+// @Failure      409  {object}  common.ErrorResponse  "vm-bhyve is not installed or not configured"
+// @Failure      500  {object}  common.ErrorResponse  "A file could not be read"
+// @Failure      501  {object}  common.ErrorResponse  "This Jail Deck cannot read a guest's files"
+// @Security     BearerAuth
+// @Router       /vms/{name}/configuration [get]
+func (h *Handler) Configuration(w http.ResponseWriter, r *http.Request) {
+	configuration, err := h.service.Configuration(r.Context(), chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, configuration)
+}
+
 // Start starts a guest.
 //
 // @Summary      Start a guest

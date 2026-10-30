@@ -1,7 +1,7 @@
 <script lang="ts">
 import { onMount } from 'svelte'
 import { navigate, onNavClick } from '../router.svelte'
-import { destroyVM, getVM, setVMTags } from '../stores/vms.svelte'
+import { destroyVM, getVM, getVMConfiguration, setVMTags } from '../stores/vms.svelte'
 import { ask } from '../stores/confirm.svelte'
 import type { Detail } from '../stores/vms.svelte'
 import { ApiError } from '../services/api'
@@ -10,6 +10,7 @@ import { stateBadge } from '../vmState'
 import VMActions from '../components/VMActions.svelte'
 import ConsolePanel from '../components/ConsolePanel.svelte'
 import TagsPanel from '../components/TagsPanel.svelte'
+import InspectPanel from '../components/InspectPanel.svelte'
 import type { OperationResult } from '../stores/vms.svelte'
 
 let { name }: { name: string } = $props()
@@ -271,6 +272,16 @@ function bytes(n: number | undefined): string {
             a destroy. Its disk volumes inherit them; the guest reports its own dataset's only.
         {/snippet}
     </TagsPanel>
+
+    <InspectPanel noun="guest" read={() => getVMConfiguration(name)}>
+        {#snippet absent(file)}
+            {#if file.name === 'network-config'}
+                Not there: the guest takes its address by DHCP, or has no network.
+            {:else}
+                Not there: the guest was made without a cloud-init seed.
+            {/if}
+        {/snippet}
+    </InspectPanel>
 {/if}
 
 <style>

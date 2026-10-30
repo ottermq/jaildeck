@@ -2,6 +2,7 @@ package fake
 
 import (
 	"context"
+	"fmt"
 	"net/netip"
 	"slices"
 	"strconv"
@@ -312,4 +313,72 @@ var _ vms.VMSystem = (*VMs)(nil)
 // where the fake guests' labels live (JD-044).
 func (f *VMs) VMDatasets(context.Context) (map[string]string, error) {
 	return map[string]string{"default": "zroot/vm"}, nil
+}
+
+// VMFiles is what vm-bhyve would have on disk for a guest: its configuration,
+// and for one made here the seed Jail Deck's create would leave, password hash
+// included, so the view masks it as it would a real one.
+func (f *VMs) VMFiles(_ context.Context, name string, limit int) ([]vms.GuestFile, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.gone[name] {
+		return nil, vms.ErrNoSuchVM
+	}
+	dir := "/zroot/vm/" + name
+	file := func(base, content string) vms.GuestFile {
+		path := dir + "/" + base
+		if base != name+".conf" {
+			path = dir + "/.cloud-init/" + base
+		}
+		if content == "" {
+			return vms.GuestFile{Name: base, Path: path}
+		}
+		cut := len(content) > limit
+		if cut {
+			content = content[:limit]
+		}
+		return vms.GuestFile{Name: base, Path: path, Present: true, Content: content, Truncated: cut}
+	}
+	var conf, meta, user, network string
+	if m, ok := f.made[name]; ok {
+		conf = fmt.Sprintf("loader=\"uefi\"\ncpu=%d\nmemory=%s\ndisk0_type=\"virtio-blk\"\ndisk0_name=\"disk0\"\n"+
+			"disk0_dev=\"sparse-zvol\"\nuuid=\"00000000-0000-4000-8000-000000000001\"\nnetwork0_mac=\"58:9c:fc:00:00:01\"\n",
+			m.spec.CPU, m.spec.Memory)
+		if m.sw != "" {
+			conf += "network0_type=\"virtio-net\"\nnetwork0_switch=\"" + m.sw + "\"\n"
+		}
+		if len(m.pins) > 0 {
+			conf += "bhyve_options=\"" + vms.PinOptions(m.pins) + "\"\n"
+		}
+		meta = "instance-id: 00000000-0000-4000-8000-000000000001\nlocal-hostname: " + name + "\n"
+		user = "#cloud-config\nresize_rootfs: True\nmanage_etc_hosts: localhost\n"
+		if len(m.spec.SSHKeys) > 0 {
+			user += "ssh_authorized_keys:\n"
+			for _, key := range m.spec.SSHKeys {
+				user += "  - " + strconv.Quote(key) + "\n"
+			}
+		}
+		if m.spec.PasswordHash != "" {
+			user += "password: " + strconv.Quote(m.spec.PasswordHash) + "\nchpasswd:\n  expire: false\nssh_pwauth: false\n"
+		}
+		if m.spec.Address != "" {
+			network = "version: 2\nethernets:\n  id0:\n    set-name: eth0\n    match:\n      macaddress: 58:9c:fc:00:00:01\n" +
+				"    addresses: [" + m.spec.Address + "]\n"
+			if m.spec.Gateway != "" {
+				network += "    routes:\n      - to: 0.0.0.0/0\n        via: " + m.spec.Gateway + "\n"
+			}
+		}
+	} else {
+		switch name {
+		case "jd-cap-running":
+			conf = "loader=\"uefi\"\ncpu=2\nmemory=512M\nnetwork0_type=\"virtio-net\"\nnetwork0_switch=\"jd-capsw\"\n" +
+				"disk0_type=\"virtio-blk\"\ndisk0_name=\"disk0\"\ndisk0_dev=\"sparse-zvol\"\n"
+		case "jd-cap-stopped":
+			conf = "loader=\"uefi\"\ncpu=1\nmemory=256M\ndisk0_type=\"virtio-blk\"\ndisk0_name=\"disk0\"\ndisk0_dev=\"sparse-zvol\"\n"
+		default:
+			return nil, vms.ErrNoSuchVM
+		}
+	}
+	return []vms.GuestFile{file(name+".conf", conf), file("meta-data", meta), file("user-data", user),
+		file("network-config", network)}, nil
 }

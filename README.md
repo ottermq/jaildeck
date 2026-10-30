@@ -7,9 +7,9 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.21.0.** Jails can be created from release templates, started,
+**Current release: v0.22.0.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API, and their limits changed in place; their ZFS datasets,
-snapshots and resource usage are visible; host setup is checked; PF can be seen,
+snapshots and resource usage are visible, and a dataset kept past its jail can be restored or destroyed; host setup is checked; PF can be seen,
 read-only; bhyve VMs are created from cloud images with cloud-init, with a console password if wanted, pinned to host CPUs, started,
 stopped and destroyed, on a default network Jail Deck sets up with NAT through PF, or on networks of their own kept apart by PF, and every network and what is on it can be seen; a jail has a shell in the
 browser, and a guest its serial console; every operation is audited, and nothing is reachable without a password or an

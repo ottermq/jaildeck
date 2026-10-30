@@ -20,6 +20,46 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.22.0 — 2026-10-30
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.22.0)
+
+**The end of a retain.** A retained dataset can be destroyed with its snapshots, and so can one
+of a jail's children without the jail (#120). Until now both ended at a root shell.
+
+Nothing to act on when upgrading: no new setting, and nothing in `pf.conf` or `rc.conf`.
+
+### Added
+
+- **Destroying a retained dataset** (#170, closing #120): a **Destroy** button beside Restore
+  under **Templates → Retained datasets**. The confirmation lists the snapshots that go with it
+  and asks for the name.
+- **Destroying a jail's child** (#170): a **Destroy** button on each child on the jail's page,
+  disabled while the jail runs. The jail and its own dataset stay.
+  - Both are refused, before anything runs, while a snapshot has a hold or a dependent clone, or
+    while the dataset has datasets of its own, and the refusal names each.
+  - A child is refused while its jail runs: zfs would unmount it from under the jail without
+    complaint (measured).
+  - The dataset is unmounted on its own before the destroy. `zfs destroy -r` refused as busy, a
+    host process with a file open on it, has already destroyed the snapshots (measured); a busy
+    unmount loses nothing.
+
+### API
+
+- **`DELETE /api/retained/{name}?confirm={name}`** and
+  **`DELETE /api/jails/{name}/datasets/{child}?confirm={child}`** (#170). `200` with `dataset`,
+  `snapshots` and `destroyed`; `409` with the same and `blocked` (`reason`, `children`, `clones`,
+  `holds`), or for a child of a running jail; `404` once it is gone. Additive.
+- **`snapshots`** on each entry of `GET /api/retained` (#170): what a destroy would take with
+  it. Additive.
+
+### Internal
+
+- **The measurements are kept as captures:** `capture-destroy-dataset-induced.sh` with its
+  `des_*` outputs. **JD-025 amended** with what was measured.
+
+---
+
 ## v0.21.0 — 2026-10-29
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.21.0)

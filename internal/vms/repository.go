@@ -37,6 +37,11 @@ type VMSystem interface {
 	// cloud-init seed the spec describes. The guest has a disk0 of the
 	// requested size and no NIC.
 	VMCreate(ctx context.Context, spec CreateSpec) (string, error)
+	// VMMakePrivate makes the guest's directory root's alone (0700). vm
+	// create leaves it 0755 and the first start writes seed.iso into it 0644,
+	// with the seed's user-data inside -- a console password's hash with it.
+	// vm-bhyve keeps the mode across starts and stops, measured (vpd_*).
+	VMMakePrivate(ctx context.Context, name string) (string, error)
 	// VMAddNetwork is `vm add -d network -s <switch>`: network0, with the
 	// MAC vm create already gave it and the seed matches the NIC by.
 	VMAddNetwork(ctx context.Context, name, vmSwitch string) (string, error)

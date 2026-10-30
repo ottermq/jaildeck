@@ -1848,6 +1848,8 @@ Everything that can be refused is refused before `vm create`: the name (vm-bhyve
 
 This is a break-glass login, not a way in for everyday use: on a platform with tenants, whoever creates the guest sets it, and an operator opening the console reaches a login prompt (jaildeck#155, otter_cloud#142).
 
+**Amended 2026-10-30 — the guest's directory is made private.** The seed's `user-data` is 0600, but the directory around it was not: `vm create` leaves it 0755, and the first start writes `seed.iso` into it 0644, with `user-data` inside. Measured as a plain account (`capture-vm-private-dir-induced.sh`, `vpd_*`): the configuration and the ISO could be read, and the hash with it. **A create now makes the directory 0700 right after `vm create`** (`vm-make-private`, audited), before anything can start the guest, and a failure there destroys the guest again, as any later step's does. vm-bhyve keeps the mode across starts and stops, and `vm start`, `vm list` and `vm destroy` work as before, measured. Every guest gets it, password or not: the configuration and seed are root's business. **A guest made before this keeps its directory as it was**; `chmod 0700 <datastore>/<guest>` does the same by hand.
+
 ---
 
 ## JD-039 — A Signed Package Repository: CI Builds and Attests, a Host Pulls, Verifies and Signs
@@ -2319,3 +2321,49 @@ The jail spec's `ip4`, `gateway`, `interface` and `bridge` were written into the
 - **IPv6.**
 - **Freeing an address** needs nothing: destroying the jail or guest removes its stanza or seed. An address that is only in ARP stays taken until its entry expires.
 - **Moving a member** to another address or network.
+
+---
+
+## JD-048 — Inspect: an Instance's Files as the Host Has Them, Read Only
+
+**Status:** Locked — 2026-10-30. Owner's decisions on #127. Measured on isengard (`capture-vm-configuration-induced.sh`), and checked live there through the API.
+
+When an instance misbehaves, the first question is what Jail Deck actually wrote. Until now the answer needed a shell on the host. Jail Deck now shows the files, as they are on disk at the moment they're asked for (JD-011).
+
+### What was measured
+
+- **A guest's directory is `root:wheel`.** Its configuration, its log and its seed's `meta-data` and `network-config` are `0644`, and so is a `user-data` that vm-bhyve wrote from `-k`.
+- **A `user-data` given with `vm create -u` keeps its own mode**: Jail Deck writes it `0600` for a console password (#152), and the seed's copy stays `0600`. An unprivileged account is refused it.
+- **The first start adds `seed.iso`, `console` and `run.lock`**, and the configuration gains `disk1` for the ISO.
+- **`rctl jail:<name>` for a jail with no rules prints nothing and exits 0.**
+- **Jail stanzas in `jail.conf.d` are `0644`.**
+
+### What is shown
+
+- **A jail:** its own `jail.conf.d/<name>.conf` and the rctl rules keyed to its name, `GET /api/jails/{name}/configuration`.
+  - **A jail with no file of its own** (configured in `/etc/jail.conf`, or nowhere) is answered with the path and `present: false`. `/etc/jail.conf` is the operator's file, and cutting one jail's block out of it would be Jail Deck guessing at its grammar.
+  - **Rules that can't be read** (a kernel without RACCT) leave `rules` null and say why in `rules_error`; the file is still shown. No rules is `[]`.
+- **A guest:** vm-bhyve's `<name>.conf` and the seed's `meta-data`, `user-data` and `network-config`, `GET /api/vms/{name}/configuration`, from the default datastore. A file that isn't there is listed with `present: false`. `seed.iso`, built from these, is binary and not shown.
+- **Each file is cut at 64 KiB** and says `truncated`. What Jail Deck writes is about a kilobyte.
+- **Read only.** Nothing is written, and nothing is audited, as for every other read.
+- **The same authentication as the other reads.** No new scope: these files are what the API already reports in other shapes.
+
+### Masked
+
+**The value of every `password`, `passwd`, `hashed_passwd` and `plain_text_passwd` key is replaced with `(masked)`**, and `masked` names the keys. A console password's hash is the one secret Jail Deck writes. Bcrypt or not, it can be guessed at offline, and showing it in a browser would put it in more places than the host. SSH keys are public and shown. Jail stanzas are world-readable on the host and are shown as they are.
+
+Masking is the service's, not the adapter's, so the fake host masks the same way and a test of the domain covers it.
+
+### The interface
+
+An **Inspect** panel on a jail's page and on a guest's page, one component for both. It's closed until asked for, so the page reads nothing more. Opened, it reads the host; **Reload** reads it again. Each file is shown under its path with a Copy button. A masked value, a cut file and a missing file are each said in words.
+
+**Checked live, 2026-10-30, on isengard,** through a dev build on :8899 with its own state, against the real jails and a throwaway guest, read only:
+- otc-pgc1's stanza matched the file on disk byte for byte, and its three rctl rules matched `rctl jail:otc-pgc1`.
+- postgres's rules were `[]`.
+- The guest's `user-data` showed `password: (masked)`, and no part of the hash appeared in the answer.
+
+### Not yet
+
+- **Editing any of it.** Changing a jail's limits is `PATCH /limits` (#119); everything else stays on the API that made it.
+- **A guest in a datastore other than the default one.**

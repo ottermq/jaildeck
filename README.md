@@ -7,12 +7,12 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.24.0.** Jails can be created from release templates, started,
+**Current release: v0.25.0.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API, and their limits changed in place; their ZFS datasets,
 snapshots and resource usage are visible, and a dataset kept past its jail can be restored or destroyed; host setup is checked; PF can be seen,
 read-only; bhyve VMs are created from cloud images with cloud-init, with a console password if wanted, pinned to host CPUs, started,
 stopped, labelled, snapshotted and destroyed, on a default network Jail Deck sets up with NAT through PF, or on networks of their own kept apart by PF, with addresses Jail Deck picks and checks, and every network and what is on it can be seen; a jail has a shell in the
-browser, and a guest its serial console; jails and guests are found in one list by name, state or label, and started, stopped, restarted or snapshotted several at once; every operation is audited, a console with who opened it and why when the client says, and nothing is reachable without a password or an
+browser, and a guest its serial console; each one's files on the host can be read on its page; jails and guests are found in one list by name, state or label, and started, stopped, restarted or snapshotted several at once; every operation is audited, a console with who opened it and why when the client says, and nothing is reachable without a password or an
 API token. Releases install and upgrade with `pkg` from a signed repository. See
 [the roadmap](docs/ROADMAP.md) for what comes next.
 
@@ -236,6 +236,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `PUT /api/host/layout` | create the missing layout datasets, adopting what is there |
 | `GET /api/jails` | every jail, running or merely configured, with its ZFS datasets |
 | `GET /api/jails/{name}` | one of them, same shape |
+| `GET /api/jails/{name}/configuration` | its own stanza as it is on disk, and the rctl rules keyed to its name |
 | `POST /api/jails` | create a jail from a ready template: network (on a Jail Deck network by name, its address picked), limits, parameters, child datasets |
 | `PUT /api/jails/{name}` | the same, idempotently: `201` made, `200` already matching, `409` with a diff |
 | `DELETE /api/jails/{name}` | stop and destroy it, with `confirm=` |
@@ -273,6 +274,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/firewall/log` | the most recent pflog lines |
 | `GET /api/vms` | vm-bhyve's guests and their state, and whether vm-bhyve is ready |
 | `GET /api/vms/{name}` | one guest's console, network interfaces, disks and CPU pin |
+| `GET /api/vms/{name}/configuration` | its vm-bhyve configuration and cloud-init seed as they are on disk, a password's value masked |
 | `POST /api/vms/{name}/start` | start it and confirm it is running |
 | `POST /api/vms/{name}/stop` | the power button, then a poweroff after 60 seconds, reported as `forced` |
 | `POST /api/vms/{name}/restart` | stop, then start |

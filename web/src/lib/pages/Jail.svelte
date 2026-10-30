@@ -3,7 +3,7 @@ import { onMount } from 'svelte'
 import {
     getJail, listSnapshots, setTags, ensureDataset, retainDataset, destroyDataset,
     createSnapshot, destroySnapshot, rollbackSnapshot, makeTemplate, recloneJail,
-    destroyJail,
+    destroyJail, getJailConfiguration,
 } from '../stores/jails.svelte'
 import type {
     JailData, Snapshot, Dataset, PropertyConflict, SnapshotBlock, Reclone, Destroyed, DatasetBlock,
@@ -16,6 +16,7 @@ import { ask } from '../stores/confirm.svelte'
 import { formatBytes, normalizeEmptyValue } from '../utils'
 import ConsolePanel from '../components/ConsolePanel.svelte'
 import TagsPanel from '../components/TagsPanel.svelte'
+import InspectPanel from '../components/InspectPanel.svelte'
 
 let { name }: { name: string } = $props()
 
@@ -926,6 +927,16 @@ async function retain(event: Event, dataset: Dataset) {
             jail with three children would look like four instances.
         {/snippet}
     </TagsPanel>
+
+    <InspectPanel noun="jail" read={async () => {
+        const c = await getJailConfiguration(name)
+        return { files: [{ name: c.name + '.conf', ...c.file }], rules: c.rules, rulesError: c.rules_error }
+    }}>
+        {#snippet absent()}
+            Not there: this jail is configured somewhere Jail Deck does not write, most likely
+            <code>/etc/jail.conf</code>, which is yours and not shown here.
+        {/snippet}
+    </InspectPanel>
 
     <section class="panel">
         <div class="panel__head">

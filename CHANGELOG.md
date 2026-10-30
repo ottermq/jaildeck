@@ -20,6 +20,54 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.25.0 — 2026-10-30
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.25.0)
+
+**Inspect.** A jail's or guest's files as the host has them, on its page, read only, a password's
+hash masked (#127). And a fix: a guest's directory is now private to root, where its seed's ISO
+could be read by any local account (#152).
+
+**Act on this when upgrading:** a guest made before the upgrade keeps its directory as it was.
+Run `chmod 0700 <datastore>/<guest>` for each one, `/vm/<guest>` on the default datastore; a guest
+made with a console password matters most. No new setting, and nothing in `pf.conf` or `rc.conf`.
+
+### Added
+
+- **Inspect: an instance's files as the host has them** (#127, JD-048). An **Inspect** panel on a
+  jail's page shows its own `jail.conf.d` stanza and its rctl rules; on a guest's page, its
+  vm-bhyve configuration and cloud-init seed. Read off the host when the panel is opened, read
+  only, each file with a Copy button. **A console password's hash is masked.**
+
+### Fixed
+
+- **A guest's directory could be read by any local account** (#152). Its seed's `user-data` is
+  0600, but `vm create` leaves the directory 0755 and the first start writes the seed's ISO into
+  it 0644, so a console password's hash could be read from the ISO. **A create now makes the
+  directory 0700** before the guest can start, audited as `vm-make-private`; vm-bhyve keeps the
+  mode, measured. **A guest made before the upgrade keeps its directory as it was:** run
+  `chmod 0700 <datastore>/<guest>` for each one (`/vm/<guest>` on the default datastore).
+
+### API
+
+- **`GET /api/jails/{name}/configuration`**: `file` (`path`, `present`, `content`, `truncated`),
+  `rules`, and `rules_error` when they could not be read. A jail configured outside
+  `jail.conf.d` answers `present: false`. Additive.
+- **`GET /api/vms/{name}/configuration`**: `files`, the configuration and the seed's three files,
+  each with `name`, `path`, `present`, `content`, `truncated` and `masked`. The value of every
+  `password`, `passwd`, `hashed_passwd` and `plain_text_passwd` key is replaced with `(masked)`.
+  A file past 64 KiB is cut there. Additive.
+- **`POST` and `PUT /api/vms`** run one more step, `vm-make-private`, right after `vm-create`; a
+  failure there destroys the guest again, as a later step's does.
+
+### Internal
+
+- **The measurements are kept as a capture:** `capture-vm-configuration-induced.sh` (`vcf_*`),
+  what a guest's directory holds and with what modes. **JD-048** records the view.
+- `capture-vm-private-dir-induced.sh` (`vpd_*`): what a plain account reads of a guest's directory,
+  before and after it is made private, and that vm-bhyve keeps the mode. JD-038's amendment of
+  2026-10-30 records it.
+
 ## v0.24.0 — 2026-10-30
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.24.0)

@@ -109,6 +109,23 @@ func (a *Adapter) VMCreate(ctx context.Context, spec vms.CreateSpec) (string, er
 	return a.vmLifecycle(ctx, system.Command{Name: "vm", Args: args, Timeout: vmCreateTimeout})
 }
 
+// VMMakePrivate makes the guest's directory 0700 (vpd_*): its configuration,
+// its seed and the seed.iso the first start builds stop being readable by
+// any local account. Plain chmod, as the other reads of the directory are
+// plain file I/O; the directory is root's already.
+func (a *Adapter) VMMakePrivate(ctx context.Context, name string) (string, error) {
+	dir, _, err := a.vmDatastore(ctx)
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, name)
+	command := "chmod 0700 " + path
+	if err := os.Chmod(path, 0o700); err != nil {
+		return command, fmt.Errorf("making %s private: %w", path, err)
+	}
+	return command, nil
+}
+
 // cloudConfig is the user-data vm-bhyve would write for the keys
 // (core::create_cloud_init), with the console password beside them:
 //

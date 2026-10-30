@@ -1,0 +1,11 @@
+loader="uefi"
+cpu=1
+memory=256M
+disk0_type="virtio-blk"
+disk0_name="disk0"
+disk0_dev="sparse-zvol"
+uuid="b85e1e59-d493-11f1-b463-e80688cecc46"
+network0_mac="58:9c:fc:06:4b:e2"
+disk1_type="ahci-cd"
+disk1_name="seed.iso"
+disk1_dev="file"

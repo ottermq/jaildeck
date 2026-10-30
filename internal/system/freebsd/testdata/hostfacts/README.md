@@ -538,6 +538,48 @@ host's epairs were as many as before. The host ran with `net.link.bridge.pfil_me
 - **A bridge that is not there is exit 1**, `arp: interface jdnope0 does not exist`
   (`nad_arp_nosuch`).
 
+## What a guest's directory holds (JD-048)
+
+`capture-vm-configuration-induced.sh`, run 2026-10-30 on isengard into `isengard-induced/` with
+the prefix `vcf_`, **changes the host**. It makes two throwaway guests on an empty 1G sparse
+disk, with no image and no switch. `jd-cap-cfgu` is made with `vm create -u`, from a user-data
+file as Jail Deck writes one for a console password, its hash a placeholder in bcrypt's shape.
+`jd-cap-cfgk` is made with `vm create -k`. It starts the first one once, powers it off, and
+destroys both and the template again; `system.conf` was as before.
+
+**What that settled:**
+
+- **The directory and everything vm-bhyve writes in it are `root:wheel`, files `0644` and
+  directories `0755`** (`vcf_dir_u`, `vcf_dir_k`): `<name>.conf`, `vm-bhyve.log`,
+  `.cloud-init/meta-data`, `.cloud-init/network-config`, and `user-data` made from `-k`.
+- **A `user-data` given with `-u` keeps its own mode**: Jail Deck writes it `0600`, and the
+  seed's copy is `0600` (`vcf_user_data_scratch`, `vcf_dir_u`). An unprivileged account is
+  refused it (`vcf_read_as_user`).
+- **The first start adds `seed.iso`, `console` and `run.lock`**, and the configuration
+  gains `disk1` for the ISO (`vcf_dir_u_started`, `vcf_conf_u`). `seed.iso` stays after the
+  guest stops (`vcf_dir_u_stopped`).
+- **`rctl jail:<name>` for a jail with no rules prints nothing and exits 0** (`vcf_rctl_none`).
+## A guest's directory, made private (#152)
+
+`capture-vm-private-dir-induced.sh`, run 2026-10-30 on isengard into `isengard-induced/` with the
+prefix `vpd_`, **changes the host**, and runs as a user that is not root, because what that user
+can read is the point. It makes a throwaway guest, `jd-cap-priv`, on an empty 1G sparse disk
+with no image and no switch, from a user-data file as Jail Deck writes one for a console
+password (`vm create -u`), its hash a placeholder in bcrypt's shape. It starts it and powers it
+off, makes its directory 0700, starts and powers it off twice more, and destroys it and the
+template again; `system.conf` was as before.
+
+**What that settled:**
+
+- **As `vm create` and the first start leave it, the directory is 0755 and `seed.iso` 0644**
+  (`vpd_mode_as_made`). A plain account reads the configuration and `seed.iso`, and the seed's
+  user-data with it, though `user-data` itself is 0600 (`vpd_read_as_made`).
+- **Made 0700, nothing in it can be read by that account**, stopped or running
+  (`vpd_read_private`, `vpd_read_running`).
+- **vm-bhyve keeps the mode**: 0700 while running and after two more starts and stops
+  (`vpd_mode_running`, `vpd_mode_after_restarts`), and `vm start`, `vm list` and `vm destroy`
+  work as before (`vpd_list_running`, `vpd_list_restarted`, `vpd_destroy`).
+
 ## Disk health (#83)
 
 Captured 2026-10-25, on `isengard` and `rohan` only. `rivendell` and the VM were not

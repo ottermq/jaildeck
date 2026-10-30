@@ -1,0 +1,4 @@
+readable /vm/jd-cap-priv/jd-cap-priv.conf
+readable /vm/jd-cap-priv/seed.iso
+refused /vm/jd-cap-priv/.cloud-init/user-data
+hash read

@@ -18,7 +18,7 @@ func TestCreatePinsBeforeTheNetworkAndAuditsIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(m.calls, []string{"create", "pin", "network", "disk"}) {
+	if !slices.Equal(m.calls, []string{"create", "private", "pin", "network", "disk"}) {
 		t.Errorf("calls = %v", m.calls)
 	}
 	if got := m.applied["pinned"].BhyveOptions; got != "-p 0:2 -p 1:3" {
@@ -74,7 +74,7 @@ func TestAPinThatFailsDestroysTheGuest(t *testing.T) {
 	s, _ := newMakerService(m)
 	_, err := s.Create(context.Background(), CreateRequest{Name: "pinned", Image: "debian-13", CPU: 1, CPUSet: []int{4}})
 	wantAppError(t, err, http.StatusInternalServerError, "could not pin its vCPUs")
-	if !slices.Equal(m.calls, []string{"create", "pin", "destroy"}) {
+	if !slices.Equal(m.calls, []string{"create", "private", "pin", "destroy"}) {
 		t.Errorf("calls = %v", m.calls)
 	}
 }

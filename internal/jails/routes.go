@@ -18,6 +18,9 @@ func RegisterJailRoutes(r chi.Router, h *JailHandler, extra ...func(chi.Router))
 				mount(r)
 			}
 			r.Get("/", h.Get)
+			// The stanza and rctl rules as the host has them, read only
+			// (#127): what Jail Deck wrote, without a shell.
+			r.Get("/configuration", h.Configuration)
 			// PUT is the idempotent create: absent -> created, already
 			// matching -> nothing, different -> refused with the
 			// differences. It never reconciles (JD-016).

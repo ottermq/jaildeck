@@ -87,6 +87,27 @@ function instanceHref(m: TopologyMember): string | null {
                     {/if}
                     <dt>Address</dt>
                     <dd>{#if b.addresses.length}<code>{b.addresses.join(', ')}</code>{:else}<span class="muted">none</span>{/if}</dd>
+                    {#if b.in_use?.length}
+                        <dt>In use</dt>
+                        <dd>
+                            <ul class="in-use">
+                                {#each b.in_use as u (u.address)}
+                                    {@const to = u.kind === 'jail' ? `/jails/${encodeURIComponent(u.name ?? '')}`
+                                        : u.kind === 'guest' ? `/vms/${encodeURIComponent(u.name ?? '')}` : ''}
+                                    <li>
+                                        <code>{u.address}</code>
+                                        {#if to && u.name && !u.name.startsWith('/')}
+                                            {u.kind} <a href={to} onclick={(e) => onNavClick(e, to)}>{u.name}</a>
+                                        {:else if u.name}
+                                            {u.kind} <code>{u.name}</code>
+                                        {:else}
+                                            <span class="muted">seen on the bridge, in no configuration</span>
+                                        {/if}
+                                    </li>
+                                {/each}
+                            </ul>
+                        </dd>
+                    {/if}
                 </dl>
                 {#if b.members.length === 0}
                     <p class="empty">{b.exists ? 'Nothing is on it.' : 'Nothing can be on it until its bridge exists.'}</p>
@@ -123,6 +144,14 @@ function instanceHref(m: TopologyMember): string | null {
 {/if}
 
 <style>
+.in-use {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: var(--space-1);
+}
+
 .networks {
     display: grid;
     gap: var(--space-5);

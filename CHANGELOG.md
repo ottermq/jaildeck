@@ -20,6 +20,50 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+### Added
+
+- **Jail Deck picks a member's address on its own networks** (#118, JD-047). A jail or guest
+  created on the default network or a tenant network with no address gets the lowest free one,
+  and the network's gateway. What is taken is read off the host at every create: every jail
+  stanza, every guest's seed, the gateway and the bridge's ARP table. Creates on one network
+  run one at a time. An address asked for is checked: in the subnet, not the gateway, and
+  free, or the create is refused with the holder named.
+- **The interface**: the jail form offers Jail Deck's networks under **On**, and the address is
+  left to it; the guest form's addressing defaults to "picked by Jail Deck" on them. A guest's
+  page says **Connect to**, and the Networks page lists each network's addresses in use.
+
+### Fixed
+
+- **A jail spec's `ip4`, `gateway`, `interface` and `bridge` were written into the stanza
+  unchecked.** They are now checked for their shape before anything runs, and a value
+  carrying more stanza is refused with 400.
+
+### API
+
+- **`network.name`** in a jail spec, for mode `vnet`: a Jail Deck network by name, in place of
+  `network.bridge`. Exactly one of the two.
+- **`network.ip4` may be left out** for a VNET jail on a Jail Deck network, and
+  `network.address` for a guest on one. Both creates answer `network` and `address`.
+- **`addresses`** on `GET /api/networks`, `GET /api/networks/{name}` and
+  `GET /api/networks/default`: each address in use, with its kind (`jail`, `guest`, `seen`) and
+  holder; `null` when it could not be read. **`in_use`** on Jail Deck's bridges in
+  `GET /api/topology`.
+- **`address`** on a guest's detail, from its seed. A VNET jail's `ip` is now its stanza's
+  address, where it was empty.
+- **New refusals:** 409 for an address taken or a network full; 400 for an address outside the
+  network, its gateway, network or broadcast address, a jail with both `bridge` and `name`, or
+  an unknown network name; 501 for `network.name` where networks are not available.
+
+### Internal
+
+- **The measurements are kept as a capture:** `capture-network-addresses-induced.sh` (`nad_*`),
+  showing that a quiet address is not in a bridge's ARP table. **JD-047** records the sources,
+  the per-network lock and `network.name`.
+- The fake host's jails, guests and networks read each other's addresses, so the demo picks
+  them as a host would.
+
 ## v0.23.0 — 2026-10-30
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.23.0)

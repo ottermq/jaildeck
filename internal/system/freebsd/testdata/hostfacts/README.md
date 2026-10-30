@@ -515,6 +515,29 @@ of the LAN's gateway was removed, as the script no longer makes it.
   -> (em0) round-robin` (`vm_net_pf_anchor`), and the main ruleset's include as `nat-anchor
   "jaildeck/*" all` (`vm_net_pf_anchors`): what the service compares against.
 
+## The addresses in use on a network (JD-047)
+
+`capture-network-addresses-induced.sh`, run 2026-10-30 on isengard into `isengard-induced/` with
+the prefix `nad_`, **changes the host's networking**. It makes a throwaway bridge, `jdcap0`
+(10.79.0.0/24, the host on .1, no physical member), and a throwaway VNET jail, `jd-cap-arp`
+(`path=/`, no dataset), on a private port. The jail gives itself .5 and says nothing, pings the
+gateway, then gives itself .77 by hand and pings from it. Both were destroyed again, and the
+host's epairs were as many as before. The host ran with `net.link.bridge.pfil_member=1`
+(`nad_pfil_member`).
+
+**What that settled:**
+
+- **An address that has said nothing is not in the bridge's ARP table** (`nad_arp_quiet`: the
+  gateway alone, `permanent`). So the table can't be where Jail Deck learns which addresses are
+  taken. The jails' stanzas and the guests' seeds are.
+- **What has talked is, with an expiry** (`nad_arp_talked`: `expires in 1200 seconds`, which is
+  `net.link.ether.inet.max_age`, `nad_max_age`), **an address set by hand inside the jail
+  included** (`nad_arp_selfset`, .77). So the table adds what no configuration says, for as long
+  as it is recent.
+- **The host's own address is `permanent`**, and is the only such entry.
+- **A bridge that is not there is exit 1**, `arp: interface jdnope0 does not exist`
+  (`nad_arp_nosuch`).
+
 ## Disk health (#83)
 
 Captured 2026-10-25, on `isengard` and `rohan` only. `rivendell` and the VM were not

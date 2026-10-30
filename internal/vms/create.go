@@ -43,7 +43,10 @@ type CreateRequest struct {
 	// Switch is the vm-bhyve switch the guest's one NIC is on. Empty means
 	// no NIC at all.
 	Switch string `json:"switch"`
-	// Network is a static address for that NIC. Absent means DHCP.
+	// Network is a static address for that NIC. Absent means DHCP, except
+	// on one of Jail Deck's own networks, which have no DHCP server: there
+	// the guest is given a free address of the network and its gateway
+	// (JD-047), and so it is when Network leaves its address out.
 	Network *StaticNetwork `json:"network,omitempty"`
 	// SSHKeys go into the default user's authorized_keys.
 	SSHKeys []string `json:"ssh_keys"`
@@ -58,8 +61,9 @@ type CreateRequest struct {
 
 // StaticNetwork is the NIC's address, written into the cloud-init seed.
 type StaticNetwork struct {
-	// Address is the guest's, with its prefix: "10.77.0.10/24".
-	Address     string   `json:"address"`
+	// Address is the guest's, with its prefix: "10.77.0.10/24". It may be
+	// left out on a Jail Deck network, which picks it.
+	Address     string   `json:"address,omitempty"`
 	Gateway     string   `json:"gateway,omitempty"`
 	Nameservers []string `json:"nameservers,omitempty"`
 }
@@ -88,6 +92,10 @@ type Created struct {
 	VM
 	// Image is what its disk was cloned from.
 	Image string `json:"image"`
+	// Network is the Jail Deck network the guest was put on, and Address
+	// the address it has there: picked, unless the request gave one (JD-047).
+	Network string `json:"network,omitempty"`
+	Address string `json:"address,omitempty"`
 }
 
 // Removal is what DELETE /api/vms/{name} answers.
@@ -142,6 +150,11 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Created, error
 			return Created{}, err
 		}
 	}
+	network, release, err := s.placeOnNetwork(ctx, req, &spec)
+	if err != nil {
+		return Created{}, err
+	}
+	defer release()
 
 	command, err := s.system.VMCreate(ctx, spec)
 	s.log(ctx, OperationCreate, spec.Name, command, err)
@@ -180,7 +193,11 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Created, error
 	if err != nil {
 		return Created{}, err
 	}
-	return Created{VM: *vm, Image: req.Image}, nil
+	created := Created{VM: *vm, Image: req.Image}
+	if network != "" {
+		created.Network, created.Address = network, spec.Address
+	}
+	return created, nil
 }
 
 // undo destroys a guest whose creation stopped part way, and says which step
@@ -327,18 +344,23 @@ func resolveNetwork(spec *CreateSpec, network StaticNetwork) error {
 	bad := func(format string, args ...any) error {
 		return common.NewAppError(http.StatusBadRequest, fmt.Sprintf(format, args...))
 	}
-	prefix, err := netip.ParsePrefix(network.Address)
-	if err != nil {
-		return bad("network.address is %s; give the guest's address with its prefix: 10.0.0.5/24", strconv.Quote(network.Address))
+	// Left out, it is a Jail Deck network's to pick; placeOnNetwork refuses
+	// it on any other switch.
+	var prefix netip.Prefix
+	if network.Address != "" {
+		var err error
+		if prefix, err = netip.ParsePrefix(network.Address); err != nil {
+			return bad("network.address is %s; give the guest's address with its prefix: 10.0.0.5/24", strconv.Quote(network.Address))
+		}
+		spec.Address = prefix.String()
 	}
-	spec.Address = prefix.String()
 	if network.Gateway != "" {
 		gateway, err := netip.ParseAddr(network.Gateway)
 		if err != nil {
 			return bad("network.gateway is %s, which is not an address", strconv.Quote(network.Gateway))
 		}
-		if gateway.Is4() != prefix.Addr().Is4() {
-			return bad("network.gateway %s and network.address %s are not the same IP version", gateway, prefix)
+		if prefix.IsValid() && gateway.Is4() != prefix.Addr().Is4() || !prefix.IsValid() && !gateway.Is4() {
+			return bad("network.gateway %s and network.address %s are not the same IP version", gateway, network.Address)
 		}
 		spec.Gateway = gateway.String()
 	}

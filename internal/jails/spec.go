@@ -3,6 +3,8 @@ package jails
 import (
 	"fmt"
 	"net/http"
+	"net/netip"
+	"regexp"
 	"strings"
 
 	"github.com/ottermq/jaildeck/internal/common"
@@ -92,6 +94,12 @@ type Network struct {
 	// edits rc.conf's network settings (JD-017). GET /api/host reports which
 	// bridges exist, and GET /api/networks which are tenant networks'.
 	Bridge string `json:"bridge,omitempty"`
+	// Name is one of Jail Deck's own networks, "default" or a tenant
+	// network's name, in place of Bridge: the jail joins its bridge, and is
+	// given a free address of its subnet and its gateway unless IP4 and
+	// Gateway say otherwise (JD-047). NetworkVNET only. A jail put on a Jail
+	// Deck network's bridge by Bridge is given its address the same way.
+	Name string `json:"name,omitempty"`
 	// Private makes the host end a private member of the bridge.
 	//
 	// Measured on 15.1-RELEASE-p5: two private members cannot reach each
@@ -147,6 +155,10 @@ type Created struct {
 	// be confirmed. Only Jail Deck will do that: jail(8) does not run
 	// exec.poststop for a start that failed (JD-030).
 	EpairRemoved bool `json:"epair_removed,omitempty"`
+	// Network is the Jail Deck network a VNET jail was put on, and Address
+	// the address it has there: picked, unless the spec gave one (JD-047).
+	Network string `json:"network,omitempty"`
+	Address string `json:"address,omitempty"`
 	// RulesRemoved are the rctl rules taken back after a start that could
 	// not be confirmed. A start that fails part way through exec.poststart
 	// keeps the rules it had already added and never runs exec.prestop, so
@@ -243,8 +255,11 @@ func (n Network) normalize() (Network, error) {
 			return Network{}, badSpec(`network.interface is required for mode "alias": an alias is added to an interface of the host`)
 		}
 	case NetworkVNET:
-		if n.Bridge == "" {
-			return Network{}, badSpec(`network.bridge is required for mode "vnet": the host end of the epair has to join one, and Jail Deck never creates a bridge (JD-017)`)
+		if n.Bridge == "" && n.Name == "" {
+			return Network{}, badSpec(`network.bridge or network.name is required for mode "vnet": the host end of the epair has to join a bridge, an operator's or a Jail Deck network's, and creating a jail never creates one (JD-017, JD-047)`)
+		}
+		if n.Bridge != "" && n.Name != "" {
+			return Network{}, badSpec(`network.bridge and network.name are both set; give one: a network's name stands for its bridge`)
 		}
 		if n.Gateway != "" && n.IP4 == "" {
 			return Network{}, badSpec(`network.gateway needs network.ip4: a default route needs an address to leave by`)
@@ -265,6 +280,9 @@ func (n Network) normalize() (Network, error) {
 		return Network{}, badSpec(fmt.Sprintf(`network.interface is only read for mode "alias", and this spec asks for %q`, n.Mode))
 	}
 	if n.Mode != NetworkVNET {
+		if n.Name != "" {
+			return Network{}, badSpec(fmt.Sprintf(`network.name is only read for mode "vnet", and this spec asks for %q`, n.Mode))
+		}
 		if n.Bridge != "" {
 			return Network{}, badSpec(fmt.Sprintf(`network.bridge is only read for mode "vnet", and this spec asks for %q`, n.Mode))
 		}
@@ -275,7 +293,51 @@ func (n Network) normalize() (Network, error) {
 			return Network{}, badSpec(fmt.Sprintf(`network.gateway is only read for mode "vnet", and this spec asks for %q`, n.Mode))
 		}
 	}
-	return n, nil
+	return n, n.checkValues()
+}
+
+// interfaceName is a FreeBSD interface name, IFNAMSIZ less its terminator.
+var interfaceName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,15}$`)
+
+// networkName is a Jail Deck network's name (JD-043), "default" included.
+var networkName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$`)
+
+// checkValues refuses a value that is not what its field holds. Each is
+// written into the stanza as it is, where a quote or a semicolon would end
+// the setting and begin another.
+func (n Network) checkValues() error {
+	if n.IP4 != "" {
+		if _, err := ip4Prefix(n.IP4); err != nil {
+			return badSpec(fmt.Sprintf("network.ip4 is %q; give an IPv4 address, with its prefix: 192.0.2.10/24", n.IP4))
+		}
+	}
+	if n.Gateway != "" {
+		if a, err := netip.ParseAddr(n.Gateway); err != nil || !a.Is4() {
+			return badSpec(fmt.Sprintf("network.gateway is %q, which is not an IPv4 address", n.Gateway))
+		}
+	}
+	if n.Interface != "" && !interfaceName.MatchString(n.Interface) {
+		return badSpec(fmt.Sprintf("network.interface is %q, which is not an interface name", n.Interface))
+	}
+	if n.Bridge != "" && !interfaceName.MatchString(n.Bridge) {
+		return badSpec(fmt.Sprintf("network.bridge is %q, which is not an interface name", n.Bridge))
+	}
+	if n.Name != "" && !networkName.MatchString(n.Name) {
+		return badSpec(fmt.Sprintf("network.name is %q, which is not a network name", n.Name))
+	}
+	return nil
+}
+
+// ip4Prefix reads an IPv4 address with its prefix, or without one as a /32.
+func ip4Prefix(s string) (netip.Prefix, error) {
+	if p, err := netip.ParsePrefix(s); err == nil && p.Addr().Is4() {
+		return p, nil
+	}
+	a, err := netip.ParseAddr(s)
+	if err != nil || !a.Is4() {
+		return netip.Prefix{}, fmt.Errorf("not an IPv4 address: %q", s)
+	}
+	return netip.PrefixFrom(a, 32), nil
 }
 
 // newCreatedJailName is stricter than NewJailName, and deliberately so.

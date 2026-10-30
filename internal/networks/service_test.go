@@ -33,6 +33,9 @@ type host struct {
 	bridgeUsers map[string][]string
 	// interfaces are what ifconfig would list, for the Networks view (#128).
 	interfaces []Interface
+	// uses are what AddressUses finds, and usesCalls how often it was asked.
+	uses      []Use
+	usesCalls int
 }
 
 func freshHost() *host {
@@ -131,6 +134,14 @@ func (h *host) SwitchUsers(_ context.Context, name string) ([]string, error) {
 
 func (h *host) BridgeUsers(_ context.Context, bridge string) ([]string, error) {
 	return h.bridgeUsers[bridge], nil
+}
+
+func (h *host) AddressUses(context.Context, netip.Prefix, string) ([]Use, error) {
+	h.usesCalls++
+	if err := h.fail["uses"]; err != nil {
+		return nil, err
+	}
+	return h.uses, nil
 }
 
 func (h *host) Interfaces(context.Context) ([]Interface, error) {

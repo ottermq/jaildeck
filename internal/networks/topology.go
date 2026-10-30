@@ -54,6 +54,10 @@ type Bridge struct {
 	Addresses   []string `json:"addresses"`
 	NAT         string   `json:"nat"`
 	Members     []Member `json:"members"`
+	// InUse are the addresses of a Jail Deck network's subnet that its
+	// instances have, and by which (JD-047). Jail Deck's networks only: what
+	// is on an operator's is the operator's to address.
+	InUse []Use `json:"in_use,omitempty"`
 }
 
 // What a member is.
@@ -134,6 +138,13 @@ func (s *Service) Topology(ctx context.Context) (Topology, error) {
 		b.NAT = natState(natKnown, natRules, i.Addresses)
 		for _, m := range i.Members {
 			b.Members = append(b.Members, attribute(m, byName[m.Name].Description))
+		}
+		if b.Kind != KindOperator && len(i.Addresses) > 0 {
+			a := i.Addresses[0]
+			if uses := s.addressesOf(ctx, Network{Name: b.Network, Bridge: i.Name,
+				Subnet: a.Masked().String(), Gateway: a.Addr().String()}); len(uses) > 0 {
+				b.InUse = uses
+			}
 		}
 		topology.Bridges = append(topology.Bridges, b)
 	}

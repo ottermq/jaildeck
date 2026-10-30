@@ -275,10 +275,10 @@ func TestVNETStanzaRoundTripsThroughTheParser(t *testing.T) {
 	if jail.Hostname != "db1" {
 		t.Errorf("hostname = %q", jail.Hostname)
 	}
-	// A VNET jail sets no ip4.addr, so neither the configuration nor jls
-	// reports an address for it. The address lives in the jail's own stack.
-	if jail.IP != "" {
-		t.Errorf("ip = %q, want empty: a vnet jail has no ip4.addr to read", jail.IP)
+	// A VNET jail sets no ip4.addr, so jls reports no address for it; the
+	// listing reads the one its stanza gives its end of the epair (JD-047).
+	if jail.IP != "10.77.0.23" {
+		t.Errorf("ip = %q, want the stanza's 10.77.0.23", jail.IP)
 	}
 
 	// And the unit the stanza claims is found again, which is what stops the

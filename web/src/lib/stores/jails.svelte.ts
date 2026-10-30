@@ -327,6 +327,8 @@ export interface NetworkSpec {
     ip4?: string
     interface?: string
     bridge?: string
+    // One of Jail Deck's networks, in place of bridge (JD-047).
+    name?: string
     private?: boolean
     gateway?: string
 }
@@ -386,6 +388,9 @@ export interface Created {
     // taken away again.
     epair?: string
     epair_removed?: boolean
+    // The Jail Deck network it was put on, and its address there (JD-047).
+    network?: string
+    address?: string
     // The rctl rules a failed start had already applied and that were taken
     // back, or why they could not be (JD-018).
     rules_removed?: string[]

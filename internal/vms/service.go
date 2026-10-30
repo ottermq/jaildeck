@@ -31,6 +31,8 @@ type Service struct {
 	consoles ConsoleHangup
 	// properties reads and writes the guests' labels (JD-044).
 	properties PropertyStore
+	// networks gives a guest on a Jail Deck network its address (JD-047).
+	networks NetworkAddresses
 	// snapshots takes a guest's snapshot through ZFS (JD-045).
 	snapshots SnapshotTaker
 }
@@ -140,6 +142,7 @@ func (s *Service) Get(ctx context.Context, name string) (Detail, error) {
 	// the default datastore has none Jail Deck wrote.
 	if applied, err := s.system.VMApplied(ctx, name); err == nil {
 		detail.CPUSet, _ = parsePins(applied.BhyveOptions)
+		detail.Address = applied.Address
 	} else if !errors.Is(err, ErrNoSuchVM) {
 		common.Logger(ctx, "vms").Warn("could not read the guest's configuration",
 			slog.String("vm", name), slog.Any("err", err))

@@ -93,7 +93,13 @@ func (s *Service) compare(ctx context.Context, vm VM, req CreateRequest) (Ensure
 				"nothing to compare a request against", strconv.Quote(vm.Name)))
 	}
 
-	differences := make([]Difference, 0)
+	// On a Jail Deck network, the address a request leaves to it is the one
+	// the guest has.
+	placed, err := s.placeExisting(ctx, req, &spec, have)
+	if err != nil {
+		return result, err
+	}
+	differences := append(make([]Difference, 0), placed...)
 	differ := func(field, want, have string) {
 		if want != have {
 			differences = append(differences, Difference{Field: field, Want: want, Have: have})

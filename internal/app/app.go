@@ -161,7 +161,9 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	networkHandler := networks.NewHandler(networks.NewService(networkSystem, auditLogger, NetworkSettings(cfg)))
+	networkService := networks.NewService(networkSystem, auditLogger, NetworkSettings(cfg))
+	networkHandler := networks.NewHandler(networkService)
+	jailService.SetNetworks(jailNetworks{networks: networkService})
 
 	vmSystem, err := newVMSystem(cfg.Adapter)
 	if err != nil {
@@ -170,6 +172,7 @@ func New(cfg *config.Config) (*App, error) {
 	vmService := vms.NewService(vmSystem, vmImageCatalog{images: imageService}, auditLogger)
 	vmService.SetProperties(storageService)
 	vmService.SetSnapshots(storage.NewGuestSnapshots(storageService))
+	vmService.SetNetworks(guestNetworks{networks: networkService})
 	vmHandler := vms.NewHandler(vmService)
 	// On a real host the switches are one thing; the two fakes are joined so
 	// fake mode behaves the same.
@@ -177,6 +180,11 @@ func New(cfg *config.Config) (*App, error) {
 		if v, ok := vmSystem.(*fake.VMs); ok {
 			v.SwitchesFrom(n)
 			n.GuestsFrom(v.GuestsOn)
+			n.AddressesFrom(v.AddressesIn)
+		}
+		if j, ok := jailAdapter.system.(*fake.JailSystem); ok {
+			n.AddressesFrom(j.AddressesIn)
+			j.BridgesFrom(n.BridgeNames)
 		}
 	}
 

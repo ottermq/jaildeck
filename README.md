@@ -236,7 +236,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `PUT /api/host/layout` | create the missing layout datasets, adopting what is there |
 | `GET /api/jails` | every jail, running or merely configured, with its ZFS datasets |
 | `GET /api/jails/{name}` | one of them, same shape |
-| `POST /api/jails` | create a jail from a ready template: network, limits, parameters, child datasets |
+| `POST /api/jails` | create a jail from a ready template: network (on a Jail Deck network by name, its address picked), limits, parameters, child datasets |
 | `PUT /api/jails/{name}` | the same, idempotently: `201` made, `200` already matching, `409` with a diff |
 | `DELETE /api/jails/{name}` | stop and destroy it, with `confirm=` |
 | `POST /api/jails/{name}/exec` | run a command inside it, with a capped timeout and capped output |
@@ -278,12 +278,12 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/vms/{name}/restart` | stop, then start |
 | `PATCH /api/vms/{name}/properties` | label a guest: ZFS user properties on its dataset, as a jail is tagged; `null` removes one |
 | `PUT /api/vms/{name}/snapshots/{snapshot}` | snapshot a guest and its disks; a running one is taken as it is and the answer says `crash-consistent` |
-| `POST /api/vms` | create a guest from an image: CPU and a pin to host CPUs, memory, disk, a NIC on a switch, SSH keys, a static address |
+| `POST /api/vms` | create a guest from an image: CPU and a pin to host CPUs, memory, disk, a NIC on a switch, SSH keys, a static address, picked by Jail Deck on its own networks |
 | `PUT /api/vms/{name}` | the same, idempotent: create it, or say it already matches, or how it differs |
 | `GET /api/vms/{name}/console` | its serial console, over a WebSocket; one at a time, audited; the `console` scope; optional `actor` and `reason`, recorded |
-| `GET /api/networks` | tenant networks: a bridge each, its subnet, gateway and members |
+| `GET /api/networks` | tenant networks: a bridge each, its subnet, gateway, members and the addresses in use |
 | `POST /api/networks` | create one: a bridge on a free /24 of the range, a vm-bhyve switch on it, rules keeping it apart |
-| `GET /api/networks/{name}` | one tenant network |
+| `GET /api/networks/{name}` | one tenant network, with the addresses in use and whose they are |
 | `DELETE /api/networks/{name}?confirm={name}` | destroy an empty one |
 | `GET /api/names/suggest` | a free name for a new jail or guest, adjective and animal: `jolly-otter` |
 | `DELETE /api/vms/{name}?confirm={name}` | destroy a stopped guest and its disk |

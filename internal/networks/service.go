@@ -35,6 +35,10 @@ type Service struct {
 	// both find the switch missing, two creates could take the same /24, and
 	// the default network and the tenant networks share one anchor file.
 	ensureMu sync.Mutex
+	// leases holds one lock per network, which Reserve keeps until the
+	// address it picked is written down (JD-047).
+	leaseMu sync.Mutex
+	leases  map[string]*sync.Mutex
 }
 
 func NewService(system System, auditLogger audit.Logger, settings Settings) *Service {
@@ -325,6 +329,9 @@ func (s *Service) Default(ctx context.Context) (Default, error) {
 				d.Usable = false
 			}
 		}
+	}
+	if sw != nil && sw.Address == p.String() {
+		d.Addresses = s.addressesOf(ctx, Network{Name: "default", Bridge: sw.Bridge, Subnet: d.Subnet, Gateway: d.Gateway})
 	}
 	return d, nil
 }

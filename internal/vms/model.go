@@ -79,6 +79,9 @@ type Detail struct {
 	// the guest's bhyve_options (JD-041). Absent for a guest not pinned, and
 	// for one whose bhyve_options are not only a pin.
 	CPUSet []int `json:"cpuset,omitempty"`
+	// Address is the one its cloud-init seed gives it, with its prefix: where
+	// to connect to it. Absent for a guest on DHCP, or made without a seed.
+	Address string `json:"address,omitempty"`
 	// MemoryResident is the guest's resident memory in bytes, from bhyvectl.
 	// Only a guest whose bhyve instance exists has one.
 	MemoryResident *int64 `json:"memory_resident,omitempty"`

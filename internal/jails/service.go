@@ -81,6 +81,9 @@ type Dependencies struct {
 	Bridges BridgeSource
 	Epairs  EpairAllocator
 	Epair   EpairCleaner
+	// Networks gives a VNET jail its address on one of Jail Deck's own
+	// networks (JD-047). Absent, a jail is only put on a bridge by name.
+	Networks NetworkAddresses
 
 	// The two a jail with limits or parameters needs (JD-018). Both only
 	// ever refuse or clean up -- the stanza is what applies a limit -- so
@@ -125,6 +128,7 @@ type JailService struct {
 	bridges         BridgeSource
 	epairs          EpairAllocator
 	epair           EpairCleaner
+	networks        NetworkAddresses
 	rctl            RctlSystem
 	devfsRulesets   DevfsRulesetSource
 	configReader    ConfigReader
@@ -148,6 +152,10 @@ type ConsoleHangup interface {
 // this one whether a jail is running.
 func (s *JailService) SetConsoles(c ConsoleHangup) { s.consoles = c }
 
+// SetNetworks gives the service Jail Deck's networks, so a VNET jail on one
+// is given its address (JD-047).
+func (s *JailService) SetNetworks(n NetworkAddresses) { s.networks = n }
+
 func NewJailService(deps Dependencies) *JailService {
 	return &JailService{
 		system:          deps.System,
@@ -167,6 +175,7 @@ func NewJailService(deps Dependencies) *JailService {
 		bridges:         deps.Bridges,
 		epairs:          deps.Epairs,
 		epair:           deps.Epair,
+		networks:        deps.Networks,
 		rctl:            deps.Rctl,
 		devfsRulesets:   deps.DevfsRulesets,
 		configReader:    deps.ConfigReader,

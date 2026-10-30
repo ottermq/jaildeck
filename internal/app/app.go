@@ -173,6 +173,9 @@ func New(cfg *config.Config) (*App, error) {
 	vmService.SetProperties(storageService)
 	vmService.SetSnapshots(storage.NewGuestSnapshots(storageService))
 	vmService.SetNetworks(guestNetworks{networks: networkService})
+	if files, ok := vmSystem.(vms.GuestFiles); ok {
+		vmService.SetFiles(files)
+	}
 	vmHandler := vms.NewHandler(vmService)
 	// On a real host the switches are one thing; the two fakes are joined so
 	// fake mode behaves the same.

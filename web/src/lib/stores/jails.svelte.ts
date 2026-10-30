@@ -54,6 +54,20 @@ export async function getJail(name:string): Promise<JailData>{
         return await api<JailData>(`/jails/${encodeURIComponent(name)}`);
 }
 
+// A jail's own stanza and its rctl rules as the host has them (#127).
+// present is false for a jail configured outside jail.conf.d; rules is null
+// when they could not be read, and rules_error says why.
+export interface JailConfiguration {
+    name: string
+    file: { path: string; present: boolean; content?: string; truncated?: boolean }
+    rules: string[] | null
+    rules_error?: string
+}
+
+export async function getJailConfiguration(name: string): Promise<JailConfiguration> {
+    return await api<JailConfiguration>(`/jails/${encodeURIComponent(name)}/configuration`)
+}
+
 export async function runJailOperation(name:string, op:Operation): Promise<JailData>{
     return await api<JailData>(`/jails/${encodeURIComponent(name)}/${op}`, {method: 'POST'})
 }

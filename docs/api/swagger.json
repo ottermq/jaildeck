@@ -822,6 +822,64 @@
                 }
             }
         },
+        "/jails/{name}/configuration": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The jail's own `jail.conf.d/\u003cname\u003e.conf`, read off the disk now, and the rctl\nrules keyed to its name (`rctl jail:\u003cname\u003e`). Read only (#127, JD-048).\n\nA jail with no file of its own, configured in /etc/jail.conf or nowhere, is\nanswered with `present: false` and the path: that file is the operator's and is\nnot shown in part. A file past 64 KiB is cut there and says `truncated`. Rules\nthat cannot be read leave `rules` null and say why in `rules_error`.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jails"
+                ],
+                "summary": "Show a jail's configuration as the host has it",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Jail name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Configuration"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a jail name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such jail",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "The file could not be read",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/jails/{name}/console": {
             "get": {
                 "security": [
@@ -3593,6 +3651,76 @@
                 }
             }
         },
+        "/vms/{name}/configuration": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "vm-bhyve's `\u003cname\u003e.conf` and the cloud-init seed's `meta-data`, `user-data` and\n`network-config`, read off the default datastore now (#127, JD-048). Read only.\n\nA file that is not there is listed with `present: false`. A file past 64 KiB is\ncut there and says `truncated`. **The value of every `password`, `passwd`,\n`hashed_passwd` and `plain_text_passwd` key is masked**, and `masked` names\nthem: a console password's hash can be guessed at offline. `seed.iso`, built\nfrom these at the first start, is not shown.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "vms"
+                ],
+                "summary": "Show a guest's configuration as the host has it",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Guest name, as listed",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/vms.Configuration"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a vm-bhyve guest name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such guest, or none in the default datastore",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "vm-bhyve is not installed or not configured",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "A file could not be read",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "This Jail Deck cannot read a guest's files",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/vms/{name}/console": {
             "get": {
                 "security": [
@@ -4750,6 +4878,46 @@
                     "additionalProperties": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "jails.ConfigFile": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "present": {
+                    "description": "Present is false for a file that is not there. That is an answer, not\nan error: a jail configured in /etc/jail.conf has no file of its own.",
+                    "type": "boolean"
+                },
+                "truncated": {
+                    "description": "Truncated says Content stops at MaxShownFile.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "jails.Configuration": {
+            "type": "object",
+            "properties": {
+                "file": {
+                    "$ref": "#/definitions/jails.ConfigFile"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "rules": {
+                    "description": "Rules are `rctl jail:\u003cname\u003e`, empty when there are none. Absent, with\nRulesError, when they could not be read: a kernel without RACCT, for\none.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "rules_error": {
+                    "type": "string"
                 }
             }
         },
@@ -6535,6 +6703,20 @@
                 }
             }
         },
+        "vms.Configuration": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/vms.GuestFile"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "vms.Consistency": {
             "type": "string",
             "enum": [
@@ -6853,6 +7035,36 @@
                 "vnc": {
                     "description": "VNC is the address a running guest's framebuffer listens on, when it\nhas one.",
                     "type": "string"
+                }
+            }
+        },
+        "vms.GuestFile": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "masked": {
+                    "description": "Masked names the keys whose values were replaced: a console password's\nhash, which bcrypt or not can be guessed at offline.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "description": "Name is what the file is to the guest: its configuration, or one of\nthe cloud-init seed's.",
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "present": {
+                    "description": "Present is false for a file that is not there, which is an answer: a\nguest made without a seed has no .cloud-init.",
+                    "type": "boolean"
+                },
+                "truncated": {
+                    "description": "Truncated says Content stops at MaxShownFile.",
+                    "type": "boolean"
                 }
             }
         },

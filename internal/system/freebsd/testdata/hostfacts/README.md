@@ -538,6 +538,28 @@ host's epairs were as many as before. The host ran with `net.link.bridge.pfil_me
 - **A bridge that is not there is exit 1**, `arp: interface jdnope0 does not exist`
   (`nad_arp_nosuch`).
 
+## What a guest's directory holds (JD-048)
+
+`capture-vm-configuration-induced.sh`, run 2026-10-30 on isengard into `isengard-induced/` with
+the prefix `vcf_`, **changes the host**. It makes two throwaway guests on an empty 1G sparse
+disk, with no image and no switch. `jd-cap-cfgu` is made with `vm create -u`, from a user-data
+file as Jail Deck writes one for a console password, its hash a placeholder in bcrypt's shape.
+`jd-cap-cfgk` is made with `vm create -k`. It starts the first one once, powers it off, and
+destroys both and the template again; `system.conf` was as before.
+
+**What that settled:**
+
+- **The directory and everything vm-bhyve writes in it are `root:wheel`, files `0644` and
+  directories `0755`** (`vcf_dir_u`, `vcf_dir_k`): `<name>.conf`, `vm-bhyve.log`,
+  `.cloud-init/meta-data`, `.cloud-init/network-config`, and `user-data` made from `-k`.
+- **A `user-data` given with `-u` keeps its own mode**: Jail Deck writes it `0600`, and the
+  seed's copy is `0600` (`vcf_user_data_scratch`, `vcf_dir_u`). An unprivileged account is
+  refused it (`vcf_read_as_user`).
+- **The first start adds `seed.iso`, `console` and `run.lock`**, and the configuration
+  gains `disk1` for the ISO (`vcf_dir_u_started`, `vcf_conf_u`). `seed.iso` stays after the
+  guest stops (`vcf_dir_u_stopped`).
+- **`rctl jail:<name>` for a jail with no rules prints nothing and exits 0** (`vcf_rctl_none`).
+
 ## Disk health (#83)
 
 Captured 2026-10-25, on `isengard` and `rohan` only. `rivendell` and the VM were not

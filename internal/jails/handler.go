@@ -85,6 +85,40 @@ func (h *JailHandler) Get(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, jail)
 }
 
+// Configuration returns a jail's stanza and rctl rules as the host has them.
+//
+// @Summary      Show a jail's configuration as the host has it
+// @Description  The jail's own `jail.conf.d/<name>.conf`, read off the disk now, and the rctl
+// @Description  rules keyed to its name (`rctl jail:<name>`). Read only (#127, JD-048).
+// @Description
+// @Description  A jail with no file of its own, configured in /etc/jail.conf or nowhere, is
+// @Description  answered with `present: false` and the path: that file is the operator's and is
+// @Description  not shown in part. A file past 64 KiB is cut there and says `truncated`. Rules
+// @Description  that cannot be read leave `rules` null and say why in `rules_error`.
+// @Tags         jails
+// @Produce      json
+// @Param        name  path      string  true  "Jail name"
+// @Success      200   {object}  Configuration
+// @Failure      400   {object}  common.ErrorResponse  "Not a jail name"
+// @Failure      401   {object}  common.ErrorResponse
+// @Failure      404   {object}  common.ErrorResponse  "No such jail"
+// @Failure      500   {object}  common.ErrorResponse  "The file could not be read"
+// @Security     BearerAuth
+// @Router       /jails/{name}/configuration [get]
+func (h *JailHandler) Configuration(w http.ResponseWriter, r *http.Request) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	configuration, err := h.service.Configuration(r.Context(), name)
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, configuration)
+}
+
 func (h *JailHandler) do(w http.ResponseWriter, r *http.Request, call func(context.Context, JailName) (OperationResult, error)) {
 	name, err := NewJailName(chi.URLParam(r, "name"))
 	if err != nil {

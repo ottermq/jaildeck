@@ -9,6 +9,9 @@ func RegisterVMRoutes(r chi.Router, h *Handler) {
 	r.Get("/vms", h.List)
 	r.Post("/vms", h.Create)
 	r.Get("/vms/{name}", h.Get)
+	// Its configuration and cloud-init seed as the host has them, read only,
+	// a password's hash masked (#127).
+	r.Get("/vms/{name}/configuration", h.Configuration)
 	r.Put("/vms/{name}", h.Ensure)
 	r.Delete("/vms/{name}", h.Destroy)
 	r.Post("/vms/{name}/start", h.Start)

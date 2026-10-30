@@ -236,6 +236,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `PUT /api/host/layout` | create the missing layout datasets, adopting what is there |
 | `GET /api/jails` | every jail, running or merely configured, with its ZFS datasets |
 | `GET /api/jails/{name}` | one of them, same shape |
+| `GET /api/jails/{name}/configuration` | its own stanza as it is on disk, and the rctl rules keyed to its name |
 | `POST /api/jails` | create a jail from a ready template: network (on a Jail Deck network by name, its address picked), limits, parameters, child datasets |
 | `PUT /api/jails/{name}` | the same, idempotently: `201` made, `200` already matching, `409` with a diff |
 | `DELETE /api/jails/{name}` | stop and destroy it, with `confirm=` |
@@ -273,6 +274,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/firewall/log` | the most recent pflog lines |
 | `GET /api/vms` | vm-bhyve's guests and their state, and whether vm-bhyve is ready |
 | `GET /api/vms/{name}` | one guest's console, network interfaces, disks and CPU pin |
+| `GET /api/vms/{name}/configuration` | its vm-bhyve configuration and cloud-init seed as they are on disk, a password's value masked |
 | `POST /api/vms/{name}/start` | start it and confirm it is running |
 | `POST /api/vms/{name}/stop` | the power button, then a poweroff after 60 seconds, reported as `forced` |
 | `POST /api/vms/{name}/restart` | stop, then start |

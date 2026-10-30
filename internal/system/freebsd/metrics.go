@@ -318,3 +318,45 @@ var (
 	_ metrics.HostMetrics     = (*Adapter)(nil)
 	_ metrics.JailUsageSource = (*Adapter)(nil)
 )
+
+// ProcessCPU reads each process's pcpu, percent of one core as ps averages
+// it, in one `ps -p` for all of them (#126). A process gone since its pid was
+// read is absent from the answer; ps exits 1 when none of them are there,
+// which is an empty answer, not a failure.
+func (a *Adapter) ProcessCPU(ctx context.Context, pids []int) (map[int]float64, error) {
+	out := map[int]float64{}
+	if len(pids) == 0 {
+		return out, nil
+	}
+	list := make([]string, len(pids))
+	for i, pid := range pids {
+		list[i] = strconv.Itoa(pid)
+	}
+	result, err := a.runHost(ctx, system.Command{
+		Name:    "ps",
+		Args:    []string{"-o", "pid=", "-o", "pcpu=", "-p", strings.Join(list, ",")},
+		Timeout: metricsTimeout,
+	})
+	if err != nil {
+		if exited(result, err) && strings.TrimSpace(result.Stdout) == "" {
+			return out, nil
+		}
+		return nil, err
+	}
+	for _, line := range nonEmptyLines(result.Stdout) {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		pid, err := strconv.Atoi(fields[0])
+		if err != nil {
+			continue
+		}
+		percent, err := strconv.ParseFloat(fields[1], 64)
+		if err != nil {
+			continue
+		}
+		out[pid] = percent
+	}
+	return out, nil
+}

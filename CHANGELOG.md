@@ -20,6 +20,24 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+### Added
+
+- **Usage sparklines in the Instances list, guests included** (#126, JD-050). A running jail's
+  or guest's CPU and memory have a small line of the last two minutes beside them, read by the
+  page every five seconds while it is open and kept nowhere else. Running guests now show what
+  they use rather than what they were given: CPU from their bhyve process, memory from
+  bhyvectl's resident count.
+
+### API
+
+- **`GET /api/metrics`** has `guests`: each running guest's `pcpu` (percent of one core, from
+  its bhyve process) and `memory_resident` (bytes, from bhyvectl), or its `error`; and
+  `guests_unavailable` when they could not be listed. `[]` on a host without vm-bhyve.
+- **`GET /metrics`** has `jaildeck_guests_running`, and per guest `jaildeck_guest_readable`,
+  `jaildeck_guest_cpu_cores` and `jaildeck_guest_memory_bytes`.
+
 ## v0.25.0 — 2026-10-30
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.25.0)

@@ -75,3 +75,10 @@ var ErrSmartctlUnavailable = errors.New("smartctl is not available")
 type JailSource interface {
 	JailStates(ctx context.Context) (map[string]bool, error)
 }
+
+// GuestSource reads every running guest's usage (#126). The vms domain knows
+// which guests run and their bhyve process; internal/app joins that with the
+// host's process table, so neither domain imports the other (JD-010).
+type GuestSource interface {
+	GuestUsage(ctx context.Context) ([]GuestUsage, error)
+}

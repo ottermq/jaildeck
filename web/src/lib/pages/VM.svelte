@@ -1,7 +1,7 @@
 <script lang="ts">
 import { onMount } from 'svelte'
 import { navigate, onNavClick } from '../router.svelte'
-import { destroyVM, getVM } from '../stores/vms.svelte'
+import { destroyVM, getVM, setVMTags } from '../stores/vms.svelte'
 import { ask } from '../stores/confirm.svelte'
 import type { Detail } from '../stores/vms.svelte'
 import { ApiError } from '../services/api'
@@ -9,6 +9,7 @@ import { formatBytes, normalizeEmptyValue } from '../utils'
 import { stateBadge } from '../vmState'
 import VMActions from '../components/VMActions.svelte'
 import ConsolePanel from '../components/ConsolePanel.svelte'
+import TagsPanel from '../components/TagsPanel.svelte'
 import type { OperationResult } from '../stores/vms.svelte'
 
 let { name }: { name: string } = $props()
@@ -247,6 +248,25 @@ function bytes(n: number | undefined): string {
             <p class="notice">No disk is configured.</p>
         {/if}
     </section>
+
+    <TagsPanel
+        {name}
+        noun="guest"
+        properties={vm.properties}
+        save={tags => setVMTags(name, tags)}
+        changed={load}
+    >
+        {#snippet empty()}
+            No ZFS user properties on this guest's dataset, <code>&lt;datastore&gt;/{vm.name}</code>.
+            An automation client sets these — <code>otter:instance</code> and the like — and
+            finds its guests again from the listing alone. A guest in a datastore that is not
+            on ZFS has nowhere to keep one.
+        {/snippet}
+        {#snippet hint()}
+            Kept on the guest's dataset, so they go with it through a rename and are gone with
+            a destroy. Its disk volumes inherit them; the guest reports its own dataset's only.
+        {/snippet}
+    </TagsPanel>
 {/if}
 
 <style>

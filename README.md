@@ -265,6 +265,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/vms/{name}/start` | start it and confirm it is running |
 | `POST /api/vms/{name}/stop` | the power button, then a poweroff after 60 seconds, reported as `forced` |
 | `POST /api/vms/{name}/restart` | stop, then start |
+| `PATCH /api/vms/{name}/properties` | label a guest: ZFS user properties on its dataset, as a jail is tagged; `null` removes one |
 | `POST /api/vms` | create a guest from an image: CPU and a pin to host CPUs, memory, disk, a NIC on a switch, SSH keys, a static address |
 | `PUT /api/vms/{name}` | the same, idempotent: create it, or say it already matches, or how it differs |
 | `GET /api/vms/{name}/console` | its serial console, over a WebSocket; one at a time, audited |

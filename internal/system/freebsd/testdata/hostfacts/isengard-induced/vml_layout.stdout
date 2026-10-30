@@ -1,0 +1,4 @@
+tank/vm/jd-cap-129	filesystem
+tank/vm/jd-cap-129/disk0	volume
+jd-cap-129.conf
+vm-bhyve.log

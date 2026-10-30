@@ -420,3 +420,7 @@ func TestDestroy(t *testing.T) {
 	_, err = s.Destroy(context.Background(), "existing", "existing")
 	wantAppError(t, err, http.StatusNotFound, "no virtual machine")
 }
+
+func (m *maker) VMDatasets(context.Context) (map[string]string, error) {
+	return map[string]string{"default": "tank/vm"}, nil
+}

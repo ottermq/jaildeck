@@ -1,0 +1,16 @@
+tank/vm/jd-cap-129r	otter:tier	frontend
+tank/vm/jd-cap-129r	otter:tenant	acme
+tank/vm/jd-cap-129r	otter:instance	web-01
+loader="uefi"
+cpu=1
+memory=256M
+disk0_type="virtio-blk"
+disk0_name="disk0"
+disk0_dev="sparse-zvol"
+uuid="6b8eb9d6-d452-11f1-b463-e80688cecc46"
+network0_mac="58:9c:fc:0d:45:ef"
+otter_tenant="acme"
+tank/vm/jd-cap-129r@2026-10-30-08:09:53
+tank/vm/jd-cap-129r@jdcap
+tank/vm/jd-cap-129r/disk0@2026-10-30-08:09:53
+tank/vm/jd-cap-129r/disk0@jdcap

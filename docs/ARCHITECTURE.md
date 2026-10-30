@@ -324,6 +324,7 @@ POST   /api/vms/{name}/start         # and stop, restart (JD-036)
 POST   /api/vms                      # create from an image (JD-038), pinned (JD-041)
 PUT    /api/vms/{name}               # idempotent create, or the differences (JD-041)
 GET    /api/vms/{name}/console       # WebSocket: the guest's serial console, raw (JD-042)
+PATCH  /api/vms/{name}/properties    # the guest's labels, ZFS user properties (JD-044)
 DELETE /api/vms/{name}
 GET    /api/networks                 # tenant networks (JD-043); POST creates one
 GET    /api/networks/{name}          # one; DELETE destroys it, empty, with confirm

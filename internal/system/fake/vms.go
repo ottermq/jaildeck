@@ -286,3 +286,9 @@ func (f *VMs) VMApplied(_ context.Context, name string) (vms.Applied, error) {
 }
 
 var _ vms.VMSystem = (*VMs)(nil)
+
+// VMDatasets is one datastore on ZFS, matching the fake storage's zroot/vm,
+// where the fake guests' labels live (JD-044).
+func (f *VMs) VMDatasets(context.Context) (map[string]string, error) {
+	return map[string]string{"default": "zroot/vm"}, nil
+}

@@ -1,0 +1,2 @@
+NAME            TYPE        PATH                      ZFS DATASET
+default         zfs         /vm                       tank/vm

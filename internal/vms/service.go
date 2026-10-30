@@ -29,6 +29,8 @@ type Service struct {
 	wait func(context.Context, time.Duration)
 	// consoles are the guests' open serial consoles (JD-042).
 	consoles ConsoleHangup
+	// properties reads and writes the guests' labels (JD-044).
+	properties PropertyStore
 }
 
 // ConsoleHangup closes a guest's console session before Jail Deck stops it.
@@ -82,6 +84,7 @@ func (s *Service) List(ctx context.Context) (Listing, error) {
 		} else if switches != nil {
 			listing.Switches = switches
 		}
+		s.labelled(ctx, listing.VMs)
 	}
 	return listing, nil
 }
@@ -104,6 +107,9 @@ func (s *Service) Get(ctx context.Context, name string) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
+	labelled := []VM{*row}
+	s.labelled(ctx, labelled)
+	row = &labelled[0]
 
 	info, err := s.system.VMInfo(ctx, name)
 	if errors.Is(err, ErrNoSuchVM) {

@@ -1,0 +1,2 @@
+/usr/local/sbin/vm: WARNING: jd-cap-129 appears to be running on isengard (locked)
+/usr/local/sbin/vm: ERROR: jd-cap-129 must be powered off first (use -f to override)

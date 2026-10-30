@@ -327,3 +327,43 @@ func (h *Handler) Destroy(w http.ResponseWriter, r *http.Request) {
 	}
 	common.WriteJSON(w, http.StatusOK, removal)
 }
+
+// SetProperties labels the guest.
+//
+// @Summary      Label the guest
+// @Description  Sets ZFS user properties on the guest's own dataset, <datastore's dataset>/<name>,
+// @Description  the way a jail is tagged (JD-044). They are what the listing reads back as the
+// @Description  guest's properties, and what `zfs get` shows on the host. vm-bhyve carries them
+// @Description  through a rename and destroys them with the guest.
+// @Description
+// @Description  PATCH: these merge. A null value removes the property via zfs inherit. Only user
+// @Description  properties -- the name must contain a colon -- and the value is passed through.
+// @Description  A running guest can be labelled.
+// @Description
+// @Description  409 for a guest in a datastore that is not on ZFS, which has nowhere to keep one.
+// @Tags         vms
+// @Accept       json
+// @Produce      json
+// @Param        name        path      string             true  "Guest name"
+// @Param        properties  body      map[string]string  true  "Property names to values; null removes"
+// @Success      200         {object}  map[string]string  "The guest's labels now"
+// @Failure      400         {object}  common.ErrorResponse  "A name that is not a user property"
+// @Failure      401         {object}  common.ErrorResponse
+// @Failure      404         {object}  common.ErrorResponse  "No such guest"
+// @Failure      409         {object}  common.ErrorResponse  "Its datastore is not on ZFS, or vm-bhyve is not ready"
+// @Security     BearerAuth
+// @Router       /vms/{name}/properties [patch]
+func (h *Handler) SetProperties(w http.ResponseWriter, r *http.Request) {
+	var properties map[string]*string
+	if err := json.NewDecoder(r.Body).Decode(&properties); err != nil {
+		common.HandlerError(w, common.NewAppError(http.StatusBadRequest,
+			"could not read the request body: "+err.Error()))
+		return
+	}
+	found, err := h.service.UpdateProperties(r.Context(), chi.URLParam(r, "name"), properties)
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, found)
+}

@@ -25,6 +25,9 @@ export interface VM {
     // In rc.conf's vm_list, which rc.d/vm starts at boot, at this place.
     autostart: boolean
     autostart_order?: number
+    // ZFS user properties on the guest's dataset: the labels an automation
+    // client sets (JD-044). Empty for a guest in a datastore not on ZFS.
+    properties: Record<string, string>
 }
 
 export interface Listing {
@@ -119,6 +122,18 @@ export async function createVM(req: CreateRequest): Promise<Created> {
 }
 
 // Destroys a stopped guest and its disk. confirm is its name.
+// Null removes a label; anything else sets it, the empty string included.
+// Answers every label the guest carries afterwards.
+export async function setVMTags(
+    name: string,
+    tags: Record<string, string | null>,
+): Promise<Record<string, string>> {
+    return await api<Record<string, string>>(`/vms/${encodeURIComponent(name)}/properties`, {
+        method: 'PATCH',
+        body: JSON.stringify(tags),
+    })
+}
+
 export async function destroyVM(name: string): Promise<{ name: string }> {
     const query = new URLSearchParams({ confirm: name })
     return await api<{ name: string }>(`/vms/${encodeURIComponent(name)}?${query}`, { method: 'DELETE' })

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/ottermq/jaildeck/internal/audit"
@@ -169,6 +170,33 @@ func (s *Service) datasetNamed(ctx context.Context, name string) (*Dataset, erro
 		}
 	}
 	return nil, nil
+}
+
+// UserPropertiesOf is each dataset's own user properties, by dataset, in one
+// zfs get: a guest's labels for every guest at once (JD-044). A dataset with
+// none is absent from the answer.
+func (s *Service) UserPropertiesOf(ctx context.Context, datasets []string) (map[string]map[string]string, error) {
+	properties, err := s.system.LocalProperties(ctx, datasets)
+	if err != nil {
+		return nil, toWriteError("read the properties of", strings.Join(datasets, " "), err)
+	}
+	wanted := make(map[string]bool, len(datasets))
+	for _, dataset := range datasets {
+		wanted[dataset] = true
+	}
+	found := map[string]map[string]string{}
+	for _, property := range properties {
+		// -r reaches a guest's disks too, which inherit its labels rather
+		// than set their own; only the datasets asked for are answered.
+		if !wanted[property.Dataset] || !isUserProperty(property.Name) {
+			continue
+		}
+		if found[property.Dataset] == nil {
+			found[property.Dataset] = map[string]string{}
+		}
+		found[property.Dataset][property.Name] = property.Value
+	}
+	return found, nil
 }
 
 func (s *Service) userPropertiesOf(ctx context.Context, name string) (map[string]string, error) {

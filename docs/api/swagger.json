@@ -4756,6 +4756,9 @@
         "jails.Created": {
             "type": "object",
             "properties": {
+                "address": {
+                    "type": "string"
+                },
                 "autostart": {
                     "type": "boolean"
                 },
@@ -4794,6 +4797,10 @@
                     "$ref": "#/definitions/jails.Jail"
                 },
                 "mountpoint": {
+                    "type": "string"
+                },
+                "network": {
+                    "description": "Network is the Jail Deck network a VNET jail was put on, and Address\nthe address it has there: picked, unless the spec gave one (JD-047).",
                     "type": "string"
                 },
                 "properties": {
@@ -5051,6 +5058,9 @@
         "jails.Ensured": {
             "type": "object",
             "properties": {
+                "address": {
+                    "type": "string"
+                },
                 "autostart": {
                     "type": "boolean"
                 },
@@ -5100,6 +5110,10 @@
                     "$ref": "#/definitions/jails.Jail"
                 },
                 "mountpoint": {
+                    "type": "string"
+                },
+                "network": {
+                    "description": "Network is the Jail Deck network a VNET jail was put on, and Address\nthe address it has there: picked, unless the spec gave one (JD-047).",
                     "type": "string"
                 },
                 "properties": {
@@ -5328,6 +5342,10 @@
                 },
                 "mode": {
                     "$ref": "#/definitions/jails.NetworkMode"
+                },
+                "name": {
+                    "description": "Name is one of Jail Deck's own networks, \"default\" or a tenant\nnetwork's name, in place of Bridge: the jail joins its bridge, and is\ngiven a free address of its subnet and its gateway unless IP4 and\nGateway say otherwise (JD-047). NetworkVNET only. A jail put on a Jail\nDeck network's bridge by Bridge is given its address the same way.",
+                    "type": "string"
                 },
                 "private": {
                     "description": "Private makes the host end a private member of the bridge.\n\nMeasured on 15.1-RELEASE-p5: two private members cannot reach each\nother, but a private member still reaches non-private members and the\nbridge itself. So this isolates a jail from the other jails that also\nask for it -- not from every jail on the bridge, and not from the\nhost. Worth being exact about, because the weaker guarantee is the one\nan operator would assume they had.",
@@ -5953,6 +5971,13 @@
                 "exists": {
                     "type": "boolean"
                 },
+                "in_use": {
+                    "description": "InUse are the addresses of a Jail Deck network's subnet that its\ninstances have, and by which (JD-047). Jail Deck's networks only: what\nis on an operator's is the operator's to address.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/networks.Use"
+                    }
+                },
                 "kind": {
                     "type": "string"
                 },
@@ -6002,6 +6027,13 @@
                 "address": {
                     "type": "string"
                 },
+                "addresses": {
+                    "description": "Addresses are the subnet's addresses in use, and by what (JD-047):\nnull until the switch has its address, or when they could not be\nread.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/networks.Use"
+                    }
+                },
                 "egress": {
                     "description": "Egress is the interface NAT sends the guests out of.",
                     "type": "string"
@@ -6038,6 +6070,13 @@
             "properties": {
                 "address": {
                     "type": "string"
+                },
+                "addresses": {
+                    "description": "Addresses are the subnet's addresses in use, and by what (JD-047):\nnull until the switch has its address, or when they could not be\nread.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/networks.Use"
+                    }
                 },
                 "changed": {
                     "type": "boolean"
@@ -6108,6 +6147,13 @@
         "networks.Network": {
             "type": "object",
             "properties": {
+                "addresses": {
+                    "description": "Addresses are the subnet's addresses in use, and by what (JD-047):\nnull when they could not be read, and on a network just made.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/networks.Use"
+                    }
+                },
                 "bridge": {
                     "description": "Bridge is the host's interface, jdn\u003ci\u003e: what a VNET jail's epair joins.",
                     "type": "string"
@@ -6206,6 +6252,22 @@
                     "items": {
                         "$ref": "#/definitions/networks.Bridge"
                     }
+                }
+            }
+        },
+        "networks.Use": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "Kind is \"jail\" or \"guest\" for an address a configuration names, and\n\"seen\" for one only the bridge's ARP table has: an instance that set\nits own address, or something that is not Jail Deck's.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is the jail's or guest's, for a jail or a guest.",
+                    "type": "string"
                 }
             }
         },
@@ -6518,7 +6580,7 @@
                     "type": "string"
                 },
                 "network": {
-                    "description": "Network is a static address for that NIC. Absent means DHCP.",
+                    "description": "Network is a static address for that NIC. Absent means DHCP, except\non one of Jail Deck's own networks, which have no DHCP server: there\nthe guest is given a free address of the network and its gateway\n(JD-047), and so it is when Network leaves its address out.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/vms.StaticNetwork"
@@ -6545,6 +6607,9 @@
         "vms.Created": {
             "type": "object",
             "properties": {
+                "address": {
+                    "type": "string"
+                },
                 "autostart": {
                     "description": "Autostart is whether the guest is in rc.conf's vm_list, which\nrc.d/vm starts at boot. AutostartOrder is its place in that list,\nfrom 1.",
                     "type": "boolean"
@@ -6575,6 +6640,10 @@
                 "name": {
                     "type": "string"
                 },
+                "network": {
+                    "description": "Network is the Jail Deck network the guest was put on, and Address\nthe address it has there: picked, unless the request gave one (JD-047).",
+                    "type": "string"
+                },
                 "pid": {
                     "type": "integer"
                 },
@@ -6597,6 +6666,10 @@
         "vms.Detail": {
             "type": "object",
             "properties": {
+                "address": {
+                    "description": "Address is the one its cloud-init seed gives it, with its prefix: where\nto connect to it. Absent for a guest on DHCP, or made without a seed.",
+                    "type": "string"
+                },
                 "autostart": {
                     "description": "Autostart is whether the guest is in rc.conf's vm_list, which\nrc.d/vm starts at boot. AutostartOrder is its place in that list,\nfrom 1.",
                     "type": "boolean"
@@ -6716,6 +6789,9 @@
         "vms.Ensured": {
             "type": "object",
             "properties": {
+                "address": {
+                    "type": "string"
+                },
                 "autostart": {
                     "description": "Autostart is whether the guest is in rc.conf's vm_list, which\nrc.d/vm starts at boot. AutostartOrder is its place in that list,\nfrom 1.",
                     "type": "boolean"
@@ -6755,6 +6831,10 @@
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "network": {
+                    "description": "Network is the Jail Deck network the guest was put on, and Address\nthe address it has there: picked, unless the request gave one (JD-047).",
                     "type": "string"
                 },
                 "pid": {
@@ -6924,7 +7004,7 @@
             "type": "object",
             "properties": {
                 "address": {
-                    "description": "Address is the guest's, with its prefix: \"10.77.0.10/24\".",
+                    "description": "Address is the guest's, with its prefix: \"10.77.0.10/24\". It may be\nleft out on a Jail Deck network, which picks it.",
                     "type": "string"
                 },
                 "gateway": {

@@ -291,7 +291,7 @@ func TestSpecNormalizeRefuses(t *testing.T) {
 			name:    "vnet without a bridge",
 			spec:    Spec{Name: "db1", Template: "p/t@base", Network: Network{Mode: NetworkVNET}},
 			code:    http.StatusBadRequest,
-			message: "network.bridge is required",
+			message: "network.bridge or network.name is required",
 		},
 		{
 			name:    "a gateway with no address to leave by",

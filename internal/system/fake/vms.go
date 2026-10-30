@@ -2,11 +2,13 @@ package fake
 
 import (
 	"context"
+	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/ottermq/jaildeck/internal/networks"
 	"github.com/ottermq/jaildeck/internal/vms"
 )
 
@@ -242,6 +244,19 @@ func (f *VMs) GuestsOn(sw string) []string {
 	}
 	slices.Sort(on)
 	return on
+}
+
+// AddressesIn are the addresses of subnet the guests' seeds give.
+func (f *VMs) AddressesIn(subnet netip.Prefix) []networks.Use {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	uses := make([]networks.Use, 0)
+	for name, m := range f.made {
+		if p, err := netip.ParsePrefix(m.spec.Address); err == nil && subnet.Contains(p.Addr()) {
+			uses = append(uses, networks.Use{Address: p.Addr().String(), Kind: networks.UseGuest, Name: name})
+		}
+	}
+	return uses
 }
 
 // HostCPUs is isengard's.

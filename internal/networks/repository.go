@@ -86,6 +86,12 @@ type System interface {
 	// Interfaces is every interface on the host, from one ifconfig: what
 	// the Networks view reads its bridges and their members from (#128).
 	Interfaces(ctx context.Context) ([]Interface, error)
+
+	// AddressUses is every address of subnet something has (JD-047): one an
+	// address in a jail's configuration or a guest's cloud-init seed names,
+	// and one the bridge's ARP table has learned. Addresses outside subnet
+	// may be returned; the service filters them.
+	AddressUses(ctx context.Context, subnet netip.Prefix, bridge string) ([]Use, error)
 }
 
 // Interface is one of the host's interfaces as ifconfig prints it.

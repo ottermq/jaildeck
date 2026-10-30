@@ -63,6 +63,13 @@ describe('buildSpec', () => {
             expect(spec.network).not.toHaveProperty('gateway')
         })
 
+        it('vnet on a Jail Deck network sends its name and no bridge', () => {
+            expect(buildSpec(blank({ mode: 'vnet', network: 'platform', bridge: 'typed before' })).network)
+                .toEqual({ mode: 'vnet', name: 'platform' })
+            expect(buildSpec(blank({ mode: 'alias', network: 'platform', ip4: '192.0.2.1', iface: 'em0' })).network)
+                .toEqual({ mode: 'alias', ip4: '192.0.2.1', interface: 'em0' })
+        })
+
         it('vnet sends its bridge, and the rest only when given', () => {
             expect(buildSpec(blank({ mode: 'vnet', bridge: 'bridge0' })).network)
                 .toEqual({ mode: 'vnet', bridge: 'bridge0' })

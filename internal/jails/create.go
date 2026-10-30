@@ -76,6 +76,17 @@ func (s *JailService) Create(ctx context.Context, spec Spec) (Created, error) {
 		result.FailedAt = StepCheck
 		return result, err
 	}
+	// On one of Jail Deck's networks the jail is given its address now,
+	// and keeps the network to itself until its stanza says so.
+	release, err := s.placeOnNetwork(ctx, &spec)
+	if err != nil {
+		result.FailedAt = StepCheck
+		return result, err
+	}
+	defer release()
+	if spec.Network.Name != "" {
+		result.Network, result.Address = spec.Network.Name, spec.Network.IP4
+	}
 	if err := s.checkBridge(ctx, spec.Network); err != nil {
 		result.FailedAt = StepCheck
 		return result, err

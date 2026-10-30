@@ -145,6 +145,10 @@ function bytes(n: number | undefined): string {
             <dd>{normalizeEmptyValue(vm.loader ?? '')}</dd>
             <dt>Datastore</dt>
             <dd>{vm.datastore}</dd>
+            {#if vm.address}
+                <dt>Connect to</dt>
+                <dd><code>{vm.address.split('/')[0]}</code> <span class="muted">its address, {vm.address}</span></dd>
+            {/if}
             {#if vm.uuid}
                 <dt>UUID</dt>
                 <dd><code>{vm.uuid}</code></dd>

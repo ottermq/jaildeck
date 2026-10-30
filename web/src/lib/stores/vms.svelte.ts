@@ -70,6 +70,9 @@ export interface Detail extends VM {
     disks: Disk[]
     // The host CPU each vCPU is pinned to, vCPU 0 first (JD-041).
     cpuset?: number[]
+    // The address its cloud-init seed gives it, with its prefix: where to
+    // connect to it. Absent on DHCP (JD-047).
+    address?: string
 }
 
 export async function listVMs(): Promise<Listing> {
@@ -97,7 +100,8 @@ export async function runVMOperation(name: string, op: VMOperation): Promise<Ope
 
 // A guest made from an image template (JD-038). Empty fields take the
 // server's defaults: one CPU, 1G of memory, the image's own disk size, no NIC,
-// DHCP when there is one.
+// DHCP on an operator's switch, and on one of Jail Deck's networks an address
+// it picks (JD-047).
 export interface CreateRequest {
     name: string
     image: string
@@ -107,7 +111,8 @@ export interface CreateRequest {
     memory?: string
     disk?: string
     switch?: string
-    network?: { address: string, gateway?: string, nameservers?: string[] }
+    // address may be left out on a Jail Deck network, which picks it.
+    network?: { address?: string, gateway?: string, nameservers?: string[] }
     ssh_keys?: string[]
     console_password?: string
     start?: boolean
@@ -115,6 +120,9 @@ export interface CreateRequest {
 
 export interface Created extends VM {
     image: string
+    // The Jail Deck network it was put on, and its address there (JD-047).
+    network?: string
+    address?: string
 }
 
 export async function createVM(req: CreateRequest): Promise<Created> {

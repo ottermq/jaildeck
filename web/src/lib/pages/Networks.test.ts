@@ -61,6 +61,23 @@ describe('the networks page', () => {
         expect(acme.textContent).toContain('Nothing is on it.')
     })
 
+    it('lists the addresses in use on a Jail Deck network, and by what', async () => {
+        const t = topology as Topology
+        t.bridges[0].in_use = [
+            { address: '10.88.0.2', kind: 'guest', name: 'web' },
+            { address: '10.88.0.3', kind: 'jail', name: '/etc/jail.conf' },
+            { address: '10.88.0.9', kind: 'seen' },
+        ]
+        render(Networks)
+        const def = await screen.findByRole('region', { name: 'jaildeck' })
+        expect(def.textContent).toContain('In use')
+        const links = screen.getAllByRole('link', { name: 'web' }).map(a => a.getAttribute('href'))
+        expect(links).toEqual(['/vms/web', '/vms/web'])
+        expect(def.textContent).toContain('jail /etc/jail.conf')
+        expect(def.textContent).toContain('seen on the bridge, in no configuration')
+        expect(screen.getByRole('region', { name: 'acme' }).textContent).not.toContain('In use')
+    })
+
     it('says a switch with no bridge gets one at vm init', async () => {
         render(Networks)
         const lan = await screen.findByRole('region', { name: 'vmlan' })

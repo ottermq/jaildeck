@@ -3,6 +3,7 @@ package networks
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/netip"
 	"regexp"
@@ -31,6 +32,9 @@ type Network struct {
 	// Members are the interfaces on the bridge now: running guests' taps and
 	// VNET jails' epairs.
 	Members []string `json:"members"`
+	// Addresses are the subnet's addresses in use, and by what (JD-047):
+	// null when they could not be read, and on a network just made.
+	Addresses []Use `json:"addresses"`
 }
 
 // NetworkList is GET /api/networks.
@@ -129,6 +133,9 @@ func (s *Service) Networks(ctx context.Context) (NetworkList, error) {
 	if err != nil {
 		return NetworkList{}, err
 	}
+	for i := range list {
+		list[i].Addresses = s.addressesOf(ctx, list[i])
+	}
 	return NetworkList{Range: r.String(), Networks: list}, nil
 }
 
@@ -143,10 +150,28 @@ func (s *Service) Network(ctx context.Context, name string) (Network, error) {
 	}
 	for _, n := range list {
 		if n.Name == name {
+			n.Addresses = s.addressesOf(ctx, n)
 			return n, nil
 		}
 	}
 	return Network{}, common.NewAppError(http.StatusNotFound, "there is no network named "+strconv.Quote(name))
+}
+
+// addressesOf reads a tenant network's addresses in use for its view. A view
+// that cannot read them still shows the network, without them.
+func (s *Service) addressesOf(ctx context.Context, n Network) []Use {
+	subnet, err1 := netip.ParsePrefix(n.Subnet)
+	gateway, err2 := netip.ParseAddr(n.Gateway)
+	if err1 != nil || err2 != nil {
+		return nil
+	}
+	uses, err := s.Uses(ctx, Own{Name: n.Name, Bridge: n.Bridge, Switch: n.Name, Subnet: subnet, Gateway: gateway})
+	if err != nil {
+		common.Logger(ctx, "networks").Warn("could not read a network's addresses",
+			slog.String("network", n.Name), slog.Any("err", err))
+		return nil
+	}
+	return uses
 }
 
 func (s *Service) tenantNetworks(ctx context.Context) ([]Network, error) {

@@ -2160,4 +2160,5 @@ An automation client finds its jails again from the listing alone, by the ZFS us
 
 ### Not yet
 
-- **The instances view across jails and guests** (search, filter and group by a label, bulk actions): #129's second part.
+- **The instances view across jails and guests** (search, filter and group by a label, bulk actions): #129's second part, in `docs/UI.md`.
+- **A guest snapshot through the API.** `vm snapshot` refuses a running guest ("must be powered off first (use -f to override)"), and with `-f` takes the guest's dataset and its disks recursively, crash-consistent at best. Whether Jail Deck offers that, refuses as vm-bhyve does, or stops the guest first is its own decision (#174).

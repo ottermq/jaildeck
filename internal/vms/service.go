@@ -35,6 +35,8 @@ type Service struct {
 	networks NetworkAddresses
 	// snapshots takes a guest's snapshot through ZFS (JD-045).
 	snapshots SnapshotTaker
+	// files reads a guest's configuration and seed for the view (#127).
+	files GuestFiles
 }
 
 // ConsoleHangup closes a guest's console session before Jail Deck stops it.

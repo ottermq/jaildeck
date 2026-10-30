@@ -20,6 +20,30 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+### Added
+
+- **Inspect: an instance's files as the host has them** (#127, JD-048). An **Inspect** panel on a
+  jail's page shows its own `jail.conf.d` stanza and its rctl rules; on a guest's page, its
+  vm-bhyve configuration and cloud-init seed. Read off the host when the panel is opened, read
+  only, each file with a Copy button. **A console password's hash is masked.**
+
+### API
+
+- **`GET /api/jails/{name}/configuration`**: `file` (`path`, `present`, `content`, `truncated`),
+  `rules`, and `rules_error` when they could not be read. A jail configured outside
+  `jail.conf.d` answers `present: false`. Additive.
+- **`GET /api/vms/{name}/configuration`**: `files`, the configuration and the seed's three files,
+  each with `name`, `path`, `present`, `content`, `truncated` and `masked`. The value of every
+  `password`, `passwd`, `hashed_passwd` and `plain_text_passwd` key is replaced with `(masked)`.
+  A file past 64 KiB is cut there. Additive.
+
+### Internal
+
+- **The measurements are kept as a capture:** `capture-vm-configuration-induced.sh` (`vcf_*`),
+  what a guest's directory holds and with what modes. **JD-048** records the view.
+
 ## v0.24.0 — 2026-10-30
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.24.0)

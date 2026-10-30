@@ -83,6 +83,21 @@ export async function getVM(name: string): Promise<Detail> {
     return await api<Detail>(`/vms/${encodeURIComponent(name)}`)
 }
 
+// A guest's configuration and seed files as the host has them (#127). masked
+// names the keys whose values were replaced: a console password's hash.
+export interface GuestFile {
+    name: string
+    path: string
+    present: boolean
+    content?: string
+    truncated?: boolean
+    masked?: string[]
+}
+
+export async function getVMConfiguration(name: string): Promise<{ name: string; files: GuestFile[] }> {
+    return await api<{ name: string; files: GuestFile[] }>(`/vms/${encodeURIComponent(name)}/configuration`)
+}
+
 export type VMOperation = 'start' | 'stop' | 'restart'
 
 // What a start, stop or restart answers: the guest as vm-bhyve lists it

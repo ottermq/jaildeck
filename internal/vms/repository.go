@@ -76,6 +76,14 @@ type PropertyStore interface {
 	SetUserProperties(ctx context.Context, dataset string, properties map[string]*string) (map[string]string, error)
 }
 
+// SnapshotTaker takes one dataset's snapshot recursively: a guest's own and
+// its disk volumes beneath it, at one point in time -- what vm snapshot -f
+// runs (JD-045). The storage domain's, as PropertyStore is. Idempotent: a
+// snapshot already there is answered, not retaken.
+type SnapshotTaker interface {
+	SnapshotDataset(ctx context.Context, dataset, short string) (SnapshotResult, error)
+}
+
 // Applied is what a guest was made with, read off the host: its vm-bhyve
 // configuration, its cloud-init seed and its disk. Nothing of it is kept by
 // Jail Deck (JD-011).

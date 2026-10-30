@@ -2161,4 +2161,40 @@ An automation client finds its jails again from the listing alone, by the ZFS us
 ### Not yet
 
 - **The instances view across jails and guests** (search, filter and group by a label, bulk actions): #129's second part, in `docs/UI.md`.
-- **A guest snapshot through the API.** `vm snapshot` refuses a running guest ("must be powered off first (use -f to override)"), and with `-f` takes the guest's dataset and its disks recursively, crash-consistent at best. Whether Jail Deck offers that, refuses as vm-bhyve does, or stops the guest first is its own decision (#174).
+- **A guest snapshot through the API**: JD-045.
+
+---
+
+## JD-045 — A Guest's Snapshot: Taken Running, Said to Be Crash-Consistent
+
+**Status:** Locked — 2026-10-30. Decided by the owner; measured on isengard with a throwaway guest (`capture-vm-snapshot-induced.sh`, and the `vml_snapshot_*` outputs of JD-044's capture). #174.
+
+The Instances page snapshots many instances at once (#129), and a guest had no snapshot in the API. vm-bhyve has one, `vm snapshot`, which refuses a running guest: "must be powered off first (use -f to override)".
+
+### What was measured
+
+- **`vm snapshot -f` on a running guest is `zfs snapshot -r` of the guest's dataset**: the dataset and its `disk0` volume, under one name, at one point in time. Without a name it uses a timestamp; `vm snapshot <guest>@<name>` takes one.
+- **`zfs snapshot -r` run directly does the same**, on a running guest: the same two snapshots. The guest stays running (`vm list`, `vm info`, `/dev/vmm`), and vm-bhyve notices nothing.
+- **The same name twice is refused by zfs**, with nothing created ("dataset already exists", "no snapshots were created").
+- **`vm destroy` takes a guest's snapshots with it.**
+
+### The decision
+
+**A running guest is snapshotted as it is, and the answer says it is crash-consistent.** Owner's decision, from three options:
+- refuse a running guest as vm-bhyve does;
+- take it and say what it is;
+- stop, snapshot, start.
+
+A snapshot of a running guest holds its disks as a power cut would have left them, without what was still in the guest's memory. That is enough to go back to before a change, which is what a bulk snapshot is for. It shouldn't be trusted as a backup. Refusing would make a bulk snapshot of running guests do nothing. Stopping each guest first is a different operation, with a minute's downtime per guest.
+
+### What Jail Deck does
+
+- **`PUT /api/vms/{name}/snapshots/{snapshot}`** runs `zfs snapshot -r` on `<datastore's dataset>/<name>`, through the jail route's own storage call: the same name check, the same audit line (`create-snapshot`), and the same idempotency (JD-016). It answers **201** when taken, and **200 with `existed`** when the snapshot was already there, in which case nothing ran.
+- **`consistency`** is `crash-consistent` unless the guest was stopped, read just before the snapshot: running, in its boot loader, suspended, or locked by another host all mean bhyve may be writing. It's `consistent` for a stopped guest, and **left out when the snapshot already existed**, because nobody recorded the state it was taken in.
+- **409** for a guest in a datastore that isn't on ZFS, which has no dataset to snapshot. 404 and 400 as for every guest route.
+- Directly through zfs rather than `vm snapshot -f`: one code path for jails and guests, and the idempotency and audit come with it.
+
+### Not yet
+
+- Listing, rolling back and destroying a guest's snapshots. A rollback needs the guest stopped and a decision on newer snapshots, as JD-024 made for jails.
+- A Snapshots panel on the guest's page.

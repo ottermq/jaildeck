@@ -3773,6 +3773,77 @@
                 }
             }
         },
+        "/vms/{name}/snapshots/{snapshot}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "zfs snapshot -r on the guest's dataset, \u003cdatastore's dataset\u003e/\u003cname\u003e: the\nguest and every disk volume beneath it at ONE point in time, which is what\nvm snapshot -f runs (JD-045). A running guest is snapshotted as it is, and\nconsistency says so: crash-consistent while bhyve runs it, its disks as a\npower cut would leave them; consistent when it was stopped.\n\n201 when taken, 200 with existed=true when it was already there, as for a\njail, so the retry after a timeout does not raise zfs's \"dataset already\nexists\". 409 for a guest in a datastore that is not on ZFS.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "vms"
+                ],
+                "summary": "Snapshot a guest",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Guest name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot name, the part after the @",
+                        "name": "snapshot",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Already there",
+                        "schema": {
+                            "$ref": "#/definitions/vms.SnapshotResult"
+                        }
+                    },
+                    "201": {
+                        "description": "Taken",
+                        "schema": {
+                            "$ref": "#/definitions/vms.SnapshotResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a snapshot name",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such guest",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Its datastore is not on ZFS, or vm-bhyve is not ready",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/vms/{name}/start": {
             "post": {
                 "security": [
@@ -6343,6 +6414,17 @@
                 }
             }
         },
+        "vms.Consistency": {
+            "type": "string",
+            "enum": [
+                "consistent",
+                "crash-consistent"
+            ],
+            "x-enum-varnames": [
+                "Consistent",
+                "CrashConsistent"
+            ]
+        },
         "vms.CreateRequest": {
             "type": "object",
             "properties": {
@@ -6747,6 +6829,34 @@
             "type": "object",
             "properties": {
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "vms.SnapshotResult": {
+            "type": "object",
+            "properties": {
+                "consistency": {
+                    "description": "From the guest's state read just before the snapshot.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/vms.Consistency"
+                        }
+                    ]
+                },
+                "created": {
+                    "description": "Every snapshot taken: the guest's dataset and each disk volume.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "existed": {
+                    "description": "The snapshot was already there and nothing ran (JD-016). Its\nconsistency is then unknown, and left out.",
+                    "type": "boolean"
+                },
+                "snapshot": {
+                    "description": "dataset@short, the guest's own.",
                     "type": "string"
                 }
             }

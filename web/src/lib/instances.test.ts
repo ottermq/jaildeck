@@ -76,6 +76,7 @@ describe('instances', () => {
         expect(skipReason(suspended, 'start')).toBeNull()
         expect(skipReason(db, 'snapshot')).toBeNull()
         expect(skipReason(web, 'snapshot')).toBeNull()
-        expect(skipReason(guest, 'snapshot')).toContain('not in the API yet')
+        expect(skipReason(guest, 'snapshot')).toBeNull()
+        expect(skipReason({ ...guest, state: 'running' }, 'snapshot')).toBeNull()
     })
 })

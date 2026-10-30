@@ -173,11 +173,9 @@ export type BulkOperation = 'start' | 'stop' | 'restart' | 'snapshot'
 // Decided here rather than left to the API to refuse: a bulk start of ten
 // instances, three of them already running, is a start of seven.
 export function skipReason(i: Instance, op: BulkOperation): string | null {
-    if (op === 'snapshot') {
-        return i.kind === 'vm'
-            ? 'Guest snapshots are not in the API yet; vm-bhyve refuses a running guest without a force.'
-            : null
-    }
+    // A guest is snapshotted in any state, a running one crash-consistent
+    // and said to be (JD-045); a jail in any state too.
+    if (op === 'snapshot') return null
     const running = i.state === 'running'
     if (i.kind === 'vm' && i.state === 'bootloader') return 'Booting — try again once it is running.'
     if (i.kind === 'vm' && i.state === 'locked') return `Held by ${i.lockedBy ?? 'another host'}.`

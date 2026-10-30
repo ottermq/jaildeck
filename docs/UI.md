@@ -98,7 +98,7 @@ Purpose: jails and guests in one list, at dozens and later hundreds, and acting 
 
 **Each instance's result is reported separately**, as it finishes, in a panel above the list: queued, running, done, failed with the API's words, or skipped with the reason. A guest powered off after its minute is done in amber, saying so. One failing does not hide the others. The list is read again afterwards, however it went.
 
-**Snapshot** asks for a name (it starts as `jd-YYYYMMDD-HHMM`) and takes each jail's recursive snapshot, the jail page's own call; a jail that already has it is reported and left alone. **Guests are skipped for now**: there is no guest snapshot in the API, and vm-bhyve refuses one of a running guest unless forced (measured, JD-044), which is a decision to make on its own (#174).
+**Snapshot** asks for a name (it starts as `jd-YYYYMMDD-HHMM`). A jail's is its recursive snapshot, the jail page's own call. A guest's is its dataset and its disks (JD-045), **taken in any state and said to be what it is**: the confirmation says a running guest is taken crash-consistent, and each guest's result says "Crash-consistent: taken while the guest ran" or "Consistent: the guest was stopped". An instance that already has the snapshot is reported and left alone.
 
 ### Jails page
 

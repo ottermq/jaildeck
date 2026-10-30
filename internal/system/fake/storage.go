@@ -50,6 +50,9 @@ func NewStorageSystem() *StorageSystem {
 			// where their labels live (JD-044).
 			{Name: "zroot/vm", Mountpoint: "/fake/vm", Used: 3 * gib, Available: 400 * gib, Referenced: 96 << 10},
 			{Name: "zroot/vm/jd-cap-running", Mountpoint: "/fake/vm/jd-cap-running", Used: 2 * gib, Available: 400 * gib, Referenced: 96 << 10},
+			// Its disk, a volume beneath it, which a guest snapshot takes at the
+			// same point in time (JD-045). A volume has no mountpoint.
+			{Name: "zroot/vm/jd-cap-running/disk0", Mountpoint: "-", Used: 2 * gib, Available: 400 * gib, Referenced: 56 << 10},
 			{Name: "zroot/vm/jd-cap-stopped", Mountpoint: "/fake/vm/jd-cap-stopped", Used: 1 * gib, Available: 400 * gib, Referenced: 96 << 10},
 		},
 		properties: []storage.Property{

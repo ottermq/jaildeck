@@ -61,6 +61,7 @@ type Dependencies struct {
 	DatasetWriter DatasetWriter
 	Snapshots     SnapshotWriter
 	DatasetMover  DatasetMover
+	Children      ChildDestroyer
 	Recloner      Recloner
 	TemplateMaker TemplateMaker
 
@@ -113,6 +114,7 @@ type JailService struct {
 	datasetWriter   DatasetWriter
 	snapshots       SnapshotWriter
 	datasetMover    DatasetMover
+	children        ChildDestroyer
 	recloner        Recloner
 	templateMaker   TemplateMaker
 	rootCloner      RootCloner
@@ -154,6 +156,7 @@ func NewJailService(deps Dependencies) *JailService {
 		datasetWriter:   deps.DatasetWriter,
 		snapshots:       deps.Snapshots,
 		datasetMover:    deps.DatasetMover,
+		children:        deps.Children,
 		recloner:        deps.Recloner,
 		templateMaker:   deps.TemplateMaker,
 		rootCloner:      deps.RootCloner,

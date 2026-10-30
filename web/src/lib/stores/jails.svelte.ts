@@ -127,6 +127,50 @@ export async function retainDataset(name: string, child: string, as: string): Pr
     )
 }
 
+// DatasetBlock says why destroying a dataset refused (#120): datasets of its
+// own, which `zfs destroy -r` would take without a word, and the clones and
+// holds zfs would refuse anyway. None can be overridden here.
+export interface DatasetBlock {
+    reason: string
+    children: string[]
+    clones: string[]
+    holds: string[]
+}
+
+// DatasetDestroy is what destroying one dataset took. `snapshots` went with
+// it; `blocked` means nothing ran.
+export interface DatasetDestroy {
+    dataset: string
+    snapshots: string[]
+    destroyed: boolean
+    blocked?: DatasetBlock
+}
+
+// datasetDestroyCall returns a refusal rather than throwing it, as a snapshot
+// call does: a 409 carrying the result is the answer, naming what is in the way.
+export async function datasetDestroyCall(path: string): Promise<DatasetDestroy> {
+    try {
+        return await api<DatasetDestroy>(path, { method: 'DELETE' })
+    } catch (err) {
+        if (err instanceof ApiError && err.statusCode === 409 && isDatasetDestroy(err.body)) {
+            return err.body
+        }
+        throw err
+    }
+}
+
+function isDatasetDestroy(body: unknown): body is DatasetDestroy {
+    return typeof body === 'object' && body !== null && 'dataset' in body && 'blocked' in body
+}
+
+// destroyDataset destroys one child of the jail and its snapshots. confirm is
+// the child's name, the one the API asks for.
+export async function destroyDataset(name: string, child: string): Promise<DatasetDestroy> {
+    const query = new URLSearchParams({ confirm: child })
+    return await datasetDestroyCall(
+        `/jails/${encodeURIComponent(name)}/datasets/${encodeURIComponent(child)}?${query}`)
+}
+
 // SnapshotBlock says why a snapshot operation refused, and names what is in the
 // way. Newer can be accepted -- that is what destroy_newer means. Clones and
 // holds cannot be, through this API at all: taking a clone with its origin

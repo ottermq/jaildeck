@@ -1,0 +1,3 @@
+cannot destroy 'tank/jd-cap-120/retained/kept': filesystem has dependent clones
+use '-R' to destroy the following datasets:
+tank/jd-cap-120/containers/from-kept

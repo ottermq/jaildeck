@@ -96,6 +96,7 @@ func New(cfg *config.Config) (*App, error) {
 		DatasetWriter: jailStorage,
 		Snapshots:     jailStorage,
 		DatasetMover:  jailStorage,
+		Children:      jailStorage,
 		Recloner:      jailStorage,
 		TemplateMaker: jailStorage,
 		RootCloner:    jailStorage,

@@ -258,6 +258,29 @@ func toJailsMove(moved MoveResult) jails.DatasetMove {
 
 var _ jails.DatasetMover = (*JailSource)(nil)
 
+// DestroyChild destroys one child of the jail and its snapshots (#120). The
+// child is one path segment under the jail's own dataset, as a create makes
+// it, so it names nothing else.
+func (s *JailSource) DestroyChild(ctx context.Context, jailPath, child string) (jails.DatasetDestroy, error) {
+	dataset, err := s.datasetFor(ctx, jailPath, child)
+	if err != nil {
+		return jails.DatasetDestroy{}, err
+	}
+	result, err := s.service.destroyOne(ctx, dataset)
+	out := jails.DatasetDestroy{
+		Dataset: result.Dataset, Snapshots: result.Snapshots, Destroyed: result.Destroyed,
+	}
+	if result.Blocked != nil {
+		out.Blocked = &jails.DatasetBlock{
+			Reason: result.Blocked.Reason, Children: result.Blocked.Children,
+			Clones: result.Blocked.Clones, Holds: result.Blocked.Holds,
+		}
+	}
+	return out, err
+}
+
+var _ jails.ChildDestroyer = (*JailSource)(nil)
+
 func (s *JailSource) CheckReclone(ctx context.Context, jailPath, templateSnapshot string) error {
 	root, err := s.datasetFor(ctx, jailPath, "")
 	if err != nil {

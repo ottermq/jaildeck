@@ -1,0 +1,4 @@
+cannot destroy 'tank/jd-cap-120/retained/kept': filesystem has children
+use '-r' to destroy the following datasets:
+tank/jd-cap-120/retained/kept/inner
+tank/jd-cap-120/retained/kept@one

@@ -1,12 +1,12 @@
 <script lang="ts">
 import { onMount } from 'svelte'
 import {
-    getJail, listSnapshots, setTags, ensureDataset, retainDataset,
+    getJail, listSnapshots, setTags, ensureDataset, retainDataset, destroyDataset,
     createSnapshot, destroySnapshot, rollbackSnapshot, makeTemplate, recloneJail,
     destroyJail,
 } from '../stores/jails.svelte'
 import type {
-    JailData, Snapshot, Dataset, PropertyConflict, SnapshotBlock, Reclone, Destroyed,
+    JailData, Snapshot, Dataset, PropertyConflict, SnapshotBlock, Reclone, Destroyed, DatasetBlock,
 } from '../stores/jails.svelte'
 import { listTemplates } from '../stores/templates.svelte'
 import type { Template } from '../stores/templates.svelte'
@@ -502,6 +502,49 @@ async function rollback(snapshot: Snapshot, destroyNewer: boolean) {
     })
 }
 
+// ---- destroying a child ------------------------------------------------
+
+// Keyed by the child's full name, beside the row it belongs to.
+let datasetBlocked = $state<Record<string, DatasetBlock>>({})
+let datasetNote = $state('')
+
+// The snapshots that go with a child: its own, from the listing the page
+// already has. The server names them again in its answer.
+function snapshotsOf(dataset: Dataset): string[] {
+    return (snapshots ?? []).filter(s => s.dataset === dataset.name).map(s => s.name)
+}
+
+async function destroyChild(dataset: Dataset) {
+    const child = childOf(dataset)
+    const taken = snapshotsOf(dataset)
+    const confirmed = await ask({
+        title: `Destroy ${name}'s dataset ${child}?`,
+        lines: [
+            'Its data is gone, and the jail stays. Retain it instead to keep it past the jail.',
+            taken.length === 0
+                ? 'It has no snapshots.'
+                : `Its ${taken.length === 1 ? 'snapshot goes' : `${taken.length} snapshots go`} with it:`,
+        ],
+        items: taken.length > 0 ? taken : undefined,
+        verb: 'Destroy',
+        typed: child,
+    })
+    if (!confirmed) return
+
+    datasetNote = ''
+    await run(`destroy-${dataset.name}`, async () => {
+        const result = await destroyDataset(name, child)
+        if (result.blocked) {
+            datasetBlocked[dataset.name] = result.blocked
+            return
+        }
+        delete datasetBlocked[dataset.name]
+        datasetNote = `Destroyed ${result.dataset}` + (result.snapshots.length > 0
+            ? ` and ${result.snapshots.length === 1 ? 'its snapshot' : `${result.snapshots.length} snapshots`}.`
+            : '.')
+    })
+}
+
 function startRetain(dataset: Dataset) {
     retaining = dataset.name
     retainAs = `${name}-${childOf(dataset)}`
@@ -664,6 +707,10 @@ async function retain(event: Event, dataset: Dataset) {
             {/if}
         </div>
 
+        {#if datasetNote}
+            <p class="notice" aria-live="polite">{datasetNote}</p>
+        {/if}
+
         {#if addingDataset}
             <form class="form" onsubmit={addDataset}>
                 <div class="form__row">
@@ -775,9 +822,44 @@ async function retain(event: Event, dataset: Dataset) {
                                             disabled={!!busy || retaining === child.name}
                                             onclick={() => startRetain(child)}
                                         >Retain</button>
+                                        <button
+                                            type="button"
+                                            class="btn btn--small btn--danger"
+                                            disabled={!!busy || jail.status === 'running'}
+                                            title={jail.status === 'running'
+                                                ? 'Stop the jail first: a child destroyed under a running jail vanishes from under whatever it runs'
+                                                : undefined}
+                                            onclick={() => destroyChild(child)}
+                                        >{busy === `destroy-${child.name}` ? 'Destroying…' : 'Destroy'}</button>
                                     </div>
                                 </td>
                             </tr>
+                            {#if actionError[`destroy-${child.name}`]}
+                                <tr class="row-form">
+                                    <td colspan="6">
+                                        <p class="notice notice--error" role="alert">{actionError[`destroy-${child.name}`]}</p>
+                                    </td>
+                                </tr>
+                            {/if}
+                            {#if datasetBlocked[child.name]}
+                                {@const block = datasetBlocked[child.name]}
+                                <tr class="row-form">
+                                    <td colspan="6">
+                                        <div class="refusal" role="alert">
+                                            <p class="refusal__reason">{block.reason}</p>
+                                            <ul class="items">
+                                                {#each [...block.children, ...block.clones, ...block.holds] as item (item)}
+                                                    <li><code>{item}</code></li>
+                                                {/each}
+                                            </ul>
+                                            <div class="form__actions">
+                                                <button type="button" class="btn btn--small"
+                                                        onclick={() => delete datasetBlocked[child.name]}>Dismiss</button>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {/if}
                             {#if editingDataset === child.name}
                                 <tr class="row-form">
                                     <td colspan="6">
@@ -867,6 +949,12 @@ async function retain(event: Event, dataset: Dataset) {
                 API writes properties to a jail's children, not to the dataset the jail runs
                 from.
             </p>
+            {#if children.length > 0}
+                <p class="hint">
+                    A child is destroyed with its snapshots, and only while the jail is stopped:
+                    zfs takes a child mounted in a running jail without complaint.
+                </p>
+            {/if}
         {/if}
     </section>
 

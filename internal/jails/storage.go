@@ -2,6 +2,7 @@ package jails
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/ottermq/jaildeck/internal/common"
@@ -126,6 +127,35 @@ func (s *JailService) Restore(ctx context.Context, name JailName, retained, chil
 		return DatasetMove{}, err
 	}
 	return s.datasetMover.Restore(context.WithoutCancel(ctx), jail.Path, retained, child)
+}
+
+// errChildInRunningJail is why a child is not destroyed while its jail runs.
+// zfs has no objection: a child mounted in a running jail with nothing open
+// on it is unmounted and destroyed without a word, and the jail loses that
+// path from under whatever it runs (measured, #120). Busy is refused only when
+// a file is open, which is not the same as unused.
+var errChildInRunningJail = common.NewAppError(http.StatusConflict,
+	"stop the jail first: zfs destroys a child mounted in a running jail without complaint, "+
+		"and the jail loses that path from under whatever it runs")
+
+// DestroyDataset destroys one child of the jail and its snapshots, without
+// the jail (#120). confirm repeats the child's name.
+func (s *JailService) DestroyDataset(ctx context.Context, name JailName, child, confirm string) (DatasetDestroy, error) {
+	if confirm != child {
+		return DatasetDestroy{}, common.NewAppError(http.StatusBadRequest, fmt.Sprintf(
+			"this destroys %s's dataset %s and its snapshots; it needs confirm=%s", name, child, child))
+	}
+	jail, err := s.onZFS(ctx, name, s.children)
+	if err != nil {
+		return DatasetDestroy{}, err
+	}
+	// Checked here rather than left to zfs, which does not refuse (above).
+	// A jail started between this and the destroy is not covered; the
+	// window is the length of one zfs list.
+	if jail.Status == JailStatusRunning {
+		return DatasetDestroy{}, errChildInRunningJail
+	}
+	return s.children.DestroyChild(context.WithoutCancel(ctx), jail.Path, child)
 }
 
 // ErrJailRunning says why a template cannot be made from a running jail.

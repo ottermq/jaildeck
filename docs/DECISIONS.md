@@ -947,6 +947,20 @@ restore:  zfs rename -u <pool>/jails/retained/<name> <jail2>/pg
 - **No `zfs mount` follows the inherit or the set.** Measured: both mount the dataset at its new mountpoint by themselves, even one that was not mounted, and a `zfs mount` after them fails as already mounted. The mount state is therefore read again rather than assumed, and a dataset that was not mounted is unmounted again — left as it was found, as above.
 - **Measured end to end in the scratch tree:** the jail destroyed cleanly once the child was retained this way, and the restore into a second jail mounted it at that jail's `var/db/postgres` with its marker file intact. The tree sat beside `<pool>/jails`, so the host's replication of that tree did not copy it; not run through the API for the same reason.
 
+**Amended 2026-10-29 — the end of a retain, and a child on its own (#120).** A retained dataset is destroyed with `DELETE /api/retained/{name}?confirm={name}`, and one child of a jail with `DELETE /api/jails/{name}/datasets/{child}?confirm={child}`, leaving the jail. Until then the end of a retain was a root shell. Measured on isengard, 15.1-RELEASE-p5, in a scratch tree beside `<pool>/jails` (`capture-destroy-dataset-induced.sh`):
+
+```
+zfs unmount   <dataset>          only when it is mounted
+zfs destroy -r <dataset>         -r only when it has snapshots; never -R
+```
+
+- **Snapshots go with it,** and are named before and after: in `GET /retained`, in the confirmation, and in the answer. Without snapshots the destroy is bare, so one taken since they were read makes zfs refuse rather than `-r` taking it unlisted.
+- **Refused with `409` before anything runs** for a hold or a dependent clone on any of its snapshots — zfs refuses both itself, but only by failing — and for **a dataset of its own**, which zfs does *not* refuse: `zfs destroy -r` took `retained/kept/inner` without a word. A destroy that names one dataset destroys that one.
+- **A child is refused while its jail runs.** zfs does not refuse it: a child mounted in a running jail with nothing open on it was unmounted and destroyed, and the jail lost that path from under whatever it ran. `busy` comes only from an open file, which is not the same as unused. The window between the check and the destroy is one `zfs list`.
+- **The unmount is its own step, first.** `zfs destroy -r` destroys the snapshots before it unmounts, so one refused as `pool or dataset is busy` — a host process with a file open on it — had already lost them: measured, the dataset left and its `@one` gone. A busy `zfs unmount` refuses with nothing destroyed. A destroy that fails after the unmount mounts it again.
+- **Only what the path names:** a retained name and a child name are one path segment (`checkChildName`), under `<pool>/jails/retained` and under the jail's own dataset. `404` when it is gone, so a client repeating the call after a timeout can tell.
+- **Checked through the API on isengard**, a branch build on its own port with `JAILDECK_ZFS_POOL` pointed at a scratch tree outside `<pool>/jails`, so replication copied nothing: every refusal above, the destroy and the `404` after it for both, a running hand-written jail refused with its marker file intact, and a busy child keeping its snapshot until the holder went.
+
 ---
 
 ## JD-026 — Re-cloning a Jail's Root

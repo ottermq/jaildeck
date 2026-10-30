@@ -631,6 +631,54 @@ func writeSnapshotResult(w http.ResponseWriter, result SnapshotResult) {
 	common.WriteJSON(w, http.StatusOK, result)
 }
 
+// DestroyDataset destroys one of the jail's child datasets and its snapshots.
+//
+// @Summary      Destroy a child dataset
+// @Description  One child of the jail and its snapshots, without destroying the jail (#120):
+// @Description  zfs destroy -r, never -R. confirm repeats the child's name.
+// @Description
+// @Description  Refused with 409 while the jail runs: zfs destroys a child mounted in a running
+// @Description  jail without complaint when nothing has a file open on it, and the jail loses
+// @Description  that path (measured). Stop the jail first, as for a jail's destroy.
+// @Description
+// @Description  Refused with 409, before anything runs, while a snapshot of it has a hold or a
+// @Description  dependent clone, and when it has datasets of its own, which -r would take
+// @Description  silently. The answer names each, and the snapshots that would go. Retain a child
+// @Description  instead to keep it.
+// @Description
+// @Description  404 when the child is not there, so a client repeating the call after a
+// @Description  timeout can tell it is gone.
+// @Tags         storage
+// @Produce      json
+// @Param        name     path      string  true  "Jail name"
+// @Param        child    path      string  true  "The child dataset's name in the jail"
+// @Param        confirm  query     string  true  "The child's name again"
+// @Success      200      {object}  DatasetDestroy
+// @Failure      400      {object}  common.ErrorResponse  "No confirm, or one that does not match"
+// @Failure      401      {object}  common.ErrorResponse
+// @Failure      404      {object}  common.ErrorResponse  "No such jail or child"
+// @Failure      409      {object}  DatasetDestroy        "A hold, a clone, or a dataset of its own is in the way; or the jail runs"
+// @Security     BearerAuth
+// @Router       /jails/{name}/datasets/{child} [delete]
+func (h *JailHandler) DestroyDataset(w http.ResponseWriter, r *http.Request) {
+	name, err := NewJailName(chi.URLParam(r, "name"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	result, err := h.service.DestroyDataset(r.Context(), name,
+		chi.URLParam(r, "child"), r.URL.Query().Get("confirm"))
+	if err != nil {
+		common.HandlerError(w, err)
+		return
+	}
+	if result.Blocked != nil {
+		common.WriteJSON(w, http.StatusConflict, result)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, result)
+}
+
 // retainRequest names where the dataset will live once it is out of the jail:
 // <pool>/jails/retained/<name>.
 type retainRequest struct {

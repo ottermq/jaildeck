@@ -24,6 +24,14 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### Added
 
+- **Reclaimable storage** (#125, JD-049). The Host page lists what storage nothing uses holds:
+  templates nothing is cloned from, VM images no guest uses, retained datasets, a jail's own
+  snapshots older than a chosen age (30 days by default), and the archives Jail Deck downloaded,
+  with the total and each kind's share. Each item can be removed, and each kind at once behind one
+  confirmation, except retained datasets, removed one at a time. Removing goes through the
+  existing endpoints, so their refusals still apply. Snapshots another tool takes and prunes
+  (`zrepl_`, `autosnap_`, `zfs-auto-snap`) are never listed, only counted. Archives are listed
+  for their size and not removed.
 - **Usage sparklines in the Instances list, guests included** (#126, JD-050). A running jail's
   or guest's CPU and memory have a small line of the last two minutes beside them, read by the
   page every five seconds while it is open and kept nowhere else. Running guests now show what
@@ -32,6 +40,10 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### API
 
+- **`GET /api/host/reclaimable`** (new, read only): `items` with `kind`, `name`, `size`, `why`
+  and `remove` (the method and path, `confirm` included, of the existing endpoint that removes
+  it; absent for an archive), `total`, `kinds`, `snapshot_age_days`, `skipped_snapshots` and
+  `problems`. `?older_than_days=` (1–3650) sets the snapshot age; anything else is 400.
 - **`GET /api/metrics`** has `guests`: each running guest's `pcpu` (percent of one core, from
   its bhyve process) and `memory_resident` (bytes, from bhyvectl), or its `error`; and
   `guests_unavailable` when they could not be listed. `[]` on a host without vm-bhyve.

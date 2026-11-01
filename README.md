@@ -7,12 +7,12 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.25.0.** Jails can be created from release templates, started,
+**Current release: v0.26.0.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API, and their limits changed in place; their ZFS datasets,
 snapshots and resource usage are visible, and a dataset kept past its jail can be restored or destroyed; host setup is checked; PF can be seen,
 read-only; bhyve VMs are created from cloud images with cloud-init, with a console password if wanted, pinned to host CPUs, started,
 stopped, labelled, snapshotted and destroyed, on a default network Jail Deck sets up with NAT through PF, or on networks of their own kept apart by PF, with addresses Jail Deck picks and checks, and every network and what is on it can be seen; a jail has a shell in the
-browser, and a guest its serial console; each one's files on the host can be read on its page; jails and guests are found in one list by name, state or label, and started, stopped, restarted or snapshotted several at once; every operation is audited, a console with who opened it and why when the client says, and nothing is reachable without a password or an
+browser, and a guest its serial console; each one's files on the host can be read on its page; jails and guests are found in one list by name, state or label, with what each is using over the last minutes, and started, stopped, restarted or snapshotted several at once; the storage nothing uses is listed and can be reclaimed; every operation is audited, a console with who opened it and why when the client says, and nothing is reachable without a password or an
 API token. Releases install and upgrade with `pkg` from a signed repository. See
 [the roadmap](docs/ROADMAP.md) for what comes next.
 
@@ -234,6 +234,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/host/readiness` | what the host has and lacks for jails, VNET, limits and VMs, each with its remedy |
 | `GET /api/host/layout` | whether the jails dataset layout exists |
 | `PUT /api/host/layout` | create the missing layout datasets, adopting what is there |
+| `GET /api/host/reclaimable` | what storage nothing uses holds: unused templates and images, retained datasets, old snapshots, downloaded archives; each with the request that removes it (`?older_than_days=`, default 30) |
 | `GET /api/jails` | every jail, running or merely configured, with its ZFS datasets |
 | `GET /api/jails/{name}` | one of them, same shape |
 | `GET /api/jails/{name}/configuration` | its own stanza as it is on disk, and the rctl rules keyed to its name |
@@ -268,7 +269,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/jails/{name}/stop` | |
 | `POST /api/jails/{name}/restart` | |
 | `GET /api/audit` | operation history, newest first |
-| `GET /api/metrics` | host and per-jail resource usage, and disk health |
+| `GET /api/metrics` | host, per-jail and per-guest resource usage, and disk health |
 | `GET /api/firewall` | PF's state, rules with counters, NAT, anchors and tables, read-only |
 | `GET /api/firewall/tables/{name}` | one table's addresses |
 | `GET /api/firewall/log` | the most recent pflog lines |
@@ -526,6 +527,10 @@ here writes `rate()`: bytes, seconds and ratios. Two that are worth knowing:
 
 - **`jaildeck_jail_cpu_cores`** is cores, not `pcpu`'s percent-of-one-core — a jail on two
   whole cores reads `2` here and `200` in the JSON.
+- **`jaildeck_guest_cpu_cores`** and **`jaildeck_guest_memory_bytes`** are a running guest's
+  bhyve process, in the same units. The memory is bhyvectl's resident count, which grows as
+  the guest touches memory and does not shrink when the guest frees it; the process's own
+  resident size leaves guest memory out.
 - **`jaildeck_host_cpu_seconds_total`** is converted with `kern.clockrate`'s **`stathz`**,
   not its `hz`. On this hardware those are 127 and 1000, so dividing by the wrong one is
   an eightfold error. The raw `jaildeck_host_cpu_ticks_total` is published alongside it,

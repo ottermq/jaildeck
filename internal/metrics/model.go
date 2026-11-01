@@ -14,6 +14,10 @@ type Report struct {
 	Build Build       `json:"-"`
 	Host  Host        `json:"host"`
 	Jail  []JailUsage `json:"jails"`
+	// Guests is every running VM guest (#126). Empty on a host without
+	// vm-bhyve, and GuestsUnavailable says why when it is not that.
+	Guests            []GuestUsage `json:"guests"`
+	GuestsUnavailable string       `json:"guests_unavailable,omitempty"`
 	// Configured is how many jails the host has in total, running or not,
 	// so the dashboard can say "3 of 5" without a second request.
 	Configured int `json:"configured"`
@@ -139,6 +143,27 @@ type JailUsage struct {
 	// Error says this one jail could not be read. The rest of the report is
 	// still worth having, so a jail that fails is reported rather than
 	// failing the request.
+	Error string `json:"error,omitempty"`
+}
+
+// GuestUsage is one running guest's cost to the host (#126).
+//
+// Measured on isengard with a throwaway guest: the bhyve process's pcpu
+// follows the guest, 95-100 with one vCPU busy and 195-200 with two, and the
+// cumulative CPU time agrees. Its resident size does not: rctl's memoryuse
+// and ps's rss stayed at 208M while the guest touched 600M, because guest
+// memory is the vmm object's, not the process's. bhyvectl's resident count,
+// which `vm info` prints, went from 391M to 972M. So memory is that one.
+type GuestUsage struct {
+	Guest string `json:"guest"`
+	// PCPU is percent of one core, as a jail's is: a guest with two busy
+	// vCPUs reads 200. From `ps`, a decaying average.
+	PCPU float64 `json:"pcpu"`
+	// MemoryResident is the guest's memory the host has given it so far, in
+	// bytes. It grows as the guest touches memory and does not shrink when
+	// the guest frees it.
+	MemoryResident int64 `json:"memory_resident"`
+	// Error says this one guest could not be read.
 	Error string `json:"error,omitempty"`
 }
 

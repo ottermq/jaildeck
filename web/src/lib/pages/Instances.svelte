@@ -1,5 +1,5 @@
 <script lang="ts">
-import { onMount } from 'svelte'
+import { onDestroy, onMount } from 'svelte'
 import { SvelteSet } from 'svelte/reactivity'
 import { onNavClick } from '../router.svelte'
 import { createSnapshot, listJails, runJailOperation } from '../stores/jails.svelte'
@@ -9,6 +9,8 @@ import { getMetrics } from '../stores/metrics.svelte'
 import { ask } from '../stores/confirm.svelte'
 import { ApiError } from '../services/api'
 import { formatBytes } from '../utils'
+import { INTERVAL, UsageWindow } from '../usageWindow'
+import Sparkline from '../components/Sparkline.svelte'
 import { stateBadge } from '../vmState'
 import type { VMState } from '../stores/vms.svelte'
 import {
@@ -25,8 +27,18 @@ let loadError = $state('')
 let vmNote = $state('')
 let usageNote = $state('')
 
+// The sparklines' window: what this page has read since it was opened, and
+// nothing kept anywhere else (#126). `seen` bumps on every reading, since the
+// window itself is not reactive.
+const usageWindow = new UsageWindow()
+let seen = $state(0)
+
 async function load() {
     const [jails, vms, metrics] = await Promise.allSettled([listJails(), listVMs(), getMetrics()])
+    if (metrics.status === 'fulfilled') {
+        usageWindow.record(metrics.value)
+        seen++
+    }
     loadError = ''
     vmNote = ''
     usageNote = ''
@@ -39,7 +51,8 @@ async function load() {
         loadError = describeLoad(jails.reason, 'Could not load jails')
     }
     if (vms.status === 'fulfilled') {
-        rows.push(...vms.value.vms.map(fromVM))
+        const usage = new Map(metrics.status === 'fulfilled' ? (metrics.value.guests ?? []).map(u => [u.guest, u]) : [])
+        rows.push(...vms.value.vms.map(vm => fromVM(vm, usage.get(vm.name))))
         vmNote = vmBhyveNote(vms.value.vm_bhyve, vms.value.problem)
     } else {
         vmNote = describeLoad(vms.reason, 'Could not load the guests')
@@ -56,7 +69,33 @@ function vmBhyveNote(state: VMBhyveState, problem?: string): string {
     return ''
 }
 
-onMount(load)
+// Only the usage is read again, every five seconds, while the tab is shown:
+// a row's state changes when someone acts on it, and the list reloads then.
+async function refreshUsage() {
+    if (document.hidden || all === null) return
+    try {
+        const report = await getMetrics()
+        usageWindow.record(report)
+        seen++
+        const jails = new Map(report.jails.map(u => [`jail:${u.jail}`, u.error ? undefined : { pcpu: u.pcpu, memory: u.memoryuse }]))
+        const guests = new Map((report.guests ?? []).map(u => [`vm:${u.guest}`, u.error ? undefined : { pcpu: u.pcpu, memory: u.memory_resident }]))
+        for (const row of all) row.usage = (row.kind === 'jail' ? jails : guests).get(row.key)
+    } catch {
+        // A missed reading is a gap in the line; the next one fills it.
+    }
+}
+
+let usageTimer: ReturnType<typeof setInterval> | undefined
+onMount(() => {
+    load()
+    usageTimer = setInterval(refreshUsage, INTERVAL)
+})
+onDestroy(() => clearInterval(usageTimer))
+
+function trail(key: string, of: 'cpu' | 'memory'): number[] {
+    void seen
+    return usageWindow.get(key)?.[of] ?? []
+}
 
 // ---- filters, kept in the URL ------------------------------------------
 
@@ -424,8 +463,8 @@ function labelEntries(i: Instance): [string, string][] {
                             <th aria-sort={ariaSort('kind')}><button type="button" class="sort" onclick={() => sortBy('kind')}>Kind</button></th>
                             <th aria-sort={ariaSort('name')}><button type="button" class="sort" onclick={() => sortBy('name')}>Name</button></th>
                             <th>Labels</th>
-                            <th class="num" title="A jail's is what it is using, in percent of one core; a guest's is its vCPU count">CPU</th>
-                            <th class="num" title="A jail's is what it is using; a guest's is what it was given">Memory</th>
+                            <th class="num" title="What it is using, in percent of one core, with the last two minutes; a stopped guest's is its vCPU count">CPU</th>
+                            <th class="num" title="What it is using, with the last two minutes: a guest's is the memory the host has given it so far; a stopped guest's is what it was given">Memory</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -450,6 +489,7 @@ function labelEntries(i: Instance): [string, string][] {
                                 </td>
                                 <td class="num nowrap">
                                     {#if i.usage}
+                                        <Sparkline values={trail(i.key, 'cpu')} floor={100} label="CPU" format={v => `${v.toFixed(1)}%`} />
                                         {i.usage.pcpu.toFixed(1)}%
                                     {:else if i.vcpus}
                                         {i.vcpus} <span class="unit">vCPU</span>
@@ -457,6 +497,7 @@ function labelEntries(i: Instance): [string, string][] {
                                 </td>
                                 <td class="num nowrap">
                                     {#if i.usage}
+                                        <Sparkline values={trail(i.key, 'memory')} label="Memory" format={formatBytes} />
                                         {formatBytes(i.usage.memory)} <span class="unit">in use</span>
                                     {:else if i.memory}
                                         {i.memory} <span class="unit">given</span>

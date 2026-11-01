@@ -2367,3 +2367,200 @@ An **Inspect** panel on a jail's page and on a guest's page, one component for b
 
 - **Editing any of it.** Changing a jail's limits is `PATCH /limits` (#119); everything else stays on the API that made it.
 - **A guest in a datastore other than the default one.**
+
+## JD-049 — Housekeeping: What Nothing Uses, Listed With How to Remove It
+
+**Status:** Locked — 2026-10-30. Decided in #125's implementation, open to the owner's review in its PR. Checked live on isengard, read only.
+
+Templates, images, retained datasets, snapshots and downloaded archives each hold storage, and nothing said which of them nothing uses any more. `GET /api/host/reclaimable` does: read at request time from ZFS and the file system (JD-011), never stored.
+
+### It reads; the existing endpoints remove
+
+The report gives each item the request that removes it, `confirm` included: `DELETE /api/templates/{name}`, `/api/vm-images/{name}`, `/api/retained/{name}`, `/api/jails/{jail}/snapshots/{snapshot}`. There is no bulk endpoint. A removal is that endpoint's, with its refusals and its audit entry, so a template something was cloned from after the report was read is still refused, and housekeeping can't take what another thing depends on. The interface sends them one at a time.
+
+### What counts as unused
+
+- **A template** with no clones and no holds, and not being prepared. One that isn't ready (a preparation that failed) is listed and says so.
+- **A VM image** that no guest's disk is cloned from, and not being prepared.
+- **Every retained dataset.** Each was kept on purpose, so each is listed, as a reminder that it is still there. The interface removes them one at a time, never all at once.
+- **A snapshot of a jail's own dataset older than `older_than_days`**, 30 by default, 1 to 3650. Its size is summed over the jail's datasets with a snapshot of the same name, since the destroy takes them together (JD-024). A child dataset's snapshot alone is not listed.
+- **A downloaded archive in Jail Deck's own paths**: `media/<release>/base.txz` and an image source's archive in `<datastore>/.images`. A file an operator put elsewhere, or in an older layout, is not guessed at. No endpoint removes an archive; it is listed so its size is known.
+
+### Other tools' snapshots are never listed
+
+Snapshots named `zrepl_…`, `autosnap_…` (sanoid) or `zfs-auto-snap…` are taken and pruned by another tool. Removing one by hand breaks that tool's replication or its retention, so they are left out and counted in `skipped_snapshots`. On isengard almost every snapshot under the jails tree is zrepl's.
+
+### Sizes
+
+A dataset's `used`, a snapshot's `used`, a file's size: what ZFS or the file system says removing it would give back. Blocks still shared with something else are not counted, so the total is a lower bound, and removing one item can make another's size grow.
+
+### A source that can't be read
+
+Each kind is read on its own. One that fails is named in `problems`, and the others are still listed.
+
+### Not yet
+
+- **Archives' removal.** Preparing a release or an image again downloads it again, so an archive is the cheapest thing to remove, and the one where a wrong path costs most. Left to the operator.
+- **A schedule.** Nothing is ever removed without someone asking.
+
+## JD-050 — A Guest's Usage, and the Lists' Trailing Window
+
+**Status:** Locked — 2026-10-30. Decided in #126's implementation, open to the owner's review in its PR. Measured on isengard with a throwaway guest.
+
+### What was measured
+
+A Debian guest with two vCPUs and 1G, idle, then with one and two vCPUs busy, then with 600 MB touched, each over 20 s:
+
+| | bhyve `ps` pcpu | `rctl -u process:` pcpu | CPU time used | `rctl` memoryuse | bhyvectl resident (`vm info`) |
+|---|---|---|---|---|---|
+| idle | 0.0 | 0 | 0.05 s | 208M | 391M |
+| one vCPU busy | 95.5 | 100 | 20 s | 208M | 391M |
+| two vCPUs busy | 195.5 | 200 | 40 s | 208M | 391M |
+| 600 MB touched | 4.3 | 0 | 0.07 s | 208M | 972M |
+
+- **The bhyve process's CPU is the guest's.** `ps` and `rctl` agree with each other and with the CPU time actually used.
+- **The process's resident size is not the guest's memory.** It stayed at 208M while the guest used 600 MB more. Guest memory belongs to the vmm object, which `ps` and `rctl` don't count. bhyvectl's count, which `vm info` prints and Jail Deck already shows on a guest's page, is the one that moved.
+
+### What is reported
+
+`GET /api/metrics` has a `guests` list, one entry per running guest:
+- `pcpu` from `ps -o pid= -o pcpu= -p <every guest's pid>`, one call for all of them. This is percent of one core, as a jail's is. `ps` rather than `rctl`, because it needs no accounting and reads every guest at once.
+- `memory_resident` from `vm info`, one call per running guest.
+
+A guest whose process ended between the listing and the read, or whose `vm info` failed, carries an `error`, as a jail does. The rest of the report is not affected. A host without vm-bhyve has `[]`.
+
+The memory **grows and doesn't shrink**: the host gives a guest pages as it touches them and doesn't take them back when the guest frees them. It is what the guest costs the host, not what the guest thinks it uses.
+
+The Prometheus endpoint carries the same in its units: `jaildeck_guest_cpu_cores` and `jaildeck_guest_memory_bytes` (JD-033).
+
+### The trailing window is the page's
+
+JD-031 refuses a sampler on the server, and that still holds. The Instances page reads the metrics every five seconds while its tab is shown and keeps the last 24 readings of each running instance in memory: two minutes. Opening the page starts the line, and a reload starts it again. An instance that stops, or can't be read, loses its line, so a restart isn't drawn as continuous with the run before it. Anything longer is Prometheus's job.
+
+Only the usage is read again. A row's state changes when someone acts on it, and the list reloads then.
+
+### Not yet
+
+- **A guest's I/O and network rates.** `vm info` has the counters, so a rate needs two readings, as the host CPU does.
+- **Sparklines on the Jails and VMs pages.** The Instances list is the one meant for many.
+
+## JD-051 — Running Without Root: What doas Can and Cannot Narrow
+
+**Status:** Proposed — 2026-10-30. The study #156 asks for, for the owner to decide. Nothing changed on any host. The measurements below are reads, run as an unprivileged account on isengard, plus FreeBSD's own manuals (`doas.conf(5)` from doas 6.4, `zfs-allow(8)`).
+
+JD-001 runs Jail Deck as root. #156 asks whether it could run as a `jaildeck` user that reaches root only through `doas`, for a known set of commands.
+
+### What Jail Deck runs
+
+From the FreeBSD adapter, by command, with what an unprivileged account got on isengard:
+
+| Command | Used for | Unprivileged |
+|---|---|---|
+| `zfs` (30 call sites), `zpool` | datasets, clones, snapshots, properties | `list` and `get` work; every change needs root or `zfs allow` |
+| `service jail`, `jexec` | start, stop, exec, the console's PTY | root (jail(2), jail_attach(2)) |
+| `vm` (20) | every guest operation | refused: "virtual machines can only be managed by root"; `/dev/vmmctl` is 0600 root |
+| `ifconfig` (11) | bridges, epairs, groups | `-g` reads work; create and destroy need root |
+| `pfctl` (6) | Jail Deck's anchors, the firewall view | refused: `/dev/pf` is 0600 root, reads included |
+| `rctl` (5), `cpuset -j` | limits, and usage where accounting is on | refused, reads included (`rctl -u`) |
+| `sysrc` (7) | `rc.conf`, vm-bhyve's `system.conf` | reads work; writes need root |
+| `fetch`, `sha256`/`sha512`, `tar`, `cp`, `mv`, `rm`, `mkdir` | releases and images under Jail Deck's own directories | work with ownership of those directories |
+| `pkg -j`, `freebsd-update -b` | preparing templates | root |
+| `smartctl`, `devfs rule showsets`, `tcpdump -r` on pflog | disk health, readiness, the firewall log | `devfs` refused; pflog is 0600 |
+| `ps`, `sysctl`, `jls`, `dmesg`, `arp`, `route`, `geom`, `glabel` | metrics, readiness, listings | work (`see_other_uids=1`, `unprivileged_read_msgbuf=1` on isengard) |
+
+Beside the commands, it writes files that root later acts on: jail stanzas in `/etc/jail.conf.d`, the PF anchor files, guest configurations and cloud-init seeds, and it opens the guests' nmdm devices.
+
+### What doas can express
+
+A rule is `permit [nopass] user cmd <command> [args <exact arguments>]`. `cmd` without `args` allows **any** arguments, and `args` matches the whole argument list **exactly**: no patterns, no prefixes. The last matching rule wins.
+
+So the rule that would work, `permit nopass jaildeck cmd /sbin/zfs`, is root's reach over every pool (`zfs destroy -r` anything, `zfs set mountpoint=` over `/etc`). And the rule that would be narrow can't name a dataset that doesn't exist yet. The same holds for `vm`, `jexec`, `service`, `pfctl` and `rctl`. Their arguments are names chosen at request time.
+
+The usual answer is a **root-owned wrapper per operation**, such as `jaildeck-zfs-clone <template> <jail>`, that checks its arguments before running the command. Jail Deck already checks every argument in Go before it runs anything. A wrapper set would be that validation again, in shell, as the security boundary, and it would have to keep up with every new command the adapter learns.
+
+### What can be delegated instead
+
+- **`zfs allow`** on Jail Deck's own trees covers create, destroy, snapshot, clone, promote, rename, rollback, hold, release and user properties. **But not the mount**, which every create and clone does: FreeBSD mounts as a user only with `vfs.usermount=1` (0 on isengard), on a mountpoint the user owns, and forces `nosuid` on user mounts. A jail root mounted `nosuid` breaks `su`, `passwd` and `ping` inside the jail.
+- **A devfs rule** could give a group `/dev/pf` or the nmdm devices. `/dev/pf` is not scoped by anchor, though: whoever can open it can flush the host's whole ruleset.
+- **Group ownership of the files Jail Deck writes** is the one that looks cheap and isn't. A jail stanza can carry `exec.prestart`, which jail(8) runs as root. Whoever can write `/etc/jail.conf.d` can run anything as root at the next start. The same goes for `rc.conf`, which rc(8) sources as shell.
+
+### What it would cost
+
+- One doas rule or one wrapper for every host command, now about thirty-five call sites, with each new feature adding more.
+- The package shipping and upgrading `doas.conf` or the wrappers, on a host whose `doas.conf` is the operator's (isengard's is one line, `permit nopass :wheel`).
+- Fixtures and fault tests for a refused escalation on every path.
+- And the gain is smaller than it looks: a token still does what Jail Deck does, which is jails, datasets, PF anchors and guests. The JD-001 amendments (tokens and sessions are root-equivalent) would still hold in practice, because the operations are root's whichever account starts them.
+
+### Options
+
+| Option | What it gives | What it costs |
+|---|---|---|
+| **A. Keep JD-001** | nothing new | nothing; the risk stays where JD-001 put it |
+| **B. doas rules per command** | a log line per escalation | root-equivalent rules (`cmd zfs`), or a wrapper set that re-does the Go validation in shell |
+| **C. Privilege separation:** an unprivileged process for HTTP, sessions, tokens and the UI, and a small root helper on a local socket that only accepts the operations the API already has, typed and checked again | a bug in request parsing, the UI, or a library on the HTTP side no longer runs as root; the helper's surface is the operation list, not a shell | a second process, a protocol between the two, and every operation crossing it; the package installs a user and a socket |
+| **D. C, with `zfs allow` for what needs no mount** | snapshots, properties and holds without the helper | two paths for ZFS; the mount still goes through the helper |
+
+### Proposed
+
+**A, amended now; C as the direction when the threat model calls for it.** doas (B) doesn't narrow what matters. The commands' arguments are names chosen at request time, and doas matches exact strings. Group-writable configuration is root by another door. C puts the boundary where a bug is most likely, in the HTTP and parsing side, without a rule per command. It is the shape OpenBSD's own daemons use. It should be its own issue, sized after Otter Cloud's operator model is settled. That is the separate question #156 names: whether a platform's operators get system users of their own.
+
+### Not decided here
+
+- Whether Otter Cloud's operators get system users of their own (#156's last point). It changes C's helper: one caller, or several with their own rights.
+- The helper's protocol, and whether the console's PTY and nmdm streams cross it or are passed as file descriptors.
+
+## JD-052 — Live State: An Event Stream on Top of the Reads
+
+**Status:** Proposed — 2026-10-30. The design note #124 asks for, for the owner to decide before any code. Timings measured on isengard, read only.
+
+Pages read their state when they open, and poll only while something long runs (JD-008). With several operators and automations acting at once, a page goes stale without saying so. JD-008 left room for server-sent events "on top rather than replacing" polling. This is that.
+
+### What the stream is
+
+**`GET /api/events`, `text/event-stream`, behind the same authentication as every other read.** A session cookie or a token, over TCP or the socket. No new scope: everything an event names, the principal can already read.
+
+**Events are hints, not state.** Each one names what changed, and the client reads it again through the existing endpoints. The API's contract stays the reads; a client that ignores the stream loses nothing but freshness. There is one shape of the truth, not two that can disagree.
+
+```
+id: 7f3c-1042
+event: operation
+data: {"operation":"jail-stop","target":"web","success":true,"request_id":"…"}
+
+id: 7f3c-1043
+event: state
+data: {"kind":"vm","name":"batch","from":"running","to":"stopped","seen":"observed"}
+```
+
+### Where events come from
+
+1. **Jail Deck's own operations, as they are audited.** A wrapper around the audit logger publishes an entry once it is written, never before. The audit log stays the record (JD-011), and an event never claims what the log does not hold. The entry is what `/api/audit` already shows, so nothing new is revealed.
+2. **Changes made elsewhere, by comparison.** A `service jail stop` in a shell, or a guest that powers itself off. While at least one client is subscribed, one goroutine reads `jls` and `vm list` every 10 s and emits a `state` event for each difference from its last reading, marked `"seen":"observed"`. Measured on isengard: `jls` under 10 ms and `vm list` 60 ms, so 10 s costs well under 1% of one core. With no subscribers it doesn't run, and its last reading is dropped: derived state, not kept (JD-011).
+3. **Progress of long work.** A template's or image's `running` step (JD-008) is already in memory. A step change emits `progress`.
+
+Usage figures are not events. The Instances list reads `/api/metrics` on its own (JD-050).
+
+### Reconnection and missed events
+
+- **Ids are `<boot>-<sequence>`.** `boot` is random per process start; `sequence` counts up.
+- **The last 256 events are kept in memory.** A reconnect with `Last-Event-ID` from the same boot, still in that ring, is sent what it missed. Otherwise the first event is `reset`: read everything again. A restart, a long sleep, or a ring that wrapped all land there. The client's answer is a reload, which is what it does today.
+- **A heartbeat comment every 15 s**, so a proxy doesn't close an idle stream and a client can tell a quiet host from a dead connection.
+- **A slow client is cut off, not waited for.** Each subscriber has a bounded queue. One that fills is closed after a `reset`, so it reloads when it reconnects. At most 32 streams at once; the 33rd gets 503.
+
+### Per connection, rechecked
+
+A stream belongs to the connection, not to a session or a token, and carries the same events for everyone. It is closed when its session expires or its token is revoked, checked at each heartbeat, so a revoked token stops hearing within 15 s. The server's `WriteTimeout` is already unset (JD-014). Middleware must pass `http.Flusher` through, and the request log writes its line when the stream closes.
+
+### The interface
+
+One `EventSource` for the whole app, opened after sign-in. Each store refetches what an event names: a list, a row, a badge. EventSource reconnects on its own, with `Last-Event-ID`. While the stream is down, pages behave as they do now: they read on open and poll during long work. A small "live" or "not live" marker in the rail shows which.
+
+### Not yet
+
+- **A filter on the stream** (`?kind=vm`). Events are small, and a client can ignore what it doesn't want.
+- **Webhooks or any delivery off the host.** The stream is for clients that are connected.
+- **History.** The audit log is history; the stream is now.
+
+### Open
+
+- The comparison interval: 10 s is a guess at "soon enough". It could follow the subscriber count, or be a setting.
+- Whether `state` events from Jail Deck's own operations should be suppressed when the `operation` event already says the same thing.

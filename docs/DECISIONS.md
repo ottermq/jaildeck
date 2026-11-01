@@ -2368,6 +2368,82 @@ An **Inspect** panel on a jail's page and on a guest's page, one component for b
 - **Editing any of it.** Changing a jail's limits is `PATCH /limits` (#119); everything else stays on the API that made it.
 - **A guest in a datastore other than the default one.**
 
+## JD-049 — Housekeeping: What Nothing Uses, Listed With How to Remove It
+
+**Status:** Locked — 2026-10-30. Decided in #125's implementation, open to the owner's review in its PR. Checked live on isengard, read only.
+
+Templates, images, retained datasets, snapshots and downloaded archives each hold storage, and nothing said which of them nothing uses any more. `GET /api/host/reclaimable` does: read at request time from ZFS and the file system (JD-011), never stored.
+
+### It reads; the existing endpoints remove
+
+The report gives each item the request that removes it, `confirm` included: `DELETE /api/templates/{name}`, `/api/vm-images/{name}`, `/api/retained/{name}`, `/api/jails/{jail}/snapshots/{snapshot}`. There is no bulk endpoint. A removal is that endpoint's, with its refusals and its audit entry, so a template something was cloned from after the report was read is still refused, and housekeeping can't take what another thing depends on. The interface sends them one at a time.
+
+### What counts as unused
+
+- **A template** with no clones and no holds, and not being prepared. One that isn't ready (a preparation that failed) is listed and says so.
+- **A VM image** that no guest's disk is cloned from, and not being prepared.
+- **Every retained dataset.** Each was kept on purpose, so each is listed, as a reminder that it is still there. The interface removes them one at a time, never all at once.
+- **A snapshot of a jail's own dataset older than `older_than_days`**, 30 by default, 1 to 3650. Its size is summed over the jail's datasets with a snapshot of the same name, since the destroy takes them together (JD-024). A child dataset's snapshot alone is not listed.
+- **A downloaded archive in Jail Deck's own paths**: `media/<release>/base.txz` and an image source's archive in `<datastore>/.images`. A file an operator put elsewhere, or in an older layout, is not guessed at. No endpoint removes an archive; it is listed so its size is known.
+
+### Other tools' snapshots are never listed
+
+Snapshots named `zrepl_…`, `autosnap_…` (sanoid) or `zfs-auto-snap…` are taken and pruned by another tool. Removing one by hand breaks that tool's replication or its retention, so they are left out and counted in `skipped_snapshots`. On isengard almost every snapshot under the jails tree is zrepl's.
+
+### Sizes
+
+A dataset's `used`, a snapshot's `used`, a file's size: what ZFS or the file system says removing it would give back. Blocks still shared with something else are not counted, so the total is a lower bound, and removing one item can make another's size grow.
+
+### A source that can't be read
+
+Each kind is read on its own. One that fails is named in `problems`, and the others are still listed.
+
+### Not yet
+
+- **Archives' removal.** Preparing a release or an image again downloads it again, so an archive is the cheapest thing to remove, and the one where a wrong path costs most. Left to the operator.
+- **A schedule.** Nothing is ever removed without someone asking.
+
+## JD-050 — A Guest's Usage, and the Lists' Trailing Window
+
+**Status:** Locked — 2026-10-30. Decided in #126's implementation, open to the owner's review in its PR. Measured on isengard with a throwaway guest.
+
+### What was measured
+
+A Debian guest with two vCPUs and 1G, idle, then with one and two vCPUs busy, then with 600 MB touched, each over 20 s:
+
+| | bhyve `ps` pcpu | `rctl -u process:` pcpu | CPU time used | `rctl` memoryuse | bhyvectl resident (`vm info`) |
+|---|---|---|---|---|---|
+| idle | 0.0 | 0 | 0.05 s | 208M | 391M |
+| one vCPU busy | 95.5 | 100 | 20 s | 208M | 391M |
+| two vCPUs busy | 195.5 | 200 | 40 s | 208M | 391M |
+| 600 MB touched | 4.3 | 0 | 0.07 s | 208M | 972M |
+
+- **The bhyve process's CPU is the guest's.** `ps` and `rctl` agree with each other and with the CPU time actually used.
+- **The process's resident size is not the guest's memory.** It stayed at 208M while the guest used 600 MB more. Guest memory belongs to the vmm object, which `ps` and `rctl` don't count. bhyvectl's count, which `vm info` prints and Jail Deck already shows on a guest's page, is the one that moved.
+
+### What is reported
+
+`GET /api/metrics` has a `guests` list, one entry per running guest:
+- `pcpu` from `ps -o pid= -o pcpu= -p <every guest's pid>`, one call for all of them. This is percent of one core, as a jail's is. `ps` rather than `rctl`, because it needs no accounting and reads every guest at once.
+- `memory_resident` from `vm info`, one call per running guest.
+
+A guest whose process ended between the listing and the read, or whose `vm info` failed, carries an `error`, as a jail does. The rest of the report is not affected. A host without vm-bhyve has `[]`.
+
+The memory **grows and doesn't shrink**: the host gives a guest pages as it touches them and doesn't take them back when the guest frees them. It is what the guest costs the host, not what the guest thinks it uses.
+
+The Prometheus endpoint carries the same in its units: `jaildeck_guest_cpu_cores` and `jaildeck_guest_memory_bytes` (JD-033).
+
+### The trailing window is the page's
+
+JD-031 refuses a sampler on the server, and that still holds. The Instances page reads the metrics every five seconds while its tab is shown and keeps the last 24 readings of each running instance in memory: two minutes. Opening the page starts the line, and a reload starts it again. An instance that stops, or can't be read, loses its line, so a restart isn't drawn as continuous with the run before it. Anything longer is Prometheus's job.
+
+Only the usage is read again. A row's state changes when someone acts on it, and the list reloads then.
+
+### Not yet
+
+- **A guest's I/O and network rates.** `vm info` has the counters, so a rate needs two readings, as the host CPU does.
+- **Sparklines on the Jails and VMs pages.** The Instances list is the one meant for many.
+
 ## JD-051 — Running Without Root: What doas Can and Cannot Narrow
 
 **Status:** Proposed — 2026-10-30. The study #156 asks for, for the owner to decide. Nothing changed on any host. The measurements below are reads, run as an unprivileged account on isengard, plus FreeBSD's own manuals (`doas.conf(5)` from doas 6.4, `zfs-allow(8)`).

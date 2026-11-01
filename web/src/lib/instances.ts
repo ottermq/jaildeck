@@ -1,5 +1,5 @@
 import type { JailData } from './stores/jails.svelte'
-import type { JailUsage } from './stores/metrics.svelte'
+import type { GuestUsage, JailUsage } from './stores/metrics.svelte'
 import type { VM } from './stores/vms.svelte'
 
 // One row of the instances view (#129): a jail or a guest, read from its own
@@ -19,8 +19,9 @@ export interface Instance {
     state: string
     // ZFS user properties on its dataset (JD-023, JD-044).
     labels: Record<string, string>
-    // A running jail's CPU in percent of one core and memory in use, read
-    // from the metrics report; absent for a stopped one.
+    // A running instance's CPU in percent of one core and memory in use, read
+    // from the metrics report; absent for a stopped one. A guest's memory is
+    // what the host has given it so far (#126).
     usage?: { pcpu: number, memory: number }
     // A guest's configuration as vm-bhyve writes it: "2", "512M".
     vcpus?: string
@@ -41,7 +42,7 @@ export function fromJail(j: JailData, usage?: JailUsage): Instance {
     }
 }
 
-export function fromVM(vm: VM): Instance {
+export function fromVM(vm: VM, usage?: GuestUsage): Instance {
     return {
         kind: 'vm',
         name: vm.name,
@@ -49,6 +50,7 @@ export function fromVM(vm: VM): Instance {
         href: `/vms/${encodeURIComponent(vm.name)}`,
         state: vm.state,
         labels: vm.properties ?? {},
+        usage: usage && !usage.error ? { pcpu: usage.pcpu, memory: usage.memory_resident } : undefined,
         vcpus: vm.cpu,
         memory: vm.memory,
         lockedBy: vm.locked_by,

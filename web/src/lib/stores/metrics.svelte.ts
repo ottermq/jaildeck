@@ -133,9 +133,22 @@ export interface Disk {
     self_test?: SelfTest
 }
 
+// A running guest's cost to the host, from its bhyve process (#126).
+export interface GuestUsage {
+    guest: string
+    // Percent of ONE core, as a jail's is.
+    pcpu: number
+    // Guest memory the host has given it so far, from bhyvectl. It grows as
+    // the guest touches memory and does not shrink when it frees it.
+    memory_resident: number
+    error?: string
+}
+
 export interface MetricsReport {
     host: HostMetrics
     jails: JailUsage[]
+    guests: GuestUsage[]
+    guests_unavailable?: string
     // Every jail the host has, running or not, so "3 of 5" needs no second
     // request.
     configured: number

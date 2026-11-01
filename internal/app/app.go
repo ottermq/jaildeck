@@ -143,8 +143,8 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	metricsHandler := metrics.NewHandler(
-		metrics.NewService(hostMetrics, jailAdapter.usage, jailService, disks))
+	metricsService := metrics.NewService(hostMetrics, jailAdapter.usage, jailService, disks)
+	metricsHandler := metrics.NewHandler(metricsService)
 
 	firewallSystem, err := newFirewallSystem(cfg.Adapter)
 	if err != nil {
@@ -172,6 +172,9 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 	vmService := vms.NewService(vmSystem, vmImageCatalog{images: imageService}, auditLogger)
+	if cpu, ok := hostMetrics.(processCPU); ok {
+		metricsService.SetGuests(metricsGuests{vms: vmService, cpu: cpu})
+	}
 	vmService.SetProperties(storageService)
 	vmService.SetSnapshots(storage.NewGuestSnapshots(storageService))
 	vmService.SetNetworks(guestNetworks{networks: networkService})

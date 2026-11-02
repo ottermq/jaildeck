@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/common"
 	"github.com/ottermq/jaildeck/internal/state"
 )
@@ -299,5 +300,11 @@ func withPrincipalLogged(r *http.Request, kind PrincipalKind, name string) *http
 		entry.AddAttrs(attrs...)
 	}
 	l := common.LoggerFromContext(r.Context()).With(attrs...)
-	return r.WithContext(common.ContextWithLogger(r.Context(), l))
+	// And for every audit entry the request writes (PrincipalOf's form).
+	principal := string(kind)
+	if kind == kindToken {
+		principal += ":" + name
+	}
+	ctx := audit.ContextWithPrincipal(common.ContextWithLogger(r.Context(), l), principal)
+	return r.WithContext(ctx)
 }

@@ -20,6 +20,24 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.30.0 — 2026-11-02
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.30.0)
+
+**A snapshot grant, and who acted in every audit entry.** A limited token can take and
+prune its own snapshots in labelled jails (JD-057), and every audit entry now names the
+session or token that made it. Nothing to act on when upgrading. A limited token's grants are
+fixed when it's made, so adding the snapshot grant means a new token.
+
+- **A snapshot grant for limited tokens** (JD-057): `--allow 'snapshot:<pattern>@<property>=<value>'`
+  takes and destroys jail-level snapshots whose name matches the pattern (a name, or a prefix
+  ending in `*`), in jails with that label. Other snapshots, rollback and a dataset's own
+  snapshots stay refused, so a leaked backup token can't destroy the snapshots that are kept
+  to restore from. Asked for by Otter Cloud.
+- **Every audit entry names who acted.** `principal` (`session` or `token:<name>`) was on
+  console entries only; now every entry a request writes has it, a detached operation's too.
+  Entries for what changed on the host outside Jail Deck still have none.
+
 ## v0.29.1 — 2026-11-02
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.29.1)

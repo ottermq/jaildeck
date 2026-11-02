@@ -2,6 +2,10 @@ package app
 
 import (
 	"encoding/json"
+	"time"
+
+	"github.com/ottermq/jaildeck/internal/auth"
+	"github.com/ottermq/jaildeck/internal/state"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,6 +44,7 @@ type auditEntry struct {
 	Operation string `json:"operation"`
 	Target    string `json:"target"`
 	RequestID string `json:"request_id"`
+	Principal string `json:"principal"`
 }
 
 func auditEntries(t *testing.T, router http.Handler, cookies []*http.Cookie, query string) []auditEntry {
@@ -127,5 +132,39 @@ func TestNoRequestIDLeavesTheFieldOut(t *testing.T) {
 	rec := do(t, router, http.MethodGet, "/api/audit", cookies, nil)
 	if strings.Contains(rec.Body.String(), "request_id") {
 		t.Errorf("audit response = %s, want no request_id field", rec.Body)
+	}
+}
+
+// Every entry a request writes says who made it, whether the operator's
+// session or a token, through the split's front and root side alike
+// (JD-056): the root side names the principal the front forwarded.
+func TestTheAuditLogNamesWhoActed(t *testing.T) {
+	const plain = "jd_audit_principal_token"
+	a, err := newTestAppWith(t, nil, []state.Token{{
+		Name: "ci", Hash: auth.HashToken(plain), CreatedAt: time.Now(), Scopes: []string{},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := a.Routes(testAssets())
+	cookies := login(t, router)
+	bearer := map[string]string{"Authorization": "Bearer " + plain, "X-Request-Id": "by-token"}
+	if rec := do(t, router, http.MethodPost, "/api/jails/nginx/stop", nil, bearer); rec.Code != http.StatusOK {
+		t.Fatalf("stop: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, router, http.MethodPut, "/api/jails/nginx/snapshots/by-session", cookies,
+		map[string]string{"X-Request-Id": "by-session"}); rec.Code != http.StatusCreated {
+		t.Fatalf("snapshot: %d %s", rec.Code, rec.Body)
+	}
+	for id, want := range map[string]string{"by-token": "token:ci", "by-session": "session"} {
+		entries := auditEntries(t, router, cookies, "?request_id="+id)
+		if len(entries) == 0 {
+			t.Fatalf("%s: no entries", id)
+		}
+		for _, e := range entries {
+			if e.Principal != want {
+				t.Errorf("%s %s: principal %q, want %q", e.Operation, e.Target, e.Principal, want)
+			}
+		}
 	}
 }

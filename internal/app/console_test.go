@@ -86,7 +86,7 @@ func TestAConsoleThroughTheRouter(t *testing.T) {
 	for i := len(entries) - 1; i >= 0; i-- {
 		got = append(got, entries[i].Operation+" "+entries[i].Target+" "+entries[i].Principal+" "+entries[i].Reason)
 	}
-	want := []string{"console-open jail/nginx session ", "console-close jail/nginx session jail-stopped", "stop nginx  "}
+	want := []string{"console-open jail/nginx session ", "console-close jail/nginx session jail-stopped", "stop nginx session "}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("audit, oldest first:\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}

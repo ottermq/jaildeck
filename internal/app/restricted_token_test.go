@@ -68,3 +68,34 @@ func TestARestrictedTokenThroughTheRouter(t *testing.T) {
 		t.Errorf("console: %v %v, want 403", resp, err)
 	}
 }
+
+// A snapshot grant through the whole stack (JD-057): the token takes and
+// destroys the snapshots its pattern names, in the jails its label names,
+// and no others -- not another tool's, not a rollback.
+func TestASnapshotGrantThroughTheRouter(t *testing.T) {
+	const plain = "jd_snapshot_test_token"
+	a, err := newTestAppWith(t, nil, []state.Token{{
+		Name: "backup", Hash: auth.HashToken(plain), CreatedAt: time.Now(),
+		Scopes: []string{}, Allow: []string{"read", "snapshot:example-*@otter:tier=frontend"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := a.Routes(testAssets())
+	bearer := map[string]string{"Authorization": "Bearer " + plain}
+	for _, c := range []struct {
+		method, path string
+		want         int
+	}{
+		{"PUT", "/api/jails/nginx/snapshots/example-hourly", http.StatusCreated},
+		{"PUT", "/api/jails/nginx/snapshots/operator-kept", http.StatusForbidden},
+		{"PUT", "/api/jails/redis/snapshots/example-hourly", http.StatusForbidden},
+		{"POST", "/api/jails/nginx/snapshots/example-hourly/rollback", http.StatusForbidden},
+		{"DELETE", "/api/jails/nginx/snapshots/example-hourly?confirm=zroot/jails/nginx@example-hourly", http.StatusOK},
+		{"DELETE", "/api/jails/nginx/snapshots/before-upgrade?confirm=zroot/jails/nginx@before-upgrade", http.StatusForbidden},
+	} {
+		if rec := sendWithHeaders(t, router, c.method, c.path, nil, "", bearer); rec.Code != c.want {
+			t.Errorf("%s %s: %d %s, want %d", c.method, c.path, rec.Code, rec.Body, c.want)
+		}
+	}
+}

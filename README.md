@@ -7,12 +7,12 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.29.1.** Jails can be created from release templates, started,
+**Current release: v0.30.0.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API, and their limits changed in place; their ZFS datasets,
 snapshots and resource usage are visible, and a dataset kept past its jail can be restored or destroyed; host setup is checked; PF can be seen,
 read-only; bhyve VMs are created from cloud images (Debian, Ubuntu, Fedora, Alpine, Arch) with cloud-init, with a console password if wanted, pinned to host CPUs, started,
 stopped, labelled, snapshotted and destroyed, on a default network Jail Deck sets up with NAT through PF, or on networks of their own kept apart by PF, with addresses Jail Deck picks and checks, and every network and what is on it can be seen; a jail has a shell in the
-browser, and a guest its serial console; each one's files on the host can be read on its page; jails and guests are found in one list by name, state or label, with what each is using over the last minutes, and started, stopped, restarted or snapshotted several at once; the storage nothing uses is listed and can be reclaimed; pages update live as anyone changes the host; a token can be limited to reading and running commands in jails with a given label; the part that faces the network runs as a user of its own, not root; every operation is audited, a console with who opened it and why when the client says, and nothing is reachable without a password or an
+browser, and a guest its serial console; each one's files on the host can be read on its page; jails and guests are found in one list by name, state or label, with what each is using over the last minutes, and started, stopped, restarted or snapshotted several at once; the storage nothing uses is listed and can be reclaimed; pages update live as anyone changes the host; a token can be limited to reading, running commands and taking its own snapshots in jails with a given label; the part that faces the network runs as a user of its own, not root; every operation is audited, a console with who opened it and why when the client says, and nothing is reachable without a password or an
 API token. Releases install and upgrade with `pkg` from a signed repository. See
 [the roadmap](docs/ROADMAP.md) for what comes next.
 
@@ -240,6 +240,15 @@ then do only what its grants name, and anything else is refused with `403`:
 - `read` is any `GET`: lists, details, metrics, the event stream.
 - `exec:<property>=<value>` is `POST /api/jails/{name}/exec`, in a jail whose ZFS user property
   has that value.
+- `snapshot:<pattern>@<property>=<value>` is `PUT` and `DELETE /api/jails/{name}/snapshots/{snapshot}`
+  for a snapshot whose name matches the pattern, in a jail whose property has that value (JD-057).
+  The pattern is a name, or a prefix ending in `*`; `*` alone is refused. A backup job can then
+  take and prune its own snapshots and can't touch anyone else's. Rollback and a dataset's own
+  snapshots stay out of reach.
+
+```sh
+jaildeck token add backup --allow read --allow 'snapshot:backup-*@example:role=cluster'
+```
 
 A platform's worker that reads and runs commands in its own jails gets:
 
@@ -501,6 +510,9 @@ path holding something that is not a socket is a configuration error and is neve
 every audit entry it produces carries it back as `request_id`, which `GET
 /api/audit?request_id=…` then filters on (JD-016). Nothing is stored that you did not
 send: a request without the header produces entries with no `request_id` field at all.
+Every entry a request produces also names who made it, as `principal`: `session` for the
+operator's login, `token:<name>` for a token. That makes a limited token's work easy to tell
+apart from everyone else's.
 
 The id may be up to 64 characters of ASCII letters, digits and `-._:` — enough for a UUID,
 a ULID or a `trace:span` pair. An id outside that is **dropped, not rejected**: the

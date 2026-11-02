@@ -30,6 +30,62 @@ func TestParseGrants(t *testing.T) {
 	}
 }
 
+// A snapshot grant names its snapshots by a pattern, never all of them
+// (JD-057): a literal name, or a prefix ending in *.
+func TestParseSnapshotGrants(t *testing.T) {
+	for _, good := range []string{"snapshot:example-*@example:role=cluster", "snapshot:nightly@example:role=cluster",
+		"snapshot:a.b_c:d-*@example:role=x=y"} {
+		if _, err := ParseGrants([]string{good}); err != nil {
+			t.Errorf("%q: %v", good, err)
+		}
+	}
+	for _, bad := range []string{"snapshot:*@example:role=cluster", "snapshot:@example:role=cluster",
+		"snapshot:example-*", "snapshot:example-*@role=cluster", "snapshot:ex*ample@example:role=cluster",
+		"snapshot:-x*@example:role=cluster", "snapshot:a/b*@example:role=cluster", "snapshot:example-*@example:role="} {
+		if _, err := ParseGrants([]string{bad}); err == nil {
+			t.Errorf("%q was taken for a grant", bad)
+		}
+	}
+	if got := DescribeGrants([]string{"snapshot:example-*@example:role=cluster"}); got != "snapshots named example-* in jails with example:role=cluster" {
+		t.Errorf("described as %q", got)
+	}
+}
+
+// Snapshots the grant's pattern names, in jails it names, can be taken and
+// destroyed; nothing else about snapshots can: another name, a rollback, a
+// dataset's own snapshots, another jail.
+func TestRestrictSnapshotGrant(t *testing.T) {
+	backup := context.WithValue(context.Background(), bearerKey{}, state.Token{Name: "backup", Scopes: []string{},
+		Allow: []string{"read", "snapshot:example-*@example:role=cluster"}})
+	for _, c := range []struct {
+		name, method, target string
+		want                 int
+		mentions             string
+	}{
+		{"take one of its own", "PUT", "/api/jails/web/snapshots/example-hourly-20261102T1200Z", 204, ""},
+		{"destroy one of its own", "DELETE", "/api/jails/web/snapshots/example-hourly-20261102T1200Z?confirm=x", 204, ""},
+		{"take another name", "PUT", "/api/jails/web/snapshots/zrepl_20261102", 403, "matches none of its patterns"},
+		{"destroy another name", "DELETE", "/api/jails/web/snapshots/operator-before-upgrade", 403, "matches none of its patterns"},
+		{"in another jail", "PUT", "/api/jails/db/snapshots/example-x", 403, "has no matching property"},
+		{"in a jail that is not there", "PUT", "/api/jails/nope/snapshots/example-x", 404, "jail not found"},
+		{"a rollback", "POST", "/api/jails/web/snapshots/example-x/rollback", 403, "is none of them"},
+		{"a dataset's snapshot", "PUT", "/api/jails/web/datasets/data/snapshots/example-x", 403, "is none of them"},
+		{"an escaped name", "PUT", "/api/jails/web/snapshots/example%2Dx", 403, "is none of them"},
+		{"exec", "POST", "/api/jails/web/exec", 403, "no exec grant"},
+	} {
+		code, body := restrict(t, backup, c.method, c.target)
+		if code != c.want || !strings.Contains(body, c.mentions) {
+			t.Errorf("%s: %d %s, want %d mentioning %q", c.name, code, body, c.want, c.mentions)
+		}
+	}
+	// The exec grant alone still reaches no snapshot.
+	worker := context.WithValue(context.Background(), bearerKey{}, state.Token{Name: "worker", Scopes: []string{},
+		Allow: []string{"exec:example:role=cluster"}})
+	if code, body := restrict(t, worker, "PUT", "/api/jails/web/snapshots/example-x"); code != 403 || !strings.Contains(body, "no snapshot grant") {
+		t.Errorf("exec grant on a snapshot: %d %s", code, body)
+	}
+}
+
 func TestARestrictedTokenTakesNoScopes(t *testing.T) {
 	now := time.Now()
 	if _, _, err := AddToken(nil, "worker", []string{"console"}, []string{"read"}, now); !errors.Is(err, ErrScopesOnRestrictedToken) {
@@ -91,10 +147,10 @@ func TestRestrictLetsThroughOnlyWhatTheGrantsName(t *testing.T) {
 		{"exec in a jail that is not there", worker, "POST", "/api/jails/nope/exec", 404, "jail not found"},
 		{"exec where the properties cannot be read", worker, "POST", "/api/jails/broken/exec", 403, "could not be read"},
 		{"a stop", worker, "POST", "/api/jails/web/stop", 403, "may only read; exec in jails with example:role=cluster"},
-		{"a relabel", worker, "PATCH", "/api/jails/db/properties", 403, "is neither"},
-		{"a destroy", worker, "DELETE", "/api/jails/web", 403, "is neither"},
-		{"an escaped path", worker, "POST", "/api/jails/w%65b/exec", 403, "is neither"},
-		{"a longer path", worker, "POST", "/api/jails/web/exec/x", 403, "is neither"},
+		{"a relabel", worker, "PATCH", "/api/jails/db/properties", 403, "is none of them"},
+		{"a destroy", worker, "DELETE", "/api/jails/web", 403, "is none of them"},
+		{"an escaped path", worker, "POST", "/api/jails/w%65b/exec", 403, "is none of them"},
+		{"a longer path", worker, "POST", "/api/jails/web/exec/x", 403, "is none of them"},
 		{"a read without read", as(state.Token{Name: "x", Scopes: []string{}, Allow: []string{"exec:example:role=cluster"}}),
 			"GET", "/api/jails", 403, "no read grant"},
 		{"exec without exec", as(state.Token{Name: "x", Scopes: []string{}, Allow: []string{"read"}}),

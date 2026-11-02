@@ -2446,7 +2446,7 @@ Only the usage is read again. A row's state changes when someone acts on it, and
 
 ## JD-051 — Running Without Root: What doas Can and Cannot Narrow
 
-**Status:** Proposed — 2026-10-30. The study #156 asks for, for the owner to decide. Nothing changed on any host. The measurements below are reads, run as an unprivileged account on isengard, plus FreeBSD's own manuals (`doas.conf(5)` from doas 6.4, `zfs-allow(8)`).
+**Status:** Locked — 2026-11-02, A with C as the direction; #156 closed. Proposed 2026-10-30 as the study #156 asks for. Nothing changed on any host. The measurements below are reads, run as an unprivileged account on isengard, plus FreeBSD's own manuals (`doas.conf(5)` from doas 6.4, `zfs-allow(8)`).
 
 JD-001 runs Jail Deck as root. #156 asks whether it could run as a `jaildeck` user that reaches root only through `doas`, for a known set of commands.
 
@@ -2500,9 +2500,9 @@ The usual answer is a **root-owned wrapper per operation**, such as `jaildeck-zf
 | **C. Privilege separation:** an unprivileged process for HTTP, sessions, tokens and the UI, and a small root helper on a local socket that only accepts the operations the API already has, typed and checked again | a bug in request parsing, the UI, or a library on the HTTP side no longer runs as root; the helper's surface is the operation list, not a shell | a second process, a protocol between the two, and every operation crossing it; the package installs a user and a socket |
 | **D. C, with `zfs allow` for what needs no mount** | snapshots, properties and holds without the helper | two paths for ZFS; the mount still goes through the helper |
 
-### Proposed
+### Decided
 
-**A, amended now; C as the direction when the threat model calls for it.** doas (B) doesn't narrow what matters. The commands' arguments are names chosen at request time, and doas matches exact strings. Group-writable configuration is root by another door. C puts the boundary where a bug is most likely, in the HTTP and parsing side, without a rule per command. It is the shape OpenBSD's own daemons use. It should be its own issue, sized after Otter Cloud's operator model is settled. That is the separate question #156 names: whether a platform's operators get system users of their own.
+**A now: Jail Deck keeps running as root (JD-001). C is the direction when the threat model calls for it.** doas (B) doesn't narrow what matters. The commands' arguments are names chosen at request time, and doas matches exact strings. Group-writable configuration is root by another door. C puts the boundary where a bug is most likely, in the HTTP and parsing side, without a rule per command. It is the shape OpenBSD's own daemons use. It should be its own issue, sized after Otter Cloud's operator model is settled. That is the separate question #156 names: whether a platform's operators get system users of their own.
 
 ### Not decided here
 

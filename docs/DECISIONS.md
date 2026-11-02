@@ -2680,3 +2680,55 @@ A middleware after `RequireAuth`, on both authenticated groups (`/api` and `/met
 - **Exec is still root inside the jail.** A leaked limited token reaches the jails its grant matches and what is in them. It no longer reaches the host's other jails, guests, PF or the pools. This is containment, not confinement of what exec can do.
 - **Rollback widens.** A Jail Deck older than this ignores `allow` in the state file, so a limited token gets the whole plain API there. The README and the release notes say to revoke limited tokens before rolling back. No old binary can be taught otherwise.
 - **More grants when they are needed.** Snapshots (create, list and destroy on matching jails) is the likely next one, as `snapshot:<property>=<value>`. A grant per need, each named, rather than a general policy language.
+
+## JD-056 — Privilege Separation: Where the Cut Goes
+
+**Status:** Proposed — 2026-11-02, #206. The design for JD-051's option C. Nothing is built yet.
+
+JD-051 kept Jail Deck running as root and named privilege separation as the direction: an unprivileged process for HTTP, sessions, tokens and the UI, and a root process that does the work. This record decides where the line between the two goes.
+
+### What the split can and can't protect
+
+A token or a session is root-equivalent in practice (JD-001, JD-051). It reaches jails, datasets, PF anchors and guests. So the split doesn't protect anything **after** authentication: whoever holds a credential already has the operations, whichever process runs them.
+
+What it can protect is everything **before** authentication. Today a bug in that code runs as root. That code is the HTTP server reading requests from the network, the static files, the login body and the password check, cookie and token parsing, and session lookup. After the split, the same bug runs as an unprivileged `jaildeck` user. It reaches what the API reaches, and no more. The API can't read `/etc/master.passwd`, put a key in root's `authorized_keys`, touch datasets outside Jail Deck's pool, or load PF rules outside its anchors.
+
+That gain is real but bounded, and the cut should be sized to it.
+
+### Three places to cut
+
+| Cut | Unprivileged side | Root side | Size |
+|---|---|---|---|
+| **1. At authentication** | listener, request id and log, static UI, `/api/auth/*`, `RequireAuth` | the API as it is now, on a Unix socket, trusting the principal the front names | a front, a proxy, a supervisor; the handlers don't change |
+| **2. At the services** | everything in 1, plus routing, handlers, JSON | services and adapters, behind a typed call per operation | about 110 service methods to carry across, each with its own encoding |
+| **3. At the adapters** | everything in 2, plus services | the FreeBSD adapters | as large as 2, and worse: the front composes primitives, so the order of a create is no longer the root side's rule (JD-030) |
+
+Cut 1 moves all of the pre-authentication code out of root. Cut 2 also moves the post-authentication HTTP and JSON code. But by the argument above, that code is reachable only by someone who already has the operations, so cut 2 costs about ten times as much for little more. The one case where cut 2 adds something is a limited token (JD-055): its holder could, through a bug in a root-side handler, reach more than its grants. That is a narrow case, and the grants are checked again on the root side either way (below).
+
+### Decided, if accepted: cut 1
+
+**Two processes from one binary.**
+
+- **The root process** starts first. It builds the services and adapters as now and serves the API on a Unix socket, `/var/run/jaildeck/api.sock`. The socket's directory is `root:jaildeck 0750` and the socket is `0660`, so only the front can connect. It doesn't open a TCP listener, and it doesn't read the state directory.
+- **The front** is started by the root process as a child, as the `jaildeck` user (`exec.Cmd` with credentials), and restarted if it exits. It listens on `JAILDECK_HOST:JAILDECK_PORT` as now. It serves the UI and `/api/auth/*`, runs `RequireAuth` against the state directory, and passes everything authenticated to the socket through `httputil.ReverseProxy`. That proxy carries WebSocket upgrades (the console) and, with flushing on, the event stream.
+- **The principal crosses as headers** the front sets after authentication. It removes any it was sent: name, kind (session or token), scopes, grants. The root side reads them only from the socket and builds the same context `RequireAuth` builds today. So `Restrict` (JD-055), the scope checks (JD-046), the console's origin check and the audit's principal stay where they are, on the root side. A front that is taken over can name any principal. That is the same as stealing an unlimited token, which is what this record says the split can't help with anyway.
+- **One rc service, one pidfile.** The operator's `service jaildeck start|stop|status` doesn't change. The root process owns the front: it stops it on stop, and it logs the front's output to syslog with its own.
+
+**What changes outside the binary.**
+
+- The package creates the `jaildeck` user and group (`nologin`, no home) if they are missing, and leaves them on removal, as ports do.
+- The state directory and its files become `root:jaildeck`, mode `0640` and `0750`. `jaildeck passwd` and `token` still run as root and set that on every save. The upgrade sets it once.
+- `/var/run/jaildeck` is created by the rc script, owned by root.
+- Fake mode (`JAILDECK_ADAPTER=fake`) runs both halves in one process over an in-memory pipe, so development and the tests stay one command.
+
+### What it costs
+
+- A second process to supervise, and a socket hop per request. The hop costs microseconds against commands that take milliseconds to seconds.
+- A trust boundary that is a few headers. It needs tests that a header sent from outside is dropped, and that the root side refuses a request without one.
+- Packaging: a user, ownership of the state directory, an upgrade step. A rollback to an older release runs as root again and reads the same files, so rolling back needs nothing.
+
+### Not decided here
+
+- **Whether Otter Cloud's operators get system users of their own** (#156's last point). Cut 1 has one caller, the front, so the answer doesn't change this design. It would change cut 2, if that is ever wanted.
+- **Cut 2 later.** It stays possible on top of cut 1: the socket protocol would change, not the processes.
+- **Dropping more from the root side.** For example, Capsicum for the front, or reading `/dev/pf` through a narrower helper. Those are separate steps, each with its own measurement.

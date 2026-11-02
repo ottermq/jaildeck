@@ -137,7 +137,9 @@ ps -axo user,command | grep -q '^jaildeck .*jaildeck front$' || fail 'the front 
 ps -axo user,command | grep -q '^root .*/usr/local/bin/jaildeck$' || fail 'the root side is not running as root.'
 curl -fsS -H "Authorization: Bearer $(tail -1 "$work/token")" http://127.0.0.1:18884/api/jails -o /dev/null ||
     fail 'an authenticated request did not reach the root side.'
-[ "$(stat -f '%Su:%Sg:%Lp' "$state_dir")" = root:jaildeck:750 ] || fail 'the state directory is not shared with the front.'
+[ "$(stat -f '%Su:%Sg:%Lp' "$state_dir")" = root:wheel:711 ] || fail 'the state directory is not as the split leaves it.'
+[ "$(stat -f '%Su:%Lp' "$state_dir/state.json")" = jaildeck:600 ] || fail 'the state file is not the front'"'"'s.'
+[ "$(stat -f '%Su:%Lp' /var/run/jaildeck/api.sock)" = jaildeck:600 ] || fail 'the root side'"'"'s socket is not the front'"'"'s alone.'
 service jaildeck onestop
 running=NO
 inventory > "$work/operator.after-split"

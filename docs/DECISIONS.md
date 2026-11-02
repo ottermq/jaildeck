@@ -2709,7 +2709,7 @@ Cut 1 moves all of the pre-authentication code out of root. Cut 2 also moves the
 
 **Two processes from one binary.**
 
-- **The root process** starts first. It builds the services and adapters as now and serves the API on a Unix socket, `/var/run/jaildeck/api.sock`. The socket's directory is `root:jaildeck 0750` and the socket is `0660`, so only the front can connect. It doesn't open a TCP listener, and it doesn't read the state directory.
+- **The root process** starts first. It builds the services and adapters as now and serves the API on a Unix socket, `/var/run/jaildeck/api.sock`. The socket is `0600` and owned by the front's uid, so only the front can connect, and a connection from any other uid is dropped (see As built). It doesn't open a TCP listener, and it doesn't read the state directory.
 - **The front** is started by the root process as a child, as the `jaildeck` user (`exec.Cmd` with credentials), and restarted if it exits. It listens on `JAILDECK_HOST:JAILDECK_PORT` as now. It serves the UI and `/api/auth/*`, runs `RequireAuth` against the state directory, and passes everything authenticated to the socket through `httputil.ReverseProxy`. That proxy carries WebSocket upgrades (the console) and, with flushing on, the event stream.
 - **The principal crosses as headers** the front sets after authentication. It removes any it was sent: name, kind (session or token), scopes, grants. The root side reads them only from the socket and builds the same context `RequireAuth` builds today. So `Restrict` (JD-055), the scope checks (JD-046), the console's origin check and the audit's principal stay where they are, on the root side. A front that is taken over can name any principal. That is the same as stealing an unlimited token, which is what this record says the split can't help with anyway.
 - **One rc service, one pidfile.** The operator's `service jaildeck start|stop|status` doesn't change. The root process owns the front: it stops it on stop, and it logs the front's output to syslog with its own.
@@ -2717,7 +2717,7 @@ Cut 1 moves all of the pre-authentication code out of root. Cut 2 also moves the
 **What changes outside the binary.**
 
 - The package creates the `jaildeck` user and group (`nologin`, no home) if they are missing, and leaves them on removal, as ports do.
-- The state directory and its files become `root:jaildeck`, mode `0640` and `0750`. `jaildeck passwd` and `token` still run as root and set that on every save. The upgrade sets it once.
+- The state file becomes the front's uid's, `0600`, in a directory of root's, `0711`. `jaildeck passwd` and `token` still run as root and keep the file's owner on every save. Every start sets it.
 - `/var/run/jaildeck` is created by the rc script, owned by root.
 - Fake mode (`JAILDECK_ADAPTER=fake`) runs both halves in one process over an in-memory pipe, so development and the tests stay one command.
 
@@ -2726,11 +2726,12 @@ Cut 1 moves all of the pre-authentication code out of root. Cut 2 also moves the
 - **The opt-out is a switch, `JAILDECK_SPLIT=off`**, not an empty `JAILDECK_USER`. An empty setting means its default everywhere else in the configuration. Anything but `off` is on, so a typo keeps the split.
 - **Jail Deck started as root without the user refuses to start**, naming the user and the switch. The package creates the user (#206). Falling back to one process would turn a missing account into running as root again, silently.
 - **`JAILDECK_USER` may not be root.**
-- **A state directory holding anything but `state.json` is refused**, not opened to a group: it would not be Jail Deck's alone. `jaildeck passwd` and `token` write the file `0640` in the directory's group only when the directory is open to its group and closed to others, which is how the split leaves it.
+- **The boundary is the front's uid, never a group** (v0.29.1). v0.29.0 made the run directory and the API socket `root:jaildeck`, and the state file `0640` in that group. But a host's `jaildeck` group may already hold the clients of `JAILDECK_SOCKET` (JD-002), the lab host's did. Any of them could then have connected to the root side's socket, named any principal, and read the credential hashes. So the API socket is created `0600` and given to the front's uid, and the front's recheck socket is root's, `0600`. A connection to the API socket from anyone but that uid or root is dropped, by the kernel's account of who connected (`LOCAL_PEERCRED`), whatever the mode says. The state file is the front's uid's, `0600`, in a directory of root's, `0711`.
+- **A state directory holding anything but `state.json` is refused**: it would not be Jail Deck's alone. `jaildeck passwd` and `token` keep the state file's owner when they replace it.
 - **The front's descriptors:** the root side opens every listener and hands them over, so the front binds nothing and the operator's socket keeps its owner and mode. A pipe the root side never writes to tells the front when the root side has gone: the front exits on end of file, which needs no signal handling and works the same on any Unix.
 - **The recheck (JD-042) is the front's.** A console or an event stream that outlives its request asks the front, over a socket of the front's own, whether the login still holds. Revoking a token closed its open event stream at the next heartbeat, measured.
 - **An unknown `/api` path is `401` before a login, not `404`.** The front doesn't know the root side's routes.
-- Measured on a lab host, the branch binary with its front as `nobody`: the front ran as `nobody` and the sockets and state file were `root:nobody`. A principal header sent by a client got `401`. The UI, the API, `/metrics`, exec and the console's WebSocket all worked through the front, and a limited token was refused the same things as before, the escaped path included. A token added while it ran worked at once. A front that was killed was back within a second. Stopping the root side stopped the front.
+- Measured on a lab host, the branch binary with its front as `nobody`: the front ran as `nobody` (in v0.29.0's group-based layout). A principal header sent by a client got `401`. The UI, the API, `/metrics`, exec and the console's WebSocket all worked through the front, and a limited token was refused the same things as before, the escaped path included. A token added while it ran worked at once. A front that was killed was back within a second. Stopping the root side stopped the front.
 
 ### What it costs
 

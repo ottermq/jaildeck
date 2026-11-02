@@ -1,17 +1,18 @@
 package main
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ottermq/jaildeck/internal/config"
 )
 
-// The state dir becomes the front's to read, and nothing more (JD-056).
-// The owner stays as it was here: a test is not root, so it chowns to the
-// owner it already has, in its own group.
+// The state file becomes the front's uid's to read, in a directory nobody
+// can list (JD-056).
 func TestShareStateDir(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, stateFileName), []byte("{}"), 0o600); err != nil {
@@ -20,10 +21,10 @@ func TestShareStateDir(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("chown to uid 0 needs root")
 	}
-	if err := shareStateDir(dir, os.Getgid()); err != nil {
+	if err := shareStateDir(dir, 65534); err != nil {
 		t.Fatal(err)
 	}
-	for path, want := range map[string]os.FileMode{dir: 0o750, filepath.Join(dir, stateFileName): 0o640} {
+	for path, want := range map[string]os.FileMode{dir: 0o711, filepath.Join(dir, stateFileName): 0o600} {
 		info, err := os.Stat(path)
 		if err != nil {
 			t.Fatal(err)
@@ -42,13 +43,9 @@ func TestShareStateDirRefusesASharedDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	err := shareStateDir(dir, os.Getgid())
+	err := shareStateDir(dir, os.Getuid())
 	if err == nil || !strings.Contains(err.Error(), "something-else") {
 		t.Fatalf("err = %v, want a refusal naming the other file", err)
-	}
-	info, _ := os.Stat(dir)
-	if info.Mode().Perm()&0o070 == 0o050 {
-		t.Error("the directory was opened to its group anyway")
 	}
 }
 
@@ -57,7 +54,7 @@ func TestPrepareRunDirRefusesAFile(t *testing.T) {
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := prepareRunDir(path, os.Getgid()); err == nil {
+	if err := prepareRunDir(path); err == nil {
 		t.Fatal("a file was taken for the run directory")
 	}
 }
@@ -69,6 +66,47 @@ func TestSplitUserIsNilUnlessRoot(t *testing.T) {
 		account, err := splitUser(&config.Config{User: "jaildeck", OneProcess: off})
 		if (off || os.Geteuid() != 0) && (account != nil || err != nil) {
 			t.Errorf("OneProcess=%v: %v, %v", off, account, err)
+		}
+	}
+}
+
+// The root side's socket takes connections from the front's uid and root
+// alone, by the kernel's account, whatever the socket's mode.
+func TestOnlyFromDropsAnotherUID(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root is always let in")
+	}
+	for _, c := range []struct {
+		uid  int
+		want bool
+	}{{os.Getuid(), true}, {os.Getuid() + 12345, false}} {
+		path := filepath.Join(t.TempDir(), "s")
+		l, err := net.Listen("unix", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		l = onlyFrom(l, c.uid)
+		accepted := make(chan bool, 1)
+		go func() {
+			conn, err := l.Accept()
+			if err == nil {
+				conn.Close()
+			}
+			accepted <- err == nil
+		}()
+		conn, err := net.Dial("unix", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got bool
+		select {
+		case got = <-accepted:
+		case <-time.After(500 * time.Millisecond):
+		}
+		conn.Close()
+		l.Close()
+		if got != c.want {
+			t.Errorf("uid %d: accepted %v, want %v", c.uid, got, c.want)
 		}
 	}
 }

@@ -1,8 +1,9 @@
 <script lang="ts">
-import { onMount } from 'svelte'
+import { onDestroy, onMount } from 'svelte'
 import { route, navigate, onNavClick, match } from '../router.svelte'
 import { auth, logout } from '../stores/auth.svelte'
 import VersionBadge from '../components/VersionBadge.svelte'
+import { connectLive, disconnectLive, live } from '../stores/events.svelte'
 import Dashboard from './Dashboard.svelte'
 import Instances from './Instances.svelte'
 import Jails from './Jails.svelte'
@@ -58,6 +59,11 @@ let vm = $derived(match('/vms/:name'))
 onMount(() => {
     if (route.path === '/') navigate('/dashboard', true)
 })
+
+// The shell is only shown to someone signed in, so the live stream opens with
+// it and closes when signing out unmounts it (#124).
+onMount(connectLive)
+onDestroy(disconnectLive)
 </script>
 
 <div class="shell">
@@ -87,6 +93,11 @@ onMount(() => {
                 <dd>{auth.principal?.kind ?? '—'}{auth.principal?.name ? ` · ${auth.principal.name}` : ''}</dd>
                 <dt>Session ends</dt>
                 <dd>{sessionExpiry}</dd>
+                <dt>Updates</dt>
+                <dd class="live" class:is-live={live.connected}
+                    title={live.connected ? 'Pages update as things change' : 'Pages update when opened or refreshed'}>
+                    {live.connected ? 'Live' : 'Not live'}
+                </dd>
             </dl>
             <button type="button" class="rail__logout" onclick={logout}>Log out</button>
         </div>
@@ -233,6 +244,22 @@ onMount(() => {
 .session dd {
     margin: 0 0 var(--space-2);
     color: var(--rail-text-strong);
+}
+
+.live::before {
+    content: '';
+    display: inline-block;
+    width: 0.5em;
+    height: 0.5em;
+    margin-right: 0.4em;
+    border-radius: 50%;
+    background: var(--rail-text);
+    opacity: 0.5;
+}
+
+.live.is-live::before {
+    background: var(--ok);
+    opacity: 1;
 }
 
 .session dd:last-of-type {

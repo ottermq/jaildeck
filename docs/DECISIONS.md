@@ -2511,7 +2511,7 @@ The usual answer is a **root-owned wrapper per operation**, such as `jaildeck-zf
 
 ## JD-052 — Live State: An Event Stream on Top of the Reads
 
-**Status:** Proposed — 2026-10-30. The design note #124 asks for, for the owner to decide before any code. Timings measured on isengard, read only.
+**Status:** Locked — 2026-11-01, built in #124. Proposed 2026-10-30 as the design note #124 asked for. Timings measured on isengard, read only.
 
 Pages read their state when they open, and poll only while something long runs (JD-008). With several operators and automations acting at once, a page goes stale without saying so. JD-008 left room for server-sent events "on top rather than replacing" polling. This is that.
 
@@ -2524,7 +2524,7 @@ Pages read their state when they open, and poll only while something long runs (
 ```
 id: 7f3c-1042
 event: operation
-data: {"operation":"jail-stop","target":"web","success":true,"request_id":"…"}
+data: {"operation":"stop","target":"web","success":true,"request_id":"…"}
 
 id: 7f3c-1043
 event: state
@@ -2560,10 +2560,11 @@ One `EventSource` for the whole app, opened after sign-in. Each store refetches 
 - **Webhooks or any delivery off the host.** The stream is for clients that are connected.
 - **History.** The audit log is history; the stream is now.
 
-### Open
+### Answered when built
 
-- The comparison interval: 10 s is a guess at "soon enough". It could follow the subscriber count, or be a setting.
-- Whether `state` events from Jail Deck's own operations should be suppressed when the `operation` event already says the same thing.
+- **The comparison interval is a fixed 10 s.** At under 1% of one core it needs no setting, and following the subscriber count would make freshness depend on who else is watching.
+- **A `state` event is suppressed when Jail Deck's own operation on that name was announced in the same interval.** The `operation` event already says it, and two hints for one change would mean two reloads. The suppression is by name, not by kind, so a jail and a guest of the same name can hide each other's change for one interval. They are reloaded by the operation's event anyway.
+- **In the interface, the 2-second poll during long work stays while live.** It is also what moves the elapsed time along. The stream adds what the poll never had: work that someone else started shows up.
 
 ## JD-053 — More Cloud Images, and Reading qcow2 Ourselves
 

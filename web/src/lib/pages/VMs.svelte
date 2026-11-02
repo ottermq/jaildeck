@@ -1,5 +1,6 @@
 <script lang="ts">
-import { onMount } from 'svelte'
+import { onDestroy, onMount } from 'svelte'
+import { onLive, aboutInstances } from '../stores/events.svelte'
 import { onNavClick } from '../router.svelte'
 import { listVMs } from '../stores/vms.svelte'
 import type { Listing } from '../stores/vms.svelte'
@@ -29,6 +30,9 @@ async function load() {
 }
 
 onMount(load)
+
+// Read again when the live stream says something here changed (#124).
+onDestroy(onLive(aboutInstances, load))
 
 // What the last operation on a guest came to, shown under its row until the
 // next one: a failure, or a stop that had to pull the plug.

@@ -240,6 +240,38 @@
                 }
             }
         },
+        "/events": {
+            "get": {
+                "description": "Server-sent events (`text/event-stream`) of what changes (#124, JD-052). Each event is a\nhint: read what it names again through the usual endpoints, which stay the contract.\n\n- `operation`: an operation Jail Deck ran, as audited: `operation`, `target`, `success`,\n`request_id`, `timestamp`.\n- `state`: a jail or guest found in another state by the periodic comparison, made outside\nJail Deck or by the guest itself: `kind`, `name`, `from`, `to` (`absent` when it appeared or\nwent), `seen: observed`. Compared every 10 s while any stream is open.\n- `progress`: a template's or image's step: `kind`, `name`, `step`; an empty step is done.\n- `reset`: events were missed; read everything again.\n\nIds are `\u003cboot\u003e-\u003csequence\u003e`. A reconnect with `Last-Event-ID` is sent what it missed while the\nlast 256 events still hold it, and a `reset` otherwise. A comment every 15 s keeps a quiet\nstream open; the credentials are checked again then, and a stream whose session expired or\ntoken was revoked is closed. At most 32 streams at once.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Live events",
+                "responses": {
+                    "200": {
+                        "description": "The stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Too many streams",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/firewall": {
             "get": {
                 "security": [

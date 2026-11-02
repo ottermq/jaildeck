@@ -13,6 +13,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/auth"
 	"github.com/ottermq/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/events"
 	"github.com/ottermq/jaildeck/internal/firewall"
 	"github.com/ottermq/jaildeck/internal/host"
 	"github.com/ottermq/jaildeck/internal/housekeeping"
@@ -53,6 +54,7 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 			about.RegisterAboutRoutes(r, a.aboutHandler)
 			storage.RegisterStorageRoutes(r, a.storageHandler)
 			templates.RegisterTemplateRoutes(r, a.templateHandler)
+			events.RegisterEventRoutes(r, a.eventHandler)
 		})
 	})
 

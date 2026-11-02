@@ -468,6 +468,14 @@ Goal: every guest on a network without a root shell, and, for Otter Cloud, a net
 
 ---
 
+## Next: Privilege Separation (#206)
+
+**Status:** proposed (JD-056).
+
+Goal: no code that runs before authentication runs as root (JD-051, option C). An unprivileged front, as a `jaildeck` user, does the listener, the UI, login and authentication. The root process serves the API as it is now, on a Unix socket only the front can reach. Nothing changes for an API client or an operator's `service jaildeck` commands.
+
+---
+
 ## Later: Firewall Tables and Anchors
 
 PF phases 2 and 3 (JD-020) — adding and removing addresses in operator-declared tables, then loading rules into `jaildeck/*` anchors with validation and rollback. Only when a real need appears, most likely per-VM rules. *Phase 3 began with the default network (JD-040): one anchor, `jaildeck/vmnet`, loaded from Jail Deck's file after `pfctl -n` accepts it.*

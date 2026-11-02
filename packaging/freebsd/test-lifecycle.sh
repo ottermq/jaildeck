@@ -63,8 +63,6 @@ diff -u "$work/datasets.before" "$work/datasets.after"
 diff -u "$work/interfaces.before" "$work/interfaces.after"
 diff -u "$work/rc.before" "$work/rc.after"
 if pgrep -x jaildeck >/dev/null; then fail 'install started the service.'; fi
-pw usershow jaildeck >/dev/null || fail 'install did not create the jaildeck user.'
-[ "$(pw usershow jaildeck | cut -d: -f10)" = /usr/sbin/nologin ] || fail 'the jaildeck user can log in.'
 
 # These are explicit operator actions, never package hooks. Use the fake
 # adapter for the HTTP smoke test so no jail operation can touch the host.
@@ -97,10 +95,6 @@ case "$asset" in /assets/*.js) ;; *) fail 'the installed binary is serving the d
 curl -fsS "http://127.0.0.1:18884$asset" -o "$work/bundle.js"
 [ -s "$work/bundle.js" ] || fail 'empty frontend bundle.'
 [ "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18884/api/jails)" = 401 ] || fail 'authentication gate failed.'
-# The front runs as the jaildeck user, the root side as root (JD-056).
-ps -axo user,command | grep -q '^jaildeck .*jaildeck front$' || fail 'the front is not running as jaildeck.'
-curl -fsS -H "Authorization: Bearer $(tail -1 "$work/token")" http://127.0.0.1:18884/api/jails -o /dev/null ||
-    fail 'an authenticated request did not reach the root side.'
 service jaildeck onestop
 running=NO
 
@@ -126,6 +120,28 @@ diff -u "$work/operator.before" "$work/operator.after-upgrade"
 sha256 -q /etc/rc.conf > "$work/rc.after-upgrade"
 diff -u "$work/rc.before" "$work/rc.after-upgrade"
 if pgrep -x jaildeck >/dev/null; then fail 'upgrade started the service.'; fi
+
+# NEW runs its front as the jaildeck user its install created (JD-056), and
+# the root side as root. Started again only for this, and stopped.
+pw usershow jaildeck >/dev/null || fail 'the upgrade did not create the jaildeck user.'
+[ "$(pw usershow jaildeck | cut -d: -f10)" = /usr/sbin/nologin ] || fail 'the jaildeck user can log in.'
+service jaildeck onestart
+running=YES
+attempt=0
+until curl -fsS http://127.0.0.1:18884/ -o /dev/null; do
+    attempt=$((attempt + 1))
+    [ "$attempt" -lt 20 ] || fail 'the upgraded service never became ready.'
+    sleep 1
+done
+ps -axo user,command | grep -q '^jaildeck .*jaildeck front$' || fail 'the front is not running as jaildeck.'
+ps -axo user,command | grep -q '^root .*/usr/local/bin/jaildeck$' || fail 'the root side is not running as root.'
+curl -fsS -H "Authorization: Bearer $(tail -1 "$work/token")" http://127.0.0.1:18884/api/jails -o /dev/null ||
+    fail 'an authenticated request did not reach the root side.'
+[ "$(stat -f '%Su:%Sg:%Lp' "$state_dir")" = root:jaildeck:750 ] || fail 'the state directory is not shared with the front.'
+service jaildeck onestop
+running=NO
+inventory > "$work/operator.after-split"
+diff -u "$work/operator.before" "$work/operator.after-split"
 
 pkg delete -y jaildeck
 if pkg info -e jaildeck; then fail 'package is still registered.'; fi

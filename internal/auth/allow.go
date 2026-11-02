@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -23,36 +24,85 @@ import (
 //	read                     any GET: the lists, the details, the metrics, the stream
 //	exec:<property>=<value>  POST /api/jails/{name}/exec, in a jail whose
 //	                         ZFS user property has that value
+//	snapshot:<pattern>@<property>=<value>
+//	                         PUT and DELETE /api/jails/{name}/snapshots/{snapshot},
+//	                         for a snapshot whose name matches the pattern, in a
+//	                         jail whose property has that value (JD-057)
 //
 // Everything else is refused with 403, so what a grant does not name is
 // never reached, including routes added after the token was made.
 
 const grantRead = "read"
 
-// grant is one parsed grant: read, or exec where a property has a value.
+type grantKind int
+
+const (
+	kindRead grantKind = iota
+	kindExec
+	kindSnapshot
+)
+
+// grant is one parsed grant: read; exec where a property has a value; or
+// snapshots whose names match a pattern, where a property has a value.
 type grant struct {
-	read     bool
+	kind     grantKind
 	property string
 	value    string
+	// pattern is a snapshot name, or a prefix when it ends in *.
+	pattern string
 }
+
+// snapshotPatternRE is a snapshot name's characters, and a * only at the
+// end. A pattern of * alone would reach every snapshot, which is what the
+// pattern is there to stop: a leaked token destroying the snapshots a
+// replication tool or the operator keeps, the ones to restore from.
+var snapshotPatternRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]*\*?$`)
+
+const grantList = "the grants are read, exec:<property>=<value> and snapshot:<pattern>@<property>=<value>"
 
 func parseGrant(text string) (grant, error) {
 	text = strings.TrimSpace(text)
 	if text == grantRead {
-		return grant{read: true}, nil
+		return grant{kind: kindRead}, nil
 	}
-	selector, ok := strings.CutPrefix(text, "exec:")
-	if !ok {
-		return grant{}, fmt.Errorf("%q is not a grant; the grants are read and exec:<property>=<value>", text)
+	if selector, ok := strings.CutPrefix(text, "exec:"); ok {
+		property, value, err := parseSelector(selector)
+		if err != nil {
+			return grant{}, fmt.Errorf("%q is not a grant: exec takes a user property and its value, as exec:example:role=cluster", text)
+		}
+		return grant{kind: kindExec, property: property, value: value}, nil
 	}
+	if rest, ok := strings.CutPrefix(text, "snapshot:"); ok {
+		// A snapshot's name cannot hold an @, so the first one ends the
+		// pattern.
+		pattern, selector, ok := strings.Cut(rest, "@")
+		property, value, err := parseSelector(selector)
+		if !ok || err != nil || !snapshotPatternRE.MatchString(pattern) {
+			return grant{}, fmt.Errorf("%q is not a grant: snapshot takes a name or a prefix ending in *, then @ and a user property and its value, as snapshot:example-*@example:role=cluster", text)
+		}
+		return grant{kind: kindSnapshot, property: property, value: value, pattern: pattern}, nil
+	}
+	return grant{}, fmt.Errorf("%q is not a grant; %s", text, grantList)
+}
+
+// parseSelector reads <property>=<value>. A ZFS user property has a colon in
+// its name (zfsprops(7)), which is also what keeps it apart from zfs's own
+// properties.
+func parseSelector(selector string) (string, string, error) {
 	property, value, ok := strings.Cut(selector, "=")
-	// A ZFS user property has a colon in its name (zfsprops(7)), which is
-	// also what keeps it apart from zfs's own properties.
 	if !ok || !strings.Contains(property, ":") || value == "" ||
 		strings.ContainsFunc(selector, func(r rune) bool { return r < ' ' }) {
-		return grant{}, fmt.Errorf("%q is not a grant: exec takes a user property and its value, as exec:example:role=cluster", text)
+		return "", "", errors.New("not a selector")
 	}
-	return grant{property: property, value: value}, nil
+	return property, value, nil
+}
+
+// matches answers whether a snapshot grant's pattern covers name.
+func (g grant) matches(name string) bool {
+	if prefix, ok := strings.CutSuffix(g.pattern, "*"); ok {
+		return strings.HasPrefix(name, prefix)
+	}
+	return name == g.pattern
 }
 
 // ParseGrants reads grants as given to `jaildeck token add --allow`, and
@@ -82,8 +132,10 @@ func DescribeGrants(allow []string) string {
 		switch {
 		case err != nil:
 			parts = append(parts, text)
-		case g.read:
+		case g.kind == kindRead:
 			parts = append(parts, "read")
+		case g.kind == kindSnapshot:
+			parts = append(parts, "snapshots named "+g.pattern+" in jails with "+g.property+"="+g.value)
 		default:
 			parts = append(parts, "exec in jails with "+g.property+"="+g.value)
 		}
@@ -131,36 +183,49 @@ func allowed(r *http.Request, token state.Token, properties JailProperties) erro
 	}
 
 	if r.Method == http.MethodGet {
-		if slices.ContainsFunc(grants, func(g grant) bool { return g.read }) {
+		if slices.ContainsFunc(grants, func(g grant) bool { return g.kind == kindRead }) {
 			return nil
 		}
 		return refuse("it has no read grant")
 	}
 
+	kind, what := kindExec, "exec"
 	jail, ok := execTarget(r)
+	snapshot := ""
 	if !ok {
-		return refuse(r.Method + " " + r.URL.Path + " is neither")
+		if jail, snapshot, ok = snapshotTarget(r); !ok {
+			return refuse(r.Method + " " + r.URL.Path + " is none of them")
+		}
+		kind, what = kindSnapshot, "snapshot"
 	}
-	var execs []grant
+	var candidates []grant
 	for _, g := range grants {
-		if !g.read {
-			execs = append(execs, g)
+		if g.kind == kind {
+			candidates = append(candidates, g)
 		}
 	}
-	if len(execs) == 0 {
-		return refuse("it has no exec grant")
+	if len(candidates) == 0 {
+		return refuse("it has no " + what + " grant")
+	}
+	if kind == kindSnapshot {
+		// The name is checked before the jail is read: it needs nothing
+		// from the host.
+		candidates = slices.DeleteFunc(candidates, func(g grant) bool { return !g.matches(snapshot) })
+		if len(candidates) == 0 {
+			return refuse("the snapshot name " + snapshot + " matches none of its patterns")
+		}
 	}
 	props, err := properties(r.Context(), jail)
 	if err != nil {
 		// Not found is a 404 whoever asks; anything else, refuse rather
-		// than run a command in a jail whose properties were not read.
+		// than act in a jail whose properties were not read.
 		var appErr *common.AppError
 		if errors.As(err, &appErr) && appErr.Code == http.StatusNotFound {
 			return err
 		}
 		return refuse("the jail's properties could not be read: " + err.Error())
 	}
-	for _, g := range execs {
+	for _, g := range candidates {
 		if props[g.property] == g.value {
 			return nil
 		}
@@ -182,4 +247,21 @@ func execTarget(r *http.Request) (string, bool) {
 		return "", false
 	}
 	return parts[3], true
+}
+
+// snapshotTarget is the jail and the snapshot a jail-level snapshot create
+// or destroy names, read from the path as execTarget reads it. A dataset's
+// snapshots and a rollback are not among them: rollback rewrites a jail's
+// data, and stays a token with the whole API's to do.
+func snapshotTarget(r *http.Request) (string, string, bool) {
+	if (r.Method != http.MethodPut && r.Method != http.MethodDelete) || r.URL.RawPath != "" {
+		return "", "", false
+	}
+	parts := strings.Split(r.URL.Path, "/")
+	// "", "api", "jails", "<name>", "snapshots", "<snapshot>"
+	if len(parts) != 6 || parts[0] != "" || parts[1] != "api" || parts[2] != "jails" || parts[3] == "" ||
+		parts[4] != "snapshots" || parts[5] == "" {
+		return "", "", false
+	}
+	return parts[3], parts[5], true
 }

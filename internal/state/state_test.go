@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -69,22 +70,26 @@ func TestSave_CreatesFileWith0600(t *testing.T) {
 	}
 }
 
-// A state dir open to its group, as the split sets it up (JD-056), gets a
-// file its group can read: the front's, which does not run as root.
-func TestSave_SharesWithAGroupDir(t *testing.T) {
+// Replacing the file keeps its owner, which is the front's when Jail Deck
+// is split (JD-056). Only root can give a file to another uid, so as anyone
+// else this checks that a file of one's own stays 0600 and one's own.
+func TestSave_KeepsTheOwner(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o750); err != nil {
+	store := NewStore(dir)
+	for range 2 {
+		if err := store.Save(State{PasswordHash: "hash"}); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+	info, err := os.Stat(filepath.Join(dir, fileName))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := NewStore(dir).Save(State{PasswordHash: "hash"}); err != nil {
-		t.Fatalf("Save() error = %v", err)
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("Perm() = %#o, want 0600", perm)
 	}
-	fInfo, err := os.Stat(filepath.Join(dir, fileName))
-	if err != nil {
-		t.Fatalf("stating file: %v", err)
-	}
-	if perm := fInfo.Mode().Perm(); perm != 0o640 {
-		t.Errorf("Perm() = %#o, want %#o", perm, 0o640)
+	if st := info.Sys().(*syscall.Stat_t); int(st.Uid) != os.Geteuid() {
+		t.Errorf("owner = %d, want %d", st.Uid, os.Geteuid())
 	}
 }
 

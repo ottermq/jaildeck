@@ -69,7 +69,7 @@ binary="$work/stage/usr/local/bin/jaildeck"
 "$go" run ./tools/checkfrontend web/dist "$binary"
 
 # Fail closed if install ever starts staging anything outside the packing list.
-awk '!/^@/ && NF { print "/usr/local/" $0 }' packaging/freebsd/plist | sort > "$work/expected"
+awk '/^@config / { print "/usr/local/" $2 } !/^@/ && NF { print "/usr/local/" $0 }' packaging/freebsd/plist | sort > "$work/expected"
 (cd "$work/stage" && find . ! -type d | sed 's|^\.||' | sort) > "$work/staged"
 diff -u "$work/expected" "$work/staged" || fail 'unexpected staged files.'
 sed -e "s/%%VERSION%%/$version/g" -e "s/%%ABI%%/$abi/g" \
@@ -87,7 +87,8 @@ diff -u "$work/expected" "$work/packaged" || fail 'unexpected package inventory.
 printf '%s\n' \
     'root:wheel:555 /usr/local/bin/jaildeck' \
     'root:wheel:555 /usr/local/etc/rc.d/jaildeck' \
-    'root:wheel:644 /usr/local/etc/jaildeck/jaildeck.env.sample' | sort > "$work/expected-modes"
+    'root:wheel:644 /usr/local/etc/jaildeck/jaildeck.env.sample' \
+    'root:wheel:644 /usr/local/etc/newsyslog.conf.d/jaildeck.conf' | sort > "$work/expected-modes"
 pkg query -F "$archive" '%Fu:%Fg:%Fm %Fp' | sort > "$work/packaged-modes"
 diff -u "$work/expected-modes" "$work/packaged-modes" || fail 'unexpected package ownership or modes.'
 [ "$(pkg query -F "$archive" '%#d')" = 0 ] || fail 'unexpected runtime package dependencies.'
@@ -96,7 +97,7 @@ diff -u "$work/expected-modes" "$work/packaged-modes" || fail 'unexpected packag
 # executable too. A valid manifest alone is not proof of a complete archive.
 mkdir "$work/extracted"
 tar -xf "$archive" -C "$work/extracted"
-for file in bin/jaildeck etc/rc.d/jaildeck etc/jaildeck/jaildeck.env.sample; do
+for file in bin/jaildeck etc/rc.d/jaildeck etc/jaildeck/jaildeck.env.sample etc/newsyslog.conf.d/jaildeck.conf; do
     cmp "$work/stage/usr/local/$file" "$work/extracted/usr/local/$file"
 done
 mv -f "$archive" "bin/packages/jaildeck-$version.pkg"

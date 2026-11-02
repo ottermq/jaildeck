@@ -58,3 +58,16 @@ func (l liveInstances) Instances(ctx context.Context) ([]events.Instance, error)
 	}
 	return out, nil
 }
+
+// jailProperties reads a jail's user properties for a restricted token's exec
+// grant (JD-055). A jail whose datasets could not be read has none, so the
+// grant does not match and the request is refused.
+type jailProperties struct{ jails *jails.JailService }
+
+func (p jailProperties) Get(ctx context.Context, name string) (map[string]string, error) {
+	jail, err := p.jails.Get(ctx, jails.JailName(name))
+	if err != nil {
+		return nil, err
+	}
+	return jail.Properties, nil
+}

@@ -88,6 +88,11 @@ func (h *AuthHandler) Allow(r *http.Request, scope Scope) error {
 		if TokenHas(token, scope) {
 			return nil
 		}
+		if Restricted(token) {
+			return common.NewAppError(http.StatusForbidden, fmt.Sprintf(
+				"the token %q is limited to %s, and a limited token has no scopes (JD-055)",
+				token.Name, DescribeGrants(token.Allow)))
+		}
 		return common.NewAppError(http.StatusForbidden, fmt.Sprintf(
 			"the token %q does not have the %s scope; make one that does with `jaildeck token add <name> --scope %s`",
 			token.Name, scope, scope))

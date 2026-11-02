@@ -105,7 +105,7 @@ func TestAddToken(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			tokens := slices.Clone(original)
-			got, plaintext, err := AddToken(tokens, tt.input, nil, now)
+			got, plaintext, err := AddToken(tokens, tt.input, nil, nil, now)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("AddToken error = %v, want %v", err, tt.wantErr)
 			}

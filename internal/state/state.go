@@ -32,6 +32,10 @@ type Token struct {
 	// No omitempty: an empty list and no list at all mean different things,
 	// and JSON keeps them apart only as [] and null.
 	Scopes []string `json:"scopes"`
+	// Allow, when it has anything in it, limits the token to these grants
+	// instead of the whole plain API (JD-055): "read", "exec:<property>=<value>".
+	// A restricted token has no scopes.
+	Allow []string `json:"allow,omitempty"`
 }
 
 type Store struct {

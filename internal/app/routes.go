@@ -36,6 +36,7 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 		auth.RegisterAuthRoutes(r, a.authHandler)
 		r.Group(func(r chi.Router) {
 			r.Use(a.authHandler.RequireAuth)
+			r.Use(a.authHandler.Restrict(a.jailProperties))
 			r.Get("/", a.apiRoot)
 			jails.RegisterJailRoutes(r, a.jailHandler, func(r chi.Router) {
 				r.Get("/console", a.consoleHandler.Jail)
@@ -64,6 +65,7 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 	// (JD-033).
 	r.Group(func(r chi.Router) {
 		r.Use(a.authHandler.RequireAuth)
+		r.Use(a.authHandler.Restrict(a.jailProperties))
 		metrics.RegisterPrometheusRoute(r, a.metricsHandler)
 	})
 

@@ -2645,3 +2645,38 @@ A checksum file fetched from the same server as the archive proves the download 
 
 - **Debian.** Its cloud images are unsigned. Debian's signed `SHA512SUMS.sign` covers the installer images, not these. If Debian starts signing them, it is a catalog line.
 - **Images already fetched** aren't checked again. An archive under its own name was verified when it arrived (JD-037).
+
+## JD-055 — Limited Tokens: Grants Instead of the Whole API
+
+**Status:** Locked — 2026-11-02. Asked for by Otter Cloud.
+
+JD-046 gave tokens scopes, which add to the plain API. Every token still had the whole plain API, which is root's reach in practice (JD-001, JD-051): stop and destroy jails, write PF anchors, create guests. A platform's worker usually needs far less: to read, and to run commands in the jails it manages.
+
+### What a limited token is
+
+**A token made with `--allow` can do only what its grants name.** Everything else is refused with `403`, which says what the token is limited to.
+
+| Grant | Reaches |
+|---|---|
+| `read` | any `GET`: lists, details, metrics, `/metrics`, the event stream |
+| `exec:<property>=<value>` | `POST /api/jails/{name}/exec`, in a jail whose ZFS user property has that value |
+
+```sh
+jaildeck token add worker --allow read --allow exec:example:role=cluster
+```
+
+- **Deny by default.** The check names what is allowed, never what is refused, so a route added later is out of reach until a grant names it.
+- **The label is the selector.** Jail Deck already keeps labels as ZFS user properties (JD-044), and a platform already labels its jails. A name pattern (`otc-*`) would be a second naming scheme to keep in step. A limited token can't change a property, so it can't widen its own grant. An operator who labels a jail is choosing to hand it to every token whose grant matches.
+- **No scopes on a limited token.** The console is root inside the jail, the thing limiting a token is for. A `GET` to the console is let through by `read` and refused by the console's own scope check.
+- **A jail whose properties can't be read is refused**, not run in. A jail that isn't there is the same `404` anyone gets.
+- **A path with escapes in it is refused** for a limited token. The router matches the escaped form and the check would read the unescaped one. A check and a handler that read one path two ways is how they come to disagree.
+
+### Where it is checked
+
+A middleware after `RequireAuth`, on both authenticated groups (`/api` and `/metrics`). The jail's properties come from the jails service through a function the app supplies, so `auth` doesn't import `jails`. `/api/auth/me` lies outside the restriction and answers `allow`, so a client can see what it has.
+
+### What it doesn't do
+
+- **Exec is still root inside the jail.** A leaked limited token reaches the jails its grant matches and what is in them. It no longer reaches the host's other jails, guests, PF or the pools. This is containment, not confinement of what exec can do.
+- **Rollback widens.** A Jail Deck older than this ignores `allow` in the state file, so a limited token gets the whole plain API there. The README and the release notes say to revoke limited tokens before rolling back. No old binary can be taught otherwise.
+- **More grants when they are needed.** Snapshots (create, list and destroy on matching jails) is the likely next one, as `snapshot:<property>=<value>`. A grant per need, each named, rather than a general policy language.

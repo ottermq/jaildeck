@@ -457,7 +457,7 @@ A Linux VM can be created from an image with cloud-init, reached over the bridge
 
 ---
 
-## Next: VM Networks (#118)
+## Milestone: VM Networks (#118)
 
 **Status:** done. Step 1 in v0.17.0; step 2, tenant networks, in v0.19.0, and the view of every network in v0.20.0; step 3, addresses picked by Jail Deck and creating on a network, in v0.24.0 (JD-047).
 
@@ -470,11 +470,17 @@ Goal: every guest on a network without a root shell, and, for Otter Cloud, a net
 
 ---
 
-## Next: Privilege Separation (#206)
+## Milestone: Privilege Separation (#206)
 
-**Status:** done in v0.29.0 (JD-056).
+**Status:** done in v0.29.0 (JD-056). v0.29.1 made the front's uid the boundary rather than a group.
 
 Goal: no code that runs before authentication runs as root (JD-051, option C). An unprivileged front, as a `jaildeck` user, does the listener, the UI, login and authentication. The root process serves the API as it is now, on a Unix socket only the front can reach. Nothing changes for an API client or an operator's `service jaildeck` commands.
+
+---
+
+## Next
+
+Nothing is queued. Every milestone above is shipped. What comes next follows what Otter Cloud asks for, as the snapshot grant did (JD-057), and is added here when it is asked for.
 
 ---
 

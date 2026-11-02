@@ -240,6 +240,15 @@ then do only what its grants name, and anything else is refused with `403`:
 - `read` is any `GET`: lists, details, metrics, the event stream.
 - `exec:<property>=<value>` is `POST /api/jails/{name}/exec`, in a jail whose ZFS user property
   has that value.
+- `snapshot:<pattern>@<property>=<value>` is `PUT` and `DELETE /api/jails/{name}/snapshots/{snapshot}`
+  for a snapshot whose name matches the pattern, in a jail whose property has that value (JD-057).
+  The pattern is a name, or a prefix ending in `*`; `*` alone is refused. A backup job can then
+  take and prune its own snapshots and can't touch anyone else's. Rollback and a dataset's own
+  snapshots stay out of reach.
+
+```sh
+jaildeck token add backup --allow read --allow 'snapshot:backup-*@example:role=cluster'
+```
 
 A platform's worker that reads and runs commands in its own jails gets:
 

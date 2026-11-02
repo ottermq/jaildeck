@@ -2683,7 +2683,7 @@ A middleware after `RequireAuth`, on both authenticated groups (`/api` and `/met
 
 ## JD-056 — Privilege Separation: Where the Cut Goes
 
-**Status:** Proposed — 2026-11-02, #206. The design for JD-051's option C. Nothing is built yet.
+**Status:** Locked — 2026-11-02, #206. The design for JD-051's option C. Built with the opt-out and the checks below.
 
 JD-051 kept Jail Deck running as root and named privilege separation as the direction: an unprivileged process for HTTP, sessions, tokens and the UI, and a root process that does the work. This record decides where the line between the two goes.
 
@@ -2705,7 +2705,7 @@ That gain is real but bounded, and the cut should be sized to it.
 
 Cut 1 moves all of the pre-authentication code out of root. Cut 2 also moves the post-authentication HTTP and JSON code. But by the argument above, that code is reachable only by someone who already has the operations, so cut 2 costs about ten times as much for little more. The one case where cut 2 adds something is a limited token (JD-055): its holder could, through a bug in a root-side handler, reach more than its grants. That is a narrow case, and the grants are checked again on the root side either way (below).
 
-### Decided, if accepted: cut 1
+### Decided: cut 1
 
 **Two processes from one binary.**
 
@@ -2720,6 +2720,17 @@ Cut 1 moves all of the pre-authentication code out of root. Cut 2 also moves the
 - The state directory and its files become `root:jaildeck`, mode `0640` and `0750`. `jaildeck passwd` and `token` still run as root and set that on every save. The upgrade sets it once.
 - `/var/run/jaildeck` is created by the rc script, owned by root.
 - Fake mode (`JAILDECK_ADAPTER=fake`) runs both halves in one process over an in-memory pipe, so development and the tests stay one command.
+
+### As built
+
+- **The opt-out is a switch, `JAILDECK_SPLIT=off`**, not an empty `JAILDECK_USER`. An empty setting means its default everywhere else in the configuration. Anything but `off` is on, so a typo keeps the split.
+- **Jail Deck started as root without the user refuses to start**, naming the user and the switch. The package creates the user (#206). Falling back to one process would turn a missing account into running as root again, silently.
+- **`JAILDECK_USER` may not be root.**
+- **A state directory holding anything but `state.json` is refused**, not opened to a group: it would not be Jail Deck's alone. `jaildeck passwd` and `token` write the file `0640` in the directory's group only when the directory is open to its group and closed to others, which is how the split leaves it.
+- **The front's descriptors:** the root side opens every listener and hands them over, so the front binds nothing and the operator's socket keeps its owner and mode. A pipe the root side never writes to tells the front when the root side has gone: the front exits on end of file, which needs no signal handling and works the same on any Unix.
+- **The recheck (JD-042) is the front's.** A console or an event stream that outlives its request asks the front, over a socket of the front's own, whether the login still holds. Revoking a token closed its open event stream at the next heartbeat, measured.
+- **An unknown `/api` path is `401` before a login, not `404`.** The front doesn't know the root side's routes.
+- Measured on a lab host, the branch binary with its front as `nobody`: the front ran as `nobody` and the sockets and state file were `root:nobody`. A principal header sent by a client got `401`. The UI, the API, `/metrics`, exec and the console's WebSocket all worked through the front, and a limited token was refused the same things as before, the escaped path included. A token added while it ran worked at once. A front that was killed was back within a second. Stopping the root side stopped the front.
 
 ### What it costs
 

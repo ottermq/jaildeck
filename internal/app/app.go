@@ -34,7 +34,10 @@ import (
 
 var ErrNoCredential = errors.New("no operator credential configured")
 
-type App struct {
+// Back is the root side of Jail Deck (JD-056): the services, the adapters
+// and the API's handlers, behind the principal the front names. It never
+// reads the state directory: the front authenticates.
+type Back struct {
 	authHandler     *auth.AuthHandler
 	housekeeping    *housekeeping.Handler
 	eventHandler    *events.Handler
@@ -54,15 +57,13 @@ type App struct {
 	networkHandler  *networks.Handler
 }
 
-func New(cfg *config.Config) (*App, error) {
-	authState := state.NewStore(cfg.StateDir)
-	if err := requireCredential(authState); err != nil {
-		return nil, err
-	}
-
-	sessions := auth.NewSessionStore()
-	authService := auth.NewAuthService(authState, sessions)
-	authHandler := auth.NewAuthHandler(authService)
+// NewBack builds the root side. recheck answers whether a request's login
+// still holds, for a console or an event stream that outlives its request:
+// the front's to answer, since the sessions and the tokens are its.
+func NewBack(cfg *config.Config, recheck func(*http.Request) error) (*Back, error) {
+	// Only the principal the front names, never a credential: Trusted,
+	// Restrict and Allow need no service.
+	authHandler := auth.NewAuthHandler(nil)
 	if cfg.NoConsoleUI {
 		authHandler.SetSessionWithout(auth.ScopeConsole)
 	}
@@ -213,7 +214,7 @@ func New(cfg *config.Config) (*App, error) {
 		guestConsoles{vms: vmService}, audited)
 	jailService.SetConsoles(consoleService)
 	vmService.SetConsoles(consoleService)
-	consoleHandler := console.NewHandler(consoleService, authHandler.Recheck, auth.PrincipalOf,
+	consoleHandler := console.NewHandler(consoleService, recheck, auth.PrincipalOf,
 		func(r *http.Request) error { return authHandler.Allow(r, auth.ScopeConsole) },
 		cfg.ConsoleIdle, cfg.ConsoleOrigins)
 
@@ -239,9 +240,9 @@ func New(cfg *config.Config) (*App, error) {
 		broker.Publish(events.TypeProgress, events.Progress{Kind: "image", Name: name, Step: step})
 	})
 	events.NewObserver(broker, liveInstances{jails: jailService, vms: vmService}, events.Interval)
-	eventHandler := events.NewHandler(broker, authHandler.Recheck)
+	eventHandler := events.NewHandler(broker, recheck)
 
-	return &App{
+	return &Back{
 		jailProperties:  jailProperties{jails: jailService}.Get,
 		authHandler:     authHandler,
 		housekeeping:    housekeepingHandler,
@@ -422,6 +423,11 @@ func newHostMetrics(adapter string) (metrics.HostMetrics, metrics.DiskSource, er
 		return nil, nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)
 	}
+}
+
+// RequireCredential refuses to start a Jail Deck nobody could sign in to.
+func RequireCredential(cfg *config.Config) error {
+	return requireCredential(state.NewStore(cfg.StateDir))
 }
 
 func requireCredential(store *state.Store) error {

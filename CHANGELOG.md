@@ -20,6 +20,20 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+- **Privilege separation** (JD-056, #206). Started as root, Jail Deck runs its front as a
+  user of its own (`JAILDECK_USER`, default `jaildeck`): the listeners, the UI, signing in and
+  authentication. Everything authenticated goes to the root side over a socket in
+  `JAILDECK_RUN_DIR`, with the principal named in a header the front sets and strips from
+  what clients send. Code that reads from the network before a login is checked no longer
+  runs as root. The root side starts the front, restarts it if it exits, and hands it the
+  listeners, so the operator's socket keeps its owner and mode. Each start makes the state
+  directory readable by the front's group. `JAILDECK_SPLIT=off` runs one process, as before.
+  **The user must exist**: Jail Deck started as root refuses to start without it.
+- **API:** an unauthenticated request to an unknown `/api` path is now `401`, not `404`.
+  The front doesn't know the root side's routes. Authenticated, it is `404` as before.
+
 ## v0.28.0 — 2026-11-02
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.28.0)

@@ -74,6 +74,9 @@ awk '!/^@/ && NF { print "/usr/local/" $0 }' packaging/freebsd/plist | sort > "$
 diff -u "$work/expected" "$work/staged" || fail 'unexpected staged files.'
 sed -e "s/%%VERSION%%/$version/g" -e "s/%%ABI%%/$abi/g" \
     packaging/freebsd/manifest.ucl.in > "$work/meta/+MANIFEST"
+# A script of its own rather than one inside the manifest, so that UCL never
+# reads its shell variables as its own.
+install -m 0644 packaging/freebsd/pre-install.sh "$work/meta/+PRE_INSTALL"
 pkg create -m "$work/meta" -p packaging/freebsd/plist -r "$work/stage" -o "$work/out"
 archive="$work/out/jaildeck-$version.pkg"
 [ -s "$archive" ] || fail 'pkg create did not produce the expected archive.'

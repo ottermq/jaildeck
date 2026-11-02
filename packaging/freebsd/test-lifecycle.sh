@@ -63,6 +63,8 @@ diff -u "$work/datasets.before" "$work/datasets.after"
 diff -u "$work/interfaces.before" "$work/interfaces.after"
 diff -u "$work/rc.before" "$work/rc.after"
 if pgrep -x jaildeck >/dev/null; then fail 'install started the service.'; fi
+pw usershow jaildeck >/dev/null || fail 'install did not create the jaildeck user.'
+[ "$(pw usershow jaildeck | cut -d: -f10)" = /usr/sbin/nologin ] || fail 'the jaildeck user can log in.'
 
 # These are explicit operator actions, never package hooks. Use the fake
 # adapter for the HTTP smoke test so no jail operation can touch the host.
@@ -95,6 +97,10 @@ case "$asset" in /assets/*.js) ;; *) fail 'the installed binary is serving the d
 curl -fsS "http://127.0.0.1:18884$asset" -o "$work/bundle.js"
 [ -s "$work/bundle.js" ] || fail 'empty frontend bundle.'
 [ "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18884/api/jails)" = 401 ] || fail 'authentication gate failed.'
+# The front runs as the jaildeck user, the root side as root (JD-056).
+ps -axo user,command | grep -q '^jaildeck .*jaildeck front$' || fail 'the front is not running as jaildeck.'
+curl -fsS -H "Authorization: Bearer $(tail -1 "$work/token")" http://127.0.0.1:18884/api/jails -o /dev/null ||
+    fail 'an authenticated request did not reach the root side.'
 service jaildeck onestop
 running=NO
 
@@ -126,9 +132,10 @@ if pkg info -e jaildeck; then fail 'package is still registered.'; fi
 for item in /usr/local/bin/jaildeck /usr/local/etc/rc.d/jaildeck /usr/local/etc/jaildeck/jaildeck.env.sample; do
     [ ! -e "$item" ] || fail "package-owned file survived removal: $item"
 done
+pw usershow jaildeck >/dev/null || fail 'removal deleted the jaildeck user.'
 inventory > "$work/operator.after-delete"
 diff -u "$work/operator.before" "$work/operator.after-delete"
 [ "$(zfs get -H -o value guid "$dataset@preserve")" = "$guid" ] || fail 'removal changed the ZFS snapshot.'
 sha256 -q /etc/rc.conf > "$work/rc.after-delete"
 diff -u "$work/rc.before" "$work/rc.after-delete"
-echo "lifecycle: PASS (install, runtime/UI/auth, upgrade, removal, operator data and ZFS preservation)"
+echo "lifecycle: PASS (install, the jaildeck user, runtime/UI/auth through the front, upgrade, removal, operator data and ZFS preservation)"

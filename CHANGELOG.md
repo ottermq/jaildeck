@@ -20,7 +20,15 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.28.0 — 2026-11-02
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.28.0)
+
+**Limited tokens and signed images.** A token can be limited to reading and running commands
+in jails with a given label, for a platform's worker (JD-055). Ubuntu, Fedora, Alpine and Arch
+images are checked against their publisher's signature as well as their checksum (JD-054).
+Nothing to act on when upgrading. **Before rolling back past this version, revoke any limited
+token**: an older Jail Deck ignores the limit and gives it the whole API.
 
 ### Added
 

@@ -14,6 +14,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/auth"
 	"github.com/ottermq/jaildeck/internal/config"
 	"github.com/ottermq/jaildeck/internal/console"
+	"github.com/ottermq/jaildeck/internal/events"
 	"github.com/ottermq/jaildeck/internal/firewall"
 	"github.com/ottermq/jaildeck/internal/host"
 	"github.com/ottermq/jaildeck/internal/housekeeping"
@@ -36,6 +37,7 @@ var ErrNoCredential = errors.New("no operator credential configured")
 type App struct {
 	authHandler     *auth.AuthHandler
 	housekeeping    *housekeeping.Handler
+	eventHandler    *events.Handler
 	jailHandler     *jails.JailHandler
 	consoleHandler  *console.Handler
 	nameHandler     *names.Handler
@@ -68,6 +70,10 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Every service audits through the stream, which announces an entry
+	// once it is written (#124, JD-052). The audit endpoint reads the file.
+	broker := events.NewBroker()
+	audited := liveAudit{next: auditLogger, broker: broker}
 
 	jailAdapter, err := newJailAdapters(cfg.Adapter)
 	if err != nil {
@@ -78,7 +84,7 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	storageService := storage.NewService(storageSystem, auditLogger, cfg.ZFSPool)
+	storageService := storage.NewService(storageSystem, audited, cfg.ZFSPool)
 
 	storageHandler := storage.NewStorageHandler(storageService)
 
@@ -91,13 +97,13 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 	templateService := templates.NewService(
-		storage.NewTemplateSource(storageService), packageSystem, releaseSource, auditLogger)
+		storage.NewTemplateSource(storageService), packageSystem, releaseSource, audited)
 	templateHandler := templates.NewTemplateHandler(templateService)
 
 	jailStorage := storage.NewJailSource(storageService)
 	jailService := jails.NewJailService(jails.Dependencies{
 		System:        jailAdapter.system,
-		Audit:         auditLogger,
+		Audit:         audited,
 		Datasets:      jailStorage,
 		DatasetWriter: jailStorage,
 		Snapshots:     jailStorage,
@@ -130,7 +136,7 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	hostService := host.NewService(hostSystem, auditLogger, cfg.ZFSPool)
+	hostService := host.NewService(hostSystem, audited, cfg.ZFSPool)
 	hostHandler := host.NewHostHandler(hostService)
 
 	auditService := audit.NewAuditService(auditLogger)
@@ -156,14 +162,14 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	imageService := images.NewService(imageSystem, auditLogger)
+	imageService := images.NewService(imageSystem, audited)
 	imageHandler := images.NewHandler(imageService)
 
 	networkSystem, err := NewNetworkSystem(cfg.Adapter)
 	if err != nil {
 		return nil, err
 	}
-	networkService := networks.NewService(networkSystem, auditLogger, NetworkSettings(cfg))
+	networkService := networks.NewService(networkSystem, audited, NetworkSettings(cfg))
 	networkHandler := networks.NewHandler(networkService)
 	jailService.SetNetworks(jailNetworks{networks: networkService})
 
@@ -171,7 +177,7 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	vmService := vms.NewService(vmSystem, vmImageCatalog{images: imageService}, auditLogger)
+	vmService := vms.NewService(vmSystem, vmImageCatalog{images: imageService}, audited)
 	if cpu, ok := hostMetrics.(processCPU); ok {
 		metricsService.SetGuests(metricsGuests{vms: vmService, cpu: cpu})
 	}
@@ -203,7 +209,7 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 	consoleService := console.NewService(shells, runningJails{jails: jailService},
-		guestConsoles{vms: vmService}, auditLogger)
+		guestConsoles{vms: vmService}, audited)
 	jailService.SetConsoles(consoleService)
 	vmService.SetConsoles(consoleService)
 	consoleHandler := console.NewHandler(consoleService, authHandler.Recheck, auth.PrincipalOf,
@@ -225,9 +231,19 @@ func New(cfg *config.Config) (*App, error) {
 		Archives:  archives,
 	}))
 
+	templateService.OnProgress(func(name, step string) {
+		broker.Publish(events.TypeProgress, events.Progress{Kind: "template", Name: name, Step: step})
+	})
+	imageService.OnProgress(func(name, step string) {
+		broker.Publish(events.TypeProgress, events.Progress{Kind: "image", Name: name, Step: step})
+	})
+	events.NewObserver(broker, liveInstances{jails: jailService, vms: vmService}, events.Interval)
+	eventHandler := events.NewHandler(broker, authHandler.Recheck)
+
 	return &App{
 		authHandler:     authHandler,
 		housekeeping:    housekeepingHandler,
+		eventHandler:    eventHandler,
 		consoleHandler:  consoleHandler,
 		nameHandler:     nameHandler,
 		aboutHandler:    about.NewHandler(time.Now(), cfg.StateDir),

@@ -1,5 +1,6 @@
 <script lang="ts">
-import { onMount } from 'svelte'
+import { onDestroy, onMount } from 'svelte'
+import { onLive, aboutInstance } from '../stores/events.svelte'
 import {
     getJail, listSnapshots, setTags, ensureDataset, retainDataset, destroyDataset,
     createSnapshot, destroySnapshot, rollbackSnapshot, makeTemplate, recloneJail,
@@ -56,6 +57,9 @@ async function load() {
 }
 
 onMount(load)
+
+// Read again when the live stream says something here changed (#124).
+onDestroy(onLive(aboutInstance(name), load))
 
 function describe(err: unknown, fallback: string): string {
     if (!(err instanceof ApiError)) return 'Could not reach Jail Deck'

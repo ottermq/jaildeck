@@ -1,6 +1,7 @@
 <script lang="ts">
 import { onMount } from 'svelte'
 import { onDestroy } from 'svelte'
+import { onLive, aboutWork } from '../stores/events.svelte'
 import {
     listTemplates, listRetained, lineage, deriveTemplate, removeTemplate, prepareRelease, destroyRetained,
 } from '../stores/templates.svelte'
@@ -57,6 +58,11 @@ $effect(() => {
 onDestroy(() => {
     if (poll !== null) clearInterval(poll)
 })
+
+// Read again when the live stream reports an operation or a step (#124):
+// work someone else started shows up without a reload. The poll above stays,
+// since it is also what moves the elapsed time along.
+onDestroy(onLive(aboutWork('template'), load))
 
 function elapsed(since: string): string {
     const seconds = Math.max(0, Math.round((Date.now() - new Date(since).getTime()) / 1000))

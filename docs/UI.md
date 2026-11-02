@@ -228,7 +228,7 @@ A guest's page has its configuration (with resident memory beside the configured
 
 Checked against the real host as well as the fake: on isengard through an SSH tunnel, a guest created from the form was reached over SSH on the address typed into it, then stopped and destroyed from its page.
 
-No polling: a guest changes when someone starts or stops it, and the page re-reads after its own operations.
+No polling: a guest changes when someone starts or stops it. The page re-reads after its own operations, and while the live stream is up, also after anyone else's or a change seen on the host (#124).
 
 ### Networks page
 
@@ -255,7 +255,8 @@ Settled by building it, between v0.6.0 and v0.16.0. These were open questions he
 5. **One `fetch` wrapper** (`src/lib/services/api.ts`). Every call goes to `/api`, and a `401` clears the session state, so the app shows the login page. A failure is an `ApiError` carrying the status, the server's message and the decoded body, because a `409` often explains itself in its body (JD-024).
 6. **Refetch after every mutation**, whichever way it went: a command that failed can still have changed the host. Nothing is optimistic.
 7. **Long-running work is polled.** A page reads its listing every 2 seconds while anything in it has `running` (JD-008), and stops when nothing does. Templates and VM images both work this way. A page that started work says how it came out, because a `202` only says the work began.
-8. **Destructive actions go through one confirm dialog** (`stores/confirm.svelte.ts`, mounted once in the shell). It asks for a typed name where the API demands `confirm=`.
+8. **The live stream is on top of all this, never instead of it** (#124, JD-052). `stores/events.svelte.ts` opens one `EventSource` on `/api/events` when the shell mounts, and closes it when signing out unmounts the shell. An event only names what changed, so a page that cares calls `onLive(wanted, load)` and reads again through the endpoints it already uses. A burst becomes one reload, and a `reset` reloads every listener. Instances, Jails, VMs, a jail's or guest's page, Templates, a template's page and the VM images panel listen. The 2-second poll during long work stays, because it also moves the elapsed time along. While the stream is down, every page behaves as it did before it existed. The rail's session block says which: **Updates · Live**, with a green dot, or **Not live**.
+9. **Destructive actions go through one confirm dialog** (`stores/confirm.svelte.ts`, mounted once in the shell). It asks for a typed name where the API demands `confirm=`.
 
 ## Checking a frontend change
 

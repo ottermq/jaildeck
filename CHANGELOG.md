@@ -29,11 +29,20 @@ versions' release notes stay there. GitHub numbering started again at #1.
   They publish qcow2, which **Jail Deck reads itself** and writes straight into the zvol, holes
   left sparse; no QEMU package is needed. Each download is checked against its publisher's
   checksum file, whatever its form. The default user is named where the keys are entered.
+- **Live updates** (#124, JD-052): the pages about instances, templates and images read again
+  when something changes, whoever changed it: another operator, an automation, or a
+  `service jail stop` in a shell, which Jail Deck notices within 10 s while a page is open.
+  The rail says **Live** or **Not live**; when not live, pages behave as before.
 
 ### API
 
 - **`GET /api/vm-images`**: each source has `user`, its default user. `PUT /api/vm-images/{name}`
   takes the four new sources. Additive.
+- **`GET /api/events`**: a server-sent event stream of `operation` (each audited operation, as
+  `/api/audit` shows it), `state` (an instance whose state changed outside Jail Deck),
+  `progress` (a template's or image's step) and `reset` (read everything again). `Last-Event-ID`
+  resumes from the last 256 events. A heartbeat every 15 s; at most 32 streams, then `503`.
+  A stream closes when its session ends or its token is revoked. Additive.
 
 ## v0.26.0 — 2026-11-01
 

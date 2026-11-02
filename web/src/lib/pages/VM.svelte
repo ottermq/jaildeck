@@ -1,5 +1,6 @@
 <script lang="ts">
-import { onMount } from 'svelte'
+import { onDestroy, onMount } from 'svelte'
+import { onLive, aboutInstance } from '../stores/events.svelte'
 import { navigate, onNavClick } from '../router.svelte'
 import { destroyVM, getVM, getVMConfiguration, setVMTags } from '../stores/vms.svelte'
 import { ask } from '../stores/confirm.svelte'
@@ -30,6 +31,9 @@ async function load() {
 }
 
 onMount(load)
+
+// Read again when the live stream says something here changed (#124).
+onDestroy(onLive(aboutInstance(name), load))
 
 let note = $state<{ text: string, kind: 'error' | 'warn' } | null>(null)
 

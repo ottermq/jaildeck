@@ -270,6 +270,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/jails/{name}/stop` | |
 | `POST /api/jails/{name}/restart` | |
 | `GET /api/audit` | operation history, newest first |
+| `GET /api/events` | a live stream (server-sent events) of operations, outside state changes and image and template progress; `Last-Event-ID` resumes it |
 | `GET /api/metrics` | host, per-jail and per-guest resource usage, and disk health |
 | `GET /api/firewall` | PF's state, rules with counters, NAT, anchors and tables, read-only |
 | `GET /api/firewall/tables/{name}` | one table's addresses |

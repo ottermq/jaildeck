@@ -221,8 +221,10 @@ function vmHref(name: string): string {
                             under a minute.
                         {:else}
                             Downloads <code class="url">{source.url}</code>, checks it against the
-                            publisher’s checksums, and writes its disk into a zvol. Minutes of work, and it
-                            keeps going whether or not you stay here.
+                            publisher’s checksums{source.signed_by ? ` and ${source.signed_by}` : ''}, and writes
+                            its disk into a zvol. Minutes of work, and it keeps going whether or not you stay here.
+                            {#if !source.signed_by}The publisher signs nothing, so the checksum guards against a
+                            corrupt download, not a dishonest mirror.{/if}
                         {/if}
                     </p>
                 {/if}

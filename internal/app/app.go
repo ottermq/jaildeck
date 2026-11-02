@@ -39,6 +39,7 @@ type App struct {
 	housekeeping    *housekeeping.Handler
 	eventHandler    *events.Handler
 	jailHandler     *jails.JailHandler
+	jailProperties  auth.JailProperties
 	consoleHandler  *console.Handler
 	nameHandler     *names.Handler
 	aboutHandler    *about.Handler
@@ -241,6 +242,7 @@ func New(cfg *config.Config) (*App, error) {
 	eventHandler := events.NewHandler(broker, authHandler.Recheck)
 
 	return &App{
+		jailProperties:  jailProperties{jails: jailService}.Get,
 		authHandler:     authHandler,
 		housekeeping:    housekeepingHandler,
 		eventHandler:    eventHandler,

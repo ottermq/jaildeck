@@ -16,10 +16,11 @@ import (
 )
 
 var (
-	ErrUnknownToken           = errors.New("unknown token")
-	ErrTokenNameAlreadyExists = errors.New("token name already exists")
-	ErrInvalidTokenName       = errors.New("token name invalid")
-	ErrMissingTokenName       = errors.New("missing token name")
+	ErrUnknownToken            = errors.New("unknown token")
+	ErrScopesOnRestrictedToken = errors.New("a token limited with --allow takes no --scope: a console is root, which is what limiting a token keeps it from")
+	ErrTokenNameAlreadyExists  = errors.New("token name already exists")
+	ErrInvalidTokenName        = errors.New("token name invalid")
+	ErrMissingTokenName        = errors.New("missing token name")
 )
 
 func GenerateToken() (string, error) {
@@ -48,8 +49,13 @@ func MatchToken(presented string, tokens []state.Token) (state.Token, bool) {
 
 // AddToken makes a token with exactly the scopes given, none if none are: a
 // token made since scopes exist has a list, so that it is never mistaken for
-// one made before them, which keeps every scope (#178).
-func AddToken(tokens []state.Token, name string, scopes []string, now time.Time) ([]state.Token, string, error) {
+// one made before them, which keeps every scope (#178). With grants it is a
+// restricted token, limited to them (JD-055), and a restricted token takes no
+// scopes: a console is root, which is what restricting a token keeps it from.
+func AddToken(tokens []state.Token, name string, scopes, allow []string, now time.Time) ([]state.Token, string, error) {
+	if len(allow) > 0 && len(scopes) > 0 {
+		return tokens, "", ErrScopesOnRestrictedToken
+	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return tokens, "", ErrMissingTokenName
@@ -70,7 +76,7 @@ func AddToken(tokens []state.Token, name string, scopes []string, now time.Time)
 	if scopes == nil {
 		scopes = []string{}
 	}
-	tokens = append(tokens, state.Token{Name: name, Hash: hash, CreatedAt: now, Scopes: scopes})
+	tokens = append(tokens, state.Token{Name: name, Hash: hash, CreatedAt: now, Scopes: scopes, Allow: allow})
 	return tokens, plainToken, nil
 }
 

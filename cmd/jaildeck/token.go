@@ -18,11 +18,11 @@ func runToken(subArgs []string, out, errOut io.Writer, stateDir string) error {
 	}
 	switch subArgs[0] {
 	case "add":
-		name, scopes, err := addArgs(subArgs[1:])
+		name, scopes, allow, err := addArgs(subArgs[1:])
 		if err != nil {
 			return err
 		}
-		return callAddToken(out, errOut, name, scopes, stateDir)
+		return callAddToken(out, errOut, name, scopes, allow, stateDir)
 
 	case "list":
 		if len(subArgs[1:]) > 0 {
@@ -44,40 +44,52 @@ func runToken(subArgs []string, out, errOut io.Writer, stateDir string) error {
 	}
 }
 
-const addUsage = "usage: jaildeck token add <name> [--scope <scope>]..."
+const addUsage = "usage: jaildeck token add <name> [--scope <scope>]... | [--allow <grant>]..."
 
-// addArgs reads a name and any number of --scope flags, in either order:
-// `token add otter --scope console` and `token add --scope console otter`.
-func addArgs(args []string) (string, []string, error) {
+// addArgs reads a name and any number of --scope or --allow flags, in either
+// order: `token add otter --scope console` and `token add --scope console
+// otter`. --allow limits the token to its grants (JD-055): `token add worker
+// --allow read --allow exec:example:role=cluster`.
+func addArgs(args []string) (string, []string, []string, error) {
 	var name string
-	names := []string{}
+	names, grants := []string{}, []string{}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
-		case arg == "--scope":
+		case arg == "--scope" || arg == "--allow":
 			if i+1 >= len(args) {
-				return "", nil, errors.New(addUsage)
+				return "", nil, nil, errors.New(addUsage)
 			}
 			i++
-			names = append(names, args[i])
+			if arg == "--scope" {
+				names = append(names, args[i])
+			} else {
+				grants = append(grants, args[i])
+			}
 		case strings.HasPrefix(arg, "--scope="):
 			names = append(names, strings.TrimPrefix(arg, "--scope="))
+		case strings.HasPrefix(arg, "--allow="):
+			grants = append(grants, strings.TrimPrefix(arg, "--allow="))
 		case strings.HasPrefix(arg, "-"):
-			return "", nil, fmt.Errorf("unknown flag %q; %s", arg, addUsage)
+			return "", nil, nil, fmt.Errorf("unknown flag %q; %s", arg, addUsage)
 		case name != "":
-			return "", nil, ErrUnexpectedArgs
+			return "", nil, nil, ErrUnexpectedArgs
 		default:
 			name = arg
 		}
 	}
 	if name == "" {
-		return "", nil, errors.New(addUsage)
+		return "", nil, nil, errors.New(addUsage)
 	}
 	scopes, err := auth.ParseScopes(names)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
-	return name, scopes, nil
+	allow, err := auth.ParseGrants(grants)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	return name, scopes, allow, nil
 }
 
 func loadState(stateDir string) (*state.Store, state.State, error) {
@@ -90,12 +102,12 @@ func loadState(stateDir string) (*state.Store, state.State, error) {
 	return store, st, nil
 }
 
-func callAddToken(out, errOut io.Writer, name string, scopes []string, stateDir string) error {
+func callAddToken(out, errOut io.Writer, name string, scopes, allow []string, stateDir string) error {
 	store, st, err := loadState(stateDir)
 	if err != nil {
 		return err
 	}
-	tokens, token, err := auth.AddToken(st.APITokens, name, scopes, time.Now())
+	tokens, token, err := auth.AddToken(st.APITokens, name, scopes, allow, time.Now())
 	if err != nil {
 		return err
 	}
@@ -103,7 +115,11 @@ func callAddToken(out, errOut io.Writer, name string, scopes []string, stateDir 
 	if err := store.Save(st); err != nil {
 		return withPermissionHint(err)
 	}
-	fmt.Fprintf(errOut, "Token generated for: %s, with %s\n", name, scopesText(scopes))
+	if len(allow) > 0 {
+		fmt.Fprintf(errOut, "Token generated for: %s, limited to: %s\n", name, auth.DescribeGrants(allow))
+	} else {
+		fmt.Fprintf(errOut, "Token generated for: %s, with %s\n", name, scopesText(scopes))
+	}
 	fmt.Fprintln(out, token)
 	fmt.Fprintln(errOut, "Warning: This token is shown only once!")
 	return nil
@@ -128,6 +144,8 @@ func callListTokens(out, errOut io.Writer, stateDir string) error {
 	for _, item := range st.APITokens {
 		scopes := strings.Join(item.Scopes, ",")
 		switch {
+		case auth.Restricted(item):
+			scopes = "only: " + auth.DescribeGrants(item.Allow)
 		case item.Scopes == nil:
 			scopes = "all (made before scopes)"
 		case len(item.Scopes) == 0:

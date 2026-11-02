@@ -47,6 +47,10 @@ type Source struct {
 	// User is the image's default user, the one cloud-init gives the SSH
 	// keys to: debian, ubuntu, fedora, alpine, arch (#137).
 	User string `json:"user"`
+	// SignedBy names the publisher's key a download is checked against,
+	// besides its checksum (JD-054). Absent for a publisher that signs
+	// nothing, which Debian's cloud images are.
+	SignedBy string `json:"signed_by,omitempty"`
 	// Fetched is whether the verified archive is already on the host, so
 	// preparing an image from it starts at the write.
 	Fetched bool `json:"fetched"`

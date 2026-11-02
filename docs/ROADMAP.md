@@ -64,6 +64,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Inspect** (v0.25.0): a jail's stanza and rctl rules, and a guest's vm-bhyve configuration and cloud-init seed, shown as the host has them, read only, a password's hash masked (#127, JD-048); a guest's directory made private to root (#152)
 - **Housekeeping and usage** (v0.26.0): unused templates, images, retained datasets, old snapshots and downloaded archives listed with what they hold and removed through the existing endpoints, other tools' snapshots left alone (#125, JD-049); running guests' CPU and memory in the metrics and Prometheus, and two-minute sparklines in the Instances list (#126, JD-050)
 - **Live updates and more images** (v0.27.0): a server-sent event stream of operations, outside state changes and progress, and pages that reload on it, with a Live marker in the rail (#124, JD-052); Ubuntu 26.04, Fedora 44, Alpine 3.24 and Arch images, their qcow2 read by Jail Deck itself (#137, JD-053)
+- **Limited tokens and signed images** (v0.28.0): tokens limited to reading and to exec in jails with a given label, for a platform's worker (JD-055); Ubuntu, Fedora, Alpine and Arch images checked against their publisher's OpenPGP signature, with the keys built in (JD-054)
 
 ---
 
@@ -438,7 +439,7 @@ Goal: a `vms` domain mirroring jails (JD-019).
 - create from an image template, with CPU and memory sizing, cpuset, a zvol disk and a cloud-init seed. *cpuset built 2026-10-28 (JD-041): one host CPU per vCPU, written as `bhyve_options="-p 0:<cpu> ..."` because vm-bhyve has no setting of its own, and checked against `hw.ncpu` first, because bhyve aborts on a CPU the host lacks while `vm start` exits 0, measured. An idempotent `PUT /api/vms/{name}` the same day, comparing against what the host holds: the configuration, the seed and disk0's origin.* *Built 2026-10-26 (JD-038), cpuset aside: `POST /api/vms`, `vm create` from Jail Deck's UEFI template with a seed carrying SSH keys and a static address, a NIC added on the operator's switch — checked to exist, because vm-bhyve does not — and disk0 replaced by a `volmode=dev` clone of the image. A step that fails destroys the guest again. Measured: reachable over SSH 16–18 s after it starts.*
 - start, stop, restart, destroy (`confirm=<name>`). *Destroy built 2026-10-26 (JD-038): stopped guests only, `vm destroy -f`, the disk clone with it.* *Start, stop and restart built 2026-10-26 (JD-036): `vm start` detached into a session of its own, every step confirmed in `vm list`, and a stop that powers off a guest ignoring the button for 60 seconds and says `forced`.*
 - a tap on the configured bridge, as VNET jails use
-- serial console through the API, later
+- ~~serial console through the API, later~~ *Built in v0.18.0 (#123, JD-042): a guest's serial console, and a jail's shell, over a WebSocket, in the browser too.*
 
 ### Technical tasks
 
@@ -479,8 +480,8 @@ Previously in scope, deliberately moved out. Not rejected — just not now.
 
 - **In-jail service management** — list/start/stop/restart services inside a jail, view service logs. This was the original conception's core; the project has since moved toward provisioning. Running a command in a jail is in scope (Exec and Automation Contract); managing services through it is not
 - **In-jail package inspection**
-- **Jail configuration** — show source, edit limited safe settings, reload
-- **Jail detail view, log tails, raw diagnostic output** — worth revisiting once the UI exists and their shape is clear
+- **Jail configuration** — show source, edit limited safe settings, reload. *Partly built since: the stanza and rctl rules are shown read only (v0.25.0, JD-048), and limits change in place (v0.21.0). Editing other settings stays deferred.*
+- **Jail detail view, log tails, raw diagnostic output** — worth revisiting once the UI exists and their shape is clear. *The detail view is built: a jail's page has its state, datasets, snapshots, limits, configuration and shell. Log tails and raw diagnostic output stay deferred.*
 - **ZFS replication status** — the rest of the ZFS write operations moved into Storage Writes
 - **Structured application logging**, distinct from the operation audit trail (JD-011)
 - **Durable metrics history inside Jail Deck** — the one feature that would justify a database. Live values and a trailing in-memory window need none, and the `/metrics` endpoint hands history to Prometheus; the trigger is wanting a chart *over time* inside Jail Deck itself that survives a restart (JD-011)
@@ -509,14 +510,14 @@ Added 2026-10-21 with the host-agent scope:
 - ~~Should rctl rules be applied by jail.conf `exec.*` hooks or by the adapter?~~ **Answered 2026-10-24 (JD-018): hooks.** Measuring added a second reason to the first: jail(8) destroys a jail whose `exec.poststart` fails, so a jail that could not be limited never runs — which an adapter could only have achieved by stopping a jail it had just started
 - ~~What are the exec timeout cap and output size cap?~~ **Answered 2026-10-24 (JD-014):** 60s by default, 5 minutes at most, 1 MiB per stream. Sized from what commands actually produce in a jail — `ps auxww` 1.4 KB against `find / -type f` at 2.85 MB.
 - ~~Does `/metrics` share auth with the API, or bind a separate loopback/socket listener?~~ **Answered 2026-10-25 (JD-033): it shares the API's auth.** The loopback was the obvious boundary and is not one here — measured on isengard, a jail with `ip4=inherit` reached the host's `127.0.0.1:8888` and was served, while the jail with its own address was refused. A Unix socket is the better-shaped answer and stays available, but Prometheus only learned to scrape one in v3.15.0 (2026-09-25), so it cannot be the only path.
-- Are derived templates (release + packages) owned by the template domain, or are they exec + snapshot from the caller's point of view?
+- ~~Are derived templates (release + packages) owned by the template domain, or are they exec + snapshot from the caller's point of view?~~ **Answered 2026-10-23 (JD-027): both, for different things.** Release plus packages is the template domain's, `PUT /api/templates/{name}` with `from` and `packages`, booting nothing. Anything else is a jail configured by hand or through exec and then promoted, `POST /api/jails/{name}/template`.
 - ~~`vm-bhyve` or direct bhyve~~ **Answered 2026-10-25 (JD-019): `vm-bhyve`**, by a spike that built the same Linux VM both ways on isengard.
 
 Earlier:
 
-1. Who orchestrates the multi-step jail-creation flow across the `jails`/`storage` boundary?
+1. ~~Who orchestrates the multi-step jail-creation flow across the `jails`/`storage` boundary?~~ **Answered 2026-10-24 (JD-030): `jails`.** The order of the steps is a rule about jails; cloning, creating a child dataset and destroying stay primitives in `storage`.
 2. ~~How should long-running template operations be represented — synchronous with a long timeout, polling, or SSE?~~ **Answered 2026-10-23 (JD-008):** detached, `202`, and the client polls the template. SSE is not excluded; it sits on top rather than replacing it.
 3. ~~How is per-jail resource accounting sourced when `kern.racct.enable` is off?~~ **Answered 2026-10-24 (JD-031):** by summing `ps -J <name>`, which reads the same quantity another way rather than a different quantity under the same name — measured within 1% of rctl's. The response says which source it used, because `rctl` additionally answers `vmemoryuse`, `openfiles` and `cputime` and `ps` does not.
-4. How does Host Setup establish the dataset layout — an `init` subcommand, or a guided first-run screen?
-5. Is the default template prepared on demand only, or offered proactively once the host release is known?
+4. ~~How does Host Setup establish the dataset layout — an `init` subcommand, or a guided first-run screen?~~ **Answered (JD-021): both, as one service method.** `jaildeck init` and `PUT /api/host/layout`, which the Host page calls, create only what is missing.
+5. ~~Is the default template prepared on demand only, or offered proactively once the host release is known?~~ **On demand.** The Templates page prepares the release the operator types, and says the host's own release is the ceiling. Nothing is downloaded unasked.
 6. ~~How is the first operator credential established?~~ **Resolved 2026-09-05: a `jaildeck passwd` subcommand.** An unauthenticated first-run setup screen is a race for the account; a token printed at startup lands in a log file nobody is watching, because Jail Deck is a service rather than an interactive program. A CLI subcommand is the convention for this (`htpasswd`, `initdb`) and keeps credential setup out of band from the daemon's lifecycle. See JD-003.

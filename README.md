@@ -7,12 +7,12 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.27.0.** Jails can be created from release templates, started,
+**Current release: v0.28.0.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API, and their limits changed in place; their ZFS datasets,
 snapshots and resource usage are visible, and a dataset kept past its jail can be restored or destroyed; host setup is checked; PF can be seen,
 read-only; bhyve VMs are created from cloud images (Debian, Ubuntu, Fedora, Alpine, Arch) with cloud-init, with a console password if wanted, pinned to host CPUs, started,
 stopped, labelled, snapshotted and destroyed, on a default network Jail Deck sets up with NAT through PF, or on networks of their own kept apart by PF, with addresses Jail Deck picks and checks, and every network and what is on it can be seen; a jail has a shell in the
-browser, and a guest its serial console; each one's files on the host can be read on its page; jails and guests are found in one list by name, state or label, with what each is using over the last minutes, and started, stopped, restarted or snapshotted several at once; the storage nothing uses is listed and can be reclaimed; pages update live as anyone changes the host; every operation is audited, a console with who opened it and why when the client says, and nothing is reachable without a password or an
+browser, and a guest its serial console; each one's files on the host can be read on its page; jails and guests are found in one list by name, state or label, with what each is using over the last minutes, and started, stopped, restarted or snapshotted several at once; the storage nothing uses is listed and can be reclaimed; pages update live as anyone changes the host; a token can be limited to reading and running commands in jails with a given label; every operation is audited, a console with who opened it and why when the client says, and nothing is reachable without a password or an
 API token. Releases install and upgrade with `pkg` from a signed repository. See
 [the roadmap](docs/ROADMAP.md) for what comes next.
 
@@ -42,8 +42,9 @@ Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com
   Start, stop and restart, from the VMs page or the API, confirmed in vm-bhyve's listing; a
   guest that ignores the power button for 60 seconds is powered off, and the answer says so
   (JD-036). Image templates for creating them: the cloud images of Debian 13, Ubuntu 26.04
-  LTS, Fedora 44, Alpine 3.24 and Arch fetched, checked against their publisher's checksum and
-  written into a zvol, qcow2 read by Jail Deck itself, from the VMs page or the API (JD-037, JD-053).
+  LTS, Fedora 44, Alpine 3.24 and Arch fetched, checked against their publisher's checksum and,
+  where the publisher signs, its OpenPGP signature, then written into a zvol, qcow2 read by Jail
+  Deck itself, from the VMs page or the API (JD-037, JD-053, JD-054).
   Creating a guest from one — CPU, memory, a disk cloned from the image, a NIC on the
   operator's switch, SSH keys and a static address through cloud-init — and destroying it,
   from the VMs pages or the API (JD-038). A default VM network for every node — a private
@@ -197,7 +198,7 @@ lines would have none at all.
 jaildeck                      run the server
 jaildeck version
 jaildeck passwd [--stdin]     set the operator password
-jaildeck token add <name> [--scope console]
+jaildeck token add <name> [--scope console] | [--allow <grant>]...
                               generate a token and print it once
 jaildeck token list
 jaildeck token revoke <name>
@@ -219,6 +220,25 @@ before scopes existed keeps every scope, and `token list` shows it as
 On a host a platform manages, `JAILDECK_CONSOLE_UI=off` keeps the browser session from
 opening a console, so the platform's own token, made with `--scope console`, is the only
 way in through Jail Deck (#155).
+
+**A token can also be limited** to less than the plain API, with `--allow` (JD-055). It can
+then do only what its grants name, and anything else is refused with `403`:
+- `read` is any `GET`: lists, details, metrics, the event stream.
+- `exec:<property>=<value>` is `POST /api/jails/{name}/exec`, in a jail whose ZFS user property
+  has that value.
+
+A platform's worker that reads and runs commands in its own jails gets:
+
+```sh
+jaildeck token add worker --allow read --allow exec:example:role=cluster
+```
+
+A leaked copy of that token can't stop a jail, destroy anything, change a property to widen
+its own reach, open a console, or run a command in a jail labelled otherwise. A limited token
+takes no `--scope`. `jaildeck token list` shows what each is limited to, and so does
+`GET /api/auth/me`, as `allow`. **Rolling back to a Jail Deck older than this feature gives a
+limited token the whole plain API**, because the older version doesn't read `allow`. Revoke
+limited tokens before rolling back.
 
 ## The API
 

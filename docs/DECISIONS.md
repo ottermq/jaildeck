@@ -2446,7 +2446,7 @@ Only the usage is read again. A row's state changes when someone acts on it, and
 
 ## JD-051 — Running Without Root: What doas Can and Cannot Narrow
 
-**Status:** Proposed — 2026-10-30. The study #156 asks for, for the owner to decide. Nothing changed on any host. The measurements below are reads, run as an unprivileged account on isengard, plus FreeBSD's own manuals (`doas.conf(5)` from doas 6.4, `zfs-allow(8)`).
+**Status:** Locked — 2026-11-02, A with C as the direction; #156 closed. Proposed 2026-10-30 as the study #156 asks for. Nothing changed on any host. The measurements below are reads, run as an unprivileged account on isengard, plus FreeBSD's own manuals (`doas.conf(5)` from doas 6.4, `zfs-allow(8)`).
 
 JD-001 runs Jail Deck as root. #156 asks whether it could run as a `jaildeck` user that reaches root only through `doas`, for a known set of commands.
 
@@ -2500,9 +2500,9 @@ The usual answer is a **root-owned wrapper per operation**, such as `jaildeck-zf
 | **C. Privilege separation:** an unprivileged process for HTTP, sessions, tokens and the UI, and a small root helper on a local socket that only accepts the operations the API already has, typed and checked again | a bug in request parsing, the UI, or a library on the HTTP side no longer runs as root; the helper's surface is the operation list, not a shell | a second process, a protocol between the two, and every operation crossing it; the package installs a user and a socket |
 | **D. C, with `zfs allow` for what needs no mount** | snapshots, properties and holds without the helper | two paths for ZFS; the mount still goes through the helper |
 
-### Proposed
+### Decided
 
-**A, amended now; C as the direction when the threat model calls for it.** doas (B) doesn't narrow what matters. The commands' arguments are names chosen at request time, and doas matches exact strings. Group-writable configuration is root by another door. C puts the boundary where a bug is most likely, in the HTTP and parsing side, without a rule per command. It is the shape OpenBSD's own daemons use. It should be its own issue, sized after Otter Cloud's operator model is settled. That is the separate question #156 names: whether a platform's operators get system users of their own.
+**A now: Jail Deck keeps running as root (JD-001). C is the direction when the threat model calls for it.** doas (B) doesn't narrow what matters. The commands' arguments are names chosen at request time, and doas matches exact strings. Group-writable configuration is root by another door. C puts the boundary where a bug is most likely, in the HTTP and parsing side, without a rule per command. It is the shape OpenBSD's own daemons use. It should be its own issue, sized after Otter Cloud's operator model is settled. That is the separate question #156 names: whether a platform's operators get system users of their own.
 
 ### Not decided here
 
@@ -2595,7 +2595,7 @@ It is tested against what `qemu-img` writes: plain, compressed, version 2, 64 Ki
 
 ### Checksums
 
-Each source names its checksum file and digest. One reader takes the four forms published. A digest must be the algorithm's length, so a SHA-256 line is never taken for a SHA-512. **The signatures Ubuntu and Fedora publish are not verified.** As with Debian's (JD-037), this guards against a corrupt download, not a dishonest server. Verifying them would mean carrying the publishers' keys and a PGP implementation, which is its own decision. The SHA-512 recorded on an image is still Jail Deck's own, of the archive it wrote.
+Each source names its checksum file and digest. One reader takes the four forms published. A digest must be the algorithm's length, so a SHA-256 line is never taken for a SHA-512. **The signatures Ubuntu and Fedora publish are not verified.** As with Debian's (JD-037), this guards against a corrupt download, not a dishonest server. Verifying them would mean carrying the publishers' keys and a PGP implementation, which is its own decision. *Amended 2026-11-02: JD-054 made it. Ubuntu's, Fedora's, Alpine's and Arch's signatures are verified.* The SHA-512 recorded on an image is still Jail Deck's own, of the archive it wrote.
 
 ### Measured
 
@@ -2612,6 +2612,71 @@ All four boot under bhyve's UEFI firmware, read vm-bhyve's NoCloud seed, grow th
 
 ### Not yet
 
-- **Signature verification** for the publishers that sign.
+- ~~**Signature verification** for the publishers that sign.~~ JD-054.
 - **Following a moving release.** Debian's and Arch's URLs follow their latest build. Ubuntu's names 26.04's current build. Fedora's and Alpine's name a point release, which a later Jail Deck moves forward.
 
+## JD-054 — Checking the Publishers' Signatures
+
+**Status:** Locked — 2026-11-02. JD-053 left this open. Keys checked against their publishers' own pages, and every signature form verified with `gpgv` before any code.
+
+A checksum file fetched from the same server as the archive proves the download is whole, not that the publisher made it. A mirror, or anything between it and the host, can serve a matching pair. Four of the five publishers sign, so for those four the check now ends at a key Jail Deck carries.
+
+### What each publisher signs
+
+| Source | Signed | Signature | Key |
+|---|---|---|---|
+| `debian-13` | nothing; the cloud image directory has only `SHA512SUMS` | none | none |
+| `ubuntu-26.04` | `SHA256SUMS` | `SHA256SUMS.gpg`, detached, RSA, SHA-512 | `D2EB4462…7DB87C81`, UEC Image Automatic Signing Key |
+| `fedora-44` | the CHECKSUM file, in place | cleartext, RSA, SHA-256 | `36F612DC…6D9F90A6`, Fedora (44), from `fedoraproject.org/fedora.gpg` |
+| `alpine-3.24` | the archive | `<archive>.asc`, detached, RSA, SHA-256 | `F26ADFAD…BFFCDF22`, the key alpinelinux.org/cloud names. It is not ncopa's release key, which signs the ISOs |
+| `arch` | the archive | `<archive>.sig`, detached, Ed25519, SHA-512 | `656E4C5A…859A9174`, the signing subkey of arch-boxes |
+
+### How
+
+- **The keys are pinned.** Each is a file under `internal/system/freebsd/keys/`, built into the binary, with its v4 fingerprint in the catalog. The fingerprint is computed from the file when it is read, so the two can't disagree unnoticed, and a test loads every key the catalog names. A new key, as Fedora's at each release, arrives with the release that lists it. There is no keyring, trust database, expiry or revocation: a pinned key needs none, and a compromised key is answered by a release.
+- **A verifier of our own, as with qcow2 (JD-053).** About 400 lines on the standard library's `crypto/rsa`, `crypto/ed25519` and SHA-2. It reads exactly what the four publishers use: v4 signatures over a binary document or a canonical text, RSA or Ed25519, SHA-256 or SHA-512. Anything else is refused by name. The alternatives:
+  - `golang.org/x/crypto/openpgp` is deprecated and has no Ed25519, which Arch uses.
+  - ProtonMail's go-crypto is a complete OpenPGP: encryption, keyrings and packet types Jail Deck will never read, to check four signatures.
+  - `gpgv` on the host is a package FreeBSD doesn't ship.
+- **Where it runs in `Fetch`.** A signed checksum file is verified before the archive is downloaded, so a bad one costs a second. Fedora's digest is read only from the signed part of its file, never from text around it. A signed archive is verified after its checksum matches and before it gets its own name. One that fails is removed, so `fetch -a` doesn't resume it. Either failure is a `502` naming the file and the key.
+- **The API says which key.** `GET /api/vm-images` gives each source a `signed_by`, absent for Debian. The prepare hint says the publisher signs nothing when that's so.
+
+### Not yet
+
+- **Debian.** Its cloud images are unsigned. Debian's signed `SHA512SUMS.sign` covers the installer images, not these. If Debian starts signing them, it is a catalog line.
+- **Images already fetched** aren't checked again. An archive under its own name was verified when it arrived (JD-037).
+
+## JD-055 — Limited Tokens: Grants Instead of the Whole API
+
+**Status:** Locked — 2026-11-02. Asked for by Otter Cloud.
+
+JD-046 gave tokens scopes, which add to the plain API. Every token still had the whole plain API, which is root's reach in practice (JD-001, JD-051): stop and destroy jails, write PF anchors, create guests. A platform's worker usually needs far less: to read, and to run commands in the jails it manages.
+
+### What a limited token is
+
+**A token made with `--allow` can do only what its grants name.** Everything else is refused with `403`, which says what the token is limited to.
+
+| Grant | Reaches |
+|---|---|
+| `read` | any `GET`: lists, details, metrics, `/metrics`, the event stream |
+| `exec:<property>=<value>` | `POST /api/jails/{name}/exec`, in a jail whose ZFS user property has that value |
+
+```sh
+jaildeck token add worker --allow read --allow exec:example:role=cluster
+```
+
+- **Deny by default.** The check names what is allowed, never what is refused, so a route added later is out of reach until a grant names it.
+- **The label is the selector.** Jail Deck already keeps labels as ZFS user properties (JD-044), and a platform already labels its jails. A name pattern (`otc-*`) would be a second naming scheme to keep in step. A limited token can't change a property, so it can't widen its own grant. An operator who labels a jail is choosing to hand it to every token whose grant matches.
+- **No scopes on a limited token.** The console is root inside the jail, the thing limiting a token is for. A `GET` to the console is let through by `read` and refused by the console's own scope check.
+- **A jail whose properties can't be read is refused**, not run in. A jail that isn't there is the same `404` anyone gets.
+- **A path with escapes in it is refused** for a limited token. The router matches the escaped form and the check would read the unescaped one. A check and a handler that read one path two ways is how they come to disagree.
+
+### Where it is checked
+
+A middleware after `RequireAuth`, on both authenticated groups (`/api` and `/metrics`). The jail's properties come from the jails service through a function the app supplies, so `auth` doesn't import `jails`. `/api/auth/me` lies outside the restriction and answers `allow`, so a client can see what it has.
+
+### What it doesn't do
+
+- **Exec is still root inside the jail.** A leaked limited token reaches the jails its grant matches and what is in them. It no longer reaches the host's other jails, guests, PF or the pools. This is containment, not confinement of what exec can do.
+- **Rollback widens.** A Jail Deck older than this ignores `allow` in the state file, so a limited token gets the whole plain API there. The README and the release notes say to revoke limited tokens before rolling back. No old binary can be taught otherwise.
+- **More grants when they are needed.** Snapshots (create, list and destroy on matching jails) is the likely next one, as `snapshot:<property>=<value>`. A grant per need, each named, rather than a general policy language.

@@ -49,6 +49,9 @@ type Principal struct {
 	// What it may do beyond the plain API (#178), so the interface can leave
 	// out what it cannot use.
 	Scopes []Scope `json:"scopes"`
+	// Allow is a restricted token's grants (JD-055); absent for a session or
+	// a token with the whole plain API.
+	Allow []string `json:"allow,omitempty"`
 }
 
 type PrincipalKind string //session | token
@@ -158,6 +161,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 				Name:      token.Name,
 				ExpiresAt: nil,
 				Scopes:    TokenScopes(token),
+				Allow:     token.Allow,
 			},
 		})
 		return

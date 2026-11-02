@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -33,7 +34,35 @@ type imageSource struct {
 	// tar member named disk, or diskQcow2, the archive itself a qcow2 image.
 	format string
 	disk   string
+	// signed is what the publisher signs with key (JD-054): sigSums, the
+	// checksum file, with a detached signature at sig in dir; sigCleartext,
+	// the checksum file signed in place; or sigArchive, the archive, with a
+	// detached signature at sig. Empty for a publisher that signs nothing,
+	// which Debian's cloud images are.
+	signed string
+	sig    string
+	key    signingKey
 }
+
+const (
+	sigSums      = "sums"
+	sigCleartext = "cleartext"
+	sigArchive   = "archive"
+)
+
+// The publishers' keys, each checked against where its publisher names it
+// when it was added (JD-054).
+var (
+	ubuntuCloudKey = signingKey{file: "ubuntu-cloud.asc", name: "Ubuntu's cloud image key",
+		fingerprint: "d2eb44626fddc30b513d5bb71a5d6c4c7db87c81"}
+	fedora44Key = signingKey{file: "fedora-44.asc", name: "Fedora 44's key",
+		fingerprint: "36f612dcf27f7d1a48a835e4dbfcf71c6d9f90a6"}
+	alpineCloudKey = signingKey{file: "alpine-cloud.asc", name: "Alpine's cloud image key",
+		fingerprint: "f26adfadbae702ef7af637459da7ef23bffcdf22"}
+	// arch-boxes signs with an Ed25519 subkey of 1b9a16984a4e8cb448712d2ae0b78bf4326c6f8f.
+	archBoxesKey = signingKey{file: "arch-boxes.asc", name: "Arch's arch-boxes key",
+		fingerprint: "656e4c5ac1cc3b86e539d97e343635a6859a9174"}
+)
 
 const (
 	diskTarRaw = "tar-raw"
@@ -72,6 +101,9 @@ var imageCatalog = []imageSource{
 		sums:    "SHA256SUMS",
 		sum:     "sha256",
 		format:  diskQcow2,
+		signed:  sigSums,
+		sig:     "SHA256SUMS.gpg",
+		key:     ubuntuCloudKey,
 	},
 	{
 		Source: images.Source{
@@ -85,6 +117,8 @@ var imageCatalog = []imageSource{
 		sums:    "Fedora-Cloud-44-1.7-x86_64-CHECKSUM",
 		sum:     "sha256",
 		format:  diskQcow2,
+		signed:  sigCleartext,
+		key:     fedora44Key,
 	},
 	{
 		Source: images.Source{
@@ -98,6 +132,9 @@ var imageCatalog = []imageSource{
 		sums:    alpineArchive + ".sha512",
 		sum:     "sha512",
 		format:  diskQcow2,
+		signed:  sigArchive,
+		sig:     alpineArchive + ".asc",
+		key:     alpineCloudKey,
 	},
 	{
 		Source: images.Source{
@@ -111,6 +148,9 @@ var imageCatalog = []imageSource{
 		sums:    "Arch-Linux-x86_64-cloudimg.qcow2.SHA256",
 		sum:     "sha256",
 		format:  diskQcow2,
+		signed:  sigArchive,
+		sig:     "Arch-Linux-x86_64-cloudimg.qcow2.sig",
+		key:     archBoxesKey,
 	},
 }
 
@@ -150,11 +190,15 @@ type ImageAdapter struct {
 	// a device; overridden in tests, for the same reason.
 	qcow2Size  func(path string) (int64, error)
 	writeQcow2 func(ctx context.Context, path, device string) (int64, error)
+	// openArchive opens a downloaded archive to check its signature;
+	// overridden in tests, which have no archives.
+	openArchive func(path string) (io.ReadCloser, error)
 }
 
 func NewImageAdapter(runner system.CommandRunner) *ImageAdapter {
 	return &ImageAdapter{Adapter: NewAdapter(runner), exists: pathExists,
-		qcow2Size: qcow2Size, writeQcow2: writeQcow2}
+		qcow2Size: qcow2Size, writeQcow2: writeQcow2,
+		openArchive: func(p string) (io.ReadCloser, error) { return os.Open(p) }}
 }
 
 func pathExists(p string) bool {
@@ -165,7 +209,9 @@ func pathExists(p string) bool {
 func (a *ImageAdapter) Sources() []images.Source {
 	out := make([]images.Source, 0, len(imageCatalog))
 	for _, entry := range imageCatalog {
-		out = append(out, entry.Source)
+		source := entry.Source
+		source.SignedBy = entry.key.name
+		out = append(out, source)
 	}
 	return out
 }
@@ -330,13 +376,16 @@ func (a *ImageAdapter) Fetched(_ context.Context, store images.Store) ([]string,
 }
 
 // Fetch downloads a source's archive and verifies it against the checksum
-// file published beside it (JD-037).
+// file published beside it (JD-037), and against its publisher's signature
+// where the publisher signs (JD-054): the checksum file, or the archive
+// itself.
 //
-// Debian publishes no signature for these, so this guards against a corrupt
-// download, not a dishonest server -- the release template's MANIFEST has
-// the same strength. The archive arrives as <archive>.part, which `fetch -a`
-// resumes, and becomes <archive> only once it matches: an archive under its
-// own name is a verified one, and that is what Fetched reads.
+// Debian publishes no signature for its cloud images, so for Debian this
+// guards against a corrupt download, not a dishonest server -- the release
+// template's MANIFEST has the same strength. The archive arrives as
+// <archive>.part, which `fetch -a` resumes, and becomes <archive> only once
+// it matches: an archive under its own name is a verified one, and that is
+// what Fetched reads.
 func (a *ImageAdapter) Fetch(ctx context.Context, store images.Store, source string) (string, error) {
 	entry, err := lookupSource(source)
 	if err != nil {
@@ -355,7 +404,30 @@ func (a *ImageAdapter) Fetch(ctx context.Context, store images.Store, source str
 	if err != nil {
 		return download.String(), err
 	}
-	want, err := sumsEntry(sums.Stdout, entry.archive, entry.sum)
+	sumsText := sums.Stdout
+	var archiveSig []byte
+	switch entry.signed {
+	case sigSums, sigArchive:
+		// Read before the download, so a missing signature costs a second,
+		// not the archive.
+		sig, err := a.runHost(ctx, system.Command{
+			Name: "fetch", Args: []string{"-q", "-o", "-", entry.dir + "/" + entry.sig}, Timeout: time.Minute,
+		})
+		if err != nil {
+			return download.String(), err
+		}
+		if entry.signed == sigArchive {
+			archiveSig = []byte(sig.Stdout)
+		} else if err := verifyDetached(entry.key, strings.NewReader(sumsText), []byte(sig.Stdout)); err != nil {
+			return download.String(), notSigned(entry.sums, entry.key, err)
+		}
+	case sigCleartext:
+		// Only the signed text is read for the digest.
+		if sumsText, err = verifyCleartext(entry.key, []byte(sumsText)); err != nil {
+			return download.String(), notSigned(entry.sums, entry.key, err)
+		}
+	}
+	want, err := sumsEntry(sumsText, entry.archive, entry.sum)
 	if err != nil {
 		return download.String(), err
 	}
@@ -367,16 +439,44 @@ func (a *ImageAdapter) Fetch(ctx context.Context, store images.Store, source str
 		return download.String(), err
 	}
 	if sum := strings.TrimSpace(got.Stdout); sum != want {
-		// Removed, or fetch -a would resume a corrupt file next time.
-		if _, rmErr := a.runHost(ctx, system.Command{Name: "rm", Args: []string{"-f", part}}); rmErr != nil {
-			common.Logger(ctx, "images").Warn("could not remove a corrupt download", "file", part, "err", rmErr)
-		}
+		a.removeDownload(ctx, part)
 		return download.String(), common.NewAppError(http.StatusBadGateway, fmt.Sprintf(
 			"%s does not match the checksum %s publishes for it (got %s, want %s); the download was removed",
 			entry.archive, entry.sums, sum, want))
 	}
+	if entry.signed == sigArchive {
+		if err := a.verifyArchive(part, entry.key, archiveSig); err != nil {
+			a.removeDownload(ctx, part)
+			return download.String(), common.NewAppError(http.StatusBadGateway, fmt.Sprintf(
+				"%s is not signed by %s (%v); the download was removed", entry.archive, entry.key.name, err))
+		}
+	}
 	_, err = a.runHost(ctx, system.Command{Name: "mv", Args: []string{part, archive}})
 	return download.String(), err
+}
+
+func (a *ImageAdapter) verifyArchive(part string, key signingKey, sig []byte) error {
+	f, err := a.openArchive(part)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return verifyDetached(key, f, sig)
+}
+
+// removeDownload removes a download that failed its check, or fetch -a would
+// resume it next time.
+func (a *ImageAdapter) removeDownload(ctx context.Context, part string) {
+	if _, err := a.runHost(ctx, system.Command{Name: "rm", Args: []string{"-f", part}}); err != nil {
+		common.Logger(ctx, "images").Warn("could not remove a download that failed its check", "file", part, "err", err)
+	}
+}
+
+// notSigned is the refusal for a checksum file its publisher's key did not
+// sign. A 502, like a download that does not match: the publisher's side is
+// what is wrong, or something between it and this host.
+func notSigned(file string, key signingKey, err error) error {
+	return common.NewAppError(http.StatusBadGateway, fmt.Sprintf("%s is not signed by %s (%v)", file, key.name, err))
 }
 
 // ensureImageDataset creates <datastore>/.images the first time, with

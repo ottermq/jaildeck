@@ -20,6 +20,37 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.28.0 — 2026-11-02
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.28.0)
+
+**Limited tokens and signed images.** A token can be limited to reading and running commands
+in jails with a given label, for a platform's worker (JD-055). Ubuntu, Fedora, Alpine and Arch
+images are checked against their publisher's signature as well as their checksum (JD-054).
+Nothing to act on when upgrading. **Before rolling back past this version, revoke any limited
+token**: an older Jail Deck ignores the limit and gives it the whole API.
+
+### Added
+
+- **Limited tokens** (JD-055): `jaildeck token add <name> --allow read --allow
+  exec:<property>=<value>` makes a token that can only read and run commands in jails whose ZFS
+  user property matches, and is refused with 403 for anything else. It is meant for a platform's
+  worker: a leaked copy can't stop or destroy anything, relabel a jail, open a console, or reach
+  another jail. `token list` shows what each token is limited to. **Rolling back to an older
+  Jail Deck gives a limited token the whole plain API**; revoke limited tokens first.
+- **Publishers' signatures are checked** (JD-054): an Ubuntu, Fedora, Alpine or Arch image is
+  verified against its publisher's OpenPGP signature as well as its checksum, with the
+  publisher's key built into Jail Deck. A checksum file that isn't signed is refused before the
+  download, and an archive that isn't signed is removed. Debian publishes no signature for its
+  cloud images, and the prepare form says so.
+
+### API
+
+- **A limited token** gets `403` for anything its grants don't name. `GET /api/auth/me` answers
+  its grants as `allow`. Additive: tokens made without `--allow` are unchanged.
+- **`GET /api/vm-images`**: each source has `signed_by`, the publisher key its download is
+  checked against, absent for Debian. Additive.
+
 ## v0.27.0 — 2026-11-01
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.27.0)

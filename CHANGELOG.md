@@ -31,6 +31,9 @@ versions' release notes stay there. GitHub numbering started again at #1.
   listeners, so the operator's socket keeps its owner and mode. Each start makes the state
   directory readable by the front's group. `JAILDECK_SPLIT=off` runs one process, as before.
   **The user must exist**: Jail Deck started as root refuses to start without it.
+- **The package creates the `jaildeck` user and group** when they are missing (#206): the
+  first id from 850 free as both, `nologin`, no home. Removal keeps them. Jail Deck's front
+  runs as this user (JD-056).
 - **API:** an unauthenticated request to an unknown `/api` path is now `401`, not `404`.
   The front doesn't know the root side's routes. Authenticated, it is `404` as before.
 

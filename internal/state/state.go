@@ -89,7 +89,7 @@ func (s *Store) Save(st State) error {
 		}
 	}()
 
-	if err = shareWithDirGroup(tmpFile, s.dir); err != nil {
+	if err = keepOwner(tmpFile, filepath.Join(s.dir, fileName)); err != nil {
 		return err
 	}
 
@@ -125,29 +125,25 @@ func (s *Store) Save(st State) error {
 	return nil
 }
 
-// shareWithDirGroup sets the new state file's mode: 0600, or 0640 in the
-// directory's group when the directory is open to its group and to no one
-// else, as the split sets it up. A directory that is also open to others is
-// not taken as a reason to share the password's hash. That is how the
-// front, which runs as the jaildeck user, reads a file root writes (JD-056):
-// the directory is root:jaildeck 0750, and a file renamed into it would
-// otherwise be root's alone until the next start fixed it.
-func shareWithDirGroup(f *os.File, dir string) error {
-	mode := os.FileMode(0o600)
-	info, err := os.Stat(dir)
-	if err != nil {
-		return fmt.Errorf("reading the state dir's mode: %w", err)
-	}
-	if perm := info.Mode().Perm(); perm&0o050 == 0o050 && perm&0o007 == 0 {
-		if st, ok := info.Sys().(*syscall.Stat_t); ok {
-			if err := f.Chown(-1, int(st.Gid)); err != nil {
-				return fmt.Errorf("setting the state file's group: %w", err)
-			}
-			mode = 0o640
-		}
-	}
-	if err := f.Chmod(mode); err != nil {
+// keepOwner gives the new state file the owner the file it replaces had,
+// mode 0600. When Jail Deck is split, that owner is the front's uid (JD-056):
+// `jaildeck passwd` and `token` run as root, and a file renamed into place
+// would otherwise be root's alone until the next start fixed it.
+func keepOwner(f *os.File, final string) error {
+	if err := f.Chmod(0o600); err != nil {
 		return fmt.Errorf("setting permission on temp file: %w", err)
+	}
+	info, err := os.Stat(final)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading the state file's owner: %w", err)
+	}
+	if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Geteuid() {
+		if err := f.Chown(int(st.Uid), int(st.Gid)); err != nil {
+			return fmt.Errorf("keeping the state file's owner: %w", err)
+		}
 	}
 	return nil
 }

@@ -20,6 +20,21 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.29.1 — 2026-11-02
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.29.1)
+
+**A security fix to v0.29.0's privilege separation.** Upgrade from 0.29.0 with `pkg upgrade`;
+nothing else to do.
+
+- **Security: the root side's socket is the front's uid's alone** (JD-056). v0.29.0 made
+  it, and the state file, readable and connectable by the `jaildeck` group. On a host
+  where that group also holds the clients of `JAILDECK_SOCKET`, any of them could reach
+  the root side, name any principal, and read the credential hashes. Now `api.sock` is
+  `0600` and the front's, a connection from any other uid is dropped by its peer
+  credentials, and `state.json` is the front's, `0600`, in a directory of root's, `0711`.
+  **Don't run v0.29.0 on a host whose `jaildeck` group has other members.**
+
 ## v0.29.0 — 2026-11-02
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.29.0)

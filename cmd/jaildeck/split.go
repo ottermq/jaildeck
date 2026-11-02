@@ -56,26 +56,25 @@ func runSplit(cfg *config.Config, account *user.User) error {
 	if err != nil {
 		return fmt.Errorf("the user %s has no numeric gid: %w", account.Username, err)
 	}
-	group, err := user.LookupGroupId(account.Gid)
-	if err != nil {
-		return fmt.Errorf("the user %s's group: %w", account.Username, err)
-	}
-
 	if err := app.RequireCredential(cfg); err != nil {
 		return err
 	}
-	if err := shareStateDir(cfg.StateDir, gid); err != nil {
+	if err := shareStateDir(cfg.StateDir, uid); err != nil {
 		return err
 	}
-	if err := prepareRunDir(cfg.RunDir, gid); err != nil {
+	if err := prepareRunDir(cfg.RunDir); err != nil {
 		return err
 	}
-	apiListener, err := listenUnix(filepath.Join(cfg.RunDir, apiSocketName), group.Name)
+	// The front's uid is the boundary, never a group: a host's jaildeck
+	// group may already hold the clients of JAILDECK_SOCKET, and any of them
+	// could then name any principal on the root side's socket.
+	apiListener, err := listenPrivate(filepath.Join(cfg.RunDir, apiSocketName), uid)
 	if err != nil {
 		return err
 	}
+	apiListener = onlyFrom(apiListener, uid)
 	recheckPath := filepath.Join(cfg.RunDir, recheckSocketName)
-	recheckListener, err := listenUnix(recheckPath, "")
+	recheckListener, err := listenPrivate(recheckPath, 0)
 	if err != nil {
 		return err
 	}
@@ -104,12 +103,13 @@ func runSplit(cfg *config.Config, account *user.User) error {
 	return newServer("", back.Routes()).Serve(apiListener)
 }
 
-// shareStateDir makes the state directory the front's to read: root's,
-// in the front's group, 0750, and the state file 0640. Every start does it,
-// which is also the upgrade from a Jail Deck that ran as one process. A
-// directory holding anything but the state file is refused rather than
-// opened to a group: it would not be Jail Deck's alone.
-func shareStateDir(dir string, gid int) error {
+// shareStateDir makes the state file the front's to read: the file owned
+// by the front's uid, 0600, in a directory of root's, 0711, that the front
+// can pass through but nobody can list. Every start does it, which is also
+// the upgrade from a Jail Deck that ran as one process. `jaildeck passwd`
+// and `token` keep the owner when they replace the file. A directory holding
+// anything but the state file is refused: it would not be Jail Deck's alone.
+func shareStateDir(dir string, uid int) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("reading the state dir: %w", err)
@@ -122,9 +122,10 @@ func shareStateDir(dir string, gid int) error {
 	}
 	for _, p := range []struct {
 		path string
+		uid  int
 		mode os.FileMode
-	}{{dir, 0o750}, {filepath.Join(dir, stateFileName), 0o640}} {
-		if err := os.Lchown(p.path, 0, gid); err != nil {
+	}{{dir, 0, 0o711}, {filepath.Join(dir, stateFileName), uid, 0o600}} {
+		if err := os.Lchown(p.path, p.uid, 0); err != nil {
 			return fmt.Errorf("sharing %s with the front: %w", p.path, err)
 		}
 		if err := os.Chmod(p.path, p.mode); err != nil {
@@ -134,11 +135,10 @@ func shareStateDir(dir string, gid int) error {
 	return nil
 }
 
-// prepareRunDir makes the directory the sockets live in: root's, in the
-// front's group, 0750, so that the front reaches the API socket and nobody
-// else reaches either.
-func prepareRunDir(dir string, gid int) error {
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+// prepareRunDir makes the directory the sockets live in: root's, 0755. The
+// sockets in it are each 0600 and owned by the one uid that may use them.
+func prepareRunDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating %s: %w", dir, err)
 	}
 	info, err := os.Lstat(dir)
@@ -148,10 +148,64 @@ func prepareRunDir(dir string, gid int) error {
 	if !info.IsDir() {
 		return fmt.Errorf("%s is not a directory", dir)
 	}
-	if err := os.Chown(dir, 0, gid); err != nil {
+	if err := os.Chown(dir, 0, 0); err != nil {
 		return fmt.Errorf("setting the owner of %s: %w", dir, err)
 	}
-	return os.Chmod(dir, 0o750)
+	return os.Chmod(dir, 0o755)
+}
+
+// privateUmask creates a socket at 0600, so that nobody but root can connect
+// in the moment before it is given to its uid.
+const privateUmask = 0o177
+
+// listenPrivate listens on a socket only uid (and root) can connect to.
+func listenPrivate(path string, uid int) (net.Listener, error) {
+	if err := clearStaleSocket(path); err != nil {
+		return nil, err
+	}
+	old := syscall.Umask(privateUmask)
+	l, err := net.Listen("unix", path)
+	syscall.Umask(old)
+	if err != nil {
+		return nil, fmt.Errorf("listening on %s: %w", path, err)
+	}
+	if err := os.Chown(path, uid, 0); err != nil {
+		l.Close()
+		return nil, fmt.Errorf("giving %s to uid %d: %w", path, uid, err)
+	}
+	return l, nil
+}
+
+// onlyFrom drops a connection from anyone but uid or root, by the kernel's
+// account of who connected. The socket's mode already says so; this holds
+// even if the mode is ever wrong.
+func onlyFrom(l net.Listener, uid int) net.Listener {
+	return &peerListener{Listener: l, uid: uid}
+}
+
+type peerListener struct {
+	net.Listener
+	uid int
+}
+
+func (l *peerListener) Accept() (net.Conn, error) {
+	for {
+		c, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		uc, ok := c.(*net.UnixConn)
+		if !ok {
+			c.Close()
+			continue
+		}
+		peer, err := peerUID(uc)
+		if err == nil && (peer == l.uid || peer == 0) {
+			return c, nil
+		}
+		slog.Warn("refused a connection to the root side's socket", "uid", peer, slog.Any("err", err))
+		c.Close()
+	}
 }
 
 func listenerFiles(listeners []net.Listener) ([]*os.File, error) {

@@ -7,7 +7,7 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.29.0.** Jails can be created from release templates, started,
+**Current release: v0.29.1.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API, and their limits changed in place; their ZFS datasets,
 snapshots and resource usage are visible, and a dataset kept past its jail can be restored or destroyed; host setup is checked; PF can be seen,
 read-only; bhyve VMs are created from cloud images (Debian, Ubuntu, Fedora, Alpine, Arch) with cloud-init, with a console password if wanted, pinned to host CPUs, started,
@@ -131,7 +131,7 @@ loaded if present — see [`.env.sample`](.env.sample).
 | --- | --- | --- |
 | `JAILDECK_HOST` | `127.0.0.1` | Bind address. Anything non-loopback warns |
 | `JAILDECK_PORT` | `8888` | |
-| `JAILDECK_STATE_DIR` | `/var/db/jaildeck` | Password hash and API tokens, written `0600`, or `0640` in the front's group when split |
+| `JAILDECK_STATE_DIR` | `/var/db/jaildeck` | Password hash and API tokens, written `0600`; owned by the front's user when split |
 | `JAILDECK_AUDIT_LOG` | `/var/log/jaildeck/audit.log` | Append-only JSON lines. Rotate it with `newsyslog` |
 | `JAILDECK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `JAILDECK_ADAPTER` | `freebsd` | `fake` runs against an in-memory host, for development |
@@ -147,8 +147,10 @@ loaded if present — see [`.env.sample`](.env.sample).
 serves the API on a socket in `JAILDECK_RUN_DIR` only the front can reach. The front, as
 `JAILDECK_USER`, serves the listeners, the UI and signing in, and passes what it has
 authenticated to the root side. Code that reads from the network before a login is checked
-no longer runs as root. Each start makes the state directory `root:<the user's group>`, mode
-`0750`, and refuses a state directory that holds anything but `state.json`. Nothing changes
+no longer runs as root. The boundary is the front's uid, not a group: the root side's
+socket is `0600` and the front's, and a connection from any other uid is dropped. Each start
+gives `state.json` to the front's uid, `0600`, in a directory of root's, `0711`, and refuses a
+state directory that holds anything but `state.json`. Nothing changes
 for an API client. Started as another user, or with `JAILDECK_SPLIT=off`, both sides run in
 one process.
 

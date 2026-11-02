@@ -20,6 +20,14 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+- **A snapshot grant for limited tokens** (JD-057): `--allow 'snapshot:<pattern>@<property>=<value>'`
+  takes and destroys jail-level snapshots whose name matches the pattern (a name, or a prefix
+  ending in `*`), in jails with that label. Other snapshots, rollback and a dataset's own
+  snapshots stay refused, so a leaked backup token can't destroy the snapshots that are kept
+  to restore from. Asked for by Otter Cloud.
+
 ## v0.29.1 — 2026-11-02
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.29.1)

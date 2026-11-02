@@ -2744,3 +2744,29 @@ Cut 1 moves all of the pre-authentication code out of root. Cut 2 also moves the
 - **Whether Otter Cloud's operators get system users of their own** (#156's last point). Cut 1 has one caller, the front, so the answer doesn't change this design. It would change cut 2, if that is ever wanted.
 - **Cut 2 later.** It stays possible on top of cut 1: the socket protocol would change, not the processes.
 - **Dropping more from the root side.** For example, Capsicum for the front, or reading `/dev/pf` through a narrower helper. Those are separate steps, each with its own measurement.
+
+## JD-057 — A Snapshot Grant: Named Snapshots in Labelled Jails
+
+**Status:** Locked — 2026-11-02. Asked for by Otter Cloud.
+
+JD-055 named snapshots as the likely next grant. A platform's backups take snapshots before an upgrade or a risky step, and on a host without a replication tool they keep an hourly and a daily schedule. Without a grant, that means a token with the whole API, which a limited worker token exists to avoid.
+
+### The grant
+
+```sh
+jaildeck token add backup --allow read --allow 'snapshot:backup-*@example:role=cluster'
+```
+
+`snapshot:<pattern>@<property>=<value>` reaches `PUT` and `DELETE /api/jails/{name}/snapshots/{snapshot}`, for a snapshot whose name matches the pattern, in a jail whose ZFS user property has that value. Listing is `read`'s.
+
+- **The pattern is the point.** A token that could destroy any snapshot on the jail could destroy the replication tool's and the operator's. Those are the snapshots to restore from after the very leak a limited token is for. So the token takes and destroys only names that match: a literal name, or a prefix ending in `*`. `*` alone is refused, because it would undo the reason for the pattern. Creating is held to the pattern too, so the token can't make snapshots under another tool's naming scheme, which that tool might then manage or prune.
+- **`@` separates the pattern from the label.** A ZFS snapshot name can't hold one, so the first `@` is always the end of the pattern.
+- **Jail level only.** The jail route is recursive and atomic: one snapshot of the root and every child at one point in time (JD-007, JD-024), which is what a backup wants. A dataset's own snapshot routes aren't reached. A client that needs them can ask.
+- **No rollback.** Rolling back rewrites a jail's data. On a shared cluster it rewinds every tenant at once. It stays with a token that has the whole API.
+- **The name is checked before the jail is read**, since it needs nothing from the host. A path with escapes is refused, as for exec (JD-055).
+
+### What it doesn't do
+
+- **A leaked token can still destroy the snapshots its own pattern names.** That comes with a token that keeps its own retention. The snapshots that matter after a leak are the others.
+- **No record of who made a snapshot.** A ZFS user property on each snapshot could say so, and the grant could check it. The name is what the platform already controls and what an operator reads in `zfs list`, so the pattern is the simpler rule to see and to reason about.
+

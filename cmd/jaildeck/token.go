@@ -48,8 +48,9 @@ const addUsage = "usage: jaildeck token add <name> [--scope <scope>]... | [--all
 
 // addArgs reads a name and any number of --scope or --allow flags, in either
 // order: `token add otter --scope console` and `token add --scope console
-// otter`. --allow limits the token to its grants (JD-055): `token add worker
-// --allow read --allow exec:example:role=cluster`.
+// otter`. --allow limits the token to its grants (JD-055, JD-057): `token add
+// worker --allow read --allow exec:example:role=cluster --allow
+// 'snapshot:example-*@example:role=cluster'`.
 func addArgs(args []string) (string, []string, []string, error) {
 	var name string
 	names, grants := []string{}, []string{}

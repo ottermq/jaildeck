@@ -29,6 +29,9 @@ func TestLoadConfig(t *testing.T) {
 				NetworkRange: "10.92.0.0/16",
 
 				ConsoleIdle: 30 * time.Minute,
+
+				User:   "jaildeck",
+				RunDir: "/var/run/jaildeck",
 			},
 		},
 		{
@@ -50,6 +53,10 @@ func TestLoadConfig(t *testing.T) {
 
 				ConsoleIdle:    5 * time.Minute,
 				ConsoleOrigins: []string{"jaildeck.example.org", "*.example.org"},
+
+				User:       "jd-front",
+				RunDir:     "/tmp/jaildeck-run",
+				OneProcess: true,
 			},
 			want: Config{
 				Host:     "0.0.0.0",
@@ -68,6 +75,10 @@ func TestLoadConfig(t *testing.T) {
 
 				ConsoleIdle:    5 * time.Minute,
 				ConsoleOrigins: []string{"jaildeck.example.org", "*.example.org"},
+
+				User:       "jd-front",
+				RunDir:     "/tmp/jaildeck-run",
+				OneProcess: true,
 			},
 		},
 	}
@@ -86,6 +97,13 @@ func TestLoadConfig(t *testing.T) {
 			t.Setenv("JAILDECK_VM_EGRESS", tt.env.VMEgress)
 			t.Setenv("JAILDECK_PF_ANCHOR_DIR", tt.env.PFAnchorDir)
 			t.Setenv("JAILDECK_NETWORK_RANGE", tt.env.NetworkRange)
+			t.Setenv("JAILDECK_USER", tt.env.User)
+			t.Setenv("JAILDECK_RUN_DIR", tt.env.RunDir)
+			split := ""
+			if tt.env.OneProcess {
+				split = "off"
+			}
+			t.Setenv("JAILDECK_SPLIT", split)
 			idle := ""
 			if tt.env.ConsoleIdle != 0 {
 				idle = tt.env.ConsoleIdle.String()

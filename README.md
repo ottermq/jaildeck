@@ -131,7 +131,7 @@ loaded if present — see [`.env.sample`](.env.sample).
 | --- | --- | --- |
 | `JAILDECK_HOST` | `127.0.0.1` | Bind address. Anything non-loopback warns |
 | `JAILDECK_PORT` | `8888` | |
-| `JAILDECK_STATE_DIR` | `/var/db/jaildeck` | Password hash and API tokens, written `0600` |
+| `JAILDECK_STATE_DIR` | `/var/db/jaildeck` | Password hash and API tokens, written `0600`, or `0640` in the front's group when split |
 | `JAILDECK_AUDIT_LOG` | `/var/log/jaildeck/audit.log` | Append-only JSON lines. Rotate it with `newsyslog` |
 | `JAILDECK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `JAILDECK_ADAPTER` | `freebsd` | `fake` runs against an in-memory host, for development |
@@ -139,6 +139,18 @@ loaded if present — see [`.env.sample`](.env.sample).
 | `JAILDECK_SOCKET` | empty | Unix socket to listen on as well as TCP. Empty means TCP only |
 | `JAILDECK_SOCKET_GROUP` | empty | Group owning the socket. Empty leaves it in the process's own group |
 | `JAILDECK_SOCKET_ONLY` | `false` | `true` drops the TCP listener, leaving only the socket |
+| `JAILDECK_USER` | `jaildeck` | Who the front runs as when Jail Deck starts as root (JD-056) |
+| `JAILDECK_RUN_DIR` | `/var/run/jaildeck` | Where the root side's socket and the front's live |
+| `JAILDECK_SPLIT` | `on` | `off` runs everything in one process as root, as before |
+
+**Started as root, Jail Deck runs as two processes** (JD-056). The root side does the work and
+serves the API on a socket in `JAILDECK_RUN_DIR` only the front can reach. The front, as
+`JAILDECK_USER`, serves the listeners, the UI and signing in, and passes what it has
+authenticated to the root side. Code that reads from the network before a login is checked
+no longer runs as root. Each start makes the state directory `root:<the user's group>`, mode
+`0750`, and refuses a state directory that holds anything but `state.json`. Nothing changes
+for an API client. Started as another user, or with `JAILDECK_SPLIT=off`, both sides run in
+one process.
 
 `debug` logs every command Jail Deck runs, which is the fastest way to see what it is
 doing to the host. No credential material is logged at any level.

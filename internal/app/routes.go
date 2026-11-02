@@ -11,7 +11,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/ottermq/jaildeck/internal/about"
 	"github.com/ottermq/jaildeck/internal/audit"
-	"github.com/ottermq/jaildeck/internal/auth"
 	"github.com/ottermq/jaildeck/internal/common"
 	"github.com/ottermq/jaildeck/internal/events"
 	"github.com/ottermq/jaildeck/internal/firewall"
@@ -27,15 +26,19 @@ import (
 	"github.com/ottermq/jaildeck/internal/vms"
 )
 
-func (a *App) Routes(assets fs.FS) http.Handler {
+// Routes is the root side's API, served on its socket to the front alone
+// (JD-056). Every route is behind the principal the front names; the access
+// log is the front's.
+func (a *Back) Routes() http.Handler {
 	r := chi.NewRouter()
 
-	useObservability(r)
+	r.Use(middleware.Recoverer)
+	r.Use(requestID)
+	r.Use(requestContextLogger)
 	r.Route("/api", func(r chi.Router) {
 		r.NotFound(apiNotFound)
-		auth.RegisterAuthRoutes(r, a.authHandler)
 		r.Group(func(r chi.Router) {
-			r.Use(a.authHandler.RequireAuth)
+			r.Use(a.authHandler.Trusted)
 			r.Use(a.authHandler.Restrict(a.jailProperties))
 			r.Get("/", a.apiRoot)
 			jails.RegisterJailRoutes(r, a.jailHandler, func(r chi.Router) {
@@ -64,13 +67,11 @@ func (a *App) Routes(assets fs.FS) http.Handler {
 	// RequireAuth because the loopback is not a boundary on a host with jails
 	// (JD-033).
 	r.Group(func(r chi.Router) {
-		r.Use(a.authHandler.RequireAuth)
+		r.Use(a.authHandler.Trusted)
 		r.Use(a.authHandler.Restrict(a.jailProperties))
 		metrics.RegisterPrometheusRoute(r, a.metricsHandler)
 	})
-
-	// Serve SPA fallback handler for any unmatched paths (handles frontend routing)
-	r.NotFound(staticHandler(assets))
+	r.NotFound(apiNotFound)
 
 	return r
 }
@@ -188,6 +189,6 @@ func apiNotFound(w http.ResponseWriter, _ *http.Request) {
 // @Failure      401  {object}  common.ErrorResponse
 // @Security     BearerAuth
 // @Router       / [get]
-func (a *App) apiRoot(w http.ResponseWriter, r *http.Request) {
+func (a *Back) apiRoot(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/api/jails", http.StatusSeeOther)
 }

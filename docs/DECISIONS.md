@@ -2595,7 +2595,7 @@ It is tested against what `qemu-img` writes: plain, compressed, version 2, 64 Ki
 
 ### Checksums
 
-Each source names its checksum file and digest. One reader takes the four forms published. A digest must be the algorithm's length, so a SHA-256 line is never taken for a SHA-512. **The signatures Ubuntu and Fedora publish are not verified.** As with Debian's (JD-037), this guards against a corrupt download, not a dishonest server. Verifying them would mean carrying the publishers' keys and a PGP implementation, which is its own decision. *Amended 2026-11-02: JD-054 made it. Ubuntu's, Fedora's, Alpine's and Arch's signatures are verified.* The SHA-512 recorded on an image is still Jail Deck's own, of the archive it wrote.
+Each source names its checksum file and digest. One reader takes the four forms published. A digest must be the algorithm's length, so a SHA-256 line is never taken for a SHA-512. **The signatures Ubuntu and Fedora publish are not verified.** As with Debian's (JD-037), this guards against a corrupt download, not a dishonest server. Verifying them would mean carrying the publishers' keys and a PGP implementation, which is its own decision. The SHA-512 recorded on an image is still Jail Deck's own, of the archive it wrote.
 
 ### Measured
 
@@ -2612,36 +2612,6 @@ All four boot under bhyve's UEFI firmware, read vm-bhyve's NoCloud seed, grow th
 
 ### Not yet
 
-- ~~**Signature verification** for the publishers that sign.~~ JD-054.
+- **Signature verification** for the publishers that sign.
 - **Following a moving release.** Debian's and Arch's URLs follow their latest build. Ubuntu's names 26.04's current build. Fedora's and Alpine's name a point release, which a later Jail Deck moves forward.
 
-## JD-054 — Checking the Publishers' Signatures
-
-**Status:** Locked — 2026-11-02. JD-053 left this open. Keys checked against their publishers' own pages, and every signature form verified with `gpgv` before any code.
-
-A checksum file fetched from the same server as the archive proves the download is whole, not that the publisher made it. A mirror, or anything between it and the host, can serve a matching pair. Four of the five publishers sign, so for those four the check now ends at a key Jail Deck carries.
-
-### What each publisher signs
-
-| Source | Signed | Signature | Key |
-|---|---|---|---|
-| `debian-13` | nothing; the cloud image directory has only `SHA512SUMS` | none | none |
-| `ubuntu-26.04` | `SHA256SUMS` | `SHA256SUMS.gpg`, detached, RSA, SHA-512 | `D2EB4462…7DB87C81`, UEC Image Automatic Signing Key |
-| `fedora-44` | the CHECKSUM file, in place | cleartext, RSA, SHA-256 | `36F612DC…6D9F90A6`, Fedora (44), from `fedoraproject.org/fedora.gpg` |
-| `alpine-3.24` | the archive | `<archive>.asc`, detached, RSA, SHA-256 | `F26ADFAD…BFFCDF22`, the key alpinelinux.org/cloud names. It is not ncopa's release key, which signs the ISOs |
-| `arch` | the archive | `<archive>.sig`, detached, Ed25519, SHA-512 | `656E4C5A…859A9174`, the signing subkey of arch-boxes |
-
-### How
-
-- **The keys are pinned.** Each is a file under `internal/system/freebsd/keys/`, built into the binary, with its v4 fingerprint in the catalog. The fingerprint is computed from the file when it is read, so the two can't disagree unnoticed, and a test loads every key the catalog names. A new key, as Fedora's at each release, arrives with the release that lists it. There is no keyring, trust database, expiry or revocation: a pinned key needs none, and a compromised key is answered by a release.
-- **A verifier of our own, as with qcow2 (JD-053).** About 400 lines on the standard library's `crypto/rsa`, `crypto/ed25519` and SHA-2. It reads exactly what the four publishers use: v4 signatures over a binary document or a canonical text, RSA or Ed25519, SHA-256 or SHA-512. Anything else is refused by name. The alternatives:
-  - `golang.org/x/crypto/openpgp` is deprecated and has no Ed25519, which Arch uses.
-  - ProtonMail's go-crypto is a complete OpenPGP: encryption, keyrings and packet types Jail Deck will never read, to check four signatures.
-  - `gpgv` on the host is a package FreeBSD doesn't ship.
-- **Where it runs in `Fetch`.** A signed checksum file is verified before the archive is downloaded, so a bad one costs a second. Fedora's digest is read only from the signed part of its file, never from text around it. A signed archive is verified after its checksum matches and before it gets its own name. One that fails is removed, so `fetch -a` doesn't resume it. Either failure is a `502` naming the file and the key.
-- **The API says which key.** `GET /api/vm-images` gives each source a `signed_by`, absent for Debian. The prepare hint says the publisher signs nothing when that's so.
-
-### Not yet
-
-- **Debian.** Its cloud images are unsigned. Debian's signed `SHA512SUMS.sign` covers the installer images, not these. If Debian starts signing them, it is a catalog line.
-- **Images already fetched** aren't checked again. An archive under its own name was verified when it arrived (JD-037).

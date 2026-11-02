@@ -20,7 +20,16 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.29.0 — 2026-11-02
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.29.0)
+
+**Privilege separation.** Jail Deck started as root now runs as two processes. Its
+network-facing front (listeners, UI, signing in) runs as a `jaildeck` user, which the package
+creates. The root side, which does the work, is reachable only through the front. **On
+upgrade:** `pkg` creates the user. A host that installed with `make install` needs it created
+by hand, or `JAILDECK_SPLIT=off`. A rollback needs nothing: an older release runs as root and
+reads the same files.
 
 - **Privilege separation** (JD-056, #206). Started as root, Jail Deck runs its front as a
   user of its own (`JAILDECK_USER`, default `jaildeck`): the listeners, the UI, signing in and

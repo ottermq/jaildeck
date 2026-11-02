@@ -42,8 +42,9 @@ Documentation is published at **[otter-labs.com/jaildeck](https://otter-labs.com
   Start, stop and restart, from the VMs page or the API, confirmed in vm-bhyve's listing; a
   guest that ignores the power button for 60 seconds is powered off, and the answer says so
   (JD-036). Image templates for creating them: the cloud images of Debian 13, Ubuntu 26.04
-  LTS, Fedora 44, Alpine 3.24 and Arch fetched, checked against their publisher's checksum and
-  written into a zvol, qcow2 read by Jail Deck itself, from the VMs page or the API (JD-037, JD-053).
+  LTS, Fedora 44, Alpine 3.24 and Arch fetched, checked against their publisher's checksum and,
+  where the publisher signs, its OpenPGP signature, then written into a zvol, qcow2 read by Jail
+  Deck itself, from the VMs page or the API (JD-037, JD-053, JD-054).
   Creating a guest from one — CPU, memory, a disk cloned from the image, a NIC on the
   operator's switch, SSH keys and a static address through cloud-init — and destroying it,
   from the VMs pages or the API (JD-038). A default VM network for every node — a private

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import type { Image, ImageListing } from '../stores/vmImages.svelte'
 import { ApiError } from '../services/api'
 import VMImages from './VMImages.svelte'
@@ -114,6 +114,19 @@ describe('preparing an image', () => {
         await fireEvent.click(screen.getByRole('button', { name: 'Prepare' }))
         await waitFor(() => expect(prepared).toEqual([{ name: 'trixie', source: 'debian-13' }]))
         expect(await screen.findByText(/It keeps going if you leave this page/)).toBeTruthy()
+    })
+
+    it("names the publisher's key, or says the publisher signs nothing", async () => {
+        render(VMImages)
+        await fireEvent.click(await screen.findByRole('button', { name: 'Prepare an image' }))
+        expect(screen.getByText(/The publisher signs nothing/)).toBeTruthy()
+        cleanup()
+
+        listing.sources[0].signed_by = "Ubuntu's cloud image key"
+        render(VMImages)
+        await fireEvent.click(await screen.findByRole('button', { name: 'Prepare an image' }))
+        expect(screen.getByText(/checksums and Ubuntu's cloud image key/)).toBeTruthy()
+        expect(screen.queryByText(/The publisher signs nothing/)).toBeNull()
     })
 
     it('says an archive already on the host is only written', async () => {

@@ -50,7 +50,7 @@ func parseGrant(text string) (grant, error) {
 	// also what keeps it apart from zfs's own properties.
 	if !ok || !strings.Contains(property, ":") || value == "" ||
 		strings.ContainsFunc(selector, func(r rune) bool { return r < ' ' }) {
-		return grant{}, fmt.Errorf("%q is not a grant: exec takes a user property and its value, as exec:otter:role=cluster", text)
+		return grant{}, fmt.Errorf("%q is not a grant: exec takes a user property and its value, as exec:example:role=cluster", text)
 	}
 	return grant{property: property, value: value}, nil
 }

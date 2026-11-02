@@ -14,12 +14,12 @@ import (
 )
 
 func TestParseGrants(t *testing.T) {
-	got, err := ParseGrants([]string{"read", " exec:otter:role=cluster ", "read"})
-	if err != nil || strings.Join(got, ",") != "read,exec:otter:role=cluster" {
+	got, err := ParseGrants([]string{"read", " exec:example:role=cluster ", "read"})
+	if err != nil || strings.Join(got, ",") != "read,exec:example:role=cluster" {
 		t.Errorf("got %v, %v", got, err)
 	}
-	for _, bad := range []string{"write", "exec", "exec:role=cluster", "exec:otter:role=", "exec:otter:role",
-		"exec:otter:role=a\nb", "console", ""} {
+	for _, bad := range []string{"write", "exec", "exec:role=cluster", "exec:example:role=", "exec:example:role",
+		"exec:example:role=a\nb", "console", ""} {
 		if _, err := ParseGrants([]string{bad}); err == nil {
 			t.Errorf("%q was taken for a grant", bad)
 		}
@@ -42,15 +42,15 @@ func TestARestrictedTokenTakesNoScopes(t *testing.T) {
 }
 
 // restrict runs one request through Restrict as the principal in ctx, with
-// web carrying otter:role=cluster and db otter:role=platform-db.
+// web carrying example:role=cluster and db example:role=other.
 func restrict(t *testing.T, ctx context.Context, method, target string) (int, string) {
 	t.Helper()
 	properties := func(_ context.Context, jail string) (map[string]string, error) {
 		switch jail {
 		case "web":
-			return map[string]string{"otter:role": "cluster"}, nil
+			return map[string]string{"example:role": "cluster"}, nil
 		case "db":
-			return map[string]string{"otter:role": "platform-db"}, nil
+			return map[string]string{"example:role": "other"}, nil
 		case "broken":
 			return nil, errors.New("zfs: cannot open pool")
 		}
@@ -74,7 +74,7 @@ func TestRestrictLetsThroughOnlyWhatTheGrantsName(t *testing.T) {
 	as := func(token state.Token) context.Context {
 		return context.WithValue(context.Background(), bearerKey{}, token)
 	}
-	worker := as(state.Token{Name: "worker", Scopes: []string{}, Allow: []string{"read", "exec:otter:role=cluster"}})
+	worker := as(state.Token{Name: "worker", Scopes: []string{}, Allow: []string{"read", "exec:example:role=cluster"}})
 	cases := []struct {
 		name     string
 		ctx      context.Context
@@ -90,12 +90,12 @@ func TestRestrictLetsThroughOnlyWhatTheGrantsName(t *testing.T) {
 		{"exec in the platform database", worker, "POST", "/api/jails/db/exec", 403, "has no matching property"},
 		{"exec in a jail that is not there", worker, "POST", "/api/jails/nope/exec", 404, "jail not found"},
 		{"exec where the properties cannot be read", worker, "POST", "/api/jails/broken/exec", 403, "could not be read"},
-		{"a stop", worker, "POST", "/api/jails/web/stop", 403, "may only read; exec in jails with otter:role=cluster"},
+		{"a stop", worker, "POST", "/api/jails/web/stop", 403, "may only read; exec in jails with example:role=cluster"},
 		{"a relabel", worker, "PATCH", "/api/jails/db/properties", 403, "is neither"},
 		{"a destroy", worker, "DELETE", "/api/jails/web", 403, "is neither"},
 		{"an escaped path", worker, "POST", "/api/jails/w%65b/exec", 403, "is neither"},
 		{"a longer path", worker, "POST", "/api/jails/web/exec/x", 403, "is neither"},
-		{"a read without read", as(state.Token{Name: "x", Scopes: []string{}, Allow: []string{"exec:otter:role=cluster"}}),
+		{"a read without read", as(state.Token{Name: "x", Scopes: []string{}, Allow: []string{"exec:example:role=cluster"}}),
 			"GET", "/api/jails", 403, "no read grant"},
 		{"exec without exec", as(state.Token{Name: "x", Scopes: []string{}, Allow: []string{"read"}}),
 			"POST", "/api/jails/web/exec", 403, "no exec grant"},

@@ -230,7 +230,7 @@ then do only what its grants name, and anything else is refused with `403`:
 A platform's worker that reads and runs commands in its own jails gets:
 
 ```sh
-jaildeck token add otter-worker2 --allow read --allow exec:otter:role=cluster
+jaildeck token add worker --allow read --allow exec:example:role=cluster
 ```
 
 A leaked copy of that token can't stop a jail, destroy anything, change a property to widen

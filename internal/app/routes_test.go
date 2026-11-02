@@ -118,8 +118,20 @@ func TestUnknownAPIRouteReturnsJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create test app: %v", err)
 	}
+	router := a.Routes(testAssets())
+	// Unauthenticated, an unknown path asks for credentials like a known one:
+	// the front does not know the root side's routes (JD-056).
 	rec := httptest.NewRecorder()
-	a.Routes(testAssets()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/nope", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/nope", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("unauthenticated: status = %d, want 401", rec.Code)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/nope", nil)
+	for _, c := range login(t, router) {
+		req.AddCookie(c)
+	}
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
 	}

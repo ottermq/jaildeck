@@ -470,7 +470,7 @@ Goal: every guest on a network without a root shell, and, for Otter Cloud, a net
 
 ## Next: Privilege Separation (#206)
 
-**Status:** proposed (JD-056).
+**Status:** JD-056 locked; the split built on dev; the package creating the user is next.
 
 Goal: no code that runs before authentication runs as root (JD-051, option C). An unprivileged front, as a `jaildeck` user, does the listener, the UI, login and authentication. The root process serves the API as it is now, on a Unix socket only the front can reach. Nothing changes for an API client or an operator's `service jaildeck` commands.
 

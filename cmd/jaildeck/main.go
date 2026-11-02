@@ -74,6 +74,15 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "front":
+			cfg := config.LoadConfig()
+			lvl, _ := parseLogLevel(cfg.LogLevel)
+			setupLogHandler(lvl)
+			if err := runFront(cfg); err != nil {
+				slog.Error("jaildeck front: " + err.Error())
+				os.Exit(1)
+			}
+			return
 		default:
 			fmt.Fprintf(os.Stderr, "unknown command: %q\n", os.Args[1])
 			os.Exit(2)
@@ -97,6 +106,21 @@ func main() {
 			slog.Warn(warning)
 		}
 	}
+	// Started as root, Jail Deck runs its front as a user of its own
+	// (JD-056); otherwise both sides run here, in one process.
+	account, err := splitUser(cfg)
+	if err != nil {
+		slog.Error(err.Error())
+		os.Exit(1)
+	}
+	if account != nil {
+		if err := runSplit(cfg, account); err != nil {
+			slog.Error(err.Error())
+			os.Exit(1)
+		}
+		return
+	}
+
 	a, err := app.New(cfg)
 	if err != nil {
 		slog.Error(err.Error())

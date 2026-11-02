@@ -69,6 +69,25 @@ func TestSave_CreatesFileWith0600(t *testing.T) {
 	}
 }
 
+// A state dir open to its group, as the split sets it up (JD-056), gets a
+// file its group can read: the front's, which does not run as root.
+func TestSave_SharesWithAGroupDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewStore(dir).Save(State{PasswordHash: "hash"}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	fInfo, err := os.Stat(filepath.Join(dir, fileName))
+	if err != nil {
+		t.Fatalf("stating file: %v", err)
+	}
+	if perm := fInfo.Mode().Perm(); perm != 0o640 {
+		t.Errorf("Perm() = %#o, want %#o", perm, 0o640)
+	}
+}
+
 func TestSave_TwiceReplacesContents(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)

@@ -70,6 +70,15 @@ type Config struct {
 	// token with the console scope is then the only way in through Jail
 	// Deck. Negative so that the zero value is the default, on.
 	NoConsoleUI bool
+
+	// User is who the front runs as when Jail Deck starts as root (JD-056):
+	// the listener, the UI and signing in, with the root side reached through
+	// a socket in RunDir. OneProcess runs both in one process as root, as
+	// before: JAILDECK_SPLIT=off. Negative so that the zero value is the
+	// default, split.
+	User       string
+	RunDir     string
+	OneProcess bool
 }
 
 func LoadConfig() *Config {
@@ -98,6 +107,10 @@ func LoadConfig() *Config {
 		ConsoleIdle:    getDuration("JAILDECK_CONSOLE_IDLE", 30*time.Minute),
 		ConsoleOrigins: getList("JAILDECK_CONSOLE_ORIGINS"),
 		NoConsoleUI:    !getSwitch("JAILDECK_CONSOLE_UI", true),
+
+		User:       getEnv("JAILDECK_USER", "jaildeck"),
+		RunDir:     getEnv("JAILDECK_RUN_DIR", "/var/run/jaildeck"),
+		OneProcess: getOff("JAILDECK_SPLIT"),
 	}
 }
 
@@ -128,6 +141,21 @@ func getSwitch(key string, defaultValue bool) bool {
 		return false
 	default:
 		slog.Warn("a setting that is neither on nor off is taken as off", "key", key, "value", value)
+		return false
+	}
+}
+
+// getOff reads a switch that is on by default and protects something, so
+// only "off" turns it off. Anything else is on and, if it is not "on", says
+// so: the opposite of getSwitch, for the same reason.
+func getOff(key string) bool {
+	switch value := strings.ToLower(strings.TrimSpace(os.Getenv(key))); value {
+	case "", "on":
+		return false
+	case "off":
+		return true
+	default:
+		slog.Warn("a setting that is neither on nor off is taken as on", "key", key, "value", value)
 		return false
 	}
 }

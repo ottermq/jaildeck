@@ -25,7 +25,9 @@ As root, for a new installation only:
 
 Review host readiness before explicitly running jaildeck init. The package
 does not create ZFS datasets or change networking. Credentials, tokens, logs,
-live configuration and jail datasets are never package-owned.
+live configuration and jail datasets are never package-owned. The package
+does set how the audit log rotates: 10 MB, 10 files kept, in
+/usr/local/etc/newsyslog.conf.d/jaildeck.conf.
 
 Started as root, Jail Deck runs its front (the listeners, the UI, signing
 in) as the jaildeck user this package created, and gives that user its

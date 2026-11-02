@@ -44,7 +44,8 @@ sha256 -q /etc/rc.conf > "$work/rc.before"
 pkg add "$old"
 pkg info jaildeck
 pkg check -s jaildeck
-pkg query '%Fp' jaildeck | sort > "$work/files"
+# An older package may not have the rotation config yet; NEW's is checked below.
+pkg query '%Fp' jaildeck | grep -v newsyslog | sort > "$work/files"
 printf '%s\n' /usr/local/bin/jaildeck /usr/local/etc/jaildeck/jaildeck.env.sample \
     /usr/local/etc/rc.d/jaildeck | sort > "$work/expected-files"
 diff -u "$work/expected-files" "$work/files"
@@ -145,9 +146,44 @@ running=NO
 inventory > "$work/operator.after-split"
 diff -u "$work/operator.before" "$work/operator.after-split"
 
+# The rotation config (JD-058), as the hourly newsyslog reads it. Only the
+# package's own file is named here, so forcing it touches no other log.
+rotation=/usr/local/etc/newsyslog.conf.d/jaildeck.conf
+[ "$(stat -f '%Su:%Sg:%Lp' "$rotation")" = root:wheel:644 ] || fail 'rotation config permissions.'
+newsyslog -F -f "$rotation"
+[ "$(stat -f '%Su:%Sg:%Lp' "$audit_log")" = root:wheel:600 ] || fail 'the new audit log is not 0600.'
+[ ! -s "$audit_log" ] || fail 'rotation wrote into the new audit log.'
+[ "$(stat -f '%Lp' "$audit_log.0.bz2")" = 600 ] || fail 'the rotated audit log is not 0600.'
+bzcat "$audit_log.0.bz2" | grep -q 'operator-owned audit fixture' || fail 'rotation lost the old entries.'
+# Entries carry on in the new file with no restart and no signal: the running
+# service opens the log for each one.
+service jaildeck onestart
+running=YES
+attempt=0
+until curl -fsS http://127.0.0.1:18884/ -o /dev/null; do
+    attempt=$((attempt + 1))
+    [ "$attempt" -lt 20 ] || fail 'the service never became ready after rotating.'
+    sleep 1
+done
+newsyslog -F -f "$rotation"
+curl -sS -o /dev/null -X POST -H "Authorization: Bearer $(tail -1 "$work/token")" \
+    http://127.0.0.1:18884/api/jails/nginx/stop
+[ -s "$audit_log" ] || fail 'no entry reached the audit log after rotating under the service.'
+if grep -qv '^{' "$audit_log"; then fail 'the rotated audit log holds something other than JSON lines.'; fi
+service jaildeck onestop
+running=NO
+# pkg upgrade keeps an edited rotation config. pkg add replaces it and keeps the
+# edit beside it (measured, JD-058), which is what this checks.
+printf '%s\n' '# operator edit' >> "$rotation"
+pkg add -f "$new"
+grep -q '^# operator edit$' "$rotation.pkgsave" || fail 'pkg add lost an edited rotation config.'
+rm -f "$rotation.pkgsave"
+inventory > "$work/operator.before"
+
 pkg delete -y jaildeck
 if pkg info -e jaildeck; then fail 'package is still registered.'; fi
-for item in /usr/local/bin/jaildeck /usr/local/etc/rc.d/jaildeck /usr/local/etc/jaildeck/jaildeck.env.sample; do
+for item in /usr/local/bin/jaildeck /usr/local/etc/rc.d/jaildeck /usr/local/etc/jaildeck/jaildeck.env.sample \
+    /usr/local/etc/newsyslog.conf.d/jaildeck.conf; do
     [ ! -e "$item" ] || fail "package-owned file survived removal: $item"
 done
 pw usershow jaildeck >/dev/null || fail 'removal deleted the jaildeck user.'
@@ -156,4 +192,4 @@ diff -u "$work/operator.before" "$work/operator.after-delete"
 [ "$(zfs get -H -o value guid "$dataset@preserve")" = "$guid" ] || fail 'removal changed the ZFS snapshot.'
 sha256 -q /etc/rc.conf > "$work/rc.after-delete"
 diff -u "$work/rc.before" "$work/rc.after-delete"
-echo "lifecycle: PASS (install, the jaildeck user, runtime/UI/auth through the front, upgrade, removal, operator data and ZFS preservation)"
+echo "lifecycle: PASS (install, the jaildeck user, runtime/UI/auth through the front, upgrade, removal, log rotation, operator data and ZFS preservation)"

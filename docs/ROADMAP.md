@@ -501,7 +501,7 @@ Previously in scope, deliberately moved out. Not rejected — just not now.
 - **ZFS replication status** — the rest of the ZFS write operations moved into Storage Writes
 - **Structured application logging**, distinct from the operation audit trail (JD-011)
 - **Durable metrics history inside Jail Deck** — the one feature that would justify a database. Live values and a trailing in-memory window need none, and the `/metrics` endpoint hands history to Prometheus; the trigger is wanting a chart *over time* inside Jail Deck itself that survives a restart (JD-011)
-- **Audit log rotation or richer querying** — filtering currently scans the whole file. Harmless at single-operator scale; rotation is the cheaper answer before anything larger (JD-011)
+- **Richer audit querying** — filtering scans the current file, which rotation now keeps to 10 MB (JD-058). Older entries are in the rotated files, which the API doesn't read (JD-011)
 
 ## Not planned
 

@@ -2770,3 +2770,37 @@ jaildeck token add backup --allow read --allow 'snapshot:backup-*@example:role=c
 - **A leaked token can still destroy the snapshots its own pattern names.** That comes with a token that keeps its own retention. The snapshots that matter after a leak are the others.
 - **No record of who made a snapshot.** A ZFS user property on each snapshot could say so, and the grant could check it. The name is what the platform already controls and what an operator reads in `zfs list`, so the pattern is the simpler rule to see and to reason about.
 
+## JD-058 — The Package Rotates the Audit Log
+
+**Status:** Locked — 2026-11-02.
+
+JD-011 put the audit log in `/var/log` and accepted that `newsyslog` would rotate it, and the README told the operator to set that up. Nothing did, so on a host where nobody read that line the log grew without end, and every filter on `GET /api/audit` scans the whole file. Production defaults shouldn't depend on it.
+
+### What ships
+
+```
+/var/log/jaildeck/audit.log    root:wheel     600   10     10240  *     BJN
+```
+
+- **By size, not by date.** A host's rate depends on what drives it: an unattended worker writes far more than an operator. A size bound is what keeps the scan's cost fixed. A full 10 MB file, about 50,000 entries, took a quarter of a second to filter on a laptop.
+- **Ten files, compressed.** Up to 110 MB of entries before the oldest goes. An audit trail is worth keeping, and it compresses well.
+- **`B`,** because the file is JSON lines and `newsyslog` would otherwise write a text message into it.
+- **`N`,** because there's nothing to signal: `Log` opens the file for each entry (JD-011). The lifecycle test rotates under a running service to prove it.
+- **`0600`,** the same as the log itself. It records every command Jail Deck ran.
+
+### A config file the package owns, marked `@config`
+
+The log stays the operator's. The rule for rotating it is the package's, since it has to arrive with the package to do any good. Retention is the operator's to change, so a plain file wasn't enough: an upgrade would silently undo a longer retention, and the oldest evidence would go with it. Measured with pkg 2.8.4:
+
+| What ran | An edited config |
+| --- | --- |
+| `pkg upgrade` | kept |
+| `pkg add`, `pkg add -f` | replaced, the edit kept as `jaildeck.conf.pkgsave` |
+| `pkg delete` | removed |
+
+`.pkgsave` doesn't match `newsyslog`'s `[!.]*.conf`, so a saved copy is never read as a second rule. `@sample` would keep an edit in all three, but it's a ports framework keyword that `pkg create` doesn't have here, and writing the same logic as install scripts is more than this needs.
+
+### What it costs
+
+- **`GET /api/audit` now loses history on every host,** at each rotation, with nothing in the response to say so. JD-011 accepted this; the difference is that it now happens by default. Reading the rotated files would make every filter slow again, which is what this is for.
+- **Only the default path is covered.** `JAILDECK_AUDIT_LOG` elsewhere needs a line of its own. A missing file is skipped silently, so a host using another path gets no rotation and no complaint.

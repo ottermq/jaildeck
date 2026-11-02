@@ -20,6 +20,12 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+- **Every audit entry names who acted.** `principal` (`session` or `token:<name>`) was on
+  console entries only; now every entry a request writes has it, a detached operation's too.
+  Entries for what changed on the host outside Jail Deck still have none.
+
 ## v0.29.1 — 2026-11-02
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.29.1)

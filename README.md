@@ -501,6 +501,9 @@ path holding something that is not a socket is a configuration error and is neve
 every audit entry it produces carries it back as `request_id`, which `GET
 /api/audit?request_id=…` then filters on (JD-016). Nothing is stored that you did not
 send: a request without the header produces entries with no `request_id` field at all.
+Every entry a request produces also names who made it, as `principal`: `session` for the
+operator's login, `token:<name>` for a token. That makes a limited token's work easy to tell
+apart from everyone else's.
 
 The id may be up to 64 characters of ASCII letters, digits and `-._:` — enough for a UUID,
 a ULID or a `trace:span` pair. An id outside that is **dropped, not rejected**: the

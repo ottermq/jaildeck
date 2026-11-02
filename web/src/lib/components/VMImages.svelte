@@ -209,7 +209,7 @@ function vmHref(name: string): string {
                 </div>
                 {#if source}
                     <p class="hint">
-                        {source.description}.
+                        {source.description}. Its default user is <code>{source.user}</code>.
                         {#if source.fetched}
                             Its archive is already on this host, so this only writes it into a new zvol —
                             under a minute.

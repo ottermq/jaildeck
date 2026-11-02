@@ -4985,6 +4985,10 @@
                 "url": {
                     "description": "URL is the archive's, for the operator to see what will be fetched.",
                     "type": "string"
+                },
+                "user": {
+                    "description": "User is the image's default user, the one cloud-init gives the SSH\nkeys to: debian, ubuntu, fedora, alpine, arch (#137).",
+                    "type": "string"
                 }
             }
         },

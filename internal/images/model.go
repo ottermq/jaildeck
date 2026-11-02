@@ -44,6 +44,9 @@ type Source struct {
 	Description string `json:"description"`
 	// URL is the archive's, for the operator to see what will be fetched.
 	URL string `json:"url"`
+	// User is the image's default user, the one cloud-init gives the SSH
+	// keys to: debian, ubuntu, fedora, alpine, arch (#137).
+	User string `json:"user"`
 	// Fetched is whether the verified archive is already on the host, so
 	// preparing an image from it starts at the write.
 	Fetched bool `json:"fetched"`

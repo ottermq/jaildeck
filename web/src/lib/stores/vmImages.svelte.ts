@@ -44,6 +44,9 @@ export interface ImageSource {
     url: string
     // The image's default user, the one cloud-init gives the SSH keys to.
     user: string
+    // The publisher's key a download is checked against, besides its
+    // checksum. Absent for a publisher that signs nothing (Debian).
+    signed_by?: string
     // Its verified archive is already on the host, so preparing starts at
     // the write.
     fetched: boolean

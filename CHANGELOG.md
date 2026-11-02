@@ -20,6 +20,21 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+### Added
+
+- **Publishers' signatures are checked** (JD-054): an Ubuntu, Fedora, Alpine or Arch image is
+  verified against its publisher's OpenPGP signature as well as its checksum, with the
+  publisher's key built into Jail Deck. A checksum file that isn't signed is refused before the
+  download, and an archive that isn't signed is removed. Debian publishes no signature for its
+  cloud images, and the prepare form says so.
+
+### API
+
+- **`GET /api/vm-images`**: each source has `signed_by`, the publisher key its download is
+  checked against, absent for Debian. Additive.
+
 ## v0.27.0 — 2026-11-01
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.27.0)

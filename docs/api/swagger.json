@@ -5014,6 +5014,10 @@
                 "name": {
                     "type": "string"
                 },
+                "signed_by": {
+                    "description": "SignedBy names the publisher's key a download is checked against,\nbesides its checksum (JD-054). Absent for a publisher that signs\nnothing, which Debian's cloud images are.",
+                    "type": "string"
+                },
                 "url": {
                     "description": "URL is the archive's, for the operator to see what will be fetched.",
                     "type": "string"

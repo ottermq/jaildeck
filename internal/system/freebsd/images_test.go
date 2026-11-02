@@ -3,6 +3,7 @@ package freebsd
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -469,18 +470,127 @@ func TestWriteReadsAQcow2ArchiveItself(t *testing.T) {
 	}
 }
 
-func TestFetchChecksAnArchiveWithItsPublishersDigest(t *testing.T) {
+// signedBy swaps a catalog entry's key for a test key, for one test: the
+// publishers' secret keys are not to hand, so what they sign is constructed
+// with keys of the same kind.
+func signedBy(t *testing.T, source string, key signingKey) {
+	t.Helper()
+	for i := range imageCatalog {
+		if imageCatalog[i].Name == source {
+			old := imageCatalog[i].key
+			imageCatalog[i].key = key
+			t.Cleanup(func() { imageCatalog[i].key = old })
+			return
+		}
+	}
+	t.Fatalf("no source %s", source)
+}
+
+// Arch's form: the archive itself signed, Ed25519 over SHA-512 (JD-054).
+func archFetch(t *testing.T, content string) (*ImageAdapter, *imageRunner) {
+	ed, _ := testKeys(t)
+	signedBy(t, "arch", ed)
 	archive := "/vm/.images/Arch-Linux-x86_64-cloudimg.qcow2"
 	digest := "794eb4889b39e1f0ed7d5ae998b2a1ed2137db8cf8c3476cf2962c7437ecb003"
 	a, runner := imageAdapter(t, nil, map[string]system.CommandResult{
 		"zfs list -H -o name tank/vm/.images": {Stdout: "tank/vm/.images\n"},
 		"fetch -q -o - " + archLatest + "/Arch-Linux-x86_64-cloudimg.qcow2.SHA256": {
 			Stdout: digest + "  Arch-Linux-x86_64-cloudimg.qcow2\n"},
+		"fetch -q -o - " + archLatest + "/Arch-Linux-x86_64-cloudimg.qcow2.sig": {
+			Stdout: string(pgpFixture(t, "archive.bin.sig"))},
 		"fetch -a -o " + archive + ".part " + archLatest + "/Arch-Linux-x86_64-cloudimg.qcow2": {},
 		"sha256 -q " + archive + ".part":     {Stdout: digest + "\n"},
 		"mv " + archive + ".part " + archive: {},
+		"rm -f " + archive + ".part":         {},
 	})
+	a.openArchive = func(p string) (io.ReadCloser, error) {
+		if p != archive+".part" {
+			t.Errorf("opened %s", p)
+		}
+		return io.NopCloser(strings.NewReader(content)), nil
+	}
+	return a, runner
+}
+
+func TestFetchChecksAnArchiveWithItsPublishersSignature(t *testing.T) {
+	a, runner := archFetch(t, string(pgpFixture(t, "archive.bin")))
 	if _, err := a.Fetch(context.Background(), isengardImages, "arch"); err != nil {
+		t.Fatalf("%v: %v", err, runner.lines())
+	}
+	ran := runner.lines()
+	if last := ran[len(ran)-1]; !strings.HasPrefix(last, "mv ") {
+		t.Errorf("ran %v", ran)
+	}
+}
+
+// Constructed: an archive that matches its checksum but not its signature,
+// which is what a mirror serving its own archive and checksum would give.
+func TestFetchRemovesAnArchiveItsPublisherDidNotSign(t *testing.T) {
+	a, runner := archFetch(t, "a disk image, from somewhere else\n")
+	_, err := a.Fetch(context.Background(), isengardImages, "arch")
+	var appErr *common.AppError
+	if !errors.As(err, &appErr) || appErr.Code != http.StatusBadGateway || !strings.Contains(err.Error(), "is not signed by") {
+		t.Fatalf("err = %v, want a 502 naming the signature", err)
+	}
+	ran := runner.lines()
+	if !slices.Contains(ran, "rm -f /vm/.images/Arch-Linux-x86_64-cloudimg.qcow2.part") ||
+		slices.ContainsFunc(ran, func(l string) bool { return strings.HasPrefix(l, "mv ") }) {
+		t.Errorf("ran %v", ran)
+	}
+}
+
+// Ubuntu's form, with Ubuntu's own published files: SHA256SUMS signed.
+func TestFetchChecksUbuntusSignedChecksums(t *testing.T) {
+	archive := "/vm/.images/ubuntu-26.04-server-cloudimg-amd64.img"
+	sums := string(pgpFixture(t, "ubuntu-SHA256SUMS"))
+	digest, err := sumsEntry(sums, "ubuntu-26.04-server-cloudimg-amd64.img", "sha256")
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := map[string]system.CommandResult{
+		"zfs list -H -o name tank/vm/.images":         {Stdout: "tank/vm/.images\n"},
+		"fetch -q -o - " + ubuntu2604 + "/SHA256SUMS": {Stdout: sums},
+		"fetch -q -o - " + ubuntu2604 + "/SHA256SUMS.gpg": {
+			Stdout: string(pgpFixture(t, "ubuntu-SHA256SUMS.gpg"))},
+		"fetch -a -o " + archive + ".part " + ubuntu2604 + "/ubuntu-26.04-server-cloudimg-amd64.img": {},
+		"sha256 -q " + archive + ".part":     {Stdout: digest + "\n"},
+		"mv " + archive + ".part " + archive: {},
+	}
+	a, runner := imageAdapter(t, nil, results)
+	if _, err := a.Fetch(context.Background(), isengardImages, "ubuntu-26.04"); err != nil {
+		t.Fatalf("%v: %v", err, runner.lines())
+	}
+
+	// A checksum changed on the way: refused before the download.
+	results["fetch -q -o - "+ubuntu2604+"/SHA256SUMS"] = system.CommandResult{
+		Stdout: strings.Replace(sums, digest, strings.Repeat("0", 64), 1)}
+	a, runner = imageAdapter(t, nil, results)
+	if _, err := a.Fetch(context.Background(), isengardImages, "ubuntu-26.04"); err == nil ||
+		!strings.Contains(err.Error(), "SHA256SUMS is not signed by Ubuntu's cloud image key") {
+		t.Errorf("err = %v", err)
+	}
+	if slices.ContainsFunc(runner.lines(), func(l string) bool { return strings.HasPrefix(l, "fetch -a ") }) {
+		t.Error("downloaded the archive although its checksum file was not signed")
+	}
+}
+
+// Fedora's form, with Fedora's own published file: the checksum file signed
+// in place.
+func TestFetchChecksFedorasSignedChecksums(t *testing.T) {
+	archive := "/vm/.images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2"
+	checksum := string(pgpFixture(t, "fedora-44-CHECKSUM"))
+	digest, err := sumsEntry(checksum, "Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2", "sha256")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, runner := imageAdapter(t, nil, map[string]system.CommandResult{
+		"zfs list -H -o name tank/vm/.images":                                                             {Stdout: "tank/vm/.images\n"},
+		"fetch -q -o - " + fedora44 + "/Fedora-Cloud-44-1.7-x86_64-CHECKSUM":                              {Stdout: checksum},
+		"fetch -a -o " + archive + ".part " + fedora44 + "/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2": {},
+		"sha256 -q " + archive + ".part":                                                                  {Stdout: digest + "\n"},
+		"mv " + archive + ".part " + archive:                                                              {},
+	})
+	if _, err := a.Fetch(context.Background(), isengardImages, "fedora-44"); err != nil {
 		t.Fatalf("%v: %v", err, runner.lines())
 	}
 }

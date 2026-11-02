@@ -63,6 +63,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Addresses on Jail Deck's networks** (v0.24.0): a jail or guest on the default or a tenant network gets the lowest free address, from what the host's stanzas, seeds and ARP table say is taken, an address asked for refused when taken, a jail created on a network by name, and the addresses in use shown (#118 step 3, JD-047)
 - **Inspect** (v0.25.0): a jail's stanza and rctl rules, and a guest's vm-bhyve configuration and cloud-init seed, shown as the host has them, read only, a password's hash masked (#127, JD-048); a guest's directory made private to root (#152)
 - **Housekeeping and usage** (v0.26.0): unused templates, images, retained datasets, old snapshots and downloaded archives listed with what they hold and removed through the existing endpoints, other tools' snapshots left alone (#125, JD-049); running guests' CPU and memory in the metrics and Prometheus, and two-minute sparklines in the Instances list (#126, JD-050)
+- **Live updates and more images** (v0.27.0): a server-sent event stream of operations, outside state changes and progress, and pages that reload on it, with a Live marker in the rail (#124, JD-052); Ubuntu 26.04, Fedora 44, Alpine 3.24 and Arch images, their qcow2 read by Jail Deck itself (#137, JD-053)
 
 ---
 

@@ -20,7 +20,15 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.27.0 — 2026-11-01
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.27.0)
+
+**Live updates and more images.** Pages update as things change, whoever changes them: another
+operator, an automation, or a command run in a shell (#124). Ubuntu 26.04, Fedora 44, Alpine 3.24
+and Arch join Debian 13 as cloud images, and Jail Deck reads their qcow2 itself (#137).
+Nothing to act on when upgrading: no new setting, and nothing in `pf.conf` or `rc.conf`. A proxy
+in front of Jail Deck must not buffer `/api/events`; Jail Deck sends `X-Accel-Buffering: no`.
 
 ### Added
 

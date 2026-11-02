@@ -20,6 +20,12 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+- **The package creates the `jaildeck` user and group** when they are missing (#206): the
+  first id from 850 free as both, `nologin`, no home. Removal keeps them. Jail Deck's front
+  runs as this user (JD-056).
+
 ## v0.28.0 — 2026-11-02
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.28.0)

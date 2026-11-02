@@ -159,3 +159,35 @@ func TestEntryOmitsEmptyRequestID(t *testing.T) {
 		t.Errorf("audit line = %s, want no request_id field at all", raw)
 	}
 }
+
+// The principal is stamped as the request id is: from the context, unless
+// the entry already names one (the console names its own), and not at all
+// for work no request started.
+func TestFileLoggerStampsThePrincipalFromContext(t *testing.T) {
+	logger := NewFileLogger(t.TempDir() + "/audit.log")
+	ctx := ContextWithPrincipal(context.Background(), "token:backup")
+	for _, e := range []Entry{
+		{Operation: "snapshot", Target: "web"},
+		{Operation: "console-open", Target: "jail/web", Principal: "session"},
+	} {
+		if err := logger.Log(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := logger.Log(context.Background(), Entry{Operation: "changed", Target: "web"}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := logger.Recent(context.Background(), 10, Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, e := range entries {
+		got[e.Operation] = e.Principal
+	}
+	for op, want := range map[string]string{"snapshot": "token:backup", "console-open": "session", "changed": ""} {
+		if got[op] != want {
+			t.Errorf("%s: principal %q, want %q", op, got[op], want)
+		}
+	}
+}

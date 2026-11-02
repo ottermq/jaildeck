@@ -27,6 +27,9 @@ versions' release notes stay there. GitHub numbering started again at #1.
   ending in `*`), in jails with that label. Other snapshots, rollback and a dataset's own
   snapshots stay refused, so a leaked backup token can't destroy the snapshots that are kept
   to restore from. Asked for by Otter Cloud.
+- **Every audit entry names who acted.** `principal` (`session` or `token:<name>`) was on
+  console entries only; now every entry a request writes has it, a detached operation's too.
+  Entries for what changed on the host outside Jail Deck still have none.
 
 ## v0.29.1 — 2026-11-02
 

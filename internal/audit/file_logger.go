@@ -28,6 +28,9 @@ func (l *FileLogger) Log(ctx context.Context, entry Entry) error {
 	if entry.RequestID == "" {
 		entry.RequestID = RequestIDFromContext(ctx)
 	}
+	if entry.Principal == "" {
+		entry.Principal = PrincipalFromContext(ctx)
+	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()

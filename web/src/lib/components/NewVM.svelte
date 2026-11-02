@@ -41,6 +41,7 @@ onMount(async () => {
         const listing = await listImages()
         // Only a ready image can be cloned from.
         images = listing.images.filter(i => i.ready && !i.running)
+        users = new Map(listing.sources.map(s => [s.name, s.user]))
         image = images[0]?.name ?? ''
     } catch {
         imagesError = 'Could not read the images'
@@ -67,6 +68,9 @@ let password = $state('')
 let start = $state(true)
 
 let chosen = $derived(images?.find(i => i.name === image))
+// Each source's default user, which the keys and the password are for.
+let users = $state(new Map<string, string>())
+let user = $derived(chosen?.source ? users.get(chosen.source) : undefined)
 let onDefault = $derived(defaultNet !== null && vmSwitch === defaultNet.switch)
 // The Jail Deck network the chosen switch is, if it is one.
 let network = $derived(networks.find(n => n.switch === vmSwitch))
@@ -258,7 +262,7 @@ async function submit(event: Event) {
                       placeholder="ssh-ed25519 AAAA… you@laptop"></textarea>
         </div>
         <p class="hint">
-            One per line, for the image's default user (<code>debian</code> on Debian).
+            One per line, for the image's default user{#if user}, <code>{user}</code>{/if}.
         </p>
 
         <div class="field">

@@ -1,5 +1,6 @@
 <script lang="ts">
-import { onMount } from 'svelte'
+import { onDestroy, onMount } from 'svelte'
+import { onLive, aboutInstances } from '../stores/events.svelte'
 import { onNavClick } from '../router.svelte'
 import { listJails, runJailOperation } from '../stores/jails.svelte'
 import type { JailData, Operation } from '../stores/jails.svelte'
@@ -27,6 +28,9 @@ async function load() {
 onMount(() => {
     load()
 })
+
+// Read again when the live stream says something here changed (#124).
+onDestroy(onLive(aboutInstances, load))
 
 async function run(j: JailData, op: Operation) {
     if (pending[j.name]) return

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte'
+import { onLive, aboutWork } from '../stores/events.svelte'
 import { getTemplate, listTemplates, classifyClones, removeTemplate } from '../stores/templates.svelte'
 import type { Template, TemplateDetail, Blocked } from '../stores/templates.svelte'
 import { listJails } from '../stores/jails.svelte'
@@ -58,6 +59,11 @@ $effect(() => {
 onDestroy(() => {
     if (poll !== null) clearInterval(poll)
 })
+
+// Read again when the live stream reports an operation or a step (#124):
+// work someone else started shows up without a reload. The poll above stays,
+// since it is also what moves the elapsed time along.
+onDestroy(onLive(aboutWork('template'), load))
 
 // What depends on this template, split by what each clone turned out to be --
 // a jail, another template, or something made outside Jail Deck. Worth

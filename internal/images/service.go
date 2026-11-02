@@ -25,6 +25,14 @@ type Service struct {
 	running *operations
 }
 
+// OnProgress is told each step of the images this process is preparing,
+// and the end of each with an empty step (#124).
+func (s *Service) OnProgress(fn func(name, step string)) {
+	s.running.mu.Lock()
+	defer s.running.mu.Unlock()
+	s.running.notify = fn
+}
+
 func NewService(system ImageSystem, auditLogger audit.Logger) *Service {
 	return &Service{system: system, audit: auditLogger, running: newOperations()}
 }

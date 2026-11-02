@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte'
+import { onLive, aboutInstances } from '../stores/events.svelte'
 import { SvelteSet } from 'svelte/reactivity'
 import { onNavClick } from '../router.svelte'
 import { createSnapshot, listJails, runJailOperation } from '../stores/jails.svelte'
@@ -91,6 +92,7 @@ onMount(() => {
     usageTimer = setInterval(refreshUsage, INTERVAL)
 })
 onDestroy(() => clearInterval(usageTimer))
+onDestroy(onLive(aboutInstances, load))
 
 function trail(key: string, of: 'cpu' | 'memory'): number[] {
     void seen

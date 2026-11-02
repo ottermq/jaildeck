@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte'
+import { onLive, aboutWork } from '../stores/events.svelte'
 import { listImages, prepareImage, removeImage } from '../stores/vmImages.svelte'
 import type { Image, ImageListing } from '../stores/vmImages.svelte'
 import { ApiError } from '../services/api'
@@ -64,6 +65,11 @@ $effect(() => {
 onDestroy(() => {
     if (poll !== null) clearInterval(poll)
 })
+
+// Read again when the live stream reports an operation or a step (#124):
+// work someone else started shows up without a reload. The poll above stays,
+// since it is also what moves the elapsed time along.
+onDestroy(onLive(aboutWork('image'), load))
 
 function elapsed(since: string): string {
     const seconds = Math.max(0, Math.round((Date.now() - new Date(since).getTime()) / 1000))
@@ -209,7 +215,7 @@ function vmHref(name: string): string {
                 </div>
                 {#if source}
                     <p class="hint">
-                        {source.description}.
+                        {source.description}. Its default user is <code>{source.user}</code>.
                         {#if source.fetched}
                             Its archive is already on this host, so this only writes it into a new zvol —
                             under a minute.

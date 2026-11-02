@@ -29,6 +29,9 @@ type Running struct {
 type operations struct {
 	mu   sync.Mutex
 	work map[string]Running
+	// notify is told each step and, with an empty step, the end: the live
+	// stream's progress events (#124). Called outside the lock.
+	notify func(name, step string)
 }
 
 func newOperations() *operations {
@@ -40,12 +43,17 @@ func newOperations() *operations {
 // the same dataset is not a thing to serialise, it is a thing to say no to.
 func (o *operations) start(name string, running Running) bool {
 	o.mu.Lock()
-	defer o.mu.Unlock()
 	if _, busy := o.work[name]; busy {
+		o.mu.Unlock()
 		return false
 	}
 	running.Since = time.Now().UTC()
 	o.work[name] = running
+	notify := o.notify
+	o.mu.Unlock()
+	if notify != nil {
+		notify(name, running.Step)
+	}
 	return true
 }
 
@@ -54,17 +62,27 @@ func (o *operations) start(name string, running Running) bool {
 // going, not how long this particular command has.
 func (o *operations) step(name, state, step string) {
 	o.mu.Lock()
-	defer o.mu.Unlock()
-	if current, ok := o.work[name]; ok {
+	current, ok := o.work[name]
+	if ok {
 		current.State, current.Step = state, step
 		o.work[name] = current
+	}
+	notify := o.notify
+	o.mu.Unlock()
+	if ok && notify != nil {
+		notify(name, step)
 	}
 }
 
 func (o *operations) stop(name string) {
 	o.mu.Lock()
-	defer o.mu.Unlock()
+	_, ok := o.work[name]
 	delete(o.work, name)
+	notify := o.notify
+	o.mu.Unlock()
+	if ok && notify != nil {
+		notify(name, "")
+	}
 }
 
 func (o *operations) of(name string) (Running, bool) {

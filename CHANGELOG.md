@@ -20,6 +20,38 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.27.0 — 2026-11-01
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.27.0)
+
+**Live updates and more images.** Pages update as things change, whoever changes them: another
+operator, an automation, or a command run in a shell (#124). Ubuntu 26.04, Fedora 44, Alpine 3.24
+and Arch join Debian 13 as cloud images, and Jail Deck reads their qcow2 itself (#137).
+Nothing to act on when upgrading: no new setting, and nothing in `pf.conf` or `rc.conf`. A proxy
+in front of Jail Deck must not buffer `/api/events`; Jail Deck sends `X-Accel-Buffering: no`.
+
+### Added
+
+- **More cloud images** (#137, JD-053): Ubuntu 26.04 LTS, Fedora 44 Cloud Base, Alpine 3.24 and
+  Arch beside Debian 13 under **Prepare an image**. Each was booted to SSH on a lab host first.
+  They publish qcow2, which **Jail Deck reads itself** and writes straight into the zvol, holes
+  left sparse; no QEMU package is needed. Each download is checked against its publisher's
+  checksum file, whatever its form. The default user is named where the keys are entered.
+- **Live updates** (#124, JD-052): the pages about instances, templates and images read again
+  when something changes, whoever changed it: another operator, an automation, or a
+  `service jail stop` in a shell, which Jail Deck notices within 10 s while a page is open.
+  The rail says **Live** or **Not live**; when not live, pages behave as before.
+
+### API
+
+- **`GET /api/vm-images`**: each source has `user`, its default user. `PUT /api/vm-images/{name}`
+  takes the four new sources. Additive.
+- **`GET /api/events`**: a server-sent event stream of `operation` (each audited operation, as
+  `/api/audit` shows it), `state` (an instance whose state changed outside Jail Deck),
+  `progress` (a template's or image's step) and `reset` (read everything again). `Last-Event-ID`
+  resumes from the last 256 events. A heartbeat every 15 s; at most 32 streams, then `503`.
+  A stream closes when its session ends or its token is revoked. Additive.
+
 ## v0.26.0 — 2026-11-01
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.26.0)

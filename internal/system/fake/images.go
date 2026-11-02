@@ -68,9 +68,11 @@ func (f *Images) Store(context.Context) (images.Store, error) {
 func (f *Images) Sources() []images.Source {
 	return []images.Source{
 		{Name: "debian-13", Description: "Debian 13 (trixie), genericcloud, amd64, with cloud-init",
-			URL: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.tar.xz"},
+			URL: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.tar.xz", User: "debian"},
+		{Name: "ubuntu-26.04", Description: "Ubuntu 26.04 LTS, server cloud image, amd64, with cloud-init",
+			URL: "https://cloud-images.ubuntu.com/releases/resolute/release/ubuntu-26.04-server-cloudimg-amd64.img", User: "ubuntu"},
 		{Name: FailingImageSource, Description: "Fake only: its write fails, leaving a zvol with no @base",
-			URL: "https://example.invalid/fails-to-write.tar.xz"},
+			URL: "https://example.invalid/fails-to-write.tar.xz", User: "nobody"},
 	}
 }
 

@@ -42,6 +42,8 @@ export interface ImageSource {
     name: string
     description: string
     url: string
+    // The image's default user, the one cloud-init gives the SSH keys to.
+    user: string
     // Its verified archive is already on the host, so preparing starts at
     // the write.
     fetched: boolean

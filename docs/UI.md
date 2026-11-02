@@ -212,7 +212,7 @@ A guest's page has its configuration (with resident memory beside the configured
 
 **Images** are a second panel under the guests, shown once vm-bhyve is ready (JD-037): each image's state, the source it was written from with the first twelve characters of its build's SHA-512 (the whole one on hover), its disk size, what it costs the pool, and the guests cloned from it, linked to their pages. A panel rather than a page of its own, because `/vms/images` would be the page of a guest called `images`. A datastore that cannot hold images — not on ZFS — gets amber and the server's reason, and no Prepare button.
 
-**Preparing** is a form with the source and a name that starts as the source's own. The hint says what will happen: the URL to be downloaded and checked, or, when the source's archive is already on the host, that this is only a write. The panel then polls every two seconds while anything is running and stops when nothing is, as Templates does (JD-008). **It says how the work it started came out**: "ready", or, in amber, that the image stopped before it was ready and at which state, with a link to Operations, where the failed stage's audit entry says why. Without that, a failed write looked exactly like a successful start until someone noticed the grey badge — the screenshots showed it.
+**Preparing** is a form with the source and a name that starts as the source's own. The hint says what will happen: the URL to be downloaded and checked, or, when the source's archive is already on the host, that this is only a write. It names the image's default user (#137), and so does the create form's hint for SSH keys, for the image chosen there. The panel then polls every two seconds while anything is running and stops when nothing is, as Templates does (JD-008). **It says how the work it started came out**: "ready", or, in amber, that the image stopped before it was ready and at which state, with a link to Operations, where the failed stage's audit entry says why. Without that, a failed write looked exactly like a successful start until someone noticed the grey badge — the screenshots showed it.
 
 **Removing** asks for the name typed, as removing a template does. The refusal for an image a guest uses comes back naming the guest and is shown under the image's row.
 
@@ -228,7 +228,7 @@ A guest's page has its configuration (with resident memory beside the configured
 
 Checked against the real host as well as the fake: on isengard through an SSH tunnel, a guest created from the form was reached over SSH on the address typed into it, then stopped and destroyed from its page.
 
-No polling: a guest changes when someone starts or stops it, and the page re-reads after its own operations.
+No polling: a guest changes when someone starts or stops it. The page re-reads after its own operations, and while the live stream is up, also after anyone else's or a change seen on the host (#124).
 
 ### Networks page
 
@@ -255,7 +255,8 @@ Settled by building it, between v0.6.0 and v0.16.0. These were open questions he
 5. **One `fetch` wrapper** (`src/lib/services/api.ts`). Every call goes to `/api`, and a `401` clears the session state, so the app shows the login page. A failure is an `ApiError` carrying the status, the server's message and the decoded body, because a `409` often explains itself in its body (JD-024).
 6. **Refetch after every mutation**, whichever way it went: a command that failed can still have changed the host. Nothing is optimistic.
 7. **Long-running work is polled.** A page reads its listing every 2 seconds while anything in it has `running` (JD-008), and stops when nothing does. Templates and VM images both work this way. A page that started work says how it came out, because a `202` only says the work began.
-8. **Destructive actions go through one confirm dialog** (`stores/confirm.svelte.ts`, mounted once in the shell). It asks for a typed name where the API demands `confirm=`.
+8. **The live stream is on top of all this, never instead of it** (#124, JD-052). `stores/events.svelte.ts` opens one `EventSource` on `/api/events` when the shell mounts, and closes it when signing out unmounts the shell. An event only names what changed, so a page that cares calls `onLive(wanted, load)` and reads again through the endpoints it already uses. A burst becomes one reload, and a `reset` reloads every listener. Instances, Jails, VMs, a jail's or guest's page, Templates, a template's page and the VM images panel listen. The 2-second poll during long work stays, because it also moves the elapsed time along. While the stream is down, every page behaves as it did before it existed. The rail's session block says which: **Updates · Live**, with a green dot, or **Not live**.
+9. **Destructive actions go through one confirm dialog** (`stores/confirm.svelte.ts`, mounted once in the shell). It asks for a typed name where the API demands `confirm=`.
 
 ## Checking a frontend change
 

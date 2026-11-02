@@ -2511,7 +2511,7 @@ The usual answer is a **root-owned wrapper per operation**, such as `jaildeck-zf
 
 ## JD-052 — Live State: An Event Stream on Top of the Reads
 
-**Status:** Proposed — 2026-10-30. The design note #124 asks for, for the owner to decide before any code. Timings measured on isengard, read only.
+**Status:** Locked — 2026-11-01, built in #124. Proposed 2026-10-30 as the design note #124 asked for. Timings measured on isengard, read only.
 
 Pages read their state when they open, and poll only while something long runs (JD-008). With several operators and automations acting at once, a page goes stale without saying so. JD-008 left room for server-sent events "on top rather than replacing" polling. This is that.
 
@@ -2524,7 +2524,7 @@ Pages read their state when they open, and poll only while something long runs (
 ```
 id: 7f3c-1042
 event: operation
-data: {"operation":"jail-stop","target":"web","success":true,"request_id":"…"}
+data: {"operation":"stop","target":"web","success":true,"request_id":"…"}
 
 id: 7f3c-1043
 event: state
@@ -2560,7 +2560,58 @@ One `EventSource` for the whole app, opened after sign-in. Each store refetches 
 - **Webhooks or any delivery off the host.** The stream is for clients that are connected.
 - **History.** The audit log is history; the stream is now.
 
-### Open
+### Answered when built
 
-- The comparison interval: 10 s is a guess at "soon enough". It could follow the subscriber count, or be a setting.
-- Whether `state` events from Jail Deck's own operations should be suppressed when the `operation` event already says the same thing.
+- **The comparison interval is a fixed 10 s.** At under 1% of one core it needs no setting, and following the subscriber count would make freshness depend on who else is watching.
+- **A `state` event is suppressed when Jail Deck's own operation on that name was announced in the same interval.** The `operation` event already says it, and two hints for one change would mean two reloads. The suppression is by name, not by kind, so a jail and a guest of the same name can hide each other's change for one interval. They are reloaded by the operation's event anyway.
+- **In the interface, the 2-second poll during long work stays while live.** It is also what moves the elapsed time along. The stream adds what the poll never had: work that someone else started shows up.
+
+## JD-053 — More Cloud Images, and Reading qcow2 Ourselves
+
+**Status:** Locked — 2026-11-01. Owner's decisions on #137: all four distributions, and a small qcow2 reader of Jail Deck's own rather than qemu-img. Measured on isengard, each image booted to SSH through the API.
+
+JD-037 made Debian 13 the one image, because Debian publishes a raw disk in a `.tar.xz` that `tar` in base reads. Ubuntu, Fedora, Alpine and Arch publish qcow2, and nothing in base reads it.
+
+### What the published images are
+
+Read off their headers before any code: every one is **qcow2 version 3, 64 KiB clusters, no encryption, no backing file, no snapshots, no incompatible features**, so compression, where there is any, is zlib.
+
+| Source | Archive | Checksum file | Default user |
+|---|---|---|---|
+| `ubuntu-26.04` | `ubuntu-26.04-server-cloudimg-amd64.img`, 859 MB | `SHA256SUMS`, `<hex> *<file>` | `ubuntu` |
+| `fedora-44` | `Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2`, 584 MB | `…-CHECKSUM`, `SHA256 (<file>) = <hex>` in a signed message | `fedora` |
+| `alpine-3.24` | `generic_alpine-3.24.1-x86_64-uefi-cloudinit-r0.qcow2`, 202 MB | `<archive>.sha512`, the bare digest | `alpine` |
+| `arch` | `Arch-Linux-x86_64-cloudimg.qcow2`, 577 MB | `<archive>.SHA256`, `<hex>  <file>` | `arch` |
+
+Fedora also publishes a `.raw.xz`, but only as its EC2 build; the Generic build is qcow2, and one reader is simpler than two paths. Alpine's generic UEFI cloud-init build is the one named for this.
+
+### The reader
+
+`qcow2.go`, about 200 lines on the standard library: the header, the L1 and L2 tables, ordinary clusters, version 3 zero clusters, and zlib-compressed clusters. **Anything else is refused by name**: another version, encryption, a backing file, any incompatible feature bit (dirty, corrupt, external data, zstd, extended L2). It writes each cluster that holds data at its offset in the zvol, which is fresh and sparse. Holes and zero clusters are left as the zeros it already reads as, so the zvol's `used` is the data, not the disk.
+
+It is tested against what `qemu-img` writes: plain, compressed, version 2, 64 KiB clusters, and a zero-flag cluster, each read back to the same bytes as the raw disk it came from. Each refusal is tested on an edited header. `qemu-img` makes the fixtures (`testdata/qcow2/make-fixtures.sh`) and is never needed by Jail Deck.
+
+**qemu-img was the alternative**: the standard tool, from `qemu-tools`, reported by Host Setup as optional. The owner chose the reader for the lean-dependency rule, and because the published images use so little of the format.
+
+### Checksums
+
+Each source names its checksum file and digest. One reader takes the four forms published. A digest must be the algorithm's length, so a SHA-256 line is never taken for a SHA-512. **The signatures Ubuntu and Fedora publish are not verified.** As with Debian's (JD-037), this guards against a corrupt download, not a dishonest server. Verifying them would mean carrying the publishers' keys and a PGP implementation, which is its own decision. The SHA-512 recorded on an image is still Jail Deck's own, of the archive it wrote.
+
+### Measured
+
+On isengard, 2026-11-01, through the branch binary on :8899. Each source was prepared, and a guest created from it with 2 vCPUs, 1G and an 8G disk, on Jail Deck's default network, with an SSH key. Each was reached as its default user:
+
+| Source | Prepared (download included) | Boot to SSH | Root filesystem | cloud-init | Admin |
+|---|---|---|---|---|---|
+| `ubuntu-26.04` | 426 s | 146 s | grown to 6.7G | done | sudo |
+| `fedora-44` | 325 s | 91 s | grown to 7.9G | done, degraded | sudo |
+| `alpine-3.24` | 72 s | 40 s | grown to 7.5G | done, degraded | doas |
+| `arch` | 570 s | 76 s | grown to 7.8G | done | sudo |
+
+All four boot under bhyve's UEFI firmware, read vm-bhyve's NoCloud seed, grow their root filesystem into the disk, and reach the network. "Degraded" is cloud-init reporting a module warning; the keys, the address and the growth were all there, and the cause was not looked into.
+
+### Not yet
+
+- **Signature verification** for the publishers that sign.
+- **Following a moving release.** Debian's and Arch's URLs follow their latest build. Ubuntu's names 26.04's current build. Fedora's and Alpine's name a point release, which a later Jail Deck moves forward.
+

@@ -66,6 +66,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Live updates and more images** (v0.27.0): a server-sent event stream of operations, outside state changes and progress, and pages that reload on it, with a Live marker in the rail (#124, JD-052); Ubuntu 26.04, Fedora 44, Alpine 3.24 and Arch images, their qcow2 read by Jail Deck itself (#137, JD-053)
 - **Limited tokens and signed images** (v0.28.0): tokens limited to reading and to exec in jails with a given label, for a platform's worker (JD-055); Ubuntu, Fedora, Alpine and Arch images checked against their publisher's OpenPGP signature, with the keys built in (JD-054)
 - **Privilege separation** (v0.29.0, fixed in v0.29.1): the front (listeners, UI, signing in) runs as a `jaildeck` user the package creates, and the root side serves the API on a socket only the front reaches (#206, JD-056)
+- **Snapshot grant and audit principals** (v0.30.0): limited tokens take and destroy snapshots whose name matches a pattern, in labelled jails, for a platform's backups (JD-057); every audit entry names the session or token that made it
 
 ---
 

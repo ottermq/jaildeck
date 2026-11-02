@@ -20,6 +20,21 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+### Added
+
+- **More cloud images** (#137, JD-053): Ubuntu 26.04 LTS, Fedora 44 Cloud Base, Alpine 3.24 and
+  Arch beside Debian 13 under **Prepare an image**. Each was booted to SSH on a lab host first.
+  They publish qcow2, which **Jail Deck reads itself** and writes straight into the zvol, holes
+  left sparse; no QEMU package is needed. Each download is checked against its publisher's
+  checksum file, whatever its form. The default user is named where the keys are entered.
+
+### API
+
+- **`GET /api/vm-images`**: each source has `user`, its default user. `PUT /api/vm-images/{name}`
+  takes the four new sources. Additive.
+
 ## v0.26.0 — 2026-11-01
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.26.0)

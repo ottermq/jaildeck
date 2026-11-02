@@ -41,7 +41,11 @@ const key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFMz6uwq6uCySEimJJLIKB1qaSuK3Gp
 
 beforeEach(() => {
     images = {
-        vm_bhyve: 'ready', dataset: 'tank/vm/.images', sources: [],
+        vm_bhyve: 'ready', dataset: 'tank/vm/.images',
+        sources: [
+            { name: 'debian-13', description: 'Debian 13', url: 'https://example.invalid/d', user: 'debian', fetched: true },
+            { name: 'ubuntu-26.04', description: 'Ubuntu 26.04', url: 'https://example.invalid/u', user: 'ubuntu', fetched: true },
+        ],
         images: [
             { name: 'debian-13', source: 'debian-13', ready: true, state: 'ready', size: 3221225472, guests: [] },
             { name: 'half', ready: false, state: 'written', guests: [] },
@@ -64,6 +68,15 @@ async function type(label: string, value: string) {
 }
 
 describe('creating a virtual machine', () => {
+    it("names the chosen image's default user for the keys", async () => {
+        images.images.push({ name: 'noble-web', source: 'ubuntu-26.04', ready: true, state: 'ready', size: 3758096384, guests: [] })
+        form()
+        const select = await screen.findByLabelText('Image')
+        expect(screen.getByText('debian', { selector: 'code' })).toBeTruthy()
+        await fireEvent.change(select, { target: { value: 'noble-web' } })
+        expect(await screen.findByText('ubuntu', { selector: 'code' })).toBeTruthy()
+    })
+
     it('offers only ready images, and the image size as the disk', async () => {
         form()
         const select = await screen.findByLabelText('Image') as HTMLSelectElement

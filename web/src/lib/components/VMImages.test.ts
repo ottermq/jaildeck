@@ -48,6 +48,7 @@ const ready: Image = {
 const debian = {
     name: 'debian-13', description: 'Debian 13 (trixie), genericcloud, amd64, with cloud-init',
     url: 'https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.tar.xz',
+    user: 'debian',
     fetched: false,
 }
 
@@ -105,6 +106,7 @@ describe('preparing an image', () => {
         await fireEvent.click(await screen.findByRole('button', { name: 'Prepare an image' }))
         expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('debian-13')
         expect(screen.getByText(debian.url)).toBeTruthy()
+        expect(screen.getByText('debian', { selector: 'code' })).toBeTruthy()
 
         await fireEvent.input(screen.getByLabelText('Name'), { target: { value: ' trixie ' } })
         prepareAnswer = { ...prepareAnswer as Image, name: 'trixie' }

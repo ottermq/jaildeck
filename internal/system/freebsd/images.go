@@ -18,38 +18,113 @@ import (
 )
 
 // imageSource is one catalog entry: where its archive is, which file vouches
-// for it, and which member of the archive is the disk (JD-037).
+// for it, and how the disk is read out of it (JD-037, JD-053).
 type imageSource struct {
 	images.Source
 	// dir is the directory the archive and its checksum file are published
 	// in.
 	dir     string
 	archive string
-	sums    string
-	disk    string
+	// sums is the checksum file, in dir, and sum the digest it carries:
+	// sha256 or sha512.
+	sums string
+	sum  string
+	// format is how the disk is in the archive: diskTarRaw, a raw disk as a
+	// tar member named disk, or diskQcow2, the archive itself a qcow2 image.
+	format string
+	disk   string
 }
+
+const (
+	diskTarRaw = "tar-raw"
+	diskQcow2  = "qcow2"
+)
 
 // imageCatalog is every image Jail Deck can prepare. Debian publishes its
 // cloud images in three forms; the .tar.xz is the smallest and tar in base
-// reads it, where the qcow2 would need qemu-img (JD-019, JD-037).
+// reads it (JD-019, JD-037). The others publish qcow2, which Jail Deck reads
+// itself (qcow2.go, JD-053). Each was booted to SSH under bhyve's UEFI
+// firmware with vm-bhyve's NoCloud seed before it was listed here.
 var imageCatalog = []imageSource{
 	{
 		Source: images.Source{
 			Name:        "debian-13",
 			Description: "Debian 13 (trixie), genericcloud, amd64, with cloud-init",
 			URL:         debianTrixie + "/debian-13-genericcloud-amd64.tar.xz",
+			User:        "debian",
 		},
 		dir:     debianTrixie,
 		archive: "debian-13-genericcloud-amd64.tar.xz",
 		sums:    "SHA512SUMS",
+		sum:     "sha512",
+		format:  diskTarRaw,
 		disk:    "disk.raw",
+	},
+	{
+		Source: images.Source{
+			Name:        "ubuntu-26.04",
+			Description: "Ubuntu 26.04 LTS, server cloud image, amd64, with cloud-init",
+			URL:         ubuntu2604 + "/ubuntu-26.04-server-cloudimg-amd64.img",
+			User:        "ubuntu",
+		},
+		dir:     ubuntu2604,
+		archive: "ubuntu-26.04-server-cloudimg-amd64.img",
+		sums:    "SHA256SUMS",
+		sum:     "sha256",
+		format:  diskQcow2,
+	},
+	{
+		Source: images.Source{
+			Name:        "fedora-44",
+			Description: "Fedora 44 Cloud Base, generic, x86_64, with cloud-init",
+			URL:         fedora44 + "/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2",
+			User:        "fedora",
+		},
+		dir:     fedora44,
+		archive: "Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2",
+		sums:    "Fedora-Cloud-44-1.7-x86_64-CHECKSUM",
+		sum:     "sha256",
+		format:  diskQcow2,
+	},
+	{
+		Source: images.Source{
+			Name:        "alpine-3.24",
+			Description: "Alpine Linux 3.24, generic UEFI cloud image, x86_64, with cloud-init",
+			URL:         alpine324 + "/" + alpineArchive,
+			User:        "alpine",
+		},
+		dir:     alpine324,
+		archive: alpineArchive,
+		sums:    alpineArchive + ".sha512",
+		sum:     "sha512",
+		format:  diskQcow2,
+	},
+	{
+		Source: images.Source{
+			Name:        "arch",
+			Description: "Arch Linux, cloud image (rolling), x86_64, with cloud-init",
+			URL:         archLatest + "/Arch-Linux-x86_64-cloudimg.qcow2",
+			User:        "arch",
+		},
+		dir:     archLatest,
+		archive: "Arch-Linux-x86_64-cloudimg.qcow2",
+		sums:    "Arch-Linux-x86_64-cloudimg.qcow2.SHA256",
+		sum:     "sha256",
+		format:  diskQcow2,
 	},
 }
 
-// debianTrixie is where Debian publishes 13's current cloud images. "latest"
-// moves with each build; the checksum recorded on an image names the one it
-// was written from.
-const debianTrixie = "https://cloud.debian.org/images/cloud/trixie/latest"
+// Where each is published. Debian's "latest" and Arch's move with each
+// build; the others name a release. The checksum recorded on an image names
+// the one it was written from.
+const (
+	debianTrixie  = "https://cloud.debian.org/images/cloud/trixie/latest"
+	ubuntu2604    = "https://cloud-images.ubuntu.com/releases/resolute/release"
+	fedora44      = "https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images"
+	alpine324     = "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/cloud"
+	alpineArchive = "generic_alpine-3.24.1-x86_64-uefi-cloudinit-r0.qcow2"
+	archLatest    = "https://geo.mirror.pkgbuild.com/images/latest"
+)
 
 // The deadlines for an image's stages (JD-014). Measured on isengard: the
 // archive in 69-79 s, its checksum in 1 s, listing it in 13 s, writing the
@@ -71,10 +146,15 @@ type ImageAdapter struct {
 	// exists reports whether a path is there; overridden in tests, which
 	// have no zvol devices.
 	exists func(string) bool
+	// qcow2Size and writeQcow2 read a qcow2 archive and write its disk into
+	// a device; overridden in tests, for the same reason.
+	qcow2Size  func(path string) (int64, error)
+	writeQcow2 func(ctx context.Context, path, device string) (int64, error)
 }
 
 func NewImageAdapter(runner system.CommandRunner) *ImageAdapter {
-	return &ImageAdapter{Adapter: NewAdapter(runner), exists: pathExists}
+	return &ImageAdapter{Adapter: NewAdapter(runner), exists: pathExists,
+		qcow2Size: qcow2Size, writeQcow2: writeQcow2}
 }
 
 func pathExists(p string) bool {
@@ -275,14 +355,14 @@ func (a *ImageAdapter) Fetch(ctx context.Context, store images.Store, source str
 	if err != nil {
 		return download.String(), err
 	}
-	want, err := sha512SumsEntry(sums.Stdout, entry.archive)
+	want, err := sumsEntry(sums.Stdout, entry.archive, entry.sum)
 	if err != nil {
 		return download.String(), err
 	}
 	if _, err := a.runHost(ctx, download); err != nil {
 		return download.String(), err
 	}
-	got, err := a.runHost(ctx, system.Command{Name: "sha512", Args: []string{"-q", part}, Timeout: 5 * time.Minute})
+	got, err := a.runHost(ctx, system.Command{Name: entry.sum, Args: []string{"-q", part}, Timeout: 5 * time.Minute})
 	if err != nil {
 		return download.String(), err
 	}
@@ -314,16 +394,45 @@ func (a *ImageAdapter) ensureImageDataset(ctx context.Context, store images.Stor
 	return err
 }
 
-// sha512SumsEntry reads one file's checksum out of a SHA512SUMS file, in
-// sha512sum's format: the hex digest, two spaces, the file name.
-func sha512SumsEntry(sums, file string) (string, error) {
-	for _, line := range nonEmptyLines(sums) {
-		digest, name, ok := strings.Cut(line, "  ")
-		if ok && strings.TrimPrefix(name, "*") == file && len(digest) == 128 {
+// sumsEntry reads one file's digest out of a publisher's checksum file. The
+// four forms published are all read:
+//
+//	<hex>  <file>              sha512sum's, Debian's and Arch's
+//	<hex> *<file>              the same in binary mode, Ubuntu's
+//	SHA256 (<file>) = <hex>    BSD's, Fedora's, inside a signed message
+//	<hex>                      one file's own, Alpine's
+//
+// The digest must be the algorithm's length, so a SHA-256 is never taken
+// for a SHA-512 or a line of some other file's.
+func sumsEntry(sums, file, sum string) (string, error) {
+	length := map[string]int{"sha256": 64, "sha512": 128}[sum]
+	hex := func(s string) bool {
+		if len(s) != length {
+			return false
+		}
+		for _, c := range s {
+			if !strings.ContainsRune("0123456789abcdef", c) {
+				return false
+			}
+		}
+		return true
+	}
+	lines := nonEmptyLines(sums)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if digest, name, ok := strings.Cut(line, " "); ok && hex(digest) &&
+			strings.TrimPrefix(strings.TrimSpace(name), "*") == file {
 			return digest, nil
 		}
+		if rest, ok := strings.CutPrefix(line, strings.ToUpper(sum)+" ("+file+") = "); ok && hex(rest) {
+			return rest, nil
+		}
 	}
-	return "", common.NewAppError(http.StatusBadGateway, "the checksum file names no SHA-512 for "+file)
+	if len(lines) == 1 && hex(strings.TrimSpace(lines[0])) {
+		return strings.TrimSpace(lines[0]), nil
+	}
+	return "", common.NewAppError(http.StatusBadGateway,
+		fmt.Sprintf("the checksum file names no %s for %s", strings.ToUpper(sum), file))
 }
 
 // Write creates the image's zvol and writes the archive's disk into it
@@ -333,10 +442,16 @@ func sha512SumsEntry(sums, file string) (string, error) {
 //	tar -xOf <archive> disk.raw > /dev/zvol/<dataset>
 //
 // The size is the disk's, from tar's listing. The checksum recorded is the
-// archive's own, taken again here rather than trusted from the fetch: it is
-// what names the bytes that were actually written. tar writes the disk to
-// its standard output, which the runner points at the zvol, so there is no
-// shell, no dd and no temporary file.
+// archive's own SHA-512, taken again here whatever the publisher signs with,
+// rather than trusted from the fetch: it is what names the bytes that were
+// actually written. tar writes the disk to its standard output, which the
+// runner points at the zvol, so there is no shell, no dd and no temporary
+// file.
+//
+// A qcow2 archive is read by Jail Deck itself (JD-053): its size from its
+// header, its clusters written straight into the zvol, the holes left as the
+// zeros a sparse zvol already reads as. There is no command to audit for
+// that step, so what is audited says what was done in the same form.
 func (a *ImageAdapter) Write(ctx context.Context, store images.Store, name, source string) (string, error) {
 	entry, err := lookupSource(source)
 	if err != nil {
@@ -347,30 +462,47 @@ func (a *ImageAdapter) Write(ctx context.Context, store images.Store, name, sour
 	device := "/dev/zvol/" + dataset
 	write := system.Command{Name: "tar", Args: []string{"-xOf", archive, entry.disk},
 		StdoutFile: device, Timeout: imageWriteTimeout}
+	described := write.String()
 
-	listing, err := a.runHost(ctx, system.Command{Name: "tar", Args: []string{"-tvf", archive}, Timeout: imageReadTimeout})
-	if err != nil {
-		return write.String(), err
-	}
-	size, err := tarMemberSize(listing.Stdout, entry.disk)
-	if err != nil {
-		return write.String(), err
+	var size int64
+	switch entry.format {
+	case diskQcow2:
+		described = "qcow2 " + archive + " > " + device
+		if size, err = a.qcow2Size(archive); err != nil {
+			return described, fmt.Errorf("%s: %w", archive, err)
+		}
+	default:
+		listing, err := a.runHost(ctx, system.Command{Name: "tar", Args: []string{"-tvf", archive}, Timeout: imageReadTimeout})
+		if err != nil {
+			return described, err
+		}
+		if size, err = tarMemberSize(listing.Stdout, entry.disk); err != nil {
+			return described, err
+		}
 	}
 	sum, err := a.runHost(ctx, system.Command{Name: "sha512", Args: []string{"-q", archive}, Timeout: 5 * time.Minute})
 	if err != nil {
-		return write.String(), err
+		return described, err
 	}
 	if _, err := a.runHost(ctx, system.Command{Name: "zfs", Args: []string{
 		"create", "-s", "-V", strconv.FormatInt(size, 10), "-o", "volmode=dev",
 		"-o", "jaildeck:source=" + source, "-o", "jaildeck:sha512=" + strings.TrimSpace(sum.Stdout), dataset,
 	}}); err != nil {
-		return write.String(), err
+		return described, err
 	}
 	if err := a.waitFor(ctx, device); err != nil {
-		return write.String(), err
+		return described, err
+	}
+	if entry.format == diskQcow2 {
+		ctx, cancel := context.WithTimeout(ctx, imageWriteTimeout)
+		defer cancel()
+		if _, err := a.writeQcow2(ctx, archive, device); err != nil {
+			return described, fmt.Errorf("writing %s into %s: %w", archive, device, err)
+		}
+		return described, nil
 	}
 	_, err = a.runHost(ctx, write)
-	return write.String(), err
+	return described, err
 }
 
 // waitFor gives a new zvol's device node time to appear.

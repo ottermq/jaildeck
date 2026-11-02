@@ -220,12 +220,12 @@ func TestSHA512SumsEntry(t *testing.T) {
 	// The captured line, among constructed neighbours that are not the file.
 	sums := strings.Repeat("a", 128) + "  debian-13-genericcloud-amd64.qcow2\n" + string(line) +
 		strings.Repeat("b", 128) + "  debian-13-genericcloud-amd64.tar.xz.json\n"
-	got, err := sha512SumsEntry(sums, "debian-13-genericcloud-amd64.tar.xz")
+	got, err := sumsEntry(sums, "debian-13-genericcloud-amd64.tar.xz", "sha512")
 	if err != nil || got != capturedSHA512(t) {
-		t.Errorf("sha512SumsEntry = %q, %v; want the archive's", got, err)
+		t.Errorf("sumsEntry = %q, %v; want the archive's", got, err)
 	}
 
-	_, err = sha512SumsEntry(sums, "debian-13-genericcloud-amd64.raw")
+	_, err = sumsEntry(sums, "debian-13-genericcloud-amd64.raw", "sha512")
 	var appErr *common.AppError
 	if !errors.As(err, &appErr) || appErr.Code != http.StatusBadGateway {
 		t.Errorf("err = %v, want a 502 for a file the checksums do not name", err)
@@ -387,5 +387,112 @@ func TestEveryCatalogSourceSaysWhereItComesFrom(t *testing.T) {
 		if source.Name == "" || source.Description == "" || !strings.HasPrefix(source.URL, "https://") {
 			t.Errorf("source = %+v", source)
 		}
+	}
+}
+
+// #137: each publisher's checksum file, as it publishes it. The lines are
+// the ones published for the archives in the catalog on 2026-11-01.
+func TestSumsEntryReadsEachPublishersForm(t *testing.T) {
+	ubuntu := "0b7c00d4c1f8b5d2c95d0a5f7e5f6a1e3b1a2a3d4c5e6f708192a3b4c5d6e7f8 *ubuntu-26.04-server-cloudimg-amd64-root.tar.xz\n" +
+		"5645d0318ad21f643ebb1ac4567514620e9893380b07b0201fda163baa5b7eb5 *ubuntu-26.04-server-cloudimg-amd64.img\n"
+	fedora := "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA256\n\n" +
+		"# Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2: 583729152 bytes\n" +
+		"SHA256 (Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2) = 28680fe5b371a5a82ebf43a31926e086a168e59949d03969c5093e7071f90b7f\n" +
+		"-----BEGIN PGP SIGNATURE-----\n\niQIzBAEBCAAdFiEE\n-----END PGP SIGNATURE-----\n"
+	alpine := "ed976ef40de1f73adcb0a3b253ec9e73e43c408208fcc3c30dcdf7a69b91a387a4777f88c6b72345123edf3832d7cb49403ecce28ec84d496d4b3bad6fbd0923\n"
+	arch := "794eb4889b39e1f0ed7d5ae998b2a1ed2137db8cf8c3476cf2962c7437ecb003  Arch-Linux-x86_64-cloudimg.qcow2\n"
+	for _, c := range []struct{ sums, file, sum, want string }{
+		{ubuntu, "ubuntu-26.04-server-cloudimg-amd64.img", "sha256", "5645d0318ad21f643ebb1ac4567514620e9893380b07b0201fda163baa5b7eb5"},
+		{fedora, "Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2", "sha256", "28680fe5b371a5a82ebf43a31926e086a168e59949d03969c5093e7071f90b7f"},
+		{alpine, alpineArchive, "sha512", strings.TrimSpace(alpine)},
+		{arch, "Arch-Linux-x86_64-cloudimg.qcow2", "sha256", "794eb4889b39e1f0ed7d5ae998b2a1ed2137db8cf8c3476cf2962c7437ecb003"},
+	} {
+		if got, err := sumsEntry(c.sums, c.file, c.sum); err != nil || got != c.want {
+			t.Errorf("%s: %q, %v", c.file, got, err)
+		}
+	}
+	// A digest of the wrong length is not taken for the right one, and a
+	// file the checksums do not name is refused.
+	for _, c := range []struct{ sums, file, sum string }{
+		{arch, "Arch-Linux-x86_64-cloudimg.qcow2", "sha512"},
+		{ubuntu, "ubuntu-26.04-server-cloudimg-amd64.vmdk", "sha256"},
+		{fedora, "Fedora-Cloud-Base-Generic-44-1.7.x86_64.raw.xz", "sha256"},
+		{alpine, alpineArchive, "sha256"},
+	} {
+		if got, err := sumsEntry(c.sums, c.file, c.sum); err == nil {
+			t.Errorf("%s as %s: took %q", c.file, c.sum, got)
+		}
+	}
+}
+
+// A qcow2 source: its size from its header, the archive's SHA-512 on the
+// zvol, and the disk written by Jail Deck rather than tar.
+func TestWriteReadsAQcow2ArchiveItself(t *testing.T) {
+	archive := "/vm/.images/ubuntu-26.04-server-cloudimg-amd64.img"
+	sum := strings.Repeat("ab", 64)
+	a, runner := imageAdapter(t, nil, map[string]system.CommandResult{
+		"sha512 -q " + archive: {Stdout: sum + "\n"},
+		"zfs create -s -V 3758096384 -o volmode=dev -o jaildeck:source=ubuntu-26.04 -o jaildeck:sha512=" + sum +
+			" tank/vm/.images/ubuntu": {},
+	})
+	a.qcow2Size = func(p string) (int64, error) {
+		if p != archive {
+			t.Errorf("size of %s", p)
+		}
+		return 3758096384, nil
+	}
+	var wrote string
+	a.writeQcow2 = func(ctx context.Context, p, device string) (int64, error) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Error("the write has no deadline")
+		}
+		wrote = p + " > " + device
+		return 1 << 30, nil
+	}
+	command, err := a.Write(context.Background(), isengardImages, "ubuntu", "ubuntu-26.04")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wrote != archive+" > /dev/zvol/tank/vm/.images/ubuntu" || command != "qcow2 "+wrote {
+		t.Errorf("wrote %q, audited %q", wrote, command)
+	}
+	if len(runner.ran) != 2 {
+		t.Errorf("ran %v, want the checksum and the zvol only", runner.lines())
+	}
+
+	a.writeQcow2 = func(context.Context, string, string) (int64, error) {
+		return 0, errors.New("qcow2 incompatible features 0x8 are not ones this reads")
+	}
+	if _, err := a.Write(context.Background(), isengardImages, "ubuntu", "ubuntu-26.04"); err == nil ||
+		!strings.Contains(err.Error(), "incompatible features") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestFetchChecksAnArchiveWithItsPublishersDigest(t *testing.T) {
+	archive := "/vm/.images/Arch-Linux-x86_64-cloudimg.qcow2"
+	digest := "794eb4889b39e1f0ed7d5ae998b2a1ed2137db8cf8c3476cf2962c7437ecb003"
+	a, runner := imageAdapter(t, nil, map[string]system.CommandResult{
+		"zfs list -H -o name tank/vm/.images": {Stdout: "tank/vm/.images\n"},
+		"fetch -q -o - " + archLatest + "/Arch-Linux-x86_64-cloudimg.qcow2.SHA256": {
+			Stdout: digest + "  Arch-Linux-x86_64-cloudimg.qcow2\n"},
+		"fetch -a -o " + archive + ".part " + archLatest + "/Arch-Linux-x86_64-cloudimg.qcow2": {},
+		"sha256 -q " + archive + ".part":     {Stdout: digest + "\n"},
+		"mv " + archive + ".part " + archive: {},
+	})
+	if _, err := a.Fetch(context.Background(), isengardImages, "arch"); err != nil {
+		t.Fatalf("%v: %v", err, runner.lines())
+	}
+}
+
+func TestEveryCatalogSourceNamesItsUserAndHowItIsRead(t *testing.T) {
+	seen := map[string]bool{}
+	for _, entry := range imageCatalog {
+		if entry.User == "" || seen[entry.Name] || (entry.sum != "sha256" && entry.sum != "sha512") ||
+			(entry.format == diskTarRaw) == (entry.disk == "") || (entry.format != diskTarRaw && entry.format != diskQcow2) ||
+			entry.URL != entry.dir+"/"+entry.archive {
+			t.Errorf("entry = %+v", entry)
+		}
+		seen[entry.Name] = true
 	}
 }

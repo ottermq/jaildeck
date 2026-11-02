@@ -67,6 +67,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Limited tokens and signed images** (v0.28.0): tokens limited to reading and to exec in jails with a given label, for a platform's worker (JD-055); Ubuntu, Fedora, Alpine and Arch images checked against their publisher's OpenPGP signature, with the keys built in (JD-054)
 - **Privilege separation** (v0.29.0, fixed in v0.29.1): the front (listeners, UI, signing in) runs as a `jaildeck` user the package creates, and the root side serves the API on a socket only the front reaches (#206, JD-056)
 - **Snapshot grant and audit principals** (v0.30.0): limited tokens take and destroy snapshots whose name matches a pattern, in labelled jails, for a platform's backups (JD-057); every audit entry names the session or token that made it
+- **Audit log rotation** (v0.30.1): the package rotates the default audit log with `newsyslog`, at 10 MB with 10 compressed files kept (JD-058).
 
 ---
 

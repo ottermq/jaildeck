@@ -132,7 +132,7 @@ loaded if present — see [`.env.sample`](.env.sample).
 | `JAILDECK_HOST` | `127.0.0.1` | Bind address. Anything non-loopback warns |
 | `JAILDECK_PORT` | `8888` | |
 | `JAILDECK_STATE_DIR` | `/var/db/jaildeck` | Password hash and API tokens, written `0600`; owned by the front's user when split |
-| `JAILDECK_AUDIT_LOG` | `/var/log/jaildeck/audit.log` | Append-only JSON lines. Rotate it with `newsyslog` |
+| `JAILDECK_AUDIT_LOG` | `/var/log/jaildeck/audit.log` | Append-only JSON lines. The package rotates this default path with `newsyslog` at 10 MB, keeping 10 (JD-058); a log configured elsewhere needs its own line |
 | `JAILDECK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `JAILDECK_ADAPTER` | `freebsd` | `fake` runs against an in-memory host, for development |
 | `JAILDECK_ZFS_POOL` | empty | Pool holding `<pool>/jails`. Empty adopts the only pool; with more than one, set it |

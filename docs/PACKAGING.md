@@ -89,6 +89,7 @@ the account that built the package:
 | `/usr/local/bin/jaildeck` | `0555` |
 | `/usr/local/etc/rc.d/jaildeck` | `0555` |
 | `/usr/local/etc/jaildeck/jaildeck.env.sample` | `0644` |
+| `/usr/local/etc/newsyslog.conf.d/jaildeck.conf` | `0644` |
 
 The executable is built with `CGO_ENABLED=0` and the baseline amd64 CPU target.
 Go and Node.js are build dependencies, not runtime dependencies. Native FreeBSD
@@ -164,6 +165,18 @@ configuration file that could silently create, merge or replace
 `jaildeck.env`. The live configuration, `/var/db/jaildeck` (credentials, API
 tokens and other state), `/var/log/jaildeck` (audit history), and jail datasets
 are all outside the package inventory.
+
+The package does own how the audit log rotates (JD-058):
+`/usr/local/etc/newsyslog.conf.d/jaildeck.conf` rotates the default
+`JAILDECK_AUDIT_LOG` at 10 MB and keeps 10 compressed files, `0600`, in
+`/var/log/jaildeck`. They stay when the package is removed. `GET /api/audit`
+reads the current file only; read older entries with `bzcat`. If you log
+somewhere else, add a line of your own for that path.
+
+To keep more, edit that file. `pkg upgrade` keeps your edit. `pkg add` and
+`pkg add -f` put the packaged file back and leave yours beside it as
+`jaildeck.conf.pkgsave`, so copy it back afterwards. Removing the package removes
+the file, edited or not.
 
 ## Install and upgrade from a package repository
 

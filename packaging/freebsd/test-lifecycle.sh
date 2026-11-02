@@ -167,16 +167,17 @@ until curl -fsS http://127.0.0.1:18884/ -o /dev/null; do
 done
 newsyslog -F -f "$rotation"
 curl -sS -o /dev/null -X POST -H "Authorization: Bearer $(tail -1 "$work/token")" \
-    http://127.0.0.1:18884/api/jails/package-test-none/stop
+    http://127.0.0.1:18884/api/jails/nginx/stop
 [ -s "$audit_log" ] || fail 'no entry reached the audit log after rotating under the service.'
 if grep -qv '^{' "$audit_log"; then fail 'the rotated audit log holds something other than JSON lines.'; fi
 service jaildeck onestop
 running=NO
-# An operator's retention stays through an upgrade.
+# pkg upgrade keeps an edited rotation config. pkg add replaces it and keeps the
+# edit beside it (measured, JD-058), which is what this checks.
 printf '%s\n' '# operator edit' >> "$rotation"
 pkg add -f "$new"
-grep -q '^# operator edit$' "$rotation" || fail 'an upgrade replaced an edited rotation config.'
-sed -i '' '/^# operator edit$/d' "$rotation"
+grep -q '^# operator edit$' "$rotation.pkgsave" || fail 'pkg add lost an edited rotation config.'
+rm -f "$rotation.pkgsave"
 inventory > "$work/operator.before"
 
 pkg delete -y jaildeck

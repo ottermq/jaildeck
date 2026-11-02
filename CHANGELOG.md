@@ -24,6 +24,12 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### Added
 
+- **Limited tokens** (JD-055): `jaildeck token add <name> --allow read --allow
+  exec:<property>=<value>` makes a token that can only read and run commands in jails whose ZFS
+  user property matches, and is refused with 403 for anything else. It is meant for a platform's
+  worker: a leaked copy can't stop or destroy anything, relabel a jail, open a console, or reach
+  another jail. `token list` shows what each token is limited to. **Rolling back to an older
+  Jail Deck gives a limited token the whole plain API**; revoke limited tokens first.
 - **Publishers' signatures are checked** (JD-054): an Ubuntu, Fedora, Alpine or Arch image is
   verified against its publisher's OpenPGP signature as well as its checksum, with the
   publisher's key built into Jail Deck. A checksum file that isn't signed is refused before the
@@ -32,6 +38,8 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ### API
 
+- **A limited token** gets `403` for anything its grants don't name. `GET /api/auth/me` answers
+  its grants as `allow`. Additive: tokens made without `--allow` are unchanged.
 - **`GET /api/vm-images`**: each source has `signed_by`, the publisher key its download is
   checked against, absent for Debian. Additive.
 

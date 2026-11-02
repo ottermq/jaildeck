@@ -133,6 +133,9 @@ func TestRunToken_InvalidArguments(t *testing.T) {
 		{name: "add unknown scope", args: []string{"add", "backup", "--scope", "root"}, message: "is not a scope"},
 		{name: "add scope without a value", args: []string{"add", "backup", "--scope"}, message: "usage:"},
 		{name: "add unknown flag", args: []string{"add", "backup", "--all"}, message: "unknown flag"},
+		{name: "add unknown grant", args: []string{"add", "w", "--allow", "write"}, message: "is not a grant"},
+		{name: "add exec grant without a user property", args: []string{"add", "w", "--allow", "exec:role=cluster"}, message: "user property"},
+		{name: "add scope and grant", args: []string{"add", "w", "--scope", "console", "--allow", "read"}, want: auth.ErrScopesOnRestrictedToken},
 		{name: "list extra", args: []string{"list", "extra"}, want: ErrUnexpectedArgs},
 		{name: "revoke extra", args: []string{"revoke", "backup", "extra"}, want: ErrUnexpectedArgs},
 	} {
@@ -239,5 +242,32 @@ func TestRunToken_Scopes(t *testing.T) {
 	}
 	if !regexp.MustCompile(`(?m)^ci\s+\S+\s+-\s*$`).MatchString(out.String()) {
 		t.Errorf("list = %q, want ci's scopes as -", out.String())
+	}
+}
+
+// A restricted token is made with its grants and no scopes, and the list
+// says what it is limited to (JD-055).
+func TestRunToken_Allow(t *testing.T) {
+	dir := t.TempDir()
+	var errOut bytes.Buffer
+	if err := runToken([]string{"add", "worker", "--allow", "read", "--allow=exec:otter:role=cluster"}, io.Discard, &errOut, dir); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errOut.String(), "limited to: read; exec in jails with otter:role=cluster") {
+		t.Errorf("add said %q", errOut.String())
+	}
+	st, err := state.NewStore(dir).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token := st.APITokens[0]; !reflect.DeepEqual(token.Allow, []string{"read", "exec:otter:role=cluster"}) || token.Scopes == nil || len(token.Scopes) != 0 {
+		t.Errorf("token = %+v", token)
+	}
+	var out bytes.Buffer
+	if err := runToken([]string{"list"}, &out, io.Discard, dir); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "only: read; exec in jails with otter:role=cluster") {
+		t.Errorf("list = %q", out.String())
 	}
 }

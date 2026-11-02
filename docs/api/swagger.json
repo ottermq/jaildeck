@@ -4329,6 +4329,13 @@
         "auth.Principal": {
             "type": "object",
             "properties": {
+                "allow": {
+                    "description": "Allow is a restricted token's grants (JD-055); absent for a session or\na token with the whole plain API.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "expires_at": {
                     "type": "string"
                 },

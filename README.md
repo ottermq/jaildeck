@@ -7,12 +7,12 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.28.0.** Jails can be created from release templates, started,
+**Current release: v0.29.0.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API, and their limits changed in place; their ZFS datasets,
 snapshots and resource usage are visible, and a dataset kept past its jail can be restored or destroyed; host setup is checked; PF can be seen,
 read-only; bhyve VMs are created from cloud images (Debian, Ubuntu, Fedora, Alpine, Arch) with cloud-init, with a console password if wanted, pinned to host CPUs, started,
 stopped, labelled, snapshotted and destroyed, on a default network Jail Deck sets up with NAT through PF, or on networks of their own kept apart by PF, with addresses Jail Deck picks and checks, and every network and what is on it can be seen; a jail has a shell in the
-browser, and a guest its serial console; each one's files on the host can be read on its page; jails and guests are found in one list by name, state or label, with what each is using over the last minutes, and started, stopped, restarted or snapshotted several at once; the storage nothing uses is listed and can be reclaimed; pages update live as anyone changes the host; a token can be limited to reading and running commands in jails with a given label; every operation is audited, a console with who opened it and why when the client says, and nothing is reachable without a password or an
+browser, and a guest its serial console; each one's files on the host can be read on its page; jails and guests are found in one list by name, state or label, with what each is using over the last minutes, and started, stopped, restarted or snapshotted several at once; the storage nothing uses is listed and can be reclaimed; pages update live as anyone changes the host; a token can be limited to reading and running commands in jails with a given label; the part that faces the network runs as a user of its own, not root; every operation is audited, a console with who opened it and why when the client says, and nothing is reachable without a password or an
 API token. Releases install and upgrade with `pkg` from a signed repository. See
 [the roadmap](docs/ROADMAP.md) for what comes next.
 
@@ -131,7 +131,7 @@ loaded if present — see [`.env.sample`](.env.sample).
 | --- | --- | --- |
 | `JAILDECK_HOST` | `127.0.0.1` | Bind address. Anything non-loopback warns |
 | `JAILDECK_PORT` | `8888` | |
-| `JAILDECK_STATE_DIR` | `/var/db/jaildeck` | Password hash and API tokens, written `0600` |
+| `JAILDECK_STATE_DIR` | `/var/db/jaildeck` | Password hash and API tokens, written `0600`, or `0640` in the front's group when split |
 | `JAILDECK_AUDIT_LOG` | `/var/log/jaildeck/audit.log` | Append-only JSON lines. Rotate it with `newsyslog` |
 | `JAILDECK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `JAILDECK_ADAPTER` | `freebsd` | `fake` runs against an in-memory host, for development |
@@ -139,6 +139,18 @@ loaded if present — see [`.env.sample`](.env.sample).
 | `JAILDECK_SOCKET` | empty | Unix socket to listen on as well as TCP. Empty means TCP only |
 | `JAILDECK_SOCKET_GROUP` | empty | Group owning the socket. Empty leaves it in the process's own group |
 | `JAILDECK_SOCKET_ONLY` | `false` | `true` drops the TCP listener, leaving only the socket |
+| `JAILDECK_USER` | `jaildeck` | Who the front runs as when Jail Deck starts as root (JD-056) |
+| `JAILDECK_RUN_DIR` | `/var/run/jaildeck` | Where the root side's socket and the front's live |
+| `JAILDECK_SPLIT` | `on` | `off` runs everything in one process as root, as before |
+
+**Started as root, Jail Deck runs as two processes** (JD-056). The root side does the work and
+serves the API on a socket in `JAILDECK_RUN_DIR` only the front can reach. The front, as
+`JAILDECK_USER`, serves the listeners, the UI and signing in, and passes what it has
+authenticated to the root side. Code that reads from the network before a login is checked
+no longer runs as root. Each start makes the state directory `root:<the user's group>`, mode
+`0750`, and refuses a state directory that holds anything but `state.json`. Nothing changes
+for an API client. Started as another user, or with `JAILDECK_SPLIT=off`, both sides run in
+one process.
 
 `debug` logs every command Jail Deck runs, which is the fastest way to see what it is
 doing to the host. No credential material is logged at any level.

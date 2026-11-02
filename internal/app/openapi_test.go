@@ -87,18 +87,22 @@ func apiRoutes(t *testing.T) map[string][]string {
 		t.Fatalf("create test app: %v", err)
 	}
 	routes := map[string][]string{}
-	err = chi.Walk(a.Routes(testAssets()).(chi.Routes),
-		func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
-			path, ok := strings.CutPrefix(route, "/api")
-			if !ok {
-				// The SPA fallback is not part of the JSON API.
+	// The API is the front's own routes (signing in) and the root side's
+	// (everything else), JD-056. The SPA fallback is not part of it, and the
+	// front's catch-all is only the way to the root side's routes.
+	for _, router := range []http.Handler{a.Routes(testAssets()), a.back.Routes()} {
+		err = chi.Walk(router.(chi.Routes),
+			func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+				path, ok := strings.CutPrefix(route, "/api")
+				if !ok || path == "/*" {
+					return nil
+				}
+				routes[method] = append(routes[method], normalizePath(path))
 				return nil
-			}
-			routes[method] = append(routes[method], normalizePath(path))
-			return nil
-		})
-	if err != nil {
-		t.Fatalf("chi.Walk: %v", err)
+			})
+		if err != nil {
+			t.Fatalf("chi.Walk: %v", err)
+		}
 	}
 	if len(routes) == 0 {
 		t.Fatal("the router serves no /api routes")

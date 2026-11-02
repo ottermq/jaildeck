@@ -27,7 +27,17 @@ Review host readiness before explicitly running jaildeck init. The package
 does not create ZFS datasets or change networking. Credentials, tokens, logs,
 live configuration and jail datasets are never package-owned.
 
+Started as root, Jail Deck runs its front (the listeners, the UI, signing
+in) as the jaildeck user this package created, and makes its state
+directory readable by that user's group (JD-056).
+
 Build and lifecycle documentation:
   https://github.com/ottermq/jaildeck/blob/dev/docs/PACKAGING.md
+EOD
+}, {
+    type: "remove"
+    message: <<EOD
+The jaildeck user and group were kept. If nothing else uses them:
+  pw userdel jaildeck
 EOD
 }]

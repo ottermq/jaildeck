@@ -121,14 +121,37 @@ sha256 -q /etc/rc.conf > "$work/rc.after-upgrade"
 diff -u "$work/rc.before" "$work/rc.after-upgrade"
 if pgrep -x jaildeck >/dev/null; then fail 'upgrade started the service.'; fi
 
+# NEW runs its front as the jaildeck user its install created (JD-056), and
+# the root side as root. Started again only for this, and stopped.
+pw usershow jaildeck >/dev/null || fail 'the upgrade did not create the jaildeck user.'
+[ "$(pw usershow jaildeck | cut -d: -f10)" = /usr/sbin/nologin ] || fail 'the jaildeck user can log in.'
+service jaildeck onestart
+running=YES
+attempt=0
+until curl -fsS http://127.0.0.1:18884/ -o /dev/null; do
+    attempt=$((attempt + 1))
+    [ "$attempt" -lt 20 ] || fail 'the upgraded service never became ready.'
+    sleep 1
+done
+ps -axo user,command | grep -q '^jaildeck .*jaildeck front$' || fail 'the front is not running as jaildeck.'
+ps -axo user,command | grep -q '^root .*/usr/local/bin/jaildeck$' || fail 'the root side is not running as root.'
+curl -fsS -H "Authorization: Bearer $(tail -1 "$work/token")" http://127.0.0.1:18884/api/jails -o /dev/null ||
+    fail 'an authenticated request did not reach the root side.'
+[ "$(stat -f '%Su:%Sg:%Lp' "$state_dir")" = root:jaildeck:750 ] || fail 'the state directory is not shared with the front.'
+service jaildeck onestop
+running=NO
+inventory > "$work/operator.after-split"
+diff -u "$work/operator.before" "$work/operator.after-split"
+
 pkg delete -y jaildeck
 if pkg info -e jaildeck; then fail 'package is still registered.'; fi
 for item in /usr/local/bin/jaildeck /usr/local/etc/rc.d/jaildeck /usr/local/etc/jaildeck/jaildeck.env.sample; do
     [ ! -e "$item" ] || fail "package-owned file survived removal: $item"
 done
+pw usershow jaildeck >/dev/null || fail 'removal deleted the jaildeck user.'
 inventory > "$work/operator.after-delete"
 diff -u "$work/operator.before" "$work/operator.after-delete"
 [ "$(zfs get -H -o value guid "$dataset@preserve")" = "$guid" ] || fail 'removal changed the ZFS snapshot.'
 sha256 -q /etc/rc.conf > "$work/rc.after-delete"
 diff -u "$work/rc.before" "$work/rc.after-delete"
-echo "lifecycle: PASS (install, runtime/UI/auth, upgrade, removal, operator data and ZFS preservation)"
+echo "lifecycle: PASS (install, the jaildeck user, runtime/UI/auth through the front, upgrade, removal, operator data and ZFS preservation)"

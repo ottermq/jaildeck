@@ -20,6 +20,32 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.29.0 — 2026-11-02
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.29.0)
+
+**Privilege separation.** Jail Deck started as root now runs as two processes. Its
+network-facing front (listeners, UI, signing in) runs as a `jaildeck` user, which the package
+creates. The root side, which does the work, is reachable only through the front. **On
+upgrade:** `pkg` creates the user. A host that installed with `make install` needs it created
+by hand, or `JAILDECK_SPLIT=off`. A rollback needs nothing: an older release runs as root and
+reads the same files.
+
+- **Privilege separation** (JD-056, #206). Started as root, Jail Deck runs its front as a
+  user of its own (`JAILDECK_USER`, default `jaildeck`): the listeners, the UI, signing in and
+  authentication. Everything authenticated goes to the root side over a socket in
+  `JAILDECK_RUN_DIR`, with the principal named in a header the front sets and strips from
+  what clients send. Code that reads from the network before a login is checked no longer
+  runs as root. The root side starts the front, restarts it if it exits, and hands it the
+  listeners, so the operator's socket keeps its owner and mode. Each start makes the state
+  directory readable by the front's group. `JAILDECK_SPLIT=off` runs one process, as before.
+  **The user must exist**: Jail Deck started as root refuses to start without it.
+- **The package creates the `jaildeck` user and group** when they are missing (#206): the
+  first id from 850 free as both, `nologin`, no home. Removal keeps them. Jail Deck's front
+  runs as this user (JD-056).
+- **API:** an unauthenticated request to an unknown `/api` path is now `401`, not `404`.
+  The front doesn't know the root side's routes. Authenticated, it is `404` as before.
+
 ## v0.28.0 — 2026-11-02
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.28.0)

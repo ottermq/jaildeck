@@ -15,8 +15,9 @@
 #   /usr/local/etc/jaildeck/jaildeck.env
 #
 # It is the KEY=value format of the repository's .env.sample, which `make
-# install` puts beside it as jaildeck.env.sample. Jail Deck runs as root
-# (JD-001) and will not start without an operator credential, so run
+# install` puts beside it as jaildeck.env.sample. Jail Deck starts as root
+# (JD-001) and runs its front as the jaildeck user (JD-056), which the package
+# creates. It will not start without an operator credential, so run
 # `jaildeck passwd` once before enabling the service.
 
 . /etc/rc.subr

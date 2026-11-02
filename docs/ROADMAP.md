@@ -65,6 +65,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Housekeeping and usage** (v0.26.0): unused templates, images, retained datasets, old snapshots and downloaded archives listed with what they hold and removed through the existing endpoints, other tools' snapshots left alone (#125, JD-049); running guests' CPU and memory in the metrics and Prometheus, and two-minute sparklines in the Instances list (#126, JD-050)
 - **Live updates and more images** (v0.27.0): a server-sent event stream of operations, outside state changes and progress, and pages that reload on it, with a Live marker in the rail (#124, JD-052); Ubuntu 26.04, Fedora 44, Alpine 3.24 and Arch images, their qcow2 read by Jail Deck itself (#137, JD-053)
 - **Limited tokens and signed images** (v0.28.0): tokens limited to reading and to exec in jails with a given label, for a platform's worker (JD-055); Ubuntu, Fedora, Alpine and Arch images checked against their publisher's OpenPGP signature, with the keys built in (JD-054)
+- **Privilege separation** (v0.29.0): the front (listeners, UI, signing in) runs as a `jaildeck` user the package creates, and the root side serves the API on a socket only the front reaches (#206, JD-056)
 
 ---
 
@@ -465,6 +466,14 @@ Goal: every guest on a network without a root shell, and, for Otter Cloud, a net
 - addresses allocated by Jail Deck, so the form needn't ask and a guest's page can say where to connect. *Built 2026-10-30 (JD-047): on Jail Deck's own networks, the lowest free address, from what the host's stanzas, seeds and the bridge's ARP table say is taken, one create per network at a time; an address asked for is checked and refused, naming its holder, when taken. A jail names a network with `network.name`. The network's view lists its addresses, and a guest's page says where to connect.*
 - networks per tenant as a resource: a bridge or a VLAN each, a subnet from a range, nothing between networks, refused while in use. *Built 2026-10-28 (JD-043): a bridge each, measured against VLANs on one bridge, which route between tenants just the same and need every new tap tagged; `/api/networks` creates, lists and destroys them; their rules share the default network's anchor file, so `pf.conf` needs nothing more.*
 - a read-only view of every network (#128). *Done in v0.20.0: a Networks page from `GET /api/topology`, every bridge and switch with its kind, addresses, NAT and what is on it.*
+
+---
+
+## Next: Privilege Separation (#206)
+
+**Status:** done in v0.29.0 (JD-056).
+
+Goal: no code that runs before authentication runs as root (JD-051, option C). An unprivileged front, as a `jaildeck` user, does the listener, the UI, login and authentication. The root process serves the API as it is now, on a Unix socket only the front can reach. Nothing changes for an API client or an operator's `service jaildeck` commands.
 
 ---
 

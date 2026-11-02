@@ -108,6 +108,11 @@ pkg check -s jaildeck
 ```
 
 Installation displays instructions but does not configure or start anything.
+It does create **the `jaildeck` user and group** when they are missing: the first
+id from 850 that is free as both, no login shell, no home. Jail Deck started as
+root runs its front as that user (JD-056) and refuses to start without it. An
+upgrade finds them and leaves them. Removal leaves them too, as ports do, and
+says how to remove them.
 For a **new deployment**, copy and edit the sample, then load the same settings
 the service will use before creating the operator credential:
 
@@ -131,7 +136,7 @@ setup during an upgrade.
 Host preparation remains an explicit operator action. Review readiness and
 the selected pool before running `jaildeck init`. Package installation never
 initializes ZFS, changes networking, creates credentials, enables the service
-or starts it. The default UI bind remains `127.0.0.1:8888`; reach it remotely
+or starts it. The `jaildeck` user is the one thing it adds to the host. The default UI bind remains `127.0.0.1:8888`; reach it remotely
 with the SSH forwarding described in [the README](https://github.com/ottermq/jaildeck/blob/dev/README.md#first-run).
 
 ## Upgrade or replace a local package

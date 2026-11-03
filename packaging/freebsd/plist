@@ -5,3 +5,4 @@ bin/jaildeck
 etc/rc.d/jaildeck
 @mode 0644
 etc/jaildeck/jaildeck.env.sample
+@config etc/newsyslog.conf.d/jaildeck.conf

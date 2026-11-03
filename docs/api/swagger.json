@@ -4263,6 +4263,7 @@
                     "type": "string"
                 },
                 "duration_ms": {
+                    "description": "How long a console session lasted and why it ended (JD-042).\nDurationMS is also an exec's, how long the command ran (#141). Omitted\non every other entry.",
                     "type": "integer"
                 },
                 "error": {
@@ -4278,7 +4279,7 @@
                     "type": "string"
                 },
                 "principal": {
-                    "description": "Who opened a console session (\"session\", or \"token:\u003cname\u003e\"), how long\nit lasted, and why it ended (JD-042). DurationMS is also an exec's, how\nlong the command ran (#141). Omitted on every other entry.",
+                    "description": "Who the request that wrote the entry authenticated as: \"session\", or\n\"token:\u003cname\u003e\". Every entry a request writes has one, a detached\noperation's too; only what no request started, such as the observer's,\nhas none.",
                     "type": "string"
                 },
                 "reason": {

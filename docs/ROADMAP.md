@@ -67,6 +67,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Limited tokens and signed images** (v0.28.0): tokens limited to reading and to exec in jails with a given label, for a platform's worker (JD-055); Ubuntu, Fedora, Alpine and Arch images checked against their publisher's OpenPGP signature, with the keys built in (JD-054)
 - **Privilege separation** (v0.29.0, fixed in v0.29.1): the front (listeners, UI, signing in) runs as a `jaildeck` user the package creates, and the root side serves the API on a socket only the front reaches (#206, JD-056)
 - **Snapshot grant and audit principals** (v0.30.0): limited tokens take and destroy snapshots whose name matches a pattern, in labelled jails, for a platform's backups (JD-057); every audit entry names the session or token that made it
+- **Audit log rotation** (v0.30.1): the package rotates the default audit log with `newsyslog`, at 10 MB with 10 compressed files kept (JD-058).
 
 ---
 
@@ -457,7 +458,7 @@ A Linux VM can be created from an image with cloud-init, reached over the bridge
 
 ---
 
-## Next: VM Networks (#118)
+## Milestone: VM Networks (#118)
 
 **Status:** done. Step 1 in v0.17.0; step 2, tenant networks, in v0.19.0, and the view of every network in v0.20.0; step 3, addresses picked by Jail Deck and creating on a network, in v0.24.0 (JD-047).
 
@@ -470,11 +471,17 @@ Goal: every guest on a network without a root shell, and, for Otter Cloud, a net
 
 ---
 
-## Next: Privilege Separation (#206)
+## Milestone: Privilege Separation (#206)
 
-**Status:** done in v0.29.0 (JD-056).
+**Status:** done in v0.29.0 (JD-056). v0.29.1 made the front's uid the boundary rather than a group.
 
 Goal: no code that runs before authentication runs as root (JD-051, option C). An unprivileged front, as a `jaildeck` user, does the listener, the UI, login and authentication. The root process serves the API as it is now, on a Unix socket only the front can reach. Nothing changes for an API client or an operator's `service jaildeck` commands.
+
+---
+
+## Next
+
+Nothing is queued. Every milestone above is shipped. What comes next follows what Otter Cloud asks for, as the snapshot grant did (JD-057), and is added here when it is asked for.
 
 ---
 
@@ -495,7 +502,7 @@ Previously in scope, deliberately moved out. Not rejected — just not now.
 - **ZFS replication status** — the rest of the ZFS write operations moved into Storage Writes
 - **Structured application logging**, distinct from the operation audit trail (JD-011)
 - **Durable metrics history inside Jail Deck** — the one feature that would justify a database. Live values and a trailing in-memory window need none, and the `/metrics` endpoint hands history to Prometheus; the trigger is wanting a chart *over time* inside Jail Deck itself that survives a restart (JD-011)
-- **Audit log rotation or richer querying** — filtering currently scans the whole file. Harmless at single-operator scale; rotation is the cheaper answer before anything larger (JD-011)
+- **Richer audit querying** — filtering scans the current file, which rotation now keeps to 10 MB (JD-058). Older entries are in the rotated files, which the API doesn't read (JD-011)
 
 ## Not planned
 

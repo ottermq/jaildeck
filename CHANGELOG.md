@@ -20,7 +20,13 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.30.1 — 2026-11-02
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.30.1)
+
+**The package rotates the audit log.** On the default path it now rotates at 10 MB, and
+`GET /api/audit` shows only the current file. A log configured elsewhere needs a `newsyslog`
+line of its own.
 
 - **The package rotates the audit log** (JD-058): `/usr/local/etc/newsyslog.conf.d/jaildeck.conf`
   rotates the default `JAILDECK_AUDIT_LOG` at 10 MB and keeps 10 compressed files. `GET /api/audit`

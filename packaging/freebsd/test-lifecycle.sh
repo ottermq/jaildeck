@@ -182,6 +182,11 @@ boot=/usr/local/etc/rc.d/jaildeck_networks
 order=$(rcorder /etc/rc.d/* /usr/local/etc/rc.d/* 2>/dev/null)
 before_jail=$(printf '%s\n' "$order" | sed -n '\#/jaildeck_networks$#,\#^/etc/rc.d/jail$#p' | wc -l)
 [ "$before_jail" -gt 1 ] || fail 'the boot step does not come before the jails.'
+# Both scripts after syslogd, or what they say at boot is lost.
+for script in jaildeck jaildeck_networks; do
+    after_syslogd=$(printf '%s\n' "$order" | sed -n "\\#^/etc/rc.d/syslogd\$#,\\#/$script\$#p" | wc -l)
+    [ "$after_syslogd" -gt 1 ] || fail "$script starts before syslogd."
+done
 service jaildeck_networks onestart > "$work/restore.out"
 grep -qx 'no tenant networks are recorded: nothing to do' "$work/restore.out" ||
     fail 'the boot step did not run jaildeck networks restore.'

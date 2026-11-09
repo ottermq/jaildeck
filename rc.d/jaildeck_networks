@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # PROVIDE: jaildeck_networks
-# REQUIRE: NETWORKING
+# REQUIRE: NETWORKING syslogd
 # BEFORE: jail vm
 # KEYWORD: nojailvnet
 #
@@ -43,7 +43,13 @@ jaildeck_networks_start()
 		. "${jaildeck_env_file}"
 		set +a
 	fi
-	/usr/local/bin/jaildeck networks restore
+	# On the console, as rc scripts print, and in syslog, where it can be read
+	# after the boot.
+	_out=$(/usr/local/bin/jaildeck networks restore 2>&1)
+	_status=$?
+	echo "${_out}"
+	echo "${_out}" | logger -t jaildeck_networks
+	return ${_status}
 }
 
 run_rc_command "$1"

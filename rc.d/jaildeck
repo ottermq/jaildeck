@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # PROVIDE: jaildeck
-# REQUIRE: NETWORKING FILESYSTEMS
+# REQUIRE: NETWORKING FILESYSTEMS syslogd
 # KEYWORD: shutdown
 #
 # Jail Deck — FreeBSD jails dashboard and host agent.
@@ -44,6 +44,10 @@ command="/usr/sbin/daemon"
 command_args="-P ${pidfile} ${jaildeck_daemon_args} /usr/local/bin/${name}"
 
 start_precmd="jaildeck_prestart"
+
+# syslogd in REQUIRE: daemon(8) -S hands Jail Deck's output to syslog, and at
+# boot this script came before syslogd, so everything Jail Deck said while
+# starting -- a missing network's warning among it (JD-059) -- was lost.
 
 jaildeck_prestart()
 {

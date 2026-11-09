@@ -68,6 +68,8 @@ export interface TenantNetwork {
 export interface NetworkList {
     range: string
     networks: TenantNetwork[]
+    // Recorded networks whose bridge the host does not have (JD-059).
+    missing: TenantNetwork[]
 }
 
 export async function listNetworks(): Promise<NetworkList> {

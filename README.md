@@ -159,7 +159,7 @@ doing to the host. No credential material is logged at any level.
 
 ## Running as a service
 
-`make install` puts the binary in `$PREFIX/bin`, the `rc.d` script in
+`make install` puts the binary in `$PREFIX/bin`, the `rc.d` scripts in
 `$PREFIX/etc/rc.d`, and a sample config in `$PREFIX/etc/jaildeck` (`PREFIX` defaults to
 `/usr/local`; `DESTDIR` stages the same layout for a package build):
 
@@ -201,6 +201,14 @@ not hang the session.
 Oct 22 22:23:51 isengard jaildeck[81634]: level=INFO msg=listening version=v0.7.0 addr=127.0.0.1:8888
 ```
 
+**Tenant networks come back at boot** (JD-059). Their bridges are made at runtime and a
+reboot takes them, so a second script, `jaildeck_networks`, runs `jaildeck networks restore`
+after the network is up and before jails and guests start. It puts back each recorded
+network's bridge that is missing, with its description and gateway, and changes nothing
+that is there. It follows `jaildeck_enable`; set `jaildeck_networks_enable=NO` to leave the
+bridges to something else. The record is `networks.json` beside the anchor file, in
+`JAILDECK_PF_ANCHOR_DIR`.
+
 `daemon(8)` is **not** given `-r`, so a stopped service stays stopped. Add it through
 `jaildeck_daemon_args` for restart-on-exit. Replacing `-S` with `-o /var/log/jaildeck.log`
 would write to a file instead — but Jail Deck emits no timestamps of its own, so those
@@ -216,6 +224,7 @@ jaildeck token add <name> [--scope console] | [--allow <grant>]...
                               generate a token and print it once
 jaildeck token list
 jaildeck token revoke <name>
+jaildeck networks restore     put back tenant networks' bridges a reboot took
 ```
 
 `token add` prints the token on stdout and everything else on stderr, so the secret can
@@ -329,7 +338,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `POST /api/vms` | create a guest from an image: CPU and a pin to host CPUs, memory, disk, a NIC on a switch, SSH keys, a static address, picked by Jail Deck on its own networks |
 | `PUT /api/vms/{name}` | the same, idempotent: create it, or say it already matches, or how it differs |
 | `GET /api/vms/{name}/console` | its serial console, over a WebSocket; one at a time, audited; the `console` scope; optional `actor` and `reason`, recorded |
-| `GET /api/networks` | tenant networks: a bridge each, its subnet, gateway, members and the addresses in use |
+| `GET /api/networks` | tenant networks: a bridge each, its subnet, gateway, members and the addresses in use; under `missing`, recorded ones whose bridge the host has lost |
 | `POST /api/networks` | create one: a bridge on a free /24 of the range, a vm-bhyve switch on it, rules keeping it apart |
 | `GET /api/networks/{name}` | one tenant network, with the addresses in use and whose they are |
 | `DELETE /api/networks/{name}?confirm={name}` | destroy an empty one |

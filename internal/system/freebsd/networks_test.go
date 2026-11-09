@@ -171,3 +171,30 @@ func TestASwitchWithNoAddress(t *testing.T) {
 		t.Errorf("switches = %+v, want one with no address", got)
 	}
 }
+
+// The record is written whole, through a file beside it, and read back; a
+// record that is not there reads as empty, and no temporary file is left.
+func TestNetworkRecordFile(t *testing.T) {
+	a := NewAdapter(nil)
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "pf", "networks.json")
+	if content, err := a.NetworkRecord(ctx, path); err != nil || content != "" {
+		t.Fatalf("missing record = %q, %v", content, err)
+	}
+	for _, content := range []string{"first\n", "second\n"} {
+		if _, err := a.WriteNetworkRecord(ctx, path, content); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := a.NetworkRecord(ctx, path); err != nil || got != content {
+			t.Errorf("record = %q, %v; want %q", got, err, content)
+		}
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o644 {
+		t.Errorf("mode = %v, %v", info, err)
+	}
+	entries, _ := os.ReadDir(filepath.Dir(path))
+	if len(entries) != 1 {
+		t.Errorf("the directory holds %v", entries)
+	}
+}

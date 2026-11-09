@@ -74,6 +74,13 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "networks":
+			cfg := config.LoadConfig()
+			if err := runNetworks(os.Args[2:], os.Stdout, os.Stderr, cfg); err != nil {
+				fmt.Fprintln(os.Stderr, "jaildeck networks:", err)
+				os.Exit(1)
+			}
+			return
 		case "front":
 			cfg := config.LoadConfig()
 			lvl, _ := parseLogLevel(cfg.LogLevel)

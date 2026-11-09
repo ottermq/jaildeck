@@ -93,17 +93,19 @@ tidy-check:
 check: fmt-check vet build doc-check test
 	@echo "check: OK"
 
-## install: install the binary, rc.d script and sample env under PREFIX (run on the FreeBSD host, or stage with DESTDIR)
+## install: install the binary, rc.d scripts and sample env under PREFIX (run on the FreeBSD host, or stage with DESTDIR)
 install: build
 	@install -d "$(DESTDIR)$(PREFIX)/bin" "$(DESTDIR)$(PREFIX)/etc/rc.d" "$(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)" "$(DESTDIR)$(PREFIX)/etc/newsyslog.conf.d"
 	@install -m 0555 "$(BUILD_DIR)/$(BINARY_NAME)" "$(DESTDIR)$(PREFIX)/bin/$(BINARY_NAME)"
 	@install -m 0555 ./rc.d/$(BINARY_NAME) "$(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)"
+	@install -m 0555 ./rc.d/$(BINARY_NAME)_networks "$(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)_networks"
 	@# The sample only. A live jaildeck.env is the operator's and is never overwritten.
 	@install -m 0644 ./.env.sample "$(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)/$(BINARY_NAME).env.sample"
 	@install -m 0644 ./packaging/freebsd/jaildeck.newsyslog.conf "$(DESTDIR)$(PREFIX)/etc/newsyslog.conf.d/$(BINARY_NAME).conf"
 	@echo "installed:"
 	@echo "  $(DESTDIR)$(PREFIX)/bin/$(BINARY_NAME)"
 	@echo "  $(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)"
+	@echo "  $(DESTDIR)$(PREFIX)/etc/rc.d/$(BINARY_NAME)_networks"
 	@echo "  $(DESTDIR)$(PREFIX)/etc/$(BINARY_NAME)/$(BINARY_NAME).env.sample"
 	@echo "  $(DESTDIR)$(PREFIX)/etc/newsyslog.conf.d/$(BINARY_NAME).conf"
 	@echo "copy the sample to $(PREFIX)/etc/$(BINARY_NAME)/$(BINARY_NAME).env and edit it"

@@ -1,0 +1,49 @@
+#!/bin/sh
+#
+# PROVIDE: jaildeck_networks
+# REQUIRE: NETWORKING
+# BEFORE: jail vm
+# KEYWORD: nojailvnet
+#
+# Jail Deck — puts back the tenant networks' bridges at boot (JD-059).
+#
+# A tenant network's bridge is made at runtime, and a reboot takes it. This
+# runs `jaildeck networks restore` once, before jails and bhyve guests start,
+# which makes every bridge in Jail Deck's network record that the host does
+# not have, with its description and gateway. It changes nothing that is
+# there, and it does not need the jaildeck service running.
+#
+# It is on whenever the service is: jaildeck_enable=YES. Set
+# jaildeck_networks_enable=NO to leave the bridges to someone else.
+
+. /etc/rc.subr
+
+name="jaildeck_networks"
+rcvar="jaildeck_networks_enable"
+desc="Restore Jail Deck's tenant network bridges"
+
+load_rc_config jaildeck
+load_rc_config "$name"
+
+: ${jaildeck_enable:="NO"}
+: ${jaildeck_networks_enable:="${jaildeck_enable}"}
+: ${jaildeck_env_file:="/usr/local/etc/jaildeck/jaildeck.env"}
+
+start_cmd="jaildeck_networks_start"
+stop_cmd=":"
+
+jaildeck_networks_start()
+{
+	# The same environment the service gets: the env file names the anchor
+	# directory the record is in, and the audit log the restore writes to.
+	PATH="${PATH}:/usr/local/sbin:/usr/local/bin"
+	export PATH
+	if [ -f "${jaildeck_env_file}" ]; then
+		set -a
+		. "${jaildeck_env_file}"
+		set +a
+	fi
+	/usr/local/bin/jaildeck networks restore
+}
+
+run_rc_command "$1"

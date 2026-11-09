@@ -2804,3 +2804,39 @@ The log stays the operator's. The rule for rotating it is the package's, since i
 
 - **`GET /api/audit` now loses history on every host,** at each rotation, with nothing in the response to say so. JD-011 accepted this; the difference is that it now happens by default. Reading the rotated files would make every filter slow again, which is what this is for.
 - **Only the default path is covered.** `JAILDECK_AUDIT_LOG` elsewhere needs a line of its own. A missing file is skipped silently, so a host using another path gets no rotation and no complaint.
+
+## JD-059 — Tenant Networks Are Recorded and Put Back at Boot
+
+**Status:** Locked — 2026-11-08.
+
+JD-043 kept a tenant network on the host and nowhere else: its name and tenant in the bridge's description, its subnet in the bridge's address. That holds while the host is up. The bridge is made at runtime, though, and a reboot takes it (#225). Then `GET /api/networks` answered no networks, and every VNET jail on one failed to start, its `exec.prestart` stopping at `ifconfig <bridge> addm` and leaving its epair behind. Someone had to rebuild each bridge by hand, with the right name, description and gateway.
+
+### A record, kept beside the anchor file
+
+`networks.json` in `JAILDECK_PF_ANCHOR_DIR` keeps each network's name, tenant, bridge and gateway with its prefix: what it takes to make the bridge again.
+
+- **The bridge stays the truth while the host is up** (JD-011). Every read is still off the bridges. The record only matters at boot, and to say which network has lost its bridge.
+- **It follows the host.** Creating a network writes it with the bridge and its address, before the switch, and a create that fails later takes it back. Destroying a network removes it. The service brings it up to the host at every start, which is how a host whose networks were made before the record gets one. A network on the host replaces whatever the record said about its bridge.
+- **Beside the anchor file, not in the state directory.** The state directory holds the credential alone, and the front can pass through it (JD-056). The anchor directory is Jail Deck's, written as root, and its other file is also read at boot.
+- **Written whole.** Through a file beside it, synced and renamed over it: the record is read after a power cut, so a half-written one would fail the very boot it's for.
+- **Checked when it's read.** Bridge, name, tenant and gateway go on `ifconfig`'s command line. An entry that isn't a `jdn<i>` bridge, a network name, a tenant label and an IPv4 address with its prefix refuses the whole file.
+
+### The boot step
+
+`rc.d/jaildeck_networks` (`REQUIRE: NETWORKING`, `BEFORE: jail vm`) runs `jaildeck networks restore` once. That makes each recorded bridge the host doesn't have, with its description and gateway, through the same adapter calls and audit entries as a create from the API.
+
+- **A bridge that's there is left alone**, so the step can run again. One that's there with another description is someone else's: it's reported and not touched.
+- **A failed bridge is destroyed again**, as a failed create is, and the others are still tried. The step exits non-zero, and the boot goes on.
+- **It needs no service running and no credential**, like `jaildeck init`. It reads the same env file the service does.
+- **It's on whenever the service is.** `jaildeck_networks_enable` defaults to `jaildeck_enable`, and `NO` leaves the bridges to something else.
+- **The switch and the rules need nothing.** vm-bhyve keeps a manual switch in its configuration, and PF loads the anchor file at boot, before the bridges exist, and applies it once they do.
+
+### A missing network keeps its place
+
+While its bridge is missing, a recorded network is listed under `missing` in `GET /api/networks`, and the service warns about it at start. A new network takes neither its bridge nor its subnet nor its name, or the restore would collide with it. It can still be destroyed: its switch and its record go, and there's no bridge to take.
+
+### What it doesn't do
+
+- **`rc.conf` was considered and left out.** `cloned_interfaces` and `ifconfig_<bridge>` would bring the bridges back with no script, but the package has never written `rc.conf`, and the lifecycle test checks that it stays the same.
+- **No leftover epairs are cleaned.** At boot there are none yet. They come from a jail start that failed, and this step runs before any.
+- **The reboot itself isn't in the tests.** The lab VM the lifecycle test runs on wasn't available. The restore and the rc script ran on a lab host against a scratch network with no reboot, and `rcorder` placed the script after `NETWORKING` and before `jail` and `vm`.

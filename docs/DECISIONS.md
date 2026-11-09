@@ -2823,7 +2823,7 @@ JD-043 kept a tenant network on the host and nowhere else: its name and tenant i
 
 ### The boot step
 
-`rc.d/jaildeck_networks` (`REQUIRE: NETWORKING`, `BEFORE: jail vm`) runs `jaildeck networks restore` once. That makes each recorded bridge the host doesn't have, with its description and gateway, through the same adapter calls and audit entries as a create from the API.
+`rc.d/jaildeck_networks` (`REQUIRE: NETWORKING syslogd`, `BEFORE: jail vm`) runs `jaildeck networks restore` once, and sends what it prints to syslog as well as the console. That makes each recorded bridge the host doesn't have, with its description and gateway, through the same adapter calls and audit entries as a create from the API.
 
 - **A bridge that's there is left alone**, so the step can run again. One that's there with another description is someone else's: it's reported and not touched.
 - **A failed bridge is destroyed again**, as a failed create is, and the others are still tried. The step exits non-zero, and the boot goes on.
@@ -2839,4 +2839,6 @@ While its bridge is missing, a recorded network is listed under `missing` in `GE
 
 - **`rc.conf` was considered and left out.** `cloned_interfaces` and `ifconfig_<bridge>` would bring the bridges back with no script, but the package has never written `rc.conf`, and the lifecycle test checks that it stays the same.
 - **No leftover epairs are cleaned.** At boot there are none yet. They come from a jail start that failed, and this step runs before any.
-- **The reboot itself isn't in the tests.** The lab VM the lifecycle test runs on wasn't available. The restore and the rc script ran on a lab host against a scratch network with no reboot, and `rcorder` placed the script after `NETWORKING` and before `jail` and `vm`.
+### What the reboot test found
+
+The service's own script came before `syslogd` at boot, so whatever Jail Deck logged while starting after a boot was lost, the missing network's warning along with the rest. `rc.d/jaildeck` now requires `syslogd` too, and the lifecycle test checks that both scripts come after it.

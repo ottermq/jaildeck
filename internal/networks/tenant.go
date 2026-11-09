@@ -43,6 +43,9 @@ type NetworkList struct {
 	// /24 each (JAILDECK_NETWORK_RANGE).
 	Range    string    `json:"range"`
 	Networks []Network `json:"networks"`
+	// Missing are the recorded networks whose bridge the host does not have
+	// (JD-059): after a reboot that ran no `jaildeck networks restore`.
+	Missing []Network `json:"missing"`
 }
 
 // CreateNetworkRequest is the body of POST /api/networks.
@@ -136,7 +139,17 @@ func (s *Service) Networks(ctx context.Context) (NetworkList, error) {
 	for i := range list {
 		list[i].Addresses = s.addressesOf(ctx, list[i])
 	}
-	return NetworkList{Range: r.String(), Networks: list}, nil
+	missing := make([]Network, 0)
+	if rec, _, err := s.readRecord(ctx); err != nil {
+		common.Logger(ctx, "networks").Warn("could not read the network record", slog.Any("err", err))
+	} else {
+		bridges := make([]TenantBridge, 0, len(list))
+		for _, n := range list {
+			bridges = append(bridges, TenantBridge{Name: n.Bridge})
+		}
+		missing = missingFrom(rec, bridges)
+	}
+	return NetworkList{Range: r.String(), Networks: list, Missing: missing}, nil
 }
 
 // Network reads one tenant network.
@@ -251,6 +264,22 @@ func (s *Service) CreateNetwork(ctx context.Context, req CreateNetworkRequest) (
 	if err != nil {
 		return Network{}, readError("the host's addresses", err)
 	}
+	rec, err := s.syncRecord(ctx, existing)
+	if err != nil {
+		return Network{}, operationError("bring the network record up to date", err)
+	}
+	// A recorded network whose bridge is missing keeps its name, bridge and
+	// subnet: restore puts it back as it was.
+	for _, m := range missingFrom(rec, bridges) {
+		if m.Name == req.Name {
+			return Network{}, common.NewAppError(http.StatusConflict, fmt.Sprintf(
+				"the network %s is recorded, with its bridge %s missing; run `jaildeck networks restore`", strconv.Quote(req.Name), m.Bridge))
+		}
+		bridges = append(bridges, TenantBridge{Name: m.Bridge})
+		if p, err := netip.ParsePrefix(m.Subnet); err == nil {
+			inUse = append(inUse, p)
+		}
+	}
 	index, subnet, ok := freeSubnet(r, bridges, inUse)
 	if !ok {
 		return Network{}, common.NewAppError(http.StatusConflict, fmt.Sprintf(
@@ -283,6 +312,11 @@ func (s *Service) CreateNetwork(ctx context.Context, req CreateNetworkRequest) (
 	if err != nil {
 		return Network{}, undo("give the host its address on the bridge", err)
 	}
+	entry, _ := recordOf(network)
+	if err := s.writeRecord(ctx, append(slices.Clone(rec), entry)); err != nil {
+		return Network{}, undo("record the network", err)
+	}
+	made = append(made, func() { _ = s.writeRecord(ctx, rec) })
 	command, err = s.system.CreateManualSwitch(ctx, req.Name, bridge)
 	s.log(ctx, OperationCreateSwitch, req.Name, command, err)
 	if err != nil {
@@ -336,11 +370,27 @@ func (s *Service) DestroyNetwork(ctx context.Context, name, confirm string) (Net
 	if err != nil {
 		return NetworkRemoval{}, err
 	}
+	rec, err := s.syncRecord(ctx, list)
+	if err != nil {
+		return NetworkRemoval{}, operationError("bring the network record up to date", err)
+	}
+	// A recorded network whose bridge is missing can be destroyed too: its
+	// switch and its record go, and there is no bridge to take.
+	bridges := make([]TenantBridge, 0, len(list))
+	for _, n := range list {
+		bridges = append(bridges, TenantBridge{Name: n.Bridge})
+	}
+	missing := missingFrom(rec, bridges)
 	i := slices.IndexFunc(list, func(n Network) bool { return n.Name == name })
-	if i < 0 {
+	var network Network
+	switch m := slices.IndexFunc(missing, func(n Network) bool { return n.Name == name }); {
+	case i >= 0:
+		network = list[i]
+	case m >= 0:
+		network = missing[m]
+	default:
 		return NetworkRemoval{}, common.NewAppError(http.StatusNotFound, "there is no network named "+strconv.Quote(name))
 	}
-	network := list[i]
 	if confirm != name {
 		return NetworkRemoval{}, common.NewAppError(http.StatusBadRequest, fmt.Sprintf(
 			"destroying a network needs confirm=%s", name))
@@ -373,12 +423,18 @@ func (s *Service) DestroyNetwork(ctx context.Context, name, confirm string) (Net
 	if err != nil {
 		return NetworkRemoval{}, operationError("destroy the switch of "+strconv.Quote(name), err)
 	}
-	command, err = s.system.DestroyBridge(ctx, network.Bridge)
-	s.log(ctx, OperationDestroyNetworkBridge, network.Bridge, command, err)
-	if err != nil {
-		return NetworkRemoval{}, operationError("destroy the bridge of "+strconv.Quote(name), err)
+	if i >= 0 {
+		command, err = s.system.DestroyBridge(ctx, network.Bridge)
+		s.log(ctx, OperationDestroyNetworkBridge, network.Bridge, command, err)
+		if err != nil {
+			return NetworkRemoval{}, operationError("destroy the bridge of "+strconv.Quote(name), err)
+		}
 	}
-	rest := slices.Delete(slices.Clone(list), i, i+1)
+	kept := slices.DeleteFunc(slices.Clone(rec), func(r Recorded) bool { return r.Bridge == network.Bridge })
+	if err := s.writeRecord(ctx, kept); err != nil {
+		return NetworkRemoval{}, operationError("take "+strconv.Quote(name)+" out of the network record", err)
+	}
+	rest := slices.DeleteFunc(slices.Clone(list), func(n Network) bool { return n.Name == name })
 	if err := s.writeRules(ctx, rest); err != nil {
 		return NetworkRemoval{}, operationError("rewrite the rules without "+strconv.Quote(name), err)
 	}

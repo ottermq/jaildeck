@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -184,6 +185,54 @@ func (a *Adapter) WriteAnchorFile(_ context.Context, path, content string) (stri
 		return command, err
 	}
 	return command, writeIfChanged(path, []byte(content))
+}
+
+// NetworkRecord is the file, empty when it does not exist.
+func (a *Adapter) NetworkRecord(_ context.Context, path string) (string, error) {
+	content, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	return string(content), err
+}
+
+// WriteNetworkRecord writes the file beside it, syncs it, renames it over the
+// record and syncs the directory: the record is read after a power cut.
+func (a *Adapter) WriteNetworkRecord(_ context.Context, path, content string) (string, error) {
+	command := "write " + path
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return command, err
+	}
+	tmp, err := os.CreateTemp(dir, ".networks-*.json")
+	if err != nil {
+		return command, err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		return command, err
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return command, err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return command, err
+	}
+	if err := tmp.Close(); err != nil {
+		return command, err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return command, err
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return command, err
+	}
+	defer d.Close()
+	return command, d.Sync()
 }
 
 // LoadAnchor validates the file against the anchor with `pfctl -n` and only

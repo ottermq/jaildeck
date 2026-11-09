@@ -83,6 +83,13 @@ type System interface {
 	SwitchUsers(ctx context.Context, name string) ([]string, error)
 	BridgeUsers(ctx context.Context, bridge string) ([]string, error)
 
+	// NetworkRecord is the record file's contents, empty when there is none
+	// (JD-059). WriteNetworkRecord replaces it whole, through a file beside it
+	// that is renamed over it, so that a power cut leaves the old record or
+	// the new one and never half of one.
+	NetworkRecord(ctx context.Context, path string) (string, error)
+	WriteNetworkRecord(ctx context.Context, path, content string) (string, error)
+
 	// Interfaces is every interface on the host, from one ifconfig: what
 	// the Networks view reads its bridges and their members from (#128).
 	Interfaces(ctx context.Context) ([]Interface, error)

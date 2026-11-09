@@ -88,6 +88,7 @@ the account that built the package:
 | --- | --- |
 | `/usr/local/bin/jaildeck` | `0555` |
 | `/usr/local/etc/rc.d/jaildeck` | `0555` |
+| `/usr/local/etc/rc.d/jaildeck_networks` | `0555` |
 | `/usr/local/etc/jaildeck/jaildeck.env.sample` | `0644` |
 | `/usr/local/etc/newsyslog.conf.d/jaildeck.conf` | `0644` |
 
@@ -177,6 +178,14 @@ To keep more, edit that file. `pkg upgrade` keeps your edit. `pkg add` and
 `pkg add -f` put the packaged file back and leave yours beside it as
 `jaildeck.conf.pkgsave`, so copy it back afterwards. Removing the package removes
 the file, edited or not.
+
+`/usr/local/etc/rc.d/jaildeck_networks` puts tenant networks' bridges back at
+boot (JD-059), before jails and guests start. It's on whenever
+`jaildeck_enable` is, and changes no `rc.conf`. The record it reads,
+`/usr/local/etc/jaildeck/pf/networks.json`, is Jail Deck's runtime data, like the
+anchor file beside it, and isn't in the package: removing the package leaves it.
+After upgrading from v0.30.1 or earlier, start the service once while the
+networks are up. That's when Jail Deck records the networks the host has.
 
 ## Install and upgrade from a package repository
 

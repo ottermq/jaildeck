@@ -20,6 +20,31 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.30.2 — 2026-11-09
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.30.2)
+
+**Tenant networks come back after a reboot** (#225). A reboot used to take every tenant
+network's bridge with it, so the VNET jails on one didn't start. Start the service once
+after upgrading, while the networks are up, so that Jail Deck records them.
+
+- **The networks are recorded** (JD-059): `networks.json` in `JAILDECK_PF_ANCHOR_DIR` keeps
+  each tenant network's name, tenant, bridge and gateway. Creating and destroying a network
+  update it, and the service records at start the networks the host has.
+- **A boot step puts the bridges back**: `rc.d/jaildeck_networks` runs the new
+  `jaildeck networks restore` before jails and guests start. It makes each recorded bridge
+  that is missing and leaves the ones that are there. It follows `jaildeck_enable`.
+- **A missing network is reported**, in the service's log at start and under `missing` in
+  `GET /api/networks`. It keeps its bridge, its subnet and its name: a new network takes
+  none of them, and it can still be destroyed.
+- **What Jail Deck logs while starting after a boot reaches syslog.** `rc.d/jaildeck` started
+  before `syslogd`, so those lines were lost. It now waits for it, and for the boot step.
+
+### API
+
+- `GET /api/networks` has a new field, `missing`: the recorded networks whose bridge the host
+  doesn't have. It's empty while every bridge is there.
+
 ## v0.30.1 — 2026-11-02
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.30.1)

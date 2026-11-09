@@ -192,6 +192,16 @@ func (h *host) SetRCConf(_ context.Context, name, value string) (string, error) 
 	return "sysrc " + name + "=" + value, nil
 }
 
+func (h *host) NetworkRecord(_ context.Context, p string) (string, error) { return h.files[p], nil }
+
+func (h *host) WriteNetworkRecord(_ context.Context, path, content string) (string, error) {
+	if err := h.do("record " + path); err != nil {
+		return "write " + path, err
+	}
+	h.files[path] = content
+	return "write " + path, nil
+}
+
 func (h *host) WriteAnchorFile(_ context.Context, path, content string) (string, error) {
 	if err := h.do("write " + path); err != nil {
 		return "write " + path, err

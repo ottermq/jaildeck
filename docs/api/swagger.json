@@ -6562,6 +6562,13 @@
         "networks.NetworkList": {
             "type": "object",
             "properties": {
+                "missing": {
+                    "description": "Missing are the recorded networks whose bridge the host does not have\n(JD-059): after a reboot that ran no `jaildeck networks restore`.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/networks.Network"
+                    }
+                },
                 "networks": {
                     "type": "array",
                     "items": {

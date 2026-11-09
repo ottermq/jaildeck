@@ -22,7 +22,7 @@ newversion=$(pkg query -F "$new" '%v')
 if pkg info -e jaildeck || pgrep -x jaildeck >/dev/null; then
     fail 'an installed or running Jaildeck already exists.'
 fi
-for item in /usr/local/bin/jaildeck /usr/local/etc/rc.d/jaildeck \
+for item in /usr/local/bin/jaildeck /usr/local/etc/rc.d/jaildeck /usr/local/etc/rc.d/jaildeck_networks \
     /usr/local/etc/jaildeck /var/db/jaildeck /var/log/jaildeck /usr/local/jails/package-test; do
     [ ! -e "$item" ] || fail "existing operator/application path: $item"
 done
@@ -44,8 +44,9 @@ sha256 -q /etc/rc.conf > "$work/rc.before"
 pkg add "$old"
 pkg info jaildeck
 pkg check -s jaildeck
-# An older package may not have the rotation config yet; NEW's is checked below.
-pkg query '%Fp' jaildeck | grep -v newsyslog | sort > "$work/files"
+# An older package may not have the rotation config or the network boot step
+# yet; NEW's are checked below.
+pkg query '%Fp' jaildeck | grep -v -e newsyslog -e jaildeck_networks | sort > "$work/files"
 printf '%s\n' /usr/local/bin/jaildeck /usr/local/etc/jaildeck/jaildeck.env.sample \
     /usr/local/etc/rc.d/jaildeck | sort > "$work/expected-files"
 diff -u "$work/expected-files" "$work/files"
@@ -172,6 +173,28 @@ curl -sS -o /dev/null -X POST -H "Authorization: Bearer $(tail -1 "$work/token")
 if grep -qv '^{' "$audit_log"; then fail 'the rotated audit log holds something other than JSON lines.'; fi
 service jaildeck onestop
 running=NO
+
+# The boot step that puts tenant networks' bridges back (JD-059): before the
+# jails start, and with the fake adapter here, so it finds nothing recorded
+# and makes nothing.
+boot=/usr/local/etc/rc.d/jaildeck_networks
+[ "$(stat -f '%Su:%Sg:%Lp' "$boot")" = root:wheel:555 ] || fail 'boot step permissions.'
+order=$(rcorder /etc/rc.d/* /usr/local/etc/rc.d/* 2>/dev/null)
+before_jail=$(printf '%s\n' "$order" | sed -n '\#/jaildeck_networks$#,\#^/etc/rc.d/jail$#p' | wc -l)
+[ "$before_jail" -gt 1 ] || fail 'the boot step does not come before the jails.'
+# Both scripts after syslogd, or what they say at boot is lost.
+for script in jaildeck jaildeck_networks; do
+    after_syslogd=$(printf '%s\n' "$order" | sed -n "\\#^/etc/rc.d/syslogd\$#,\\#/$script\$#p" | wc -l)
+    [ "$after_syslogd" -gt 1 ] || fail "$script starts before syslogd."
+done
+# The service after the boot step, or it warns of networks about to come back.
+service_after=$(printf '%s\n' "$order" | sed -n '\#/jaildeck_networks$#,\#/rc.d/jaildeck$#p' | wc -l)
+[ "$service_after" -gt 1 ] || fail 'the service starts before the boot step.'
+service jaildeck_networks onestart > "$work/restore.out"
+grep -qx 'no tenant networks are recorded: nothing to do' "$work/restore.out" ||
+    fail 'the boot step did not run jaildeck networks restore.'
+ifconfig -l > "$work/interfaces.after-restore"
+diff -u "$work/interfaces.before" "$work/interfaces.after-restore"
 # pkg upgrade keeps an edited rotation config. pkg add replaces it and keeps the
 # edit beside it (measured, JD-058), which is what this checks.
 printf '%s\n' '# operator edit' >> "$rotation"
@@ -182,8 +205,8 @@ inventory > "$work/operator.before"
 
 pkg delete -y jaildeck
 if pkg info -e jaildeck; then fail 'package is still registered.'; fi
-for item in /usr/local/bin/jaildeck /usr/local/etc/rc.d/jaildeck /usr/local/etc/jaildeck/jaildeck.env.sample \
-    /usr/local/etc/newsyslog.conf.d/jaildeck.conf; do
+for item in /usr/local/bin/jaildeck /usr/local/etc/rc.d/jaildeck /usr/local/etc/rc.d/jaildeck_networks \
+    /usr/local/etc/jaildeck/jaildeck.env.sample /usr/local/etc/newsyslog.conf.d/jaildeck.conf; do
     [ ! -e "$item" ] || fail "package-owned file survived removal: $item"
 done
 pw usershow jaildeck >/dev/null || fail 'removal deleted the jaildeck user.'
@@ -192,4 +215,4 @@ diff -u "$work/operator.before" "$work/operator.after-delete"
 [ "$(zfs get -H -o value guid "$dataset@preserve")" = "$guid" ] || fail 'removal changed the ZFS snapshot.'
 sha256 -q /etc/rc.conf > "$work/rc.after-delete"
 diff -u "$work/rc.before" "$work/rc.after-delete"
-echo "lifecycle: PASS (install, the jaildeck user, runtime/UI/auth through the front, upgrade, removal, log rotation, operator data and ZFS preservation)"
+echo "lifecycle: PASS (install, the jaildeck user, runtime/UI/auth through the front, upgrade, removal, log rotation, the network boot step, operator data and ZFS preservation)"

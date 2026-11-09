@@ -191,6 +191,19 @@ func (f *Networks) WriteAnchorFile(_ context.Context, path, content string) (str
 	return "write " + path, nil
 }
 
+func (f *Networks) NetworkRecord(_ context.Context, path string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.files[path], nil
+}
+
+func (f *Networks) WriteNetworkRecord(_ context.Context, path, content string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.files[path] = content
+	return "write " + path, nil
+}
+
 // LoadAnchor loads the file's nat lines, as pfctl prints them back.
 func (f *Networks) LoadAnchor(_ context.Context, anchor, path string) (string, error) {
 	f.mu.Lock()

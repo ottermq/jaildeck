@@ -44,8 +44,8 @@ func TestCreatingANetworkMakesItsPartsInOrder(t *testing.T) {
 	if n.Name != want.Name || n.Tenant != want.Tenant || n.Bridge != want.Bridge || n.Subnet != want.Subnet || n.Gateway != want.Gateway {
 		t.Errorf("network = %+v\nwant      %+v", n, want)
 	}
-	if !slices.Equal(rec.ops(), oks(OperationCreateNetworkBridge, OperationSetNetworkAddress, OperationCreateSwitch,
-		OperationWriteAnchor, OperationLoadAnchor)) {
+	if !slices.Equal(rec.ops(), oks(OperationCreateNetworkBridge, OperationSetNetworkAddress, OperationWriteNetworkRecord,
+		OperationCreateSwitch, OperationWriteAnchor, OperationLoadAnchor)) {
 		t.Errorf("audited %v", rec.ops())
 	}
 	if b := h.bridges["jdn0"]; b == nil || b.Description != "jaildeck:network=acme-prod;tenant=acme" ||
@@ -225,7 +225,8 @@ func TestDestroyingANetwork(t *testing.T) {
 	if _, err := s.DestroyNetwork(ctx, "acme", "acme"); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(rec.ops()[audited:], oks(OperationDestroySwitch, OperationDestroyNetworkBridge, OperationWriteAnchor)) {
+	if !slices.Equal(rec.ops()[audited:], oks(OperationDestroySwitch, OperationDestroyNetworkBridge,
+		OperationWriteNetworkRecord, OperationWriteAnchor)) {
 		t.Errorf("audited %v", rec.ops()[audited:])
 	}
 	if h.bridges["jdn0"] != nil || h.sw("acme") != nil {

@@ -172,6 +172,9 @@ func NewBack(cfg *config.Config, recheck func(*http.Request) error) (*Back, erro
 		return nil, err
 	}
 	networkService := networks.NewService(networkSystem, audited, NetworkSettings(cfg))
+	// The record of tenant networks follows the host, and a network a reboot
+	// took is reported (JD-059).
+	networkService.CheckRecord(context.Background())
 	networkHandler := networks.NewHandler(networkService)
 	jailService.SetNetworks(jailNetworks{networks: networkService})
 

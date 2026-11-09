@@ -36,7 +36,7 @@ after upgrading, while the networks are up, so that Jail Deck records them.
   `GET /api/networks`. It keeps its bridge, its subnet and its name: a new network takes
   none of them, and it can still be destroyed.
 - **What Jail Deck logs while starting after a boot reaches syslog.** `rc.d/jaildeck` started
-  before `syslogd`, so those lines were lost. It now waits for it.
+  before `syslogd`, so those lines were lost. It now waits for it, and for the boot step.
 
 ### API
 

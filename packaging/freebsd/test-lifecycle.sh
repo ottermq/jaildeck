@@ -187,6 +187,9 @@ for script in jaildeck jaildeck_networks; do
     after_syslogd=$(printf '%s\n' "$order" | sed -n "\\#^/etc/rc.d/syslogd\$#,\\#/$script\$#p" | wc -l)
     [ "$after_syslogd" -gt 1 ] || fail "$script starts before syslogd."
 done
+# The service after the boot step, or it warns of networks about to come back.
+service_after=$(printf '%s\n' "$order" | sed -n '\#/jaildeck_networks$#,\#/rc.d/jaildeck$#p' | wc -l)
+[ "$service_after" -gt 1 ] || fail 'the service starts before the boot step.'
 service jaildeck_networks onestart > "$work/restore.out"
 grep -qx 'no tenant networks are recorded: nothing to do' "$work/restore.out" ||
     fail 'the boot step did not run jaildeck networks restore.'

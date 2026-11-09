@@ -2842,3 +2842,5 @@ While its bridge is missing, a recorded network is listed under `missing` in `GE
 ### What the reboot test found
 
 The service's own script came before `syslogd` at boot, so whatever Jail Deck logged while starting after a boot was lost, the missing network's warning along with the rest. `rc.d/jaildeck` now requires `syslogd` too, and the lifecycle test checks that both scripts come after it.
+
+With the lines arriving, the test found the service starting before the boot step and warning, at every boot, of the network the step was about to restore. The service now requires `jaildeck_networks`, which only orders the two: the service still starts with the step switched off.

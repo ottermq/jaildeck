@@ -20,6 +20,22 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.34.0 — 2026-11-17
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.34.0)
+
+**Jail Deck shows when each dataset zrepl replicates last reached the other side** (#247). A
+replication that stopped showed nothing until a restore found an old copy; the dashboard, each
+jail's page and `/metrics` now say how far behind each job is, including one another host pulls.
+
+- **ZFS replication status** (#247, JD-062). For each zrepl job, how long ago each dataset it replicates last reached the other side, read from the replication cursors zrepl keeps on this host. A job another host pulls from is covered too, which the sending host otherwise can't see. Read every minute, never per request, and read only: Jail Deck doesn't configure or trigger zrepl. The dashboard has a Replication card, headed by the dataset furthest behind, and a jail's page says which jobs replicate its datasets. A host where zrepl replicates nothing has no card, and a read that fails is `unknown`, never "nothing replicated".
+- **Metrics:** `jaildeck_replication_last_snapshot_timestamp_seconds{job,dataset}` and `jaildeck_replication_last_read_timestamp_seconds`, as Unix times. Jail Deck sets no threshold: the README has two example rules.
+
+### API
+
+- `GET /api/replication`: each job, its datasets and when each last replicated.
+- `GET /api/metrics`: `replication`, the same.
+
 ## v0.33.0 — 2026-11-17
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.33.0)

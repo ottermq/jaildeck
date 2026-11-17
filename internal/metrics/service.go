@@ -40,6 +40,8 @@ type Service struct {
 	vulnerabilities VulnerabilitySource
 	// processes is optional: Jail Deck's own memory (#224).
 	processes ProcessSource
+	// replication is optional, read as it is (#247).
+	replication ReplicationSource
 
 	mu       sync.Mutex
 	previous *reading
@@ -58,6 +60,9 @@ func (s *Service) SetVulnerabilities(v VulnerabilitySource) { s.vulnerabilities 
 
 // SetProcesses adds Jail Deck's own memory to the report (#224).
 func (s *Service) SetProcesses(p ProcessSource) { s.processes = p }
+
+// SetReplication adds zrepl's cursors to the report (#247).
+func (s *Service) SetReplication(r ReplicationSource) { s.replication = r }
 
 type reading struct {
 	ticks Ticks
@@ -129,6 +134,11 @@ func (s *Service) Report(ctx context.Context) (Report, error) {
 
 	if s.vulnerabilities != nil {
 		report.Vulnerabilities = countVulnerable(s.vulnerabilities.Snapshot())
+	}
+
+	if s.replication != nil {
+		snap := s.replication.Snapshot()
+		report.Replication = &snap
 	}
 
 	// Jail Deck's own memory never fails the report either.

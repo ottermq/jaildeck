@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"github.com/ottermq/jaildeck/internal/replication"
 	"time"
 
 	"github.com/ottermq/jaildeck/internal/osversion"
@@ -49,6 +50,10 @@ type Report struct {
 	// Processes is Jail Deck's own memory, for Prometheus only (#224):
 	// without a history of it, a slow leak could not be told from growth.
 	Processes []Process `json:"-"`
+	// Replication is the last read of zrepl's cursors (#247), the same as
+	// GET /api/replication: one entry per job and dataset, small enough
+	// that the dashboard's one poll carries it.
+	Replication *replication.Snapshot `json:"replication,omitempty"`
 }
 
 // Process is one of Jail Deck's own processes.

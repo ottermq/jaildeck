@@ -191,3 +191,41 @@ describe('the dashboard memory card', () => {
         expect(card.textContent).toMatch(/wired/)
     })
 })
+
+// The replication card (#247): the job furthest behind heads it, every job
+// is listed, and a host without zrepl has no card.
+describe('the dashboard replication card', () => {
+    const minutesAgo = (m: number) => new Date(Date.now() - m * 60000).toISOString()
+
+    it('heads with the job furthest behind and lists every job', async () => {
+        report.replication = {
+            status: 'replicating', checked: minutesAgo(0),
+            jobs: [
+                { name: 'local_push', oldest: minutesAgo(9), datasets: [{ name: 'zroot/jails', replicated: minutesAgo(9) }] },
+                { name: 'offsite', oldest: minutesAgo(312), datasets: [{ name: 'zroot/jails/redis', replicated: minutesAgo(312) }] },
+            ],
+        }
+        const { container } = render(Dashboard)
+        await screen.findByText('Replication')
+        const card = container.querySelector('[data-card="replication"]')!
+        expect(card.querySelector('.figure')!.textContent).toBe('5 h 12 minago')
+        expect([...card.querySelectorAll('[data-job]')].map((e) => e.getAttribute('data-job'))).toEqual(['local_push', 'offsite'])
+        expect(card.textContent).toMatch(/9 min ago,\s*1 dataset/)
+    })
+
+    it('has no card on a host where zrepl replicates nothing', async () => {
+        report.replication = { status: 'none', checked: minutesAgo(0), jobs: [] }
+        const { container } = render(Dashboard)
+        await screen.findByText('Memory')
+        expect(container.querySelector('[data-card="replication"]')).toBeNull()
+    })
+
+    it('says why when the cursors could not be read, never that nothing is replicated', async () => {
+        report.replication = { status: 'unknown', reason: "zrepl's replication cursors could not be read: zfs failed", jobs: [] }
+        const { container } = render(Dashboard)
+        await screen.findByText('Replication')
+        const card = container.querySelector('[data-card="replication"]')!
+        expect(card.textContent).toMatch(/could not be read/)
+        expect(card.querySelector('.figure')!.textContent).toBe('—')
+    })
+})

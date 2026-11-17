@@ -2846,6 +2846,37 @@
                 }
             }
         },
+        "/replication": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "For each zrepl job, each dataset it replicates and when the newest snapshot\nthat reached the other side was taken (#247, JD-062). Read from zrepl's\nreplication cursors, the bookmarks it keeps on the sending side, so a job that\nanother host pulls from is covered too. **Read every minute, never by this\nrequest.** `none` is a host with no cursors: zrepl is not replicating from it,\nor has not finished a first replication. `unknown` is a read that failed, never\n`none`. Jail Deck sets no threshold: how old is too old depends on the job's\ninterval, which lives in zrepl's configuration.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "replication"
+                ],
+                "summary": "ZFS replication: when each dataset last reached the other side",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/replication.Snapshot"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/retained": {
             "get": {
                 "security": [
@@ -6379,6 +6410,14 @@
                 "os_unavailable": {
                     "type": "string"
                 },
+                "replication": {
+                    "description": "Replication is the last read of zrepl's cursors (#247), the same as\nGET /api/replication: one entry per job and dataset, small enough\nthat the dashboard's one poll carries it.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/replication.Snapshot"
+                        }
+                    ]
+                },
                 "vulnerabilities": {
                     "description": "Vulnerabilities is the last package audit in numbers: the host's,\neach jail's and each template's (#230). Absent where nothing audits.\nGET /api/vulnerabilities has the packages and the CVEs.",
                     "allOf": [
@@ -6885,6 +6924,84 @@
                 "Ahead",
                 "OtherRelease",
                 "Unknown"
+            ]
+        },
+        "replication.Dataset": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "replicated": {
+                    "description": "Replicated is when the newest snapshot that reached the other side\nwas taken.",
+                    "type": "string"
+                }
+            }
+        },
+        "replication.Job": {
+            "type": "object",
+            "properties": {
+                "datasets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/replication.Dataset"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "oldest": {
+                    "description": "Oldest is the earliest Replicated among its datasets: how far behind\nthe job is at worst.",
+                    "type": "string"
+                }
+            }
+        },
+        "replication.Snapshot": {
+            "type": "object",
+            "properties": {
+                "checked": {
+                    "description": "Checked is when the cursors were last read successfully. A failed\nread leaves it where it was, so its age says how stale this is.",
+                    "type": "string"
+                },
+                "jobs": {
+                    "description": "Jobs is sorted by name, and each job's datasets by name.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/replication.Job"
+                    }
+                },
+                "reason": {
+                    "description": "Reason says why the status is unknown or unchecked.",
+                    "type": "string"
+                },
+                "status": {
+                    "enum": [
+                        "replicating",
+                        "none",
+                        "unknown",
+                        "unchecked"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/replication.Status"
+                        }
+                    ]
+                }
+            }
+        },
+        "replication.Status": {
+            "type": "string",
+            "enum": [
+                "replicating",
+                "none",
+                "unknown",
+                "unchecked"
+            ],
+            "x-enum-varnames": [
+                "Replicating",
+                "None",
+                "Unknown",
+                "Unchecked"
             ]
         },
         "storage.DatasetBlock": {

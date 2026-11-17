@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"errors"
+	"github.com/ottermq/jaildeck/internal/replication"
 
 	"github.com/ottermq/jaildeck/internal/vulns"
 )
@@ -100,4 +101,10 @@ type VulnerabilitySource interface {
 // ProcessSource is Jail Deck's own processes and their memory (#224).
 type ProcessSource interface {
 	Processes(ctx context.Context) ([]Process, error)
+}
+
+// ReplicationSource is the last read of zrepl's cursors (#247), published by
+// a timer of its own.
+type ReplicationSource interface {
+	Snapshot() replication.Snapshot
 }

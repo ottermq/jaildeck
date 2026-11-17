@@ -8,6 +8,7 @@ import { formatBytes } from '../utils'
 import { behindCount, patchOf } from '../osversion'
 import { databaseNote, vulnerableCount, vulnTitle } from '../vulns'
 import { segments } from '../memory'
+import { furthestBehind, replicationTitle, since } from '../replication'
 
 let report = $state<MetricsReport | null>(null)
 let loadError = $state('')
@@ -170,6 +171,12 @@ let notAudited = $derived(vulns
     ? [...vulns.jails, ...vulns.templates].filter((s) => s.status === 'unknown' || s.status === 'unchecked').length
     : 0)
 let dbNote = $derived(vulns ? databaseNote(vulns.database) : null)
+
+// ZFS replication (#247): the headline is how long ago the dataset furthest
+// behind was last replicated, and each job is listed under it. A host where
+// zrepl replicates nothing has no card.
+let replication = $derived(report?.replication)
+let behind = $derived(replication ? furthestBehind(replication) : undefined)
 
 function releaseOf(version: string): string {
     return version.replace(/-p[0-9]+$/, '')
@@ -336,6 +343,31 @@ function plural(n: number, one: string, many: string): string {
                 {/if}
                 {#if dbNote}
                     <p class="under" class:under--warn={dbNote.warn}>{dbNote.text}</p>
+                {/if}
+            </article>
+        {/if}
+
+        {#if replication && replication.status !== 'none'}
+            <article class="card" data-card="replication">
+                <h2>Replication</h2>
+                {#if behind}
+                    <p class="figure" title={replicationTitle}>
+                        {since(behind.oldest)}<span class="unit">ago</span>
+                    </p>
+                    <ul class="under jobs">
+                        {#each replication.jobs as job (job.name)}
+                            <li data-job={job.name}>
+                                <code>{job.name}</code>: {since(job.oldest)} ago,
+                                {job.datasets.length === 1 ? '1 dataset' : `${job.datasets.length} datasets`}
+                            </li>
+                        {/each}
+                    </ul>
+                {:else if replication.status === 'unknown'}
+                    <p class="figure figure--muted">—</p>
+                    <p class="under under--warn">{replication.reason}</p>
+                {:else}
+                    <p class="figure figure--muted">—</p>
+                    <p class="under">The first read hasn't finished.</p>
                 {/if}
             </article>
         {/if}
@@ -717,6 +749,11 @@ function plural(n: number, one: string, many: string): string {
 .bar__fill--arc,
 .swatch--arc {
     background: color-mix(in srgb, var(--brand) 22%, transparent);
+}
+
+.jobs {
+    list-style: none;
+    padding: 0;
 }
 
 .legend {

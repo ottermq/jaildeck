@@ -21,6 +21,11 @@ type Adapter struct {
 	// hostRoot is the host's own tree, whose freebsd-version is its userland
 	// (#229). For tests; a host never changes it.
 	hostRoot string
+	// vulnDatabase is the host's vulnerability database, and auditUser who
+	// reads package databases and runs pkg audit (#230, JD-061). For tests;
+	// a host never changes them.
+	vulnDatabase string
+	auditUser    string
 }
 
 func NewAdapter(runner system.CommandRunner) *Adapter {
@@ -33,5 +38,7 @@ func NewAdapter(runner system.CommandRunner) *Adapter {
 		devfsRulesFiles: defaultDevfsRulesFiles,
 		vmScratchDir:    os.TempDir(),
 		hostRoot:        "/",
+		vulnDatabase:    defaultVulnDatabase,
+		auditUser:       "nobody",
 	}
 }

@@ -4225,6 +4225,37 @@
                     }
                 }
             }
+        },
+        "/vulnerabilities": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The last audit of every installed package against the host's vulnerability\ndatabase, `/var/db/pkg/vuln.xml` (#230, JD-061): each vulnerable package, its\nversion, the VuXML entries it matches with their CVEs, and the packages that\ndepend on it. **Read from the last audit, never run by this request.** Jail\nDeck audits at startup, every hour and whenever the database changes. It never\nfetches the database: the daily security run does. A tree is `unknown` when\nits packages could not be listed or there is no database, never `clean`, and\n`database.stale` is a database over three days old, which finds nothing new.\nA jail's package list is what that jail's root lets it say, so this is an aid\nfor jails kept honestly, not a detector of a compromised one.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "vulnerabilities"
+                ],
+                "summary": "Vulnerable packages on the host, in jails and in templates",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/vulns.Snapshot"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -5597,6 +5628,14 @@
                             "$ref": "#/definitions/osversion.Standing"
                         }
                     ]
+                },
+                "vulnerabilities": {
+                    "description": "Vulnerabilities is the jail's last package audit in numbers (#230,\nJD-061); GET /api/vulnerabilities has the packages and the CVEs.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/vulns.Summary"
+                        }
+                    ]
                 }
             }
         },
@@ -6324,6 +6363,14 @@
                 },
                 "os_unavailable": {
                     "type": "string"
+                },
+                "vulnerabilities": {
+                    "description": "Vulnerabilities is the last package audit in numbers: the host's,\neach jail's and each template's (#230). Absent where nothing audits.\nGET /api/vulnerabilities has the packages and the CVEs.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/metrics.Vulnerabilities"
+                        }
+                    ]
                 }
             }
         },
@@ -6385,6 +6432,55 @@
                 "version": {
                     "description": "Version is the userland as read, \"\" when it could not be read or was\nnot shaped like a version.",
                     "type": "string"
+                }
+            }
+        },
+        "metrics.Vulnerabilities": {
+            "type": "object",
+            "properties": {
+                "checked": {
+                    "description": "Checked is when the last audit finished; absent until the first has.",
+                    "type": "string"
+                },
+                "database": {
+                    "$ref": "#/definitions/vulns.Database"
+                },
+                "host": {
+                    "$ref": "#/definitions/vulns.Summary"
+                },
+                "jails": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.VulnerableCount"
+                    }
+                },
+                "templates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.VulnerableCount"
+                    }
+                }
+            }
+        },
+        "metrics.VulnerableCount": {
+            "type": "object",
+            "properties": {
+                "checked": {
+                    "description": "Checked is when this tree was audited; absent when it was not.",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "packages": {
+                    "description": "Packages is how many packages are installed, and Vulnerable how many\nof them the database names. Both are 0 when unknown or unchecked.",
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/vulns.Status"
+                },
+                "vulnerable": {
+                    "type": "integer"
                 }
             }
         },
@@ -6947,6 +7043,14 @@
                             "$ref": "#/definitions/osversion.Standing"
                         }
                     ]
+                },
+                "vulnerabilities": {
+                    "description": "Vulnerabilities is the template's last package audit in numbers\n(#230, JD-061). Every jail cloned from it starts with these packages.\nAbsent until there is a tree to audit.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/vulns.Summary"
+                        }
+                    ]
                 }
             }
         },
@@ -7031,6 +7135,14 @@
                     "allOf": [
                         {
                             "$ref": "#/definitions/osversion.Standing"
+                        }
+                    ]
+                },
+                "vulnerabilities": {
+                    "description": "Vulnerabilities is the template's last package audit in numbers\n(#230, JD-061). Every jail cloned from it starts with these packages.\nAbsent until there is a tree to audit.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/vulns.Summary"
                         }
                     ]
                 }
@@ -7628,6 +7740,197 @@
                 "vnc": {
                     "description": "VNC is the address a running guest's framebuffer listens on, when it\nhas one.",
                     "type": "string"
+                }
+            }
+        },
+        "vulns.Database": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string"
+                },
+                "present": {
+                    "type": "boolean"
+                },
+                "stale": {
+                    "description": "Stale is a database older than StaleAfter: an old database finds\nnothing, and that looks like good news.",
+                    "type": "boolean"
+                },
+                "updated": {
+                    "description": "Updated is the file's modification time, when it is present.",
+                    "type": "string"
+                }
+            }
+        },
+        "vulns.Finding": {
+            "type": "object",
+            "properties": {
+                "issues": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/vulns.Issue"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "reverse_dependencies": {
+                    "description": "ReverseDependencies is the installed packages that depend on this\none. Shown, never counted: they are not vulnerable themselves.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "vulns.Issue": {
+            "type": "object",
+            "properties": {
+                "affected": {
+                    "description": "Affected is the version ranges the entry covers, as VuXML gives\nthem: \"\u003c 18.7\".",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "cves": {
+                    "description": "CVEs may be empty: not every VuXML entry has one.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "url": {
+                    "description": "URL is the entry on vuxml.FreeBSD.org.",
+                    "type": "string"
+                }
+            }
+        },
+        "vulns.Named": {
+            "type": "object",
+            "properties": {
+                "checked": {
+                    "description": "Checked is when this tree was audited; absent when it was not.",
+                    "type": "string"
+                },
+                "findings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/vulns.Finding"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "packages": {
+                    "description": "Packages is how many packages are installed, and Vulnerable how many\nof them the database names. Both are 0 when unknown or unchecked.",
+                    "type": "integer"
+                },
+                "reason": {
+                    "description": "Reason says why the status is unknown or unchecked.",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/vulns.Status"
+                },
+                "vulnerable": {
+                    "type": "integer"
+                }
+            }
+        },
+        "vulns.Report": {
+            "type": "object",
+            "properties": {
+                "checked": {
+                    "description": "Checked is when this tree was audited; absent when it was not.",
+                    "type": "string"
+                },
+                "findings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/vulns.Finding"
+                    }
+                },
+                "packages": {
+                    "description": "Packages is how many packages are installed, and Vulnerable how many\nof them the database names. Both are 0 when unknown or unchecked.",
+                    "type": "integer"
+                },
+                "reason": {
+                    "description": "Reason says why the status is unknown or unchecked.",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/vulns.Status"
+                },
+                "vulnerable": {
+                    "type": "integer"
+                }
+            }
+        },
+        "vulns.Snapshot": {
+            "type": "object",
+            "properties": {
+                "checked": {
+                    "description": "Checked is when the last audit finished; absent until the first one\nhas.",
+                    "type": "string"
+                },
+                "database": {
+                    "$ref": "#/definitions/vulns.Database"
+                },
+                "host": {
+                    "$ref": "#/definitions/vulns.Report"
+                },
+                "jails": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/vulns.Named"
+                    }
+                },
+                "templates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/vulns.Named"
+                    }
+                }
+            }
+        },
+        "vulns.Status": {
+            "type": "string",
+            "enum": [
+                "clean",
+                "vulnerable",
+                "unknown",
+                "unchecked"
+            ],
+            "x-enum-varnames": [
+                "Clean",
+                "Vulnerable",
+                "Unknown",
+                "Unchecked"
+            ]
+        },
+        "vulns.Summary": {
+            "type": "object",
+            "properties": {
+                "checked": {
+                    "description": "Checked is when this tree was audited; absent when it was not.",
+                    "type": "string"
+                },
+                "packages": {
+                    "description": "Packages is how many packages are installed, and Vulnerable how many\nof them the database names. Both are 0 when unknown or unchecked.",
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/vulns.Status"
+                },
+                "vulnerable": {
+                    "type": "integer"
                 }
             }
         }

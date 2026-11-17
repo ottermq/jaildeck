@@ -2872,3 +2872,27 @@ That makes this the first time the root process looks inside a jail's files from
 
 - **A file read per jail and template per listing,** and one `freebsd-version -k` per listing. The dashboard reads the versions at most once a minute.
 - **Stopped jails are read too.** Their files are there, and a stopped jail is started one day. That means the host opens files a jail controls even while nothing runs in it, which is exactly what the rule above is for.
+
+## JD-061 — What a Jail Controls Is Parsed by Nobody
+
+**Status:** Locked — 2026-11-17.
+
+#230 audits every package on the host, in every jail and in every template against the host's vulnerability database. A jail's package list is in its own `var/db/pkg/local.sqlite`, a SQLite database that belongs to whoever is root in that jail. JD-060 could read the one line it needed itself, in Go, through `os.Root`. A package list can't be read that way: only `pkg` and SQLite read that file, and both are large C parsers that the jail's root can hand a file crafted against them.
+
+### The rule
+
+- **What a jail controls and Jail Deck can't parse itself is parsed by an unprivileged process.** Every `pkg` that opens a jail's database runs as `nobody`, with no supplementary groups. A crafted database that finds a bug in `pkg` or SQLite gets `nobody` on the host, not root. `system.Command` has a `Credential` for this, and the runner sets the child's groups to that list alone, so wheel and operator are dropped rather than inherited.
+- **`pkg -r <root>`, not `pkg -j <jail>`.** `-j` confines `pkg` to the jail but runs it as root inside it, and only in a running jail. `-r` reads a stopped jail and a template the same way. Run as root, `pkg -r` also writes SQLite's `-shm` and `-wal` files into the tree it reads, a template included. Measured on FreeBSD 15.1 with pkg 2.9.0: run as `nobody`, it writes nothing, even where no `-shm` exists yet.
+- **What comes back is data, checked against its shape.** `pkg query '%n\t%v'` gives a name and a version separated by a tab, so neither has to be split out of `name-version`. A name or version not shaped like one (`^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$`, `^[A-Za-z0-9][A-Za-z0-9._,+]{0,63}$`) is skipped and logged, never passed on. The rest go to `pkg audit` as separate arguments, after `--`, never through a shell. A list over 10,000 packages is refused.
+- **`pkg audit` is never given an empty list.** Given no names, it audits the host's own packages. A jail with no packages would be reported with the host's vulnerabilities. A tree with no packages is clean without an audit, and the adapter refuses an empty list as well.
+- **A failure is never "nothing found".** `pkg audit` exits 1 both when it finds something and when the database is missing, so the exit status decides nothing. Output without `pkg_count` is an error, and a tree that can't be listed or audited is `unknown`.
+
+### What it is, and isn't
+
+- **An aid for jails kept honestly, not a detector of a compromised one.** A jail's root can rewrite its own package list, so what the audit finds is what that jail lets it find. It catches the database server left a minor version behind, and the template every new jail is cloned from: what an operator forgets.
+- **One database, the host's.** `/var/db/pkg/vuln.xml`, which the daily security run fetches (`security_status_pkgaudit_enable`, on by default). A jail's own copy is usually missing or old, because nothing refreshes it. Jail Deck never fetches the database. A missing one makes every tree `unknown`, and one over three days old is `stale`.
+
+### What it costs
+
+- **About 0.2 s per tree with packages.** Measured on FreeBSD 15.1: a host of a few hundred packages plus six jails and templates took 1.2 s in all.
+- **A timer, not a request.** It is the first thing the root side does on its own: an audit at startup, then a `stat` of the database every 5 minutes, with an audit when the database has changed or the last audit is an hour old. Requests and scrapes read the published result. A jail created since the last audit is `unchecked` until the next one.

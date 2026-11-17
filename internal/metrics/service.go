@@ -10,6 +10,7 @@ import (
 
 	"github.com/ottermq/jaildeck/internal/buildinfo"
 	"github.com/ottermq/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/vulns"
 )
 
 // Service assembles a report from the host and every running jail.
@@ -34,6 +35,9 @@ type Service struct {
 	// versions is optional too, and read at most once a minute: versions
 	// change on an update or a reboot, and the dashboard asks every 5 s.
 	versions VersionSource
+	// vulnerabilities is optional, and read as it is: the audit runs on a
+	// timer of its own (#230).
+	vulnerabilities VulnerabilitySource
 
 	mu       sync.Mutex
 	previous *reading
@@ -46,6 +50,9 @@ const versionsFor = time.Minute
 
 // SetVersions adds the FreeBSD versions to the report (#229).
 func (s *Service) SetVersions(v VersionSource) { s.versions = v }
+
+// SetVulnerabilities adds the last package audit to the report (#230).
+func (s *Service) SetVulnerabilities(v VulnerabilitySource) { s.vulnerabilities = v }
 
 type reading struct {
 	ticks Ticks
@@ -113,6 +120,10 @@ func (s *Service) Report(ctx context.Context) (Report, error) {
 		} else {
 			report.OS = read
 		}
+	}
+
+	if s.vulnerabilities != nil {
+		report.Vulnerabilities = countVulnerable(s.vulnerabilities.Snapshot())
 	}
 
 	if s.jails == nil || s.usage == nil {
@@ -265,4 +276,18 @@ func (s *Service) readVersions(ctx context.Context) (*OSVersions, error) {
 	s.osRead, s.osAt = &read, time.Now()
 	s.mu.Unlock()
 	return &read, nil
+}
+
+// countVulnerable is an audit without its findings: what the dashboard and
+// Prometheus need, and a few hundred bytes rather than every CVE.
+func countVulnerable(snap vulns.Snapshot) *Vulnerabilities {
+	out := &Vulnerabilities{Checked: snap.Checked, Database: snap.Database, Host: snap.Host.Summary,
+		Jails: make([]VulnerableCount, 0, len(snap.Jails)), Templates: make([]VulnerableCount, 0, len(snap.Templates))}
+	for _, j := range snap.Jails {
+		out.Jails = append(out.Jails, VulnerableCount{Name: j.Name, Summary: j.Summary})
+	}
+	for _, t := range snap.Templates {
+		out.Templates = append(out.Templates, VulnerableCount{Name: t.Name, Summary: t.Summary})
+	}
+	return out
 }

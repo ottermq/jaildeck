@@ -324,6 +324,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/audit` | operation history, newest first |
 | `GET /api/events` | a live stream (server-sent events) of operations, outside state changes and image and template progress; `Last-Event-ID` resumes it |
 | `GET /api/metrics` | host, per-jail and per-guest resource usage, and disk health |
+| `GET /api/vulnerabilities` | the last audit of the host's, every jail's and every template's packages against the host's vulnerability database: each vulnerable package, its CVEs and VuXML links |
 | `GET /api/firewall` | PF's state, rules with counters, NAT, anchors and tables, read-only |
 | `GET /api/firewall/tables/{name}` | one table's addresses |
 | `GET /api/firewall/log` | the most recent pflog lines |
@@ -602,6 +603,21 @@ disagree. A rule that catches the disagreement is the point:
   expr: jaildeck_disk_failing_attributes > 0
   annotations:
     summary: '{{ $labels.device }} has a SMART attribute below threshold'
+```
+
+Vulnerable packages work the same way (#230). A count is written only for a tree that was
+audited, so an alert never clears because a jail could not be read, and the two timestamps
+say how fresh the answer is:
+
+```yaml
+- alert: VulnerablePackages
+  expr: jaildeck_jail_vulnerable_packages > 0
+  annotations:
+    summary: '{{ $labels.jail }} has {{ $value }} vulnerable packages'
+- alert: VulnerabilityDatabaseStale
+  expr: time() - jaildeck_vulnerability_database_timestamp_seconds > 3 * 86400
+  annotations:
+    summary: 'the vulnerability database is over three days old: is the daily security run on?'
 ```
 
 Jail Deck does no alerting of its own and holds no history. The scraper keeps the series;

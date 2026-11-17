@@ -361,3 +361,10 @@ tbody tr:hover td {
   background: var(--danger-soft);
   border-color: color-mix(in srgb, var(--danger) 35%, transparent);
 }
+
+/* Something to act on that is not a failure: a jail behind the host (#229). */
+.notice--warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+}

@@ -1,5 +1,7 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte'
+import UserlandBadge from '../components/UserlandBadge.svelte'
+import { userlandTitle } from '../osversion'
 import { onLive, aboutInstance } from '../stores/events.svelte'
 import {
     getJail, listSnapshots, setTags, ensureDataset, retainDataset, destroyDataset,
@@ -536,6 +538,7 @@ async function retain(event: Event, dataset: Dataset) {
                 <span>JID {normalizeEmptyValue(jail.jid)}</span>
                 <span>{normalizeEmptyValue(jail.hostname)}</span>
                 <span>{normalizeEmptyValue(jail.ip)}</span>
+                {#if jail.userland}<UserlandBadge standing={jail.userland} what="jail" />{/if}
             </p>
         </div>
         {#if jail.path}
@@ -553,6 +556,10 @@ async function retain(event: Event, dataset: Dataset) {
             </div>
         {/if}
     </header>
+
+    {#if jail.userland?.status === 'behind'}
+        <p class="notice notice--warn" data-notice="userland">{userlandTitle(jail.userland, 'jail')}</p>
+    {/if}
 
     {#if jailNote}
         <p class="notice" aria-live="polite">{jailNote}</p>

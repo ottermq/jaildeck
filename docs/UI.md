@@ -62,17 +62,20 @@ Still on the sketch above: Storage, Logs, Settings. Possible later: Snapshots (i
 
 Purpose: quick operational overview. Built at `/dashboard`, and it is where `/` now lands — "what is this host doing" is the question someone opens the page with, and the jail list is one click away.
 
-Four cards, then three tables:
+Five cards, then three tables:
 
 - **Load**, with the five- and fifteen-minute averages under it and the CPU count, because a load of 4 means something different on 2 cores than on 16
 - **CPU**, as a percentage with the window it was measured over. **It reads `—` on the first poll after a restart** rather than `0`: `kern.cp_time` is cumulative and a percentage exists only between two readings (JD-031), and the card says so where the number would be
 - **Memory**, used against physical, with wired, active and inactive spelled out underneath and a note that most of wired is the ZFS ARC — a single "used" figure on a ZFS host reads as pressure that is not there
 - **Jails**, running of configured
+- **FreeBSD** (#229), the host's userland, with **Reboot pending** when the installed kernel isn't the running one, and how many jails and templates are behind the host, each a link to its list. Absent where nothing reads the versions; where the read failed, the card says why
 - **Pools** — health, used, free, size and a capacity meter
 - **Disks** — worst first, with the pool each one holds up, model, size, temperature, age and a health badge
 - **Jails** — busiest first, with a CPU meter, memory, process count and open files
 
 **A jail's CPU is shown in cores, not in `pcpu`'s own unit.** The API reports percent of *one* core, so a jail on two whole cores reads 200 — which beside a meter that is a share of all sixteen is the same number twice on two different bases. The table says `1.75 cores` and keeps the raw figure in the row's tooltip.
+
+**A jail's FreeBSD version is judged against the host's.** The Jails and Templates lists have a FreeBSD column, and a jail's and a template's page carry the same badge: `p6 · current`, `p2 · 4 behind`, `p7 · ahead`, the whole version for another release, or `unknown`. Only *behind* is a warning colour: it's the one state that asks for an update. A jail that is behind also gets a notice on its page, because updating the host doesn't update a jail and nothing else on the page would say so (JD-060).
 
 **A disk's badge is the worse of two disagreeing verdicts.** A drive reports its own overall assessment, and that verdict is not a summary of its attribute table: `isengard`'s `ada3` says `PASSED` while attribute 184 has been below threshold for days. The row reads `ATTENTION`, and a note under it names the attribute, its value against its threshold and the raw string smartctl printed — a green row over a failing attribute is how a disk gets ignored until it dies. Where the drive still claims `PASSED`, the note says so too, because an operator about to act on this deserves both halves (JD-032).
 

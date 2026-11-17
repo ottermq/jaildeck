@@ -22,7 +22,7 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
 
-- **FreeBSD versions, and what is behind the host** (#229, JD-060). The host's running kernel, installed kernel and userland, with `reboot_pending` when an update is installed and the host has not been restarted. Each jail's and template's userland, judged against the host's: `current`, `behind` by how many patch levels, `ahead`, `other-release` or `unknown`. Updating the host doesn't update a jail, whose userland is its own copy, and this is where that shows. The version is read from the tree's `bin/freebsd-version` as text and never run, through `os.Root`, so a jail can't point it at the host. The interface comes in a second change.
+- **FreeBSD versions, and what is behind the host** (#229, JD-060). The host's running kernel, installed kernel and userland, with `reboot_pending` when an update is installed and the host has not been restarted. Each jail's and template's userland, judged against the host's: `current`, `behind` by how many patch levels, `ahead`, `other-release` or `unknown`. Updating the host doesn't update a jail, whose userland is its own copy, and this is where that shows. The version is read from the tree's `bin/freebsd-version` as text and never run, through `os.Root`, so a jail can't point it at the host. The dashboard has a FreeBSD card, the Jails and Templates lists a FreeBSD column, and a jail behind the host says so on its page.
 - **Metrics:** `jaildeck_host_reboot_pending`, `jaildeck_os_version_info` and `jaildeck_jail_userland_behind` / `jaildeck_template_userland_behind`. A jail on another release, or whose version can't be read, is left out of the last two, so an alert on them never fires on a guess.
 
 ### API

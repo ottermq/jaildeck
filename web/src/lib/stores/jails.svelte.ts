@@ -1,4 +1,5 @@
 import { api, ApiError } from "../services/api";
+import type { Standing } from "../osversion";
 
 // Dataset is one ZFS dataset belonging to a jail. The sizes are exact bytes,
 // not the "1.41G" zfs prints: formatBytes spells them for display.
@@ -27,6 +28,9 @@ export interface JailData {
     // than reporting (#2).
     datasets?: Dataset[]
     properties?: Record<string, string>
+    // The jail's FreeBSD userland against the host's (#229). Filled by the
+    // listing and by a jail's own page, where datasets are.
+    userland?: Standing
 }
 
 // Snapshot is one snapshot of one of a jail's datasets. Ordered by create_txg

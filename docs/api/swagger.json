@@ -5589,6 +5589,14 @@
                 },
                 "status": {
                     "$ref": "#/definitions/jails.JailStatus"
+                },
+                "userland": {
+                    "description": "Userland is the jail's FreeBSD userland and how it stands against the\nhost's (#229), read from the jail's own files and never by running\nanything in it (JD-060). Filled where Datasets is, for the same reason.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/osversion.Standing"
+                        }
+                    ]
                 }
             }
         },
@@ -6226,6 +6234,26 @@
                 }
             }
         },
+        "metrics.OSVersions": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "$ref": "#/definitions/osversion.Host"
+                },
+                "jails": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.Userland"
+                    }
+                },
+                "templates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.Userland"
+                    }
+                }
+            }
+        },
         "metrics.Pool": {
             "type": "object",
             "properties": {
@@ -6285,6 +6313,17 @@
                     "items": {
                         "$ref": "#/definitions/metrics.JailUsage"
                     }
+                },
+                "os": {
+                    "description": "OS is the FreeBSD versions on the host and how far each jail and\ntemplate is behind it (#229). Absent where nothing reads them, and\nOSUnavailable says why when the read failed.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/metrics.OSVersions"
+                        }
+                    ]
+                },
+                "os_unavailable": {
+                    "type": "string"
                 }
             }
         },
@@ -6323,6 +6362,29 @@
                 },
                 "user": {
                     "type": "integer"
+                }
+            }
+        },
+        "metrics.Userland": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "description": "Host is the host userland it was compared with, \"\" when that was not\nknown.",
+                    "type": "string"
+                },
+                "levels": {
+                    "description": "Levels is how many patch levels behind or ahead, for those two\nstatuses only.",
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/osversion.Status"
+                },
+                "version": {
+                    "description": "Version is the userland as read, \"\" when it could not be read or was\nnot shaped like a version.",
+                    "type": "string"
                 }
             }
         },
@@ -6656,6 +6718,64 @@
                 }
             }
         },
+        "osversion.Host": {
+            "type": "object",
+            "properties": {
+                "kernel_installed": {
+                    "description": "KernelInstalled is the kernel on disk, the one the next boot loads.",
+                    "type": "string"
+                },
+                "kernel_running": {
+                    "description": "KernelRunning is the kernel booted, kern.osrelease.",
+                    "type": "string"
+                },
+                "reboot_pending": {
+                    "description": "RebootPending is true when the installed kernel is not the running\none: an update was installed and the host has not been restarted, so\nthe fixes in it are not in effect yet.",
+                    "type": "boolean"
+                },
+                "userland": {
+                    "description": "Userland is the host's base system.",
+                    "type": "string"
+                }
+            }
+        },
+        "osversion.Standing": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "description": "Host is the host userland it was compared with, \"\" when that was not\nknown.",
+                    "type": "string"
+                },
+                "levels": {
+                    "description": "Levels is how many patch levels behind or ahead, for those two\nstatuses only.",
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/osversion.Status"
+                },
+                "version": {
+                    "description": "Version is the userland as read, \"\" when it could not be read or was\nnot shaped like a version.",
+                    "type": "string"
+                }
+            }
+        },
+        "osversion.Status": {
+            "type": "string",
+            "enum": [
+                "current",
+                "behind",
+                "ahead",
+                "other-release",
+                "unknown"
+            ],
+            "x-enum-varnames": [
+                "Current",
+                "Behind",
+                "Ahead",
+                "OtherRelease",
+                "Unknown"
+            ]
+        },
         "storage.DatasetBlock": {
             "type": "object",
             "properties": {
@@ -6819,6 +6939,14 @@
                 },
                 "used": {
                     "type": "integer"
+                },
+                "userland": {
+                    "description": "Userland is the template's FreeBSD userland and how it stands against\nthe host's (#229). Every jail cloned from it starts at this patch\nlevel. Absent until there is a tree to read it from.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/osversion.Standing"
+                        }
+                    ]
                 }
             }
         },
@@ -6897,6 +7025,14 @@
                 },
                 "used": {
                     "type": "integer"
+                },
+                "userland": {
+                    "description": "Userland is the template's FreeBSD userland and how it stands against\nthe host's (#229). Every jail cloned from it starts at this patch\nlevel. Absent until there is a tree to read it from.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/osversion.Standing"
+                        }
+                    ]
                 }
             }
         },

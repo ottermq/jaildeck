@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/ottermq/jaildeck/internal/osversion"
 )
 
 // ExpositionContentType is the Prometheus text exposition format, version
@@ -33,6 +35,7 @@ func WriteExposition(w io.Writer, report Report) error {
 	out.jails(report)
 	out.guests(report.Guests)
 	out.disks(report.Disks)
+	out.versions(report.OS)
 
 	return out.w.Flush()
 }
@@ -135,6 +138,69 @@ func (e *exposition) pools(pools []Pool) {
 	e.gauge("jaildeck_pool_health_info", "Pool health, as zpool reports it.")
 	for _, pool := range pools {
 		e.value(labels{{"pool", pool.Name}, {"health", pool.Health}}, 1)
+	}
+}
+
+// versions is the FreeBSD versions on the host and how far behind it each jail
+// and template is (#229). Behind is written only where it means something:
+// the same release, at the host's level or below. A jail on another release,
+// one ahead of the host or one whose version could not be read is left out of
+// it, so an alert on "behind > 0" never fires on a guess -- the info series
+// still names them, with the status that says why.
+func (e *exposition) versions(osv *OSVersions) {
+	if osv == nil {
+		return
+	}
+	host := osv.Host
+	if host.KernelRunning != "" && host.KernelInstalled != "" {
+		e.gauge("jaildeck_host_reboot_pending",
+			"1 when the installed kernel is not the running one: an update is installed and waits for a reboot.")
+		e.value(nil, boolean(host.RebootPending))
+	}
+
+	e.gauge("jaildeck_os_version_info",
+		"FreeBSD versions on this host: the host's kernels and userland, and each jail's and template's userland. Always 1.")
+	for _, part := range []struct{ name, version string }{
+		{"kernel_running", host.KernelRunning},
+		{"kernel_installed", host.KernelInstalled},
+		{"userland", host.Userland},
+	} {
+		if part.version != "" {
+			e.value(labels{{"scope", "host"}, {"name", part.name}, {"version", part.version}, {"status", ""}}, 1)
+		}
+	}
+	for _, group := range []struct {
+		scope string
+		trees []Userland
+	}{{"jail", osv.Jails}, {"template", osv.Templates}} {
+		for _, tree := range group.trees {
+			e.value(labels{{"scope", group.scope}, {"name", tree.Name},
+				{"version", tree.Version}, {"status", string(tree.Status)}}, 1)
+		}
+	}
+
+	e.behind("jaildeck_jail_userland_behind", "jail", osv.Jails,
+		"Patch levels this jail's userland is behind the host's. Updating the host does not update a jail.")
+	e.behind("jaildeck_template_userland_behind", "template", osv.Templates,
+		"Patch levels this template's userland is behind the host's. Every jail cloned from it starts there.")
+}
+
+func (e *exposition) behind(name, label string, trees []Userland, help string) {
+	wrote := false
+	for _, tree := range trees {
+		levels := 0
+		switch tree.Status {
+		case osversion.Current:
+		case osversion.Behind:
+			levels = tree.Levels
+		default:
+			continue
+		}
+		if !wrote {
+			e.gauge(name, help)
+			wrote = true
+		}
+		e.value(labels{{label, tree.Name}}, float64(levels))
 	}
 }
 

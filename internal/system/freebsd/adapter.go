@@ -18,6 +18,9 @@ type Adapter struct {
 	// (JD-038). Both are for tests; a host never changes them.
 	vmTemplateDir string
 	vmScratchDir  string
+	// hostRoot is the host's own tree, whose freebsd-version is its userland
+	// (#229). For tests; a host never changes it.
+	hostRoot string
 }
 
 func NewAdapter(runner system.CommandRunner) *Adapter {
@@ -29,5 +32,6 @@ func NewAdapter(runner system.CommandRunner) *Adapter {
 		uefiFirmware:    defaultUEFIFirmware,
 		devfsRulesFiles: defaultDevfsRulesFiles,
 		vmScratchDir:    os.TempDir(),
+		hostRoot:        "/",
 	}
 }

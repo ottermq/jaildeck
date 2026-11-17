@@ -1,5 +1,7 @@
 package metrics
 
+import "github.com/ottermq/jaildeck/internal/osversion"
+
 // Report is the whole of what GET /api/metrics answers: the host, and every
 // jail that is up (JD-031).
 //
@@ -30,6 +32,11 @@ type Report struct {
 	// refusing to list devices. JD-032 promised a host without disk health
 	// would say why; until this field it only said nothing (#95).
 	DisksUnavailable string `json:"disks_unavailable,omitempty"`
+	// OS is the FreeBSD versions on the host and how far each jail and
+	// template is behind it (#229). Absent where nothing reads them, and
+	// OSUnavailable says why when the read failed.
+	OS            *OSVersions `json:"os,omitempty"`
+	OSUnavailable string      `json:"os_unavailable,omitempty"`
 }
 
 type Host struct {
@@ -271,4 +278,18 @@ type SelfTest struct {
 type Build struct {
 	Version string
 	Commit  string
+}
+
+// OSVersions is the host's FreeBSD versions and every jail's and template's
+// userland judged against them (#229).
+type OSVersions struct {
+	Host      osversion.Host `json:"host"`
+	Jails     []Userland     `json:"jails"`
+	Templates []Userland     `json:"templates"`
+}
+
+// Userland is one jail's or template's standing, by name.
+type Userland struct {
+	Name string `json:"name"`
+	osversion.Standing
 }

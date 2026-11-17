@@ -27,7 +27,7 @@ vi.mock('../stores/vms.svelte', async (original) => ({
         return answer
     }),
     createVM: vi.fn(async (req: CreateRequest) => {
-        const made: Guest = { name: req.name, datastore: 'default', loader: 'uefi', state: 'running', autostart: false }
+        const made: Guest = { name: req.name, datastore: 'default', loader: 'uefi', state: 'running', autostart: false, properties: {} }
         listing.vms.push(made)
         return { ...made, image: req.image }
     }),
@@ -70,6 +70,7 @@ vi.mock('../stores/confirm.svelte', () => ({
 }))
 
 const running: Detail = {
+    properties: {},
     name: 'jd-cap-running', datastore: 'default', loader: 'uefi', cpu: '2', memory: '512M',
     state: 'running', pid: 16783, autostart: true, autostart_order: 1,
     uuid: 'ed117915-d146-11f1-b463-e80688cecc46',
@@ -90,13 +91,13 @@ beforeEach(() => {
         vm_bhyve: 'ready',
         vms: [
             running,
-            { name: 'jd-cap-stopped', datastore: 'default', loader: 'uefi', state: 'stopped', autostart: false },
+            { name: 'jd-cap-stopped', datastore: 'default', loader: 'uefi', state: 'stopped', autostart: false, properties: {} },
         ],
         switches: ['jd-capsw'],
     }
     detail = running
     operated = []
-    answer = { name: 'jd-cap-running', datastore: 'default', state: 'stopped', autostart: true }
+    answer = { name: 'jd-cap-running', datastore: 'default', state: 'stopped', autostart: true, properties: {} }
     confirmed = true
     asked.length = 0
     typed.length = 0
@@ -155,7 +156,7 @@ describe('the virtual machines page', () => {
     })
 
     it('names the host holding a locked guest', async () => {
-        listing.vms = [{ name: 'shared', datastore: 'nfs', state: 'locked', locked_by: 'orthanc', autostart: false }]
+        listing.vms = [{ name: 'shared', datastore: 'nfs', state: 'locked', locked_by: 'orthanc', autostart: false, properties: {} }]
         render(VMs)
         expect(await screen.findByText('by orthanc')).toBeTruthy()
     })
@@ -175,6 +176,7 @@ describe('one virtual machine', () => {
     // memory: said, not left as an empty section.
     it('explains the missing console of a stopped guest', async () => {
         detail = {
+            properties: {},
             name: 'jd-cap-stopped', datastore: 'default', loader: 'uefi', cpu: '1', memory: '256M',
             state: 'stopped', autostart: false, networks: [], disks: [],
         }
@@ -220,7 +222,7 @@ describe('starting and stopping a guest', () => {
     })
 
     it('says so when a stop had to power the guest off', async () => {
-        answer = { name: 'jd-cap-running', datastore: 'default', state: 'stopped', autostart: true, forced: true }
+        answer = { name: 'jd-cap-running', datastore: 'default', state: 'stopped', autostart: true, forced: true, properties: {} }
         render(VMs)
         await fireEvent.click(await screen.findByRole('button', { name: 'Stop jd-cap-running' }))
         expect(await screen.findByText(/did not answer the power button within a minute and was powered off/)).toBeTruthy()
@@ -237,8 +239,8 @@ describe('starting and stopping a guest', () => {
     // host cannot be touched: no button, and the reason instead.
     it('offers nothing for a guest booting or held elsewhere, and says why', async () => {
         listing.vms = [
-            { name: 'booting', datastore: 'default', state: 'bootloader', pid: 9, autostart: false },
-            { name: 'shared', datastore: 'nfs', state: 'locked', locked_by: 'orthanc', autostart: false },
+            { name: 'booting', datastore: 'default', state: 'bootloader', pid: 9, autostart: false, properties: {} },
+            { name: 'shared', datastore: 'nfs', state: 'locked', locked_by: 'orthanc', autostart: false, properties: {} },
         ]
         render(VMs)
         expect(await screen.findByText(/Booting — try again once it is running/)).toBeTruthy()
@@ -247,7 +249,7 @@ describe('starting and stopping a guest', () => {
     })
 
     it('offers Resume for a suspended guest', async () => {
-        listing.vms = [{ name: 'napping', datastore: 'default', state: 'suspended', autostart: false }]
+        listing.vms = [{ name: 'napping', datastore: 'default', state: 'suspended', autostart: false, properties: {} }]
         render(VMs)
         expect((await screen.findByRole('button', { name: 'Start napping' })).textContent?.trim()).toBe('Resume')
     })

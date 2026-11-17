@@ -5,6 +5,7 @@ import { getMetrics } from '../stores/metrics.svelte'
 import type { MetricsReport, Memory, JailUsage, Disk } from '../stores/metrics.svelte'
 import { ApiError } from '../services/api'
 import { formatBytes } from '../utils'
+import { behindCount, patchOf } from '../osversion'
 
 let report = $state<MetricsReport | null>(null)
 let loadError = $state('')
@@ -148,6 +149,21 @@ function flags(disk: Disk): string[] {
 // Every jail read the same way, or the report says which is which. Mixed
 // sources are possible only across restarts, never within one report.
 let source = $derived(report?.jails[0]?.source)
+
+// FreeBSD versions (#229). The figure is the host's userland; what the card is
+// for is the line under it: what is behind the host, and whether the host is
+// itself waiting for a reboot.
+let os = $derived(report?.os)
+let jailsBehind = $derived(os ? behindCount(os.jails) : 0)
+let templatesBehind = $derived(os ? behindCount(os.templates) : 0)
+
+function releaseOf(version: string): string {
+    return version.replace(/-p[0-9]+$/, '')
+}
+
+function plural(n: number, one: string, many: string): string {
+    return `${n} ${n === 1 ? one : many}`
+}
 </script>
 
 <header class="page-head page-head--action">
@@ -226,6 +242,46 @@ let source = $derived(report?.jails[0]?.source)
                 <a href="/jails" onclick={(e) => onNavClick(e, '/jails')}>See them all</a>
             </p>
         </article>
+
+        {#if os}
+            <article class="card" data-card="freebsd">
+                <h2>FreeBSD</h2>
+                {#if os.host.userland}
+                    <p class="figure">
+                        {patchOf(os.host.userland)}<span class="unit">{releaseOf(os.host.userland)}</span>
+                    </p>
+                {:else}
+                    <p class="figure figure--muted">—</p>
+                {/if}
+                {#if os.host.reboot_pending}
+                    <p class="under">
+                        <span class="badge badge--warn">Reboot pending</span>
+                    </p>
+                    <p class="under">
+                        Running kernel {patchOf(os.host.kernel_running)}, installed
+                        {patchOf(os.host.kernel_installed)}: the update isn't in effect until a reboot.
+                    </p>
+                {:else if os.host.kernel_running}
+                    <p class="under">kernel {os.host.kernel_running}</p>
+                {/if}
+                {#if jailsBehind + templatesBehind > 0}
+                    <p class="under under--warn">
+                        {#if jailsBehind > 0}
+                            <a href="/jails" onclick={(e) => onNavClick(e, '/jails')}>{plural(jailsBehind, 'jail', 'jails')}</a>{/if}{#if jailsBehind > 0 && templatesBehind > 0}{' and '}{/if}{#if templatesBehind > 0}
+                            <a href="/templates" onclick={(e) => onNavClick(e, '/templates')}>{plural(templatesBehind, 'template', 'templates')}</a>{/if}
+                        behind the host
+                    </p>
+                {:else if os.jails.length + os.templates.length > 0}
+                    <p class="under">No jail or template is behind the host.</p>
+                {/if}
+            </article>
+        {:else if report.os_unavailable}
+            <article class="card" data-card="freebsd">
+                <h2>FreeBSD</h2>
+                <p class="figure figure--muted">—</p>
+                <p class="under">Could not read the versions: {report.os_unavailable}</p>
+            </article>
+        {/if}
     </section>
 
     <section class="panel">
@@ -504,6 +560,15 @@ let source = $derived(report?.jails[0]?.source)
 
 .under--note {
     font-style: italic;
+}
+
+.under--warn {
+    color: var(--warn);
+}
+
+.under--warn a {
+    color: inherit;
+    font-weight: 600;
 }
 
 /* A second line under a cell's value: the serial under the model, the vdev

@@ -1,4 +1,5 @@
 import { api, ApiError } from "../services/api";
+import type { Standing } from '../osversion'
 import type { JailData, DatasetDestroy } from "./jails.svelte";
 import { datasetDestroyCall } from "./jails.svelte";
 
@@ -30,6 +31,9 @@ export interface Template {
     running?: Running
     used: number
     referenced: number
+    // The template's FreeBSD userland against the host's (#229). Absent until
+    // there is a tree to read it from.
+    userland?: Standing
 }
 
 // The states a template reports, in the order it passes through them.

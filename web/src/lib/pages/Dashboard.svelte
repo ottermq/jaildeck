@@ -2,11 +2,12 @@
 import { onMount, onDestroy } from 'svelte'
 import { onNavClick } from '../router.svelte'
 import { getMetrics } from '../stores/metrics.svelte'
-import type { MetricsReport, Memory, JailUsage, Disk } from '../stores/metrics.svelte'
+import type { MetricsReport, JailUsage, Disk } from '../stores/metrics.svelte'
 import { ApiError } from '../services/api'
 import { formatBytes } from '../utils'
 import { behindCount, patchOf } from '../osversion'
 import { databaseNote, vulnerableCount, vulnTitle } from '../vulns'
+import { segments } from '../memory'
 
 let report = $state<MetricsReport | null>(null)
 let loadError = $state('')
@@ -40,12 +41,10 @@ onDestroy(() => {
     if (timer) clearInterval(timer)
 })
 
-// Used is everything the kernel is not holding free. Wired is shown beside
-// it rather than folded in, because on a ZFS host most of it is the ARC —
-// reclaimable, and alarming if it reads as pressure.
-function used(memory: Memory): number {
-    return memory.physical - memory.free
-}
+// The memory headline is held: neither free nor given back on demand (#224).
+// Physical less free counted the ZFS ARC and inactive pages as used, and a
+// host with its RAM in cache read as full.
+let memorySegments = $derived(report ? segments(report.host.memory) : [])
 
 function share(part: number, whole: number): number {
     return whole > 0 ? Math.min(100, (part / whole) * 100) : 0
@@ -230,22 +229,34 @@ function plural(n: number, one: string, many: string): string {
 
         <article class="card">
             <h2>Memory</h2>
-            <p class="figure">
-                {formatBytes(used(report.host.memory))}<span class="unit">
-                    of {formatBytes(report.host.memory.physical)}</span>
+            <p class="figure" title={memorySegments[0]?.title}>
+                {formatBytes(memorySegments[0]?.bytes ?? 0)}<span class="unit">
+                    {memorySegments[0]?.label} of {formatBytes(report.host.memory.physical)}</span>
             </p>
-            <div class="bar">
-                <div class="bar__fill"
-                     style={`width:${share(used(report.host.memory), report.host.memory.physical)}%`}></div>
+            <div class="bar bar--stacked" data-bar="memory">
+                {#each memorySegments as segment (segment.key)}
+                    <div class="bar__fill bar__fill--{segment.key}" data-segment={segment.key}
+                         title={`${segment.label} ${formatBytes(segment.bytes)}: ${segment.title}`}
+                         style={`width:${segment.percent}%`}></div>
+                {/each}
             </div>
-            <p class="under">
-                wired {formatBytes(report.host.memory.wired)} ·
-                active {formatBytes(report.host.memory.active)} ·
-                inactive {formatBytes(report.host.memory.inactive)}
-            </p>
-            <p class="under under--note">
-                Most of wired is the ZFS ARC, which is reclaimable.
-            </p>
+            {#if memorySegments.length > 1}
+                <p class="under legend">
+                    {#each memorySegments.slice(1) as segment (segment.key)}
+                        <span title={segment.title}><span class="swatch swatch--{segment.key}" aria-hidden="true"></span>{segment.label} {formatBytes(segment.bytes)}</span>
+                    {/each}
+                    <span>free {formatBytes(report.host.memory.free)}</span>
+                </p>
+                <p class="under under--note">
+                    Inactive pages and the ZFS ARC are given back when something needs memory{#if report.host.memory.arc_max !== undefined}; the ARC may grow to {formatBytes(report.host.memory.arc_max)}{/if}.
+                </p>
+            {:else}
+                <p class="under">
+                    wired {formatBytes(report.host.memory.wired)} ·
+                    active {formatBytes(report.host.memory.active)} ·
+                    inactive {formatBytes(report.host.memory.inactive)}
+                </p>
+            {/if}
         </article>
 
         <article class="card">
@@ -690,6 +701,37 @@ function plural(n: number, one: string, many: string): string {
 .bar__fill {
     height: 100%;
     background: var(--brand);
+}
+
+/* Memory (#224): held in the brand colour, then what is given back on
+   demand in lighter shades of it, then free as the empty rest. */
+.bar--stacked {
+    display: flex;
+}
+
+.bar__fill--inactive,
+.swatch--inactive {
+    background: color-mix(in srgb, var(--brand) 45%, transparent);
+}
+
+.bar__fill--arc,
+.swatch--arc {
+    background: color-mix(in srgb, var(--brand) 22%, transparent);
+}
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-3);
+}
+
+.swatch {
+    display: inline-block;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 2px;
+    margin-right: 0.3rem;
+    vertical-align: baseline;
 }
 
 .fill-col {

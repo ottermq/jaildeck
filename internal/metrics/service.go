@@ -38,6 +38,8 @@ type Service struct {
 	// vulnerabilities is optional, and read as it is: the audit runs on a
 	// timer of its own (#230).
 	vulnerabilities VulnerabilitySource
+	// processes is optional: Jail Deck's own memory (#224).
+	processes ProcessSource
 
 	mu       sync.Mutex
 	previous *reading
@@ -53,6 +55,9 @@ func (s *Service) SetVersions(v VersionSource) { s.versions = v }
 
 // SetVulnerabilities adds the last package audit to the report (#230).
 func (s *Service) SetVulnerabilities(v VulnerabilitySource) { s.vulnerabilities = v }
+
+// SetProcesses adds Jail Deck's own memory to the report (#224).
+func (s *Service) SetProcesses(p ProcessSource) { s.processes = p }
 
 type reading struct {
 	ticks Ticks
@@ -126,6 +131,15 @@ func (s *Service) Report(ctx context.Context) (Report, error) {
 		report.Vulnerabilities = countVulnerable(s.vulnerabilities.Snapshot())
 	}
 
+	// Jail Deck's own memory never fails the report either.
+	if s.processes != nil {
+		if processes, err := s.processes.Processes(ctx); err != nil {
+			common.Logger(ctx, "metrics").Warn("reporting without Jail Deck's own memory", slog.Any("err", err))
+		} else {
+			report.Processes = processes
+		}
+	}
+
 	if s.jails == nil || s.usage == nil {
 		return report, nil
 	}
@@ -188,6 +202,7 @@ func (s *Service) readHost(ctx context.Context) (Host, error) {
 		return Host{}, common.NewAppError(http.StatusInternalServerError,
 			"could not read memory: "+err.Error())
 	}
+	memory.Held = memory.HeldBytes()
 	pools, err := s.host.PoolUsage(ctx)
 	if err != nil {
 		return Host{}, common.NewAppError(http.StatusInternalServerError,

@@ -111,16 +111,24 @@ func TestMemory(t *testing.T) {
 	adapter.sysctl("vm.stats.vm.v_active_count", "10270")
 	adapter.sysctl("vm.stats.vm.v_inactive_count", "106011")
 	adapter.sysctl("vm.stats.vm.v_wire_count", "845271")
+	adapter.sysctl("vm.stats.vm.v_laundry_count", "12")
+	adapter.sysctl("kstat.zfs.misc.arcstats.size", "2952790016")
+	adapter.sysctl("kstat.zfs.misc.arcstats.c_max", "16046022656")
 
 	got, err := adapter.Memory(context.Background())
 	if err != nil {
 		t.Fatalf("Memory: %v", err)
 	}
+	if got.ARC == nil || *got.ARC != 2952790016 || got.ARCMax == nil || *got.ARCMax != 16046022656 {
+		t.Errorf("ARC = %v, max %v", got.ARC, got.ARCMax)
+	}
+	got.ARC, got.ARCMax = nil, nil
 	want := metrics.Memory{
 		Physical: 17120813056,
 		Free:     3111566 * 4096,
 		Active:   10270 * 4096,
 		Inactive: 106011 * 4096,
+		Laundry:  12 * 4096,
 		Wired:    845271 * 4096,
 	}
 	if got != want {
@@ -133,6 +141,24 @@ func TestMemory(t *testing.T) {
 		if strings.Contains(ran, "v_cache_count") {
 			t.Error("read v_cache_count, which is vestigial")
 		}
+	}
+}
+
+// A host without the ZFS module has no arcstats: the ARC is absent, not 0,
+// and memory is still read.
+func TestMemoryWithoutZFS(t *testing.T) {
+	adapter := newMetricsAdapter(t)
+	adapter.sysctl("hw.pagesize", "4096")
+	adapter.sysctl("hw.physmem", "17120813056")
+	for _, name := range []string{"v_free_count", "v_active_count", "v_inactive_count", "v_wire_count", "v_laundry_count"} {
+		adapter.sysctl("vm.stats.vm."+name, "1")
+	}
+	got, err := adapter.Memory(context.Background())
+	if err != nil {
+		t.Fatalf("Memory: %v", err)
+	}
+	if got.ARC != nil || got.ARCMax != nil {
+		t.Errorf("a host without ZFS has ARC %v, max %v", got.ARC, got.ARCMax)
 	}
 }
 

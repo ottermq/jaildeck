@@ -20,7 +20,14 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.31.0 — 2026-11-17
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.31.0)
+
+**Jail Deck shows which FreeBSD patch level everything runs, and what is behind the host** (#229).
+A jail's userland is its own copy, so updating the host leaves every jail where it was, and a host
+can look updated while still running the old kernel. Both now show on the dashboard, in the lists
+and in `/metrics`.
 
 - **FreeBSD versions, and what is behind the host** (#229, JD-060). The host's running kernel, installed kernel and userland, with `reboot_pending` when an update is installed and the host has not been restarted. Each jail's and template's userland, judged against the host's: `current`, `behind` by how many patch levels, `ahead`, `other-release` or `unknown`. Updating the host doesn't update a jail, whose userland is its own copy, and this is where that shows. The version is read from the tree's `bin/freebsd-version` as text and never run, through `os.Root`, so a jail can't point it at the host. The dashboard has a FreeBSD card, the Jails and Templates lists a FreeBSD column, and a jail behind the host says so on its page.
 - **Metrics:** `jaildeck_host_reboot_pending`, `jaildeck_os_version_info` and `jaildeck_jail_userland_behind` / `jaildeck_template_userland_behind`. A jail on another release, or whose version can't be read, is left out of the last two, so an alert on them never fires on a guess.

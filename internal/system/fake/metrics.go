@@ -46,7 +46,11 @@ func (h *HostMetrics) Memory(context.Context) (metrics.Memory, error) {
 		Free:     3111566 * page,
 		Active:   10270 * page,
 		Inactive: 106011 * page,
+		Laundry:  0,
 		Wired:    845271 * page,
+		// Most of wired, as on a ZFS host that has been up a while.
+		ARC:    ptr(int64(2952790016)),
+		ARCMax: ptr(int64(16046022656)),
 	}, nil
 }
 
@@ -167,3 +171,5 @@ func (h *HostMetrics) ProcessCPU(_ context.Context, pids []int) (map[int]float64
 	}
 	return out, nil
 }
+
+func ptr[T any](v T) *T { return &v }

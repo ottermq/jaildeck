@@ -7,7 +7,7 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.32.0.** Jails can be created from release templates, started,
+**Current release: v0.33.0.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API, and their limits changed in place; their ZFS datasets,
 snapshots and resource usage are visible, and a dataset kept past its jail can be restored or destroyed; host setup is checked, along with the host's FreeBSD version, a reboot it's waiting for and any jail or template behind it, and every package on the host, in jails and in templates is audited against the host's vulnerability database; PF can be seen,
 read-only; bhyve VMs are created from cloud images (Debian, Ubuntu, Fedora, Alpine, Arch) with cloud-init, with a console password if wanted, pinned to host CPUs, started,
@@ -593,6 +593,15 @@ here writes `rate()`: bytes, seconds and ratios. Two that are worth knowing:
   not its `hz`. On this hardware those are 127 and 1000, so dividing by the wrong one is
   an eightfold error. The raw `jaildeck_host_cpu_ticks_total` is published alongside it,
   and a ratio of two of those is correct whatever a tick is worth.
+- **`jaildeck_host_memory_bytes{state="arc"}`** is the ZFS ARC, which is **part of wired**:
+  adding up every state counts it twice. **`jaildeck_host_memory_held_bytes`** is the one
+  figure without what is given back on demand, physical less free, inactive and the ARC,
+  and is what the dashboard's headline shows (#224). A host without ZFS has no ARC series.
+- **`jaildeck_process_resident_memory_bytes{side}`** is Jail Deck's own memory, the root
+  side's (`back`) and the front's, or `single` when it runs as one process. One name with a
+  label rather than the standard `process_resident_memory_bytes`, which describes the one
+  process scraped: Jail Deck is two. `jaildeck_go_heap_inuse_bytes` is the Go heap of the
+  side that answers.
 
 A disk is published both ways on purpose: `jaildeck_disk_passed` is the drive's own
 verdict and `jaildeck_disk_failing_attributes` is what smartctl flags, and they routinely

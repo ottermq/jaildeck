@@ -61,7 +61,15 @@ type Back struct {
 	// vulnerabilities audits every package on a timer of its own, started
 	// by Background (#230).
 	vulnerabilities *vulns.Service
+	// processes is Jail Deck's own memory, told the front's pid by SetFront
+	// (#224).
+	processes *ownProcesses
 }
+
+// SetFront tells the root side how to find the front's pid, 0 while it is
+// not running, so /metrics can report the front's memory too (#224). Only
+// a split Jail Deck has a front of its own.
+func (a *Back) SetFront(pid func() int) { a.processes.front.Store(&pid) }
 
 // Background starts what the root side does on its own rather than for a
 // request: today, the package audit (#230). Separate from NewBack, so
@@ -189,6 +197,14 @@ func NewBack(cfg *config.Config, recheck func(*http.Request) error) (*Back, erro
 	templateService.SetVulnerabilities(vulnService)
 	metricsService.SetVulnerabilities(vulnService)
 
+	// Jail Deck's own memory, on /metrics only (#224).
+	residents, err := newResidentReader(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	processes := &ownProcesses{rss: residents}
+	metricsService.SetProcesses(processes)
+
 	firewallSystem, err := newFirewallSystem(cfg.Adapter)
 	if err != nil {
 		return nil, err
@@ -300,6 +316,7 @@ func NewBack(cfg *config.Config, recheck func(*http.Request) error) (*Back, erro
 		networkHandler:  networkHandler,
 		vulnHandler:     vulns.NewHandler(vulnService),
 		vulnerabilities: vulnService,
+		processes:       processes,
 	}, nil
 }
 
@@ -538,6 +555,19 @@ func newVulnSource(adapter string) (vulns.Source, error) {
 		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
 	case config.AdapterFake:
 		return fake.NewVulns(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
+}
+
+// newResidentReader selects what reads processes' resident memory (#224).
+func newResidentReader(adapter string) (residentReader, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewProcesses(), nil
 	default:
 		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

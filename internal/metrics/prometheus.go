@@ -39,6 +39,7 @@ func WriteExposition(w io.Writer, report Report) error {
 	out.disks(report.Disks)
 	out.versions(report.OS)
 	out.vulnerabilities(report.Vulnerabilities)
+	out.processes(report.Processes)
 
 	return out.w.Flush()
 }
@@ -85,7 +86,8 @@ func (e *exposition) host(host Host) {
 		}
 	}
 
-	e.gauge("jaildeck_host_memory_bytes", "Host memory by state.")
+	e.gauge("jaildeck_host_memory_bytes",
+		"Host memory by state. arc is part of wired, so a sum of every state counts it twice.")
 	for _, state := range []struct {
 		name  string
 		bytes int64
@@ -97,8 +99,21 @@ func (e *exposition) host(host Host) {
 		// Most of wired is the ZFS ARC and is reclaimable; it is a state
 		// rather than a component of a single "used" figure (JD-031).
 		{"wired", host.Memory.Wired},
+		{"laundry", host.Memory.Laundry},
 	} {
 		e.value(labels{{"state", state.name}}, float64(state.bytes))
+	}
+	// The ARC is written only on a host that has one (#224): an absent
+	// series, not a 0, on a host without ZFS.
+	if host.Memory.ARC != nil {
+		e.value(labels{{"state", "arc"}}, float64(*host.Memory.ARC))
+	}
+	e.gauge("jaildeck_host_memory_held_bytes",
+		"Memory neither free nor given back on demand: physical less free, inactive and the ZFS ARC.")
+	e.value(nil, float64(host.Memory.Held))
+	if host.Memory.ARCMax != nil {
+		e.gauge("jaildeck_host_arc_max_bytes", "The most the ZFS ARC may grow to: kstat.zfs.misc.arcstats.c_max.")
+		e.value(nil, float64(*host.Memory.ARCMax))
 	}
 }
 
@@ -230,6 +245,31 @@ func (e *exposition) vulnerable(name, label string, trees []VulnerableCount, hel
 			wrote = true
 		}
 		e.value(labels{{label, tree.Name}}, float64(tree.Vulnerable))
+	}
+}
+
+// processes is Jail Deck's own memory (#224). One name with a side label
+// rather than the standard process_resident_memory_bytes, which describes
+// the one process scraped: Jail Deck is two (JD-056), and the front is the
+// larger, holding the embedded interface.
+func (e *exposition) processes(processes []Process) {
+	if len(processes) == 0 {
+		return
+	}
+	e.gauge("jaildeck_process_resident_memory_bytes", "Resident memory of each of Jail Deck's own processes: the root side and the front.")
+	for _, p := range processes {
+		e.value(labels{{"side", p.Side}}, float64(p.Resident))
+	}
+	wrote := false
+	for _, p := range processes {
+		if p.HeapInuse == nil {
+			continue
+		}
+		if !wrote {
+			e.gauge("jaildeck_go_heap_inuse_bytes", "Go heap in use in the Jail Deck process answering this scrape.")
+			wrote = true
+		}
+		e.value(labels{{"side", p.Side}}, float64(*p.HeapInuse))
 	}
 }
 

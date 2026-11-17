@@ -154,3 +154,40 @@ describe('the dashboard vulnerable packages card', () => {
         expect(await screen.findByText(/The first audit hasn't finished/)).toBeTruthy()
     })
 })
+
+// The memory card (#224): held is the headline, and the bar shows what is
+// given back on demand apart from it.
+describe('the dashboard memory card', () => {
+    const gib = 2 ** 30
+
+    it('heads with held and draws inactive and the ARC apart', async () => {
+        report.host.memory = {
+            physical: 128 * gib, free: 101 * gib, active: 3 * gib, inactive: 14 * gib, laundry: 0,
+            wired: 7 * gib, arc: 5 * gib, arc_max: 127 * gib, held: 8 * gib,
+        }
+        const { container } = render(Dashboard)
+        const card = (await screen.findByText('Memory')).closest('article')!
+        expect(card.querySelector('.figure')!.textContent).toMatch(/held of/)
+        const keys = [...container.querySelectorAll('[data-bar="memory"] [data-segment]')].map((e) => e.getAttribute('data-segment'))
+        expect(keys).toEqual(['held', 'inactive', 'arc'])
+        expect(card.textContent).toMatch(/the ARC may grow to/)
+        expect(card.textContent).toMatch(/free/)
+    })
+
+    it('has no ARC on a host without ZFS', async () => {
+        report.host.memory = { physical: 16 * gib, free: 4 * gib, active: 1, inactive: 2 * gib, wired: 1, held: 10 * gib }
+        const { container } = render(Dashboard)
+        await screen.findByText('Memory')
+        expect(container.querySelector('[data-segment="arc"]')).toBeNull()
+        expect(container.querySelector('[data-segment="inactive"]')).toBeTruthy()
+        expect(screen.queryByText(/the ARC may grow/)).toBeNull()
+    })
+
+    it('keeps the old figure from a server that sends no held', async () => {
+        const { container } = render(Dashboard)
+        await screen.findByText('Memory')
+        const card = container.querySelector('[data-bar="memory"]')!.closest('article')!
+        expect(card.querySelector('.figure')!.textContent).toMatch(/used of/)
+        expect(card.textContent).toMatch(/wired/)
+    })
+})

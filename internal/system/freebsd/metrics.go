@@ -119,6 +119,11 @@ func clockRates(value string) map[string]int {
 //
 // v_cache_count is not read: it exists on this release and is always 0, a
 // leftover of a page queue FreeBSD no longer keeps.
+//
+// The ARC's size and ceiling are read from kstat.zfs.misc.arcstats (#224).
+// A host without the ZFS module has no such sysctl, and the ARC is then
+// absent rather than 0: a host with no ARC and one whose ARC is empty are
+// different things.
 func (a *Adapter) Memory(ctx context.Context) (metrics.Memory, error) {
 	pageSize, err := a.sysctlInt(ctx, "hw.pagesize")
 	if err != nil {
@@ -135,6 +140,7 @@ func (a *Adapter) Memory(ctx context.Context) (metrics.Memory, error) {
 		"vm.stats.vm.v_active_count",
 		"vm.stats.vm.v_inactive_count",
 		"vm.stats.vm.v_wire_count",
+		"vm.stats.vm.v_laundry_count",
 	} {
 		count, err := a.sysctlInt(ctx, name)
 		if err != nil {
@@ -147,8 +153,21 @@ func (a *Adapter) Memory(ctx context.Context) (metrics.Memory, error) {
 		Free:     pages["vm.stats.vm.v_free_count"],
 		Active:   pages["vm.stats.vm.v_active_count"],
 		Inactive: pages["vm.stats.vm.v_inactive_count"],
+		Laundry:  pages["vm.stats.vm.v_laundry_count"],
 		Wired:    pages["vm.stats.vm.v_wire_count"],
+		ARC:      a.optionalSysctlInt(ctx, "kstat.zfs.misc.arcstats.size"),
+		ARCMax:   a.optionalSysctlInt(ctx, "kstat.zfs.misc.arcstats.c_max"),
 	}, nil
+}
+
+// optionalSysctlInt is a sysctl that a host may not have, such as one of a
+// kernel module that is not loaded: nil when it cannot be read.
+func (a *Adapter) optionalSysctlInt(ctx context.Context, name string) *int64 {
+	value, err := a.sysctlInt(ctx, name)
+	if err != nil {
+		return nil
+	}
+	return &value
 }
 
 // Pools reads `zpool list -Hp`: exact bytes rather than the "1.41G" the

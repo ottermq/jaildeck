@@ -38,7 +38,16 @@ export interface Memory {
     free: number
     active: number
     inactive: number
+    // Dirty pages waiting to be written before they can be reused (#224).
+    laundry?: number
     wired: number
+    // The ZFS ARC, part of wired, and the most it may grow to. Absent on a
+    // host without ZFS (#224).
+    arc?: number
+    arc_max?: number
+    // Physical less free, inactive and the ARC: what is neither free nor
+    // given back on demand. Computed by the server (#224).
+    held?: number
 }
 
 export interface Pool {

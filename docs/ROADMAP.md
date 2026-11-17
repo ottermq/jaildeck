@@ -69,6 +69,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Snapshot grant and audit principals** (v0.30.0): limited tokens take and destroy snapshots whose name matches a pattern, in labelled jails, for a platform's backups (JD-057); every audit entry names the session or token that made it
 - **Audit log rotation** (v0.30.1): the package rotates the default audit log with `newsyslog`, at 10 MB with 10 compressed files kept (JD-058).
 - **Tenant networks survive a reboot** (v0.30.2): Jail Deck records its tenant networks, and a boot step puts their bridges back before jails and guests start (#225, JD-059).
+- **FreeBSD versions, and what is behind the host**: the host's kernels and userland with a pending reboot, and each jail's and template's userland against the host's, on the dashboard, the lists and `/metrics`. Asked for by a risk review, not by Otter Cloud (#229, JD-060).
 
 ---
 

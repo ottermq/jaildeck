@@ -45,3 +45,52 @@ describe('the dashboard disk section', () => {
         expect(await screen.findByText(/found no disk it can read/)).toBeTruthy()
     })
 })
+
+// The FreeBSD card (#229): the host's userland, a pending reboot, and what is
+// behind the host.
+describe('the dashboard FreeBSD card', () => {
+    const host = '15.1-RELEASE-p6'
+    const standing = (name: string, version: string, status: 'current' | 'behind' | 'unknown', levels?: number) =>
+        ({ name, version, status, levels, host })
+
+    it('says a reboot is pending and counts what is behind', async () => {
+        report.os = {
+            host: { kernel_running: '15.1-RELEASE-p5', kernel_installed: host, userland: host, reboot_pending: true },
+            jails: [standing('web', host, 'current'), standing('db', '15.1-RELEASE-p2', 'behind', 4),
+                standing('cache', '15.1-RELEASE-p5', 'behind', 1), standing('odd', '', 'unknown')],
+            templates: [standing('15.1-RELEASE', '15.1-RELEASE-p5', 'behind', 1)],
+        }
+        const { container } = render(Dashboard)
+        expect(await screen.findByText('Reboot pending')).toBeTruthy()
+        const card = container.querySelector('[data-card="freebsd"]')!
+        expect(card.textContent).toMatch(/Running kernel p5, installed\s+p6/)
+        expect(card.textContent).toMatch(/2 jails\s+and\s+1 template\s+behind the host/)
+        expect(card.querySelector('a[href="/jails"]')).toBeTruthy()
+        expect(card.querySelector('a[href="/templates"]')).toBeTruthy()
+    })
+
+    it('shows the running kernel and nothing behind when all is current', async () => {
+        report.os = {
+            host: { kernel_running: host, kernel_installed: host, userland: host, reboot_pending: false },
+            jails: [standing('web', host, 'current')],
+            templates: [],
+        }
+        const { container } = render(Dashboard)
+        expect(await screen.findByText(`kernel ${host}`)).toBeTruthy()
+        expect(screen.queryByText('Reboot pending')).toBeNull()
+        expect(container.querySelector('[data-card="freebsd"]')!.textContent)
+            .toMatch(/No jail or template is behind the host/)
+    })
+
+    it('says why when the versions could not be read', async () => {
+        report.os_unavailable = 'sysctl: permission denied'
+        render(Dashboard)
+        expect(await screen.findByText(/Could not read the versions: sysctl: permission denied/)).toBeTruthy()
+    })
+
+    it('has no card where nothing reads the versions', async () => {
+        const { container } = render(Dashboard)
+        await screen.findByText(/found no disk it can read/)
+        expect(container.querySelector('[data-card="freebsd"]')).toBeNull()
+    })
+})

@@ -1,4 +1,5 @@
 import { api } from '../services/api'
+import type { OSVersions } from '../osversion'
 
 // Ticks are kern.cp_time, cumulative since boot. They are always present,
 // so a client that keeps its own baseline is not waiting on the server's.
@@ -158,6 +159,11 @@ export interface MetricsReport {
     // Why disks is empty, when it is not because the host has none: smartctl
     // not installed, not on the service's PATH, or refusing to list devices.
     disks_unavailable?: string
+    // FreeBSD versions on the host, and each jail's and template's userland
+    // against them (#229). Read at most once a minute. Absent where nothing
+    // reads them; os_unavailable says why when the read failed.
+    os?: OSVersions
+    os_unavailable?: string
 }
 
 export async function getMetrics(): Promise<MetricsReport> {

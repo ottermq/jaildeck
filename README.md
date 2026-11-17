@@ -325,6 +325,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/events` | a live stream (server-sent events) of operations, outside state changes and image and template progress; `Last-Event-ID` resumes it |
 | `GET /api/metrics` | host, per-jail and per-guest resource usage, and disk health |
 | `GET /api/vulnerabilities` | the last audit of the host's, every jail's and every template's packages against the host's vulnerability database: each vulnerable package, its CVEs and VuXML links |
+| `GET /api/replication` | when each dataset a zrepl job replicates last reached the other side, from zrepl's replication cursors; covers a job another host pulls from |
 | `GET /api/firewall` | PF's state, rules with counters, NAT, anchors and tables, read-only |
 | `GET /api/firewall/tables/{name}` | one table's addresses |
 | `GET /api/firewall/log` | the most recent pflog lines |
@@ -627,6 +628,22 @@ say how fresh the answer is:
   expr: time() - jaildeck_vulnerability_database_timestamp_seconds > 3 * 86400
   annotations:
     summary: 'the vulnerability database is over three days old: is the daily security run on?'
+```
+
+ZFS replication (#247) gives each dataset a zrepl job replicates the time its newest snapshot
+to reach the other side was taken. The threshold is yours, because it depends on the job's
+interval: two intervals and a margin is a reasonable start. The second rule catches Jail Deck
+no longer being able to read the cursors at all:
+
+```yaml
+- alert: ReplicationBehind
+  expr: time() - jaildeck_replication_last_snapshot_timestamp_seconds{job="local_push"} > 3600
+  annotations:
+    summary: '{{ $labels.dataset }} has not replicated for over an hour'
+- alert: ReplicationUnread
+  expr: time() - jaildeck_replication_last_read_timestamp_seconds > 600
+  annotations:
+    summary: "Jail Deck has not read zrepl's replication cursors for ten minutes"
 ```
 
 Jail Deck does no alerting of its own and holds no history. The scraper keeps the series;

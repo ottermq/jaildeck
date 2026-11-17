@@ -21,6 +21,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/metrics"
 	"github.com/ottermq/jaildeck/internal/names"
 	"github.com/ottermq/jaildeck/internal/networks"
+	"github.com/ottermq/jaildeck/internal/replication"
 	"github.com/ottermq/jaildeck/internal/storage"
 	"github.com/ottermq/jaildeck/internal/templates"
 	"github.com/ottermq/jaildeck/internal/vms"
@@ -61,6 +62,7 @@ func (a *Back) Routes() http.Handler {
 			templates.RegisterTemplateRoutes(r, a.templateHandler)
 			events.RegisterEventRoutes(r, a.eventHandler)
 			vulns.RegisterRoutes(r, a.vulnHandler)
+			replication.RegisterRoutes(r, a.replicationHandler)
 		})
 	})
 

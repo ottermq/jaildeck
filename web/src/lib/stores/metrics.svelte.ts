@@ -1,3 +1,4 @@
+import type { ReplicationSnapshot } from '../replication'
 import { api } from '../services/api'
 import type { OSVersions } from '../osversion'
 import type { VulnCounts } from '../vulns'
@@ -177,6 +178,8 @@ export interface MetricsReport {
     // The last package audit in numbers (#230). Absent where nothing
     // audits.
     vulnerabilities?: VulnCounts
+    // zrepl's replication cursors (#247).
+    replication?: ReplicationSnapshot
 }
 
 export async function getMetrics(): Promise<MetricsReport> {

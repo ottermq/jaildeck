@@ -72,6 +72,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **FreeBSD versions, and what is behind the host** (v0.31.0): the host's kernels and userland with a pending reboot, and each jail's and template's userland against the host's, on the dashboard, the lists and `/metrics`. Asked for by a risk review, not by Otter Cloud (#229, JD-060).
 - **Vulnerable packages on the host, in jails and in templates** (v0.32.0): every package audited against the host's vulnerability database, read as `nobody`, on a timer, on the dashboard, the lists, each page and `/metrics`. The other half of the same risk review (#230, JD-061).
 - **Memory without the cache** (v0.33.0): the dashboard heads its memory card with held memory, physical less free, inactive and the ZFS ARC, and `/metrics` reports the ARC, laundry and Jail Deck's own memory (#224).
+- **ZFS replication status**: how long ago each dataset a zrepl job replicates last reached the other side, from zrepl's replication cursors, so a job another host pulls from is covered too. On the dashboard, a jail's page and `/metrics`; the threshold is Prometheus's. Read only, and deferred until replication carried Otter's backups (#247, JD-062).
 
 ---
 
@@ -503,7 +504,6 @@ Previously in scope, deliberately moved out. Not rejected — just not now.
 - **In-jail package inspection**
 - **Jail configuration** — show source, edit limited safe settings, reload. *Partly built since: the stanza and rctl rules are shown read only (v0.25.0, JD-048), and limits change in place (v0.21.0). Editing other settings stays deferred.*
 - **Jail detail view, log tails, raw diagnostic output** — worth revisiting once the UI exists and their shape is clear. *The detail view is built: a jail's page has its state, datasets, snapshots, limits, configuration and shell. Log tails and raw diagnostic output stay deferred.*
-- **ZFS replication status** — the rest of the ZFS write operations moved into Storage Writes
 - **Structured application logging**, distinct from the operation audit trail (JD-011)
 - **Durable metrics history inside Jail Deck** — the one feature that would justify a database. Live values and a trailing in-memory window need none, and the `/metrics` endpoint hands history to Prometheus; the trigger is wanting a chart *over time* inside Jail Deck itself that survives a restart (JD-011)
 - **Richer audit querying** — filtering scans the current file, which rotation now keeps to 10 MB (JD-058). Older entries are in the rotated files, which the API doesn't read (JD-011)

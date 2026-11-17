@@ -3,6 +3,8 @@ import { onDestroy, onMount } from 'svelte'
 import UserlandBadge from '../components/UserlandBadge.svelte'
 import VulnBadge from '../components/VulnBadge.svelte'
 import VulnPanel from '../components/VulnPanel.svelte'
+import { getReplication } from '../stores/replication.svelte'
+import { jobsFor, replicationTitle, since, type ReplicationSnapshot } from '../replication'
 import { userlandTitle } from '../osversion'
 import { onLive, aboutInstance } from '../stores/events.svelte'
 import {
@@ -43,6 +45,9 @@ async function load() {
         loadError = describe(err, `Could not load ${name}`)
         return
     }
+    // Replication (#247), also allowed to fail on its own: the line is left
+    // out rather than say anything about a read that did not happen.
+    getReplication().then((r) => (replication = r), () => (replication = null))
     // Asked separately, and allowed to fail on its own: a jail with an
     // unreadable snapshot listing is still a jail worth showing.
     try {
@@ -74,6 +79,13 @@ function describe(err: unknown, fallback: string): string {
 // children. Shown apart because their sizes are not the jail's — a child with
 // a refquota is counted separately on purpose (JD-007).
 let root = $derived(jail?.datasets?.find(d => d.mountpoint === jail?.path))
+
+// Which zrepl jobs replicate this jail's datasets, and how long ago the
+// oldest of them last reached the other side (#247).
+let replication = $state<ReplicationSnapshot | null>(null)
+let replicatedBy = $derived(replication && jail?.datasets
+    ? jobsFor(replication, jail.datasets.map(d => d.name))
+    : [])
 let children = $derived(jail?.datasets?.filter(d => d !== root) ?? [])
 
 // Newest first: the one you are looking for is almost always the last one
@@ -923,6 +935,17 @@ async function retain(event: Event, dataset: Dataset) {
         {/if}
     </section>
 
+    {#if replication?.status === 'replicating' && jail.datasets && jail.datasets.length > 0}
+        <p class="replication" data-replication title={replicationTitle}>
+            {#if replicatedBy.length > 0}
+                Replicated by
+                {#each replicatedBy as job, i (job.name)}{#if i > 0}{'; '}{/if}<code>{job.name}</code>{`, ${since(job.oldest)} ago`}{/each}.
+            {:else}
+                None of this jail's datasets is replicated by zrepl.
+            {/if}
+        </p>
+    {/if}
+
     {#if jail.vulnerabilities}
         <VulnPanel {name} what="jail" />
     {/if}
@@ -1154,6 +1177,13 @@ async function retain(event: Event, dataset: Dataset) {
 {/if}
 
 <style>
+/* The replication line (#247), between the datasets and the packages. */
+.replication {
+    margin: var(--space-3) 0 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
 /* The one section on this page that destroys something. Marked rather than
    hidden: an operator looking for it should find it, and should not reach it
    by accident. */

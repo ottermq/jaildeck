@@ -6,8 +6,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ottermq/jaildeck/internal/osversion"
+	"github.com/ottermq/jaildeck/internal/vulns"
 )
 
 // ExpositionContentType is the Prometheus text exposition format, version
@@ -36,6 +38,7 @@ func WriteExposition(w io.Writer, report Report) error {
 	out.guests(report.Guests)
 	out.disks(report.Disks)
 	out.versions(report.OS)
+	out.vulnerabilities(report.Vulnerabilities)
 
 	return out.w.Flush()
 }
@@ -184,6 +187,55 @@ func (e *exposition) versions(osv *OSVersions) {
 	e.behind("jaildeck_template_userland_behind", "template", osv.Templates,
 		"Patch levels this template's userland is behind the host's. Every jail cloned from it starts there.")
 }
+
+// vulnerabilities is the last package audit (#230). A count is written only
+// for a tree that was audited: one whose packages could not be listed, or
+// audited before the database was there, is left out rather than written as
+// 0, so "no vulnerable packages" is never a guess. The two timestamps are
+// what an alert on the answer's age needs -- time() minus either -- and are
+// timestamps rather than ages, as Prometheus's conventions have it, so a
+// value does not depend on when it was scraped.
+func (e *exposition) vulnerabilities(v *Vulnerabilities) {
+	if v == nil {
+		return
+	}
+	if v.Checked != nil {
+		e.gauge("jaildeck_vulnerability_last_audit_timestamp_seconds",
+			"When Jail Deck last audited every package against the vulnerability database, as a Unix time.")
+		e.value(nil, unixSeconds(*v.Checked))
+	}
+	if v.Database.Present && v.Database.Updated != nil {
+		e.gauge("jaildeck_vulnerability_database_timestamp_seconds",
+			"When the host's vulnerability database was last written, as a Unix time. The daily security run fetches it; an old one finds nothing new.")
+		e.value(nil, unixSeconds(*v.Database.Updated))
+	}
+	if audited(v.Host) {
+		e.gauge("jaildeck_host_vulnerable_packages", "Packages installed on the host that the vulnerability database names.")
+		e.value(nil, float64(v.Host.Vulnerable))
+	}
+	e.vulnerable("jaildeck_jail_vulnerable_packages", "jail", v.Jails,
+		"Packages installed in this jail that the host's vulnerability database names.")
+	e.vulnerable("jaildeck_template_vulnerable_packages", "template", v.Templates,
+		"Packages installed in this template that the host's vulnerability database names. Every jail cloned from it starts with them.")
+}
+
+func (e *exposition) vulnerable(name, label string, trees []VulnerableCount, help string) {
+	wrote := false
+	for _, tree := range trees {
+		if !audited(tree.Summary) {
+			continue
+		}
+		if !wrote {
+			e.gauge(name, help)
+			wrote = true
+		}
+		e.value(labels{{label, tree.Name}}, float64(tree.Vulnerable))
+	}
+}
+
+func audited(s vulns.Summary) bool { return s.Status == vulns.Clean || s.Status == vulns.Vulnerable }
+
+func unixSeconds(t time.Time) float64 { return float64(t.UnixMilli()) / 1000 }
 
 func (e *exposition) behind(name, label string, trees []Userland, help string) {
 	wrote := false

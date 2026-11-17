@@ -1,6 +1,11 @@
 package metrics
 
-import "github.com/ottermq/jaildeck/internal/osversion"
+import (
+	"time"
+
+	"github.com/ottermq/jaildeck/internal/osversion"
+	"github.com/ottermq/jaildeck/internal/vulns"
+)
 
 // Report is the whole of what GET /api/metrics answers: the host, and every
 // jail that is up (JD-031).
@@ -37,6 +42,26 @@ type Report struct {
 	// OSUnavailable says why when the read failed.
 	OS            *OSVersions `json:"os,omitempty"`
 	OSUnavailable string      `json:"os_unavailable,omitempty"`
+	// Vulnerabilities is the last package audit in numbers: the host's,
+	// each jail's and each template's (#230). Absent where nothing audits.
+	// GET /api/vulnerabilities has the packages and the CVEs.
+	Vulnerabilities *Vulnerabilities `json:"vulnerabilities,omitempty"`
+}
+
+// Vulnerabilities is the last package audit in numbers.
+type Vulnerabilities struct {
+	// Checked is when the last audit finished; absent until the first has.
+	Checked   *time.Time        `json:"checked,omitempty"`
+	Database  vulns.Database    `json:"database"`
+	Host      vulns.Summary     `json:"host"`
+	Jails     []VulnerableCount `json:"jails"`
+	Templates []VulnerableCount `json:"templates"`
+}
+
+// VulnerableCount is one jail's or template's audit in numbers, by name.
+type VulnerableCount struct {
+	Name string `json:"name"`
+	vulns.Summary
 }
 
 type Host struct {

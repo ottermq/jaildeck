@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -35,6 +36,12 @@ type Command struct {
 	// VM image's disk into its zvol (JD-037). The command writes to it
 	// directly, with no copy through Jail Deck.
 	StdoutFile string
+	// Credential runs the command as another user rather than as Jail Deck
+	// itself, with no supplementary groups. For a command that reads what a
+	// jail's root controls -- its package database -- so that a crafted file
+	// reaches nobody rather than the host's root (JD-061). Nil runs it as
+	// Jail Deck.
+	Credential *syscall.Credential
 }
 
 func (c Command) String() string {

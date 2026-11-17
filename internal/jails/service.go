@@ -12,6 +12,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/common"
 	"github.com/ottermq/jaildeck/internal/osversion"
 	"github.com/ottermq/jaildeck/internal/system"
+	"github.com/ottermq/jaildeck/internal/vulns"
 )
 
 var (
@@ -143,7 +144,19 @@ type JailService struct {
 	// versions reads each jail's userland and the host's (#229). Nil leaves
 	// jails without a version, as in tests that are not about one.
 	versions osversion.Source
+	// vulnerabilities answers each jail's last package audit (#230). Nil
+	// leaves jails without one.
+	vulnerabilities JailVulnerabilities
 }
+
+// JailVulnerabilities answers a jail's last package audit, which runs on a
+// timer of its own and never because a jail was listed (#230).
+type JailVulnerabilities interface {
+	Jail(name string) vulns.Summary
+}
+
+// SetVulnerabilities gives the listing each jail's last package audit.
+func (s *JailService) SetVulnerabilities(v JailVulnerabilities) { s.vulnerabilities = v }
 
 // ConsoleHangup hangs up every console session in a jail. An open shell made
 // a jail stop take 10 s instead of under one, measured: jail -r waited for it
@@ -200,7 +213,7 @@ func (s *JailService) List(ctx context.Context) ([]Jail, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.withUserland(ctx, s.withStorage(ctx, jails)), nil
+	return s.withVulnerabilities(s.withUserland(ctx, s.withStorage(ctx, jails))), nil
 }
 
 // Get returns one jail by name, with its storage, or ErrJailNotFound. It reads
@@ -218,7 +231,7 @@ func (s *JailService) Get(ctx context.Context, name JailName) (Jail, error) {
 	for _, jail := range jails {
 		if jail.Name == name.String() {
 			// One jail, so the storage read is scoped to its path alone.
-			return s.withUserland(ctx, s.withStorage(ctx, []Jail{jail}))[0], nil
+			return s.withVulnerabilities(s.withUserland(ctx, s.withStorage(ctx, []Jail{jail})))[0], nil
 		}
 	}
 	return Jail{}, ErrJailNotFound
@@ -284,6 +297,19 @@ func (s *JailService) withUserland(ctx context.Context, jails []Jail) []Jail {
 			standing = osversion.Compare(host.Userland, "")
 		}
 		jails[i].Userland = &standing
+	}
+	return jails
+}
+
+// withVulnerabilities gives each jail its last package audit in numbers: a
+// read of what the audit published, never an audit (#230).
+func (s *JailService) withVulnerabilities(jails []Jail) []Jail {
+	if s.vulnerabilities == nil {
+		return jails
+	}
+	for i, jail := range jails {
+		summary := s.vulnerabilities.Jail(jail.Name)
+		jails[i].Vulnerabilities = &summary
 	}
 	return jails
 }

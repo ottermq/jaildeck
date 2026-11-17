@@ -7,9 +7,9 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.31.0.** Jails can be created from release templates, started,
+**Current release: v0.32.0.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API, and their limits changed in place; their ZFS datasets,
-snapshots and resource usage are visible, and a dataset kept past its jail can be restored or destroyed; host setup is checked, along with the host's FreeBSD version, a reboot it's waiting for and any jail or template behind it; PF can be seen,
+snapshots and resource usage are visible, and a dataset kept past its jail can be restored or destroyed; host setup is checked, along with the host's FreeBSD version, a reboot it's waiting for and any jail or template behind it, and every package on the host, in jails and in templates is audited against the host's vulnerability database; PF can be seen,
 read-only; bhyve VMs are created from cloud images (Debian, Ubuntu, Fedora, Alpine, Arch) with cloud-init, with a console password if wanted, pinned to host CPUs, started,
 stopped, labelled, snapshotted and destroyed, on a default network Jail Deck sets up with NAT through PF, or on networks of their own kept apart by PF, with addresses Jail Deck picks and checks, and every network and what is on it can be seen; a jail has a shell in the
 browser, and a guest its serial console; each one's files on the host can be read on its page; jails and guests are found in one list by name, state or label, with what each is using over the last minutes, and started, stopped, restarted or snapshotted several at once; the storage nothing uses is listed and can be reclaimed; pages update live as anyone changes the host; a token can be limited to reading, running commands and taking its own snapshots in jails with a given label; the part that faces the network runs as a user of its own, not root; every operation is audited, a console with who opened it and why when the client says, and nothing is reachable without a password or an
@@ -324,6 +324,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `GET /api/audit` | operation history, newest first |
 | `GET /api/events` | a live stream (server-sent events) of operations, outside state changes and image and template progress; `Last-Event-ID` resumes it |
 | `GET /api/metrics` | host, per-jail and per-guest resource usage, and disk health |
+| `GET /api/vulnerabilities` | the last audit of the host's, every jail's and every template's packages against the host's vulnerability database: each vulnerable package, its CVEs and VuXML links |
 | `GET /api/firewall` | PF's state, rules with counters, NAT, anchors and tables, read-only |
 | `GET /api/firewall/tables/{name}` | one table's addresses |
 | `GET /api/firewall/log` | the most recent pflog lines |
@@ -602,6 +603,21 @@ disagree. A rule that catches the disagreement is the point:
   expr: jaildeck_disk_failing_attributes > 0
   annotations:
     summary: '{{ $labels.device }} has a SMART attribute below threshold'
+```
+
+Vulnerable packages work the same way (#230). A count is written only for a tree that was
+audited, so an alert never clears because a jail could not be read, and the two timestamps
+say how fresh the answer is:
+
+```yaml
+- alert: VulnerablePackages
+  expr: jaildeck_jail_vulnerable_packages > 0
+  annotations:
+    summary: '{{ $labels.jail }} has {{ $value }} vulnerable packages'
+- alert: VulnerabilityDatabaseStale
+  expr: time() - jaildeck_vulnerability_database_timestamp_seconds > 3 * 86400
+  annotations:
+    summary: 'the vulnerability database is over three days old: is the daily security run on?'
 ```
 
 Jail Deck does no alerting of its own and holds no history. The scraper keeps the series;

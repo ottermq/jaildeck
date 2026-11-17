@@ -1,6 +1,9 @@
 package jails
 
-import "github.com/ottermq/jaildeck/internal/osversion"
+import (
+	"github.com/ottermq/jaildeck/internal/osversion"
+	"github.com/ottermq/jaildeck/internal/vulns"
+)
 
 type Jail struct {
 	JID      string     `json:"jid"`
@@ -20,6 +23,9 @@ type Jail struct {
 	// host's (#229), read from the jail's own files and never by running
 	// anything in it (JD-060). Filled where Datasets is, for the same reason.
 	Userland *osversion.Standing `json:"userland,omitempty"`
+	// Vulnerabilities is the jail's last package audit in numbers (#230,
+	// JD-061); GET /api/vulnerabilities has the packages and the CVEs.
+	Vulnerabilities *vulns.Summary `json:"vulnerabilities,omitempty"`
 }
 
 type JailStatus string

@@ -1,5 +1,6 @@
 import { api } from '../services/api'
 import type { OSVersions } from '../osversion'
+import type { VulnCounts } from '../vulns'
 
 // Ticks are kern.cp_time, cumulative since boot. They are always present,
 // so a client that keeps its own baseline is not waiting on the server's.
@@ -164,6 +165,9 @@ export interface MetricsReport {
     // reads them; os_unavailable says why when the read failed.
     os?: OSVersions
     os_unavailable?: string
+    // The last package audit in numbers (#230). Absent where nothing
+    // audits.
+    vulnerabilities?: VulnCounts
 }
 
 export async function getMetrics(): Promise<MetricsReport> {

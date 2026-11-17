@@ -1,6 +1,9 @@
 package templates
 
-import "github.com/ottermq/jaildeck/internal/osversion"
+import (
+	"github.com/ottermq/jaildeck/internal/osversion"
+	"github.com/ottermq/jaildeck/internal/vulns"
+)
 
 // Template is a FreeBSD userland a jail can be cloned from.
 //
@@ -45,6 +48,10 @@ type Template struct {
 	// the host's (#229). Every jail cloned from it starts at this patch
 	// level. Absent until there is a tree to read it from.
 	Userland *osversion.Standing `json:"userland,omitempty"`
+	// Vulnerabilities is the template's last package audit in numbers
+	// (#230, JD-061). Every jail cloned from it starts with these packages.
+	// Absent until there is a tree to audit.
+	Vulnerabilities *vulns.Summary `json:"vulnerabilities,omitempty"`
 }
 
 // ReadySnapshot is the snapshot name that marks a template usable (JD-007).

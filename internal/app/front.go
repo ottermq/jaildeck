@@ -116,6 +116,7 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	back.Background(context.Background())
 	go servePipe(toBack, back.Routes())
 	go servePipe(toFront, front.RecheckRoutes())
 	return &App{front: front, back: back}, nil

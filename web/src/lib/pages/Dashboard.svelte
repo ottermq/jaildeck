@@ -6,6 +6,7 @@ import type { MetricsReport, Memory, JailUsage, Disk } from '../stores/metrics.s
 import { ApiError } from '../services/api'
 import { formatBytes } from '../utils'
 import { behindCount, patchOf } from '../osversion'
+import { databaseNote, vulnerableCount, vulnTitle } from '../vulns'
 
 let report = $state<MetricsReport | null>(null)
 let loadError = $state('')
@@ -157,6 +158,20 @@ let os = $derived(report?.os)
 let jailsBehind = $derived(os ? behindCount(os.jails) : 0)
 let templatesBehind = $derived(os ? behindCount(os.templates) : 0)
 
+// Vulnerable packages (#230). The figure is the host's own; the lines under it
+// are which jails and templates have any, and how old the database is, which
+// says how much "nothing found" is worth.
+let vulns = $derived(report?.vulnerabilities)
+let jailsVulnerable = $derived(vulns ? vulnerableCount(vulns.jails) : 0)
+let templatesVulnerable = $derived(vulns ? vulnerableCount(vulns.templates) : 0)
+let vulnAudited = $derived(vulns ? vulns.host.status === 'clean' || vulns.host.status === 'vulnerable' : false)
+// Unknown and unchecked are counted apart, so "none vulnerable" is said only
+// of what was audited.
+let notAudited = $derived(vulns
+    ? [...vulns.jails, ...vulns.templates].filter((s) => s.status === 'unknown' || s.status === 'unchecked').length
+    : 0)
+let dbNote = $derived(vulns ? databaseNote(vulns.database) : null)
+
 function releaseOf(version: string): string {
     return version.replace(/-p[0-9]+$/, '')
 }
@@ -280,6 +295,37 @@ function plural(n: number, one: string, many: string): string {
                 <h2>FreeBSD</h2>
                 <p class="figure figure--muted">—</p>
                 <p class="under">Could not read the versions: {report.os_unavailable}</p>
+            </article>
+        {/if}
+
+        {#if vulns}
+            <article class="card" data-card="packages">
+                <h2>Vulnerable packages</h2>
+                {#if vulnAudited}
+                    <p class="figure" class:figure--warn={vulns.host.vulnerable > 0} title={vulnTitle(vulns.host, 'host')}>
+                        {vulns.host.vulnerable}<span class="unit">on the host</span>
+                    </p>
+                {:else}
+                    <p class="figure figure--muted" title={vulnTitle(vulns.host, 'host')}>—</p>
+                {/if}
+                {#if jailsVulnerable + templatesVulnerable > 0}
+                    <p class="under under--warn">
+                        {#if jailsVulnerable > 0}
+                            <a href="/jails" onclick={(e) => onNavClick(e, '/jails')}>{plural(jailsVulnerable, 'jail', 'jails')}</a>{/if}{#if jailsVulnerable > 0 && templatesVulnerable > 0}{' and '}{/if}{#if templatesVulnerable > 0}
+                            <a href="/templates" onclick={(e) => onNavClick(e, '/templates')}>{plural(templatesVulnerable, 'template', 'templates')}</a>{/if}
+                        with vulnerable packages
+                    </p>
+                {:else if vulns.checked && notAudited === 0 && vulns.jails.length + vulns.templates.length > 0}
+                    <p class="under">No jail or template has a vulnerable package.</p>
+                {:else if !vulns.checked}
+                    <p class="under">The first audit hasn't finished.</p>
+                {/if}
+                {#if vulns.checked && notAudited > 0}
+                    <p class="under">{plural(notAudited, 'jail or template', 'jails and templates')} not audited</p>
+                {/if}
+                {#if dbNote}
+                    <p class="under" class:under--warn={dbNote.warn}>{dbNote.text}</p>
+                {/if}
             </article>
         {/if}
     </section>
@@ -543,6 +589,11 @@ function plural(n: number, one: string, many: string): string {
 /* An absent measurement, not a zero one. */
 .figure--muted {
     color: var(--text-muted);
+}
+
+/* A count that asks for something to be done. */
+.figure--warn {
+    color: var(--warn);
 }
 
 .unit {

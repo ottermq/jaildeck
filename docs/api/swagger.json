@@ -6236,10 +6236,25 @@
                 "active": {
                     "type": "integer"
                 },
+                "arc": {
+                    "description": "ARC is the ZFS ARC's size, and ARCMax the most it may grow to. The\nARC is part of Wired, so adding up every state counts it twice.\nAbsent on a host without ZFS, never 0 (#224).",
+                    "type": "integer"
+                },
+                "arc_max": {
+                    "type": "integer"
+                },
                 "free": {
                     "type": "integer"
                 },
+                "held": {
+                    "description": "Held is what is neither free nor given back on demand: physical less\nfree, inactive and the ARC. Inactive pages are clean and reclaimed\nwithout I/O, and ZFS shrinks the ARC under pressure. It is not a\nlower bound on what can be reclaimed -- the kernel and ZFS metadata\nhold memory outside the ARC -- only the figure that stops a cache\nfrom reading as use. Set by the service, so the API and the\ndashboard agree.",
+                    "type": "integer"
+                },
                 "inactive": {
+                    "type": "integer"
+                },
+                "laundry": {
+                    "description": "Laundry is dirty pages waiting to be written out before they can be\nreused: not free, and not reclaimable without I/O.",
                     "type": "integer"
                 },
                 "physical": {

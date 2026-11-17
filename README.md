@@ -593,6 +593,15 @@ here writes `rate()`: bytes, seconds and ratios. Two that are worth knowing:
   not its `hz`. On this hardware those are 127 and 1000, so dividing by the wrong one is
   an eightfold error. The raw `jaildeck_host_cpu_ticks_total` is published alongside it,
   and a ratio of two of those is correct whatever a tick is worth.
+- **`jaildeck_host_memory_bytes{state="arc"}`** is the ZFS ARC, which is **part of wired**:
+  adding up every state counts it twice. **`jaildeck_host_memory_held_bytes`** is the one
+  figure without what is given back on demand, physical less free, inactive and the ARC,
+  and is what the dashboard's headline shows (#224). A host without ZFS has no ARC series.
+- **`jaildeck_process_resident_memory_bytes{side}`** is Jail Deck's own memory, the root
+  side's (`back`) and the front's, or `single` when it runs as one process. One name with a
+  label rather than the standard `process_resident_memory_bytes`, which describes the one
+  process scraped: Jail Deck is two. `jaildeck_go_heap_inuse_bytes` is the Go heap of the
+  side that answers.
 
 A disk is published both ways on purpose: `jaildeck_disk_passed` is the drive's own
 verdict and `jaildeck_disk_failing_attributes` is what smartctl flags, and they routinely

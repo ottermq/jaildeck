@@ -46,6 +46,21 @@ type Report struct {
 	// each jail's and each template's (#230). Absent where nothing audits.
 	// GET /api/vulnerabilities has the packages and the CVEs.
 	Vulnerabilities *Vulnerabilities `json:"vulnerabilities,omitempty"`
+	// Processes is Jail Deck's own memory, for Prometheus only (#224):
+	// without a history of it, a slow leak could not be told from growth.
+	Processes []Process `json:"-"`
+}
+
+// Process is one of Jail Deck's own processes.
+type Process struct {
+	// Side is "back" (the root side), "front", or "single" when Jail Deck
+	// runs as one process (JD-056).
+	Side string
+	// Resident is the process's resident set size.
+	Resident int64
+	// HeapInuse is Go's heap in use, known only for the process that
+	// answers the scrape.
+	HeapInuse *int64
 }
 
 // Vulnerabilities is the last package audit in numbers.
@@ -122,13 +137,39 @@ type CPU struct {
 //
 // A breakdown rather than one "used" figure: on a ZFS host most of Wired is
 // the ARC, which is reclaimable, so a single number would read as pressure
-// that is not there.
+// that is not there. Held is the one figure that leaves out what is given
+// back on demand (#224).
 type Memory struct {
 	Physical int64 `json:"physical"`
 	Free     int64 `json:"free"`
 	Active   int64 `json:"active"`
 	Inactive int64 `json:"inactive"`
-	Wired    int64 `json:"wired"`
+	// Laundry is dirty pages waiting to be written out before they can be
+	// reused: not free, and not reclaimable without I/O.
+	Laundry int64 `json:"laundry"`
+	Wired   int64 `json:"wired"`
+	// ARC is the ZFS ARC's size, and ARCMax the most it may grow to. The
+	// ARC is part of Wired, so adding up every state counts it twice.
+	// Absent on a host without ZFS, never 0 (#224).
+	ARC    *int64 `json:"arc,omitempty"`
+	ARCMax *int64 `json:"arc_max,omitempty"`
+	// Held is what is neither free nor given back on demand: physical less
+	// free, inactive and the ARC. Inactive pages are clean and reclaimed
+	// without I/O, and ZFS shrinks the ARC under pressure. It is not a
+	// lower bound on what can be reclaimed -- the kernel and ZFS metadata
+	// hold memory outside the ARC -- only the figure that stops a cache
+	// from reading as use. Set by the service, so the API and the
+	// dashboard agree.
+	Held int64 `json:"held"`
+}
+
+// HeldBytes is physical less free, inactive and the ARC, never below 0.
+func (m Memory) HeldBytes() int64 {
+	held := m.Physical - m.Free - m.Inactive
+	if m.ARC != nil {
+		held -= *m.ARC
+	}
+	return max(held, 0)
 }
 
 // Pool is one ZFS pool as `zpool list -Hp` reports it, in exact bytes like

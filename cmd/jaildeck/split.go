@@ -13,6 +13,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -100,6 +101,7 @@ func runSplit(cfg *config.Config, account *user.User) error {
 		"front_user", account.Username, "api", apiListener.Addr().String())
 
 	go superviseFront(uid, gid, len(public), files)
+	back.SetFront(func() int { return int(frontPID.Load()) })
 	back.Background(context.Background())
 	return newServer("", back.Routes()).Serve(apiListener)
 }
@@ -227,6 +229,9 @@ func listenerFiles(listeners []net.Listener) ([]*os.File, error) {
 
 // superviseFront starts the front and starts it again whenever it exits, at
 // most every thirty seconds when it keeps failing.
+// frontPID is the running front's pid, 0 while there is none.
+var frontPID atomic.Int64
+
 func superviseFront(uid, gid, listeners int, files []*os.File) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -251,7 +256,14 @@ func superviseFront(uid, gid, listeners int, files []*os.File) {
 			Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{uint32(gid)},
 		}}
 		started := time.Now()
-		err := cmd.Run()
+		err := cmd.Start()
+		if err == nil {
+			// Published for /metrics, which reports the front's memory
+			// (#224), and cleared the moment it exits.
+			frontPID.Store(int64(cmd.Process.Pid))
+			err = cmd.Wait()
+			frontPID.Store(0)
+		}
 		if time.Since(started) > time.Minute {
 			backoff = time.Second
 		}

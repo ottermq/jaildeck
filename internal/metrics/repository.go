@@ -96,3 +96,8 @@ type VersionSource interface {
 type VulnerabilitySource interface {
 	Snapshot() vulns.Snapshot
 }
+
+// ProcessSource is Jail Deck's own processes and their memory (#224).
+type ProcessSource interface {
+	Processes(ctx context.Context) ([]Process, error)
+}

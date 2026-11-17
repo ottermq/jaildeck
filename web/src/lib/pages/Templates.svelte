@@ -10,6 +10,7 @@ import { listJails, restoreDataset } from '../stores/jails.svelte'
 import type { JailData, DatasetBlock } from '../stores/jails.svelte'
 import { ApiError } from '../services/api'
 import { onNavClick } from '../router.svelte'
+import UserlandBadge from '../components/UserlandBadge.svelte'
 import { ask } from '../stores/confirm.svelte'
 import { formatBytes } from '../utils'
 
@@ -356,6 +357,7 @@ async function restore(event: Event, dataset: RetainedDataset) {
                         <th>Derived from</th>
                         <th class="num">Used</th>
                         <th class="num">Referenced</th>
+                        <th title="The template's FreeBSD userland, against the host's. Every jail cloned from it starts there.">FreeBSD</th>
                         <th class="actions-col">Actions</th>
                     </tr>
                 </thead>
@@ -381,6 +383,9 @@ async function restore(event: Event, dataset: RetainedDataset) {
                             <td>{#if template.parent}<code>{template.parent}</code>{:else}—{/if}</td>
                             <td class="num">{formatBytes(template.used)}</td>
                             <td class="num">{formatBytes(template.referenced)}</td>
+                            <td class="nowrap">
+                                {#if template.userland}<UserlandBadge standing={template.userland} what="template" />{:else}—{/if}
+                            </td>
                             <td class="actions-col">
                                 <button
                                     type="button"
@@ -393,7 +398,7 @@ async function restore(event: Event, dataset: RetainedDataset) {
                         </tr>
                         {#if actionError[`remove-${template.name}`]}
                             <tr class="row-form">
-                                <td colspan="6">
+                                <td colspan="7">
                                     <p class="notice notice--error" role="alert">
                                         {actionError[`remove-${template.name}`]}
                                     </p>
@@ -402,7 +407,7 @@ async function restore(event: Event, dataset: RetainedDataset) {
                         {:else if blocked[template.name]}
                             {@const block = blocked[template.name]}
                             <tr class="row-form">
-                                <td colspan="6">
+                                <td colspan="7">
                                     <div class="refusal" role="alert">
                                         <p class="refusal__reason">{block.reason}</p>
                                         <ul class="items">

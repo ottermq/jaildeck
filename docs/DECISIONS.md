@@ -2844,3 +2844,31 @@ While its bridge is missing, a recorded network is listed under `missing` in `GE
 The service's own script came before `syslogd` at boot, so whatever Jail Deck logged while starting after a boot was lost, the missing network's warning along with the rest. `rc.d/jaildeck` now requires `syslogd` too, and the lifecycle test checks that both scripts come after it.
 
 With the lines arriving, the test found the service starting before the boot step and warning, at every boot, of the network the step was about to restore. The service now requires `jaildeck_networks`, which only orders the two: the service still starts with the step switched off.
+
+## JD-060 — A Jail's Files Are Read, Never Run
+
+**Status:** Locked — 2026-11-17.
+
+#229 shows each jail's and template's FreeBSD userland and how far it is behind the host's. A jail's userland is its own copy, cloned from a template, so updating the host leaves every jail where it was. The version is written in `bin/freebsd-version` inside each tree, a shell script that `freebsd-update` rewrites when it updates that tree.
+
+That makes this the first time the root process looks inside a jail's files from the host. The script belongs to whoever is root in the jail, so the rule is worth stating once, for this and for whatever reads a jail's files next.
+
+### The rule
+
+- **Never run anything from a jail's tree as the host.** Running `<jail>/bin/freebsd-version` from the root process would hand the jail's root the host: they can put anything in that file. The host's own `freebsd-version` (in the base system, owned by root) is the only one that runs, for the installed kernel (`-k`).
+- **Read through `os.Root`.** Path resolution stays inside the tree. A `bin` or a `freebsd-version` that is a symlink out to the host is refused, not followed. A relative one that stays inside is followed: a jail is free to lay out its own files. An absolute one is refused even when the jail means a file of its own, because read from the host it names the host's file. `os.Root` refuses every absolute link, and the version is then unknown.
+- **Open non-blocking, and only a regular file.** A FIFO in its place would hold the listing until someone wrote to it. A device could hand back anything.
+- **A bounded read.** At most 64 KiB, where the script is about 4 KiB.
+- **Only what's needed, checked against its shape.** The `USERLAND_VERSION="…"` line alone, and only when its value looks like a version (`^[0-9]+\.[0-9]+-[A-Z]+(-p[0-9]+)?$`). Anything else is unknown, never a guess. The value goes nowhere but the response and the metrics: it is never put on a command line.
+
+### What "behind" means
+
+- **Compared with the host's userland only.** That needs no network, gives the same answer every time and needs no table of versions in Jail Deck that goes out of date. Comparing with what FreeBSD has published is a later question.
+- **Only within a release.** A 14.3 jail on a 15.1 host is `other-release`, not behind. A template prepared after the host was last updated is `ahead`.
+- **The kernel is shared.** A jail runs on the host's kernel, so only its userland is judged. For the host, an installed kernel that isn't the running one is `reboot_pending`: the update is on disk and not in effect.
+- **Unreadable is unknown, and never fails a listing.** A jail with no path, a missing file or a refused one shows `unknown`. `/metrics` leaves such a jail out of `jaildeck_jail_userland_behind`, so an alert on it never fires or clears on a guess.
+
+### What it costs
+
+- **A file read per jail and template per listing,** and one `freebsd-version -k` per listing. The dashboard reads the versions at most once a minute.
+- **Stopped jails are read too.** Their files are there, and a stopped jail is started one day. That means the host opens files a jail controls even while nothing runs in it, which is exactly what the rule above is for.

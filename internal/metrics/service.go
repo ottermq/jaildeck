@@ -31,10 +31,21 @@ type Service struct {
 	disks DiskSource
 	// guests is optional: a Jail Deck built without the vms domain has none.
 	guests GuestSource
+	// versions is optional too, and read at most once a minute: versions
+	// change on an update or a reboot, and the dashboard asks every 5 s.
+	versions VersionSource
 
 	mu       sync.Mutex
 	previous *reading
+	osRead   *OSVersions
+	osAt     time.Time
 }
+
+// versionsFor is how long a read of the versions is reused.
+const versionsFor = time.Minute
+
+// SetVersions adds the FreeBSD versions to the report (#229).
+func (s *Service) SetVersions(v VersionSource) { s.versions = v }
 
 type reading struct {
 	ticks Ticks
@@ -91,6 +102,16 @@ func (s *Service) Report(ctx context.Context) (Report, error) {
 		} else if guests != nil {
 			sort.Slice(guests, func(i, j int) bool { return guests[i].Guest < guests[j].Guest })
 			report.Guests = guests
+		}
+	}
+
+	// Versions never fail the report either.
+	if s.versions != nil {
+		if read, err := s.readVersions(ctx); err != nil {
+			common.Logger(ctx, "metrics").Warn("reporting without FreeBSD versions", slog.Any("err", err))
+			report.OSUnavailable = err.Error()
+		} else {
+			report.OS = read
 		}
 	}
 
@@ -214,4 +235,34 @@ func (s *Service) rate(now Ticks) (percent float64, over float64, ok bool) {
 	}
 	busy := float64(now.Busy()-previous.ticks.Busy()) / float64(total-wasTotal) * 100
 	return busy, elapsed, true
+}
+
+// readVersions answers from the last read while it is under a minute old. A
+// failed read is not kept, so the next request tries again.
+func (s *Service) readVersions(ctx context.Context) (*OSVersions, error) {
+	s.mu.Lock()
+	if s.osRead != nil && time.Since(s.osAt) < versionsFor {
+		cached := s.osRead
+		s.mu.Unlock()
+		return cached, nil
+	}
+	s.mu.Unlock()
+
+	read, err := s.versions.Versions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if read.Jails == nil {
+		read.Jails = make([]Userland, 0)
+	}
+	if read.Templates == nil {
+		read.Templates = make([]Userland, 0)
+	}
+	sort.Slice(read.Jails, func(i, j int) bool { return read.Jails[i].Name < read.Jails[j].Name })
+	sort.Slice(read.Templates, func(i, j int) bool { return read.Templates[i].Name < read.Templates[j].Name })
+
+	s.mu.Lock()
+	s.osRead, s.osAt = &read, time.Now()
+	s.mu.Unlock()
+	return &read, nil
 }

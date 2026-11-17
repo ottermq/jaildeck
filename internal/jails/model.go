@@ -1,5 +1,7 @@
 package jails
 
+import "github.com/ottermq/jaildeck/internal/osversion"
+
 type Jail struct {
 	JID      string     `json:"jid"`
 	Name     string     `json:"name"`
@@ -14,6 +16,10 @@ type Jail struct {
 	// none when the truth is that nothing looked.
 	Datasets   []Dataset         `json:"datasets,omitempty"`
 	Properties map[string]string `json:"properties,omitempty"`
+	// Userland is the jail's FreeBSD userland and how it stands against the
+	// host's (#229), read from the jail's own files and never by running
+	// anything in it (JD-060). Filled where Datasets is, for the same reason.
+	Userland *osversion.Standing `json:"userland,omitempty"`
 }
 
 type JailStatus string

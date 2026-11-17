@@ -10,6 +10,7 @@ import (
 
 	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/osversion"
 	"github.com/ottermq/jaildeck/internal/system"
 )
 
@@ -139,6 +140,9 @@ type JailService struct {
 	configReplacer  ConfigReplacer
 	// consoles are the jail's open shells (JD-042), hung up before it stops.
 	consoles ConsoleHangup
+	// versions reads each jail's userland and the host's (#229). Nil leaves
+	// jails without a version, as in tests that are not about one.
+	versions osversion.Source
 }
 
 // ConsoleHangup hangs up every console session in a jail. An open shell made
@@ -155,6 +159,10 @@ func (s *JailService) SetConsoles(c ConsoleHangup) { s.consoles = c }
 // SetNetworks gives the service Jail Deck's networks, so a VNET jail on one
 // is given its address (JD-047).
 func (s *JailService) SetNetworks(n NetworkAddresses) { s.networks = n }
+
+// SetVersions gives the listing each jail's userland, judged against the
+// host's (#229).
+func (s *JailService) SetVersions(v osversion.Source) { s.versions = v }
 
 func NewJailService(deps Dependencies) *JailService {
 	return &JailService{
@@ -192,7 +200,7 @@ func (s *JailService) List(ctx context.Context) ([]Jail, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.withStorage(ctx, jails), nil
+	return s.withUserland(ctx, s.withStorage(ctx, jails)), nil
 }
 
 // Get returns one jail by name, with its storage, or ErrJailNotFound. It reads
@@ -210,7 +218,7 @@ func (s *JailService) Get(ctx context.Context, name JailName) (Jail, error) {
 	for _, jail := range jails {
 		if jail.Name == name.String() {
 			// One jail, so the storage read is scoped to its path alone.
-			return s.withStorage(ctx, []Jail{jail})[0], nil
+			return s.withUserland(ctx, s.withStorage(ctx, []Jail{jail}))[0], nil
 		}
 	}
 	return Jail{}, ErrJailNotFound
@@ -252,6 +260,30 @@ func (s *JailService) withStorage(ctx context.Context, jails []Jail) []Jail {
 			jails[i].Datasets = found.Datasets
 			jails[i].Properties = found.Properties
 		}
+	}
+	return jails
+}
+
+// withUserland gives each jail its userland version and how it stands against
+// the host's (#229). A jail's userland is its own copy, so updating the host
+// leaves it where it was, and this is where that shows. Nothing here fails the
+// listing: a jail whose version cannot be read is unknown.
+func (s *JailService) withUserland(ctx context.Context, jails []Jail) []Jail {
+	if s.versions == nil {
+		return jails
+	}
+	roots := make([]string, 0, len(jails))
+	for _, jail := range jails {
+		roots = append(roots, jail.Path)
+	}
+	host, standings := osversion.Judge(ctx, s.versions, roots)
+	for i, jail := range jails {
+		standing, ok := standings[jail.Path]
+		if !ok {
+			// No path, so nothing to read.
+			standing = osversion.Compare(host.Userland, "")
+		}
+		jails[i].Userland = &standing
 	}
 	return jails
 }

@@ -54,7 +54,7 @@ beforeEach(() => {
     sent = []
     defaultNet = new Error('no default network')
     tenants = []
-    answer = { name: 'jd-live-web', datastore: 'default', state: 'running', autostart: false, image: 'debian-13' }
+    answer = { name: 'jd-live-web', datastore: 'default', state: 'running', autostart: false, image: 'debian-13', properties: {} }
 })
 
 function form(switches = ['jd-livesw']) {

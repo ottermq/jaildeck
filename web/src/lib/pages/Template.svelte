@@ -1,5 +1,7 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte'
+import UserlandBadge from '../components/UserlandBadge.svelte'
+import { userlandTitle } from '../osversion'
 import { onLive, aboutWork } from '../stores/events.svelte'
 import { getTemplate, listTemplates, classifyClones, removeTemplate } from '../stores/templates.svelte'
 import type { Template, TemplateDetail, Blocked } from '../stores/templates.svelte'
@@ -216,6 +218,13 @@ async function remove() {
                     <dt>Clone source</dt>
                     <dd><code>{template.snapshot}</code></dd>
                 {/if}
+                {#if template.userland}
+                    <dt>FreeBSD</dt>
+                    <dd>
+                        <UserlandBadge standing={template.userland} what="template" />
+                        <span class="userland-note">{userlandTitle(template.userland, 'template')}</span>
+                    </dd>
+                {/if}
             </dl>
         {:else}
             <p class="notice">
@@ -401,4 +410,10 @@ async function remove() {
 }
 
 .hint--lead { margin-top: 0; }
+.userland-note {
+    display: block;
+    margin-top: var(--space-1);
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
 </style>

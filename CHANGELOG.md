@@ -20,7 +20,13 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.32.0 — 2026-11-17
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.32.0)
+
+**Jail Deck shows which packages on the host, in each jail and in each template have a published
+vulnerability** (#230). A jail's packages are its own, and FreeBSD's daily security run audits only
+the host's unless told otherwise, so a database or an interpreter left behind in a jail went unseen.
 
 - **Vulnerable packages on the host, in jails and in templates** (#230, JD-061). Every package is audited against the host's vulnerability database, `/var/db/pkg/vuln.xml`, which the daily security run keeps current: at startup, every hour, and within five minutes of the database changing. A jail's package database belongs to that jail's root, so `pkg` reads it as `nobody` and never as root, and only names and versions shaped like a package reach `pkg audit`. A tree that can't be audited, or a host without the database, is `unknown`, never clean. Jail Deck never fetches the database, and one over three days old is `stale`. The dashboard has a Vulnerable packages card, the Jails and Templates lists a Packages column, and each jail's and template's page lists its vulnerable packages with their CVEs.
 - **Metrics:** `jaildeck_host_vulnerable_packages`, `jaildeck_jail_vulnerable_packages` and `jaildeck_template_vulnerable_packages`, written only for a tree that was audited. `jaildeck_vulnerability_database_timestamp_seconds` and `jaildeck_vulnerability_last_audit_timestamp_seconds` say how fresh the answer is.

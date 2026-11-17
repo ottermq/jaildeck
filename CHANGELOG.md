@@ -22,7 +22,7 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
 
-- **Memory without the cache** (#224). The dashboard's memory headline was physical less free, so on a ZFS host the ARC and inactive pages read as used: a host with most of its RAM in cache looked full. The report now reads the ARC's size and ceiling and the laundry queue, and gives **held**, physical less free, inactive and the ARC: what is neither free nor given back on demand.
+- **Memory without the cache** (#224). The dashboard's memory headline was physical less free, so on a ZFS host the ARC and inactive pages read as used: a host with most of its RAM in cache looked full. The report now reads the ARC's size and ceiling and the laundry queue, and gives **held**, physical less free, inactive and the ARC: what is neither free nor given back on demand. The dashboard heads its memory card with it, and the bar shows inactive pages and the ARC as lighter segments beside it.
 - **Metrics:** `jaildeck_host_memory_bytes{state="arc"}` and `{state="laundry"}`, `jaildeck_host_memory_held_bytes` and `jaildeck_host_arc_max_bytes`. The ARC is part of wired, so a sum of every state counts it twice. Jail Deck's own memory: `jaildeck_process_resident_memory_bytes{side}` for the root side and the front, and `jaildeck_go_heap_inuse_bytes`.
 
 ### API

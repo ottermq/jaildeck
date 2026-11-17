@@ -266,7 +266,7 @@ function bytes(n: number | undefined): string {
         changed={load}
     >
         {#snippet empty()}
-            No ZFS user properties on this guest's dataset, <code>&lt;datastore&gt;/{vm.name}</code>.
+            No ZFS user properties on this guest's dataset, <code>&lt;datastore&gt;/{name}</code>.
             An automation client sets these — <code>otter:instance</code> and the like — and
             finds its guests again from the listing alone. A guest in a datastore that is not
             on ZFS has nowhere to keep one.

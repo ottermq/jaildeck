@@ -20,7 +20,13 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.33.0 — 2026-11-17
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.33.0)
+
+**The dashboard's memory figure no longer counts the cache as used** (#224). On a ZFS host the ARC
+and inactive pages made a host with most of its RAM in cache look full; the headline is now held
+memory, and `/metrics` reports the ARC and Jail Deck's own memory.
 
 - **Memory without the cache** (#224). The dashboard's memory headline was physical less free, so on a ZFS host the ARC and inactive pages read as used: a host with most of its RAM in cache looked full. The report now reads the ARC's size and ceiling and the laundry queue, and gives **held**, physical less free, inactive and the ARC: what is neither free nor given back on demand. The dashboard heads its memory card with it, and the bar shows inactive pages and the ARC as lighter segments beside it.
 - **Metrics:** `jaildeck_host_memory_bytes{state="arc"}` and `{state="laundry"}`, `jaildeck_host_memory_held_bytes` and `jaildeck_host_arc_max_bytes`. The ARC is part of wired, so a sum of every state counts it twice. Jail Deck's own memory: `jaildeck_process_resident_memory_bytes{side}` for the root side and the front, and `jaildeck_go_heap_inuse_bytes`.

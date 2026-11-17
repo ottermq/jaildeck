@@ -71,6 +71,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Tenant networks survive a reboot** (v0.30.2): Jail Deck records its tenant networks, and a boot step puts their bridges back before jails and guests start (#225, JD-059).
 - **FreeBSD versions, and what is behind the host** (v0.31.0): the host's kernels and userland with a pending reboot, and each jail's and template's userland against the host's, on the dashboard, the lists and `/metrics`. Asked for by a risk review, not by Otter Cloud (#229, JD-060).
 - **Vulnerable packages on the host, in jails and in templates** (v0.32.0): every package audited against the host's vulnerability database, read as `nobody`, on a timer, on the dashboard, the lists, each page and `/metrics`. The other half of the same risk review (#230, JD-061).
+- **Memory without the cache** (v0.33.0): the dashboard heads its memory card with held memory, physical less free, inactive and the ZFS ARC, and `/metrics` reports the ARC, laundry and Jail Deck's own memory (#224).
 
 ---
 

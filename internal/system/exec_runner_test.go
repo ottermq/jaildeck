@@ -367,3 +367,37 @@ func TestCommand_String_ShowsTheStdoutFile(t *testing.T) {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
 }
+
+// A command given a credential runs as that user, with none of the root
+// process's groups (JD-061). Only root can switch users, so this half runs
+// only as root -- on the FreeBSD test host, or under sudo.
+func TestExecCommandRunner_Run_AsAnotherUser(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("switching users needs root")
+	}
+	result, err := NewExecCommandRunner().Run(context.Background(), Command{
+		Name: "id", Credential: &syscall.Credential{Uid: 65534, Gid: 65534},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := strings.TrimSpace(result.Stdout)
+	if !strings.HasPrefix(out, "uid=65534(") || !strings.Contains(out, "gid=65534(") ||
+		strings.Contains(out, "(wheel)") || strings.Contains(out, "(root)") {
+		t.Fatalf("id said %q, want uid and gid 65534 and no root groups", out)
+	}
+}
+
+// Without the right to switch, the command fails: it never runs as Jail
+// Deck's own user instead.
+func TestExecCommandRunner_Run_AsAnotherUserFailsWithoutRoot(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root may switch users")
+	}
+	result, err := NewExecCommandRunner().Run(context.Background(), Command{
+		Name: "id", Credential: &syscall.Credential{Uid: 65534, Gid: 65534},
+	})
+	if err == nil {
+		t.Fatalf("ran as %q without the right to switch users", result.Stdout)
+	}
+}

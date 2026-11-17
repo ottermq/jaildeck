@@ -8,6 +8,7 @@ import { ApiError } from '../services/api'
 import { ask } from '../stores/confirm.svelte'
 import { capitalizeFirstLetter, normalizeEmptyValue, formatBytes } from '../utils'
 import UserlandBadge from '../components/UserlandBadge.svelte'
+import VulnBadge from '../components/VulnBadge.svelte'
 
 let jails = $state<JailData[] | null>(null)
 let loadError = $state('')
@@ -127,6 +128,7 @@ const labels: Record<Operation, string> = {
                     <th>Path</th>
                     <th class="num">Storage</th>
                     <th title="The jail's FreeBSD userland, against the host's. Updating the host doesn't update a jail.">FreeBSD</th>
+                    <th title="The jail's packages, from the last audit against the host's vulnerability database.">Packages</th>
                     <th class="actions-col">Actions</th>
                 </tr>
             </thead>
@@ -166,6 +168,9 @@ const labels: Record<Operation, string> = {
                         </td>
                         <td class="nowrap">
                             {#if j.userland}<UserlandBadge standing={j.userland} what="jail" />{:else}—{/if}
+                        </td>
+                        <td class="nowrap">
+                            {#if j.vulnerabilities}<VulnBadge summary={j.vulnerabilities} what="jail" />{:else}—{/if}
                         </td>
                         <td>
                             <div class="actions">
@@ -207,7 +212,7 @@ const labels: Record<Operation, string> = {
                     </tr>
                     {#if rowError[j.name]}
                         <tr class="row-error">
-                            <td colspan="8" aria-live="polite">{rowError[j.name]}</td>
+                            <td colspan="10" aria-live="polite">{rowError[j.name]}</td>
                         </tr>
                     {/if}
                 {/each}

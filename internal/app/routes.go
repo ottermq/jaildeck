@@ -24,6 +24,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/storage"
 	"github.com/ottermq/jaildeck/internal/templates"
 	"github.com/ottermq/jaildeck/internal/vms"
+	"github.com/ottermq/jaildeck/internal/vulns"
 )
 
 // Routes is the root side's API, served on its socket to the front alone
@@ -59,6 +60,7 @@ func (a *Back) Routes() http.Handler {
 			storage.RegisterStorageRoutes(r, a.storageHandler)
 			templates.RegisterTemplateRoutes(r, a.templateHandler)
 			events.RegisterEventRoutes(r, a.eventHandler)
+			vulns.RegisterRoutes(r, a.vulnHandler)
 		})
 	})
 

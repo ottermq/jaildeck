@@ -3,6 +3,8 @@ package metrics
 import (
 	"context"
 	"errors"
+
+	"github.com/ottermq/jaildeck/internal/vulns"
 )
 
 // HostMetrics reads the host's own numbers. Every method returns what the
@@ -87,4 +89,10 @@ type GuestSource interface {
 // template's userland against them (#229).
 type VersionSource interface {
 	Versions(ctx context.Context) (OSVersions, error)
+}
+
+// VulnerabilitySource is the last package audit (#230): published by a
+// timer of its own, so reading it costs nothing.
+type VulnerabilitySource interface {
+	Snapshot() vulns.Snapshot
 }

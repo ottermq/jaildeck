@@ -100,6 +100,7 @@ func runSplit(cfg *config.Config, account *user.User) error {
 		"front_user", account.Username, "api", apiListener.Addr().String())
 
 	go superviseFront(uid, gid, len(public), files)
+	back.Background(context.Background())
 	return newServer("", back.Routes()).Serve(apiListener)
 }
 

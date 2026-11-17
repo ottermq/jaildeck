@@ -1,6 +1,8 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte'
 import UserlandBadge from '../components/UserlandBadge.svelte'
+import VulnBadge from '../components/VulnBadge.svelte'
+import VulnPanel from '../components/VulnPanel.svelte'
 import { userlandTitle } from '../osversion'
 import { onLive, aboutInstance } from '../stores/events.svelte'
 import {
@@ -539,6 +541,7 @@ async function retain(event: Event, dataset: Dataset) {
                 <span>{normalizeEmptyValue(jail.hostname)}</span>
                 <span>{normalizeEmptyValue(jail.ip)}</span>
                 {#if jail.userland}<UserlandBadge standing={jail.userland} what="jail" />{/if}
+                {#if jail.vulnerabilities}<VulnBadge summary={jail.vulnerabilities} what="jail" />{/if}
             </p>
         </div>
         {#if jail.path}
@@ -919,6 +922,10 @@ async function retain(event: Event, dataset: Dataset) {
             {/if}
         {/if}
     </section>
+
+    {#if jail.vulnerabilities}
+        <VulnPanel {name} what="jail" />
+    {/if}
 
     <TagsPanel
         {name}

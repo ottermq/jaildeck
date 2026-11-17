@@ -31,6 +31,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/system/freebsd"
 	"github.com/ottermq/jaildeck/internal/templates"
 	"github.com/ottermq/jaildeck/internal/vms"
+	"github.com/ottermq/jaildeck/internal/vulns"
 )
 
 var ErrNoCredential = errors.New("no operator credential configured")
@@ -56,6 +57,18 @@ type Back struct {
 	vmHandler       *vms.Handler
 	imageHandler    *images.Handler
 	networkHandler  *networks.Handler
+	vulnHandler     *vulns.Handler
+	// vulnerabilities audits every package on a timer of its own, started
+	// by Background (#230).
+	vulnerabilities *vulns.Service
+}
+
+// Background starts what the root side does on its own rather than for a
+// request: today, the package audit (#230). Separate from NewBack, so
+// building a Back -- in a test -- starts nothing. It returns at once, and
+// the work stops when ctx does.
+func (a *Back) Background(ctx context.Context) {
+	go a.vulnerabilities.Run(ctx, vulns.Poll, vulns.Every)
 }
 
 // NewBack builds the root side. recheck answers whether a request's login
@@ -164,6 +177,17 @@ func NewBack(cfg *config.Config, recheck func(*http.Request) error) (*Back, erro
 	jailService.SetVersions(versionSource)
 	templateService.SetVersions(versionSource)
 	metricsService.SetVersions(metricsVersions{source: versionSource, jails: jailService, templates: templateService})
+
+	// Vulnerable packages: the host's, each jail's and each template's,
+	// audited against the host's database as nobody (#230, JD-061).
+	vulnSource, err := newVulnSource(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	vulnService := vulns.NewService(vulnSource, vulnTargets{jails: jailService, templates: templateService})
+	jailService.SetVulnerabilities(vulnService)
+	templateService.SetVulnerabilities(vulnService)
+	metricsService.SetVulnerabilities(vulnService)
 
 	firewallSystem, err := newFirewallSystem(cfg.Adapter)
 	if err != nil {
@@ -274,6 +298,8 @@ func NewBack(cfg *config.Config, recheck func(*http.Request) error) (*Back, erro
 		vmHandler:       vmHandler,
 		imageHandler:    imageHandler,
 		networkHandler:  networkHandler,
+		vulnHandler:     vulns.NewHandler(vulnService),
+		vulnerabilities: vulnService,
 	}, nil
 }
 
@@ -320,6 +346,39 @@ func (m metricsVersions) Versions(ctx context.Context) (metrics.OSVersions, erro
 	for _, template := range prepared {
 		if template.Userland != nil {
 			out.Templates = append(out.Templates, metrics.Userland{Name: template.Name, Standing: *template.Userland})
+		}
+	}
+	return out, nil
+}
+
+// vulnTargets is what the package audit audits: every jail by its path, and
+// every template with a tree, by its mountpoint (#230).
+type vulnTargets struct {
+	jails     *jails.JailService
+	templates *templates.Service
+}
+
+func (v vulnTargets) Jails(ctx context.Context) ([]vulns.Target, error) {
+	found, err := v.jails.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]vulns.Target, 0, len(found))
+	for _, jail := range found {
+		out = append(out, vulns.Target{Name: jail.Name, Root: jail.Path})
+	}
+	return out, nil
+}
+
+func (v vulnTargets) Templates(ctx context.Context) ([]vulns.Target, error) {
+	prepared, err := v.templates.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]vulns.Target, 0, len(prepared))
+	for _, t := range prepared {
+		if t.HasTree() {
+			out = append(out, vulns.Target{Name: t.Name, Root: t.Mountpoint})
 		}
 	}
 	return out, nil
@@ -465,6 +524,20 @@ func newVersionSource(adapter string) (osversion.Source, error) {
 		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
 	case config.AdapterFake:
 		return fake.NewVersions(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
+}
+
+// newVulnSource selects what lists and audits packages (#230), with the same
+// refusal to guess as every other adapter choice here.
+func newVulnSource(adapter string) (vulns.Source, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewVulns(), nil
 	default:
 		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

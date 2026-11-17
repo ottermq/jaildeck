@@ -52,6 +52,14 @@ func (r *ExecCommandRunner) Run(ctx context.Context, cmd Command) (CommandResult
 			return c.Process.Signal(syscall.SIGTERM)
 		}
 	}
+	if cmd.Credential != nil {
+		// NoSetGroups off, so the child's groups are set to cred.Groups --
+		// none when empty -- and the root process's own, wheel and
+		// operator, are dropped rather than inherited.
+		cred := *cmd.Credential
+		cred.NoSetGroups = false
+		c.SysProcAttr.Credential = &cred
+	}
 	c.WaitDelay = commandWaitDelay
 
 	stdout := newCappedBuffer(cmd.MaxOutput)

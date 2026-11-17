@@ -14,6 +14,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/common"
 	"github.com/ottermq/jaildeck/internal/osversion"
 	"github.com/ottermq/jaildeck/internal/system"
+	"github.com/ottermq/jaildeck/internal/vulns"
 )
 
 const OperationInstallPackages = "install-packages"
@@ -29,11 +30,21 @@ type Service struct {
 	// versions reads each template's userland and the host's (#229). Nil
 	// leaves templates without one.
 	versions osversion.Source
+	// vulnerabilities answers each template's last package audit (#230).
+	vulnerabilities TemplateVulnerabilities
 }
 
 // SetVersions gives the listing each template's userland, judged against the
 // host's (#229).
 func (s *Service) SetVersions(v osversion.Source) { s.versions = v }
+
+// TemplateVulnerabilities answers a template's last package audit (#230).
+type TemplateVulnerabilities interface {
+	Template(name string) vulns.Summary
+}
+
+// SetVulnerabilities gives the listing each template's last package audit.
+func (s *Service) SetVulnerabilities(v TemplateVulnerabilities) { s.vulnerabilities = v }
 
 // OnProgress is told each step of the templates this process is preparing,
 // and the end of each with an empty step (#124).
@@ -90,6 +101,7 @@ func (s *Service) List(ctx context.Context) ([]Template, error) {
 		found = append(found, template)
 	}
 	s.withUserland(ctx, found)
+	s.withVulnerabilities(found)
 	return found, nil
 }
 
@@ -115,6 +127,24 @@ func (s *Service) withUserland(ctx context.Context, found []Template) {
 		}
 	}
 }
+
+// withVulnerabilities gives each template with a tree its last package audit
+// in numbers: a read of what the audit published, never an audit (#230).
+func (s *Service) withVulnerabilities(found []Template) {
+	if s.vulnerabilities == nil {
+		return
+	}
+	for i, t := range found {
+		if hasTree(t) {
+			summary := s.vulnerabilities.Template(t.Name)
+			found[i].Vulnerabilities = &summary
+		}
+	}
+}
+
+// HasTree is whether the template's dataset is mounted somewhere its files
+// can be read from: what the package audit needs of it (#230).
+func (t Template) HasTree() bool { return hasTree(t) }
 
 // hasTree is whether a template's dataset is mounted somewhere a userland can
 // be read from.

@@ -1,5 +1,6 @@
 import { api, ApiError } from "../services/api";
 import type { Standing } from "../osversion";
+import type { VulnSummary } from "../vulns";
 
 // Dataset is one ZFS dataset belonging to a jail. The sizes are exact bytes,
 // not the "1.41G" zfs prints: formatBytes spells them for display.
@@ -31,6 +32,8 @@ export interface JailData {
     // The jail's FreeBSD userland against the host's (#229). Filled by the
     // listing and by a jail's own page, where datasets are.
     userland?: Standing
+    // The last package audit in numbers (#230): never run by this read.
+    vulnerabilities?: VulnSummary
 }
 
 // Snapshot is one snapshot of one of a jail's datasets. Ordered by create_txg

@@ -94,3 +94,63 @@ describe('the dashboard FreeBSD card', () => {
         expect(container.querySelector('[data-card="freebsd"]')).toBeNull()
     })
 })
+
+// The vulnerable packages card (#230): the host's count, which jails and
+// templates have any, and how old the database is.
+describe('the dashboard vulnerable packages card', () => {
+    const db = { path: '/var/db/pkg/vuln.xml', present: true, updated: new Date(Date.now() - 3 * 3600_000).toISOString(), stale: false }
+    const counted = (name: string, status: 'clean' | 'vulnerable' | 'unknown', vulnerable = 0) =>
+        ({ name, status, packages: 20, vulnerable })
+
+    it('counts the host and links to what has vulnerable packages', async () => {
+        report.vulnerabilities = {
+            checked: new Date().toISOString(), database: db,
+            host: { status: 'vulnerable', packages: 400, vulnerable: 2 },
+            jails: [counted('db', 'vulnerable', 5), counted('api', 'clean'), counted('odd', 'unknown')],
+            templates: [counted('pg18', 'vulnerable', 5)],
+        }
+        const { container } = render(Dashboard)
+        await screen.findByText(/with vulnerable packages/)
+        const card = container.querySelector('[data-card="packages"]')!
+        expect(card.querySelector('.figure')!.textContent).toMatch(/2\s*on the host/)
+        expect(card.textContent).toMatch(/1 jail\s+and\s+1 template\s+with vulnerable packages/)
+        expect(card.querySelector('a[href="/jails"]')).toBeTruthy()
+        expect(card.textContent).toMatch(/Vulnerability database fetched 3 h ago\./)
+        expect(card.textContent).toMatch(/1 jail or template not audited/)
+    })
+
+    it('says nothing is vulnerable only after an audit', async () => {
+        report.vulnerabilities = {
+            checked: new Date().toISOString(), database: db,
+            host: { status: 'clean', packages: 400, vulnerable: 0 },
+            jails: [counted('api', 'clean')], templates: [],
+        }
+        const { container } = render(Dashboard)
+        expect(await screen.findByText(/No jail or template has a vulnerable package/)).toBeTruthy()
+        expect(container.querySelector('[data-card="packages"] .figure')!.textContent).toMatch(/0\s*on the host/)
+    })
+
+    it('shows no count and warns when there is no database', async () => {
+        report.vulnerabilities = {
+            checked: new Date().toISOString(), database: { path: '/var/db/pkg/vuln.xml', present: false, stale: false },
+            host: { status: 'unknown', packages: 0, vulnerable: 0 },
+            jails: [counted('api', 'unknown')], templates: [],
+        }
+        const { container } = render(Dashboard)
+        const warning = await screen.findByText(/No vulnerability database at/)
+        expect(warning.classList.contains('under--warn')).toBe(true)
+        const card = container.querySelector('[data-card="packages"]')!
+        expect(card.querySelector('.figure')!.textContent!.trim()).toBe('—')
+        // Unknown is never said the way clean is.
+        expect(card.textContent).not.toMatch(/No jail or template has a vulnerable package/)
+        expect(card.textContent).toMatch(/1 jail or template not audited/)
+    })
+
+    it('says the first audit has not finished', async () => {
+        report.vulnerabilities = {
+            database: db, host: { status: 'unchecked', packages: 0, vulnerable: 0 }, jails: [], templates: [],
+        }
+        render(Dashboard)
+        expect(await screen.findByText(/The first audit hasn't finished/)).toBeTruthy()
+    })
+})

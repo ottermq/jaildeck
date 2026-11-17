@@ -1,6 +1,8 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte'
 import UserlandBadge from '../components/UserlandBadge.svelte'
+import VulnBadge from '../components/VulnBadge.svelte'
+import VulnPanel from '../components/VulnPanel.svelte'
 import { userlandTitle } from '../osversion'
 import { onLive, aboutWork } from '../stores/events.svelte'
 import { getTemplate, listTemplates, classifyClones, removeTemplate } from '../stores/templates.svelte'
@@ -225,6 +227,10 @@ async function remove() {
                         <span class="userland-note">{userlandTitle(template.userland, 'template')}</span>
                     </dd>
                 {/if}
+                {#if template.vulnerabilities}
+                    <dt>Packages</dt>
+                    <dd><VulnBadge summary={template.vulnerabilities} what="template" /></dd>
+                {/if}
             </dl>
         {:else}
             <p class="notice">
@@ -234,6 +240,10 @@ async function remove() {
             </p>
         {/if}
     </section>
+
+    {#if template.vulnerabilities}
+        <VulnPanel {name} what="template" />
+    {/if}
 
     <section class="panel">
         <h2>What depends on this</h2>

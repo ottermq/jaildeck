@@ -24,6 +24,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/names"
 	"github.com/ottermq/jaildeck/internal/networks"
 	"github.com/ottermq/jaildeck/internal/osversion"
+	"github.com/ottermq/jaildeck/internal/replication"
 	"github.com/ottermq/jaildeck/internal/state"
 	"github.com/ottermq/jaildeck/internal/storage"
 	"github.com/ottermq/jaildeck/internal/system"
@@ -60,7 +61,11 @@ type Back struct {
 	vulnHandler     *vulns.Handler
 	// vulnerabilities audits every package on a timer of its own, started
 	// by Background (#230).
-	vulnerabilities *vulns.Service
+	vulnerabilities    *vulns.Service
+	replicationHandler *replication.Handler
+	// replication reads zrepl's cursors on a timer of its own, started by
+	// Background (#247).
+	replication *replication.Service
 	// processes is Jail Deck's own memory, told the front's pid by SetFront
 	// (#224).
 	processes *ownProcesses
@@ -77,6 +82,7 @@ func (a *Back) SetFront(pid func() int) { a.processes.front.Store(&pid) }
 // the work stops when ctx does.
 func (a *Back) Background(ctx context.Context) {
 	go a.vulnerabilities.Run(ctx, vulns.Poll, vulns.Every)
+	go a.replication.Run(ctx, replication.Every)
 }
 
 // NewBack builds the root side. recheck answers whether a request's login
@@ -197,6 +203,14 @@ func NewBack(cfg *config.Config, recheck func(*http.Request) error) (*Back, erro
 	templateService.SetVulnerabilities(vulnService)
 	metricsService.SetVulnerabilities(vulnService)
 
+	// ZFS replication: zrepl's cursors, read every minute (#247).
+	replicationSource, err := newReplicationSource(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	replicationService := replication.NewService(replicationSource)
+	metricsService.SetReplication(replicationService)
+
 	// Jail Deck's own memory, on /metrics only (#224).
 	residents, err := newResidentReader(cfg.Adapter)
 	if err != nil {
@@ -297,26 +311,28 @@ func NewBack(cfg *config.Config, recheck func(*http.Request) error) (*Back, erro
 	eventHandler := events.NewHandler(broker, recheck)
 
 	return &Back{
-		jailProperties:  jailProperties{jails: jailService}.Get,
-		authHandler:     authHandler,
-		housekeeping:    housekeepingHandler,
-		eventHandler:    eventHandler,
-		consoleHandler:  consoleHandler,
-		nameHandler:     nameHandler,
-		aboutHandler:    about.NewHandler(time.Now(), cfg.StateDir),
-		jailHandler:     jailHandler,
-		hostHandler:     hostHandler,
-		auditHandler:    auditHandler,
-		storageHandler:  storageHandler,
-		templateHandler: templateHandler,
-		metricsHandler:  metricsHandler,
-		firewallHandler: firewallHandler,
-		vmHandler:       vmHandler,
-		imageHandler:    imageHandler,
-		networkHandler:  networkHandler,
-		vulnHandler:     vulns.NewHandler(vulnService),
-		vulnerabilities: vulnService,
-		processes:       processes,
+		jailProperties:     jailProperties{jails: jailService}.Get,
+		authHandler:        authHandler,
+		housekeeping:       housekeepingHandler,
+		eventHandler:       eventHandler,
+		consoleHandler:     consoleHandler,
+		nameHandler:        nameHandler,
+		aboutHandler:       about.NewHandler(time.Now(), cfg.StateDir),
+		jailHandler:        jailHandler,
+		hostHandler:        hostHandler,
+		auditHandler:       auditHandler,
+		storageHandler:     storageHandler,
+		templateHandler:    templateHandler,
+		metricsHandler:     metricsHandler,
+		firewallHandler:    firewallHandler,
+		vmHandler:          vmHandler,
+		imageHandler:       imageHandler,
+		networkHandler:     networkHandler,
+		vulnHandler:        vulns.NewHandler(vulnService),
+		vulnerabilities:    vulnService,
+		replicationHandler: replication.NewHandler(replicationService),
+		replication:        replicationService,
+		processes:          processes,
 	}, nil
 }
 
@@ -555,6 +571,19 @@ func newVulnSource(adapter string) (vulns.Source, error) {
 		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
 	case config.AdapterFake:
 		return fake.NewVulns(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
+}
+
+// newReplicationSource selects what reads zrepl's replication cursors (#247).
+func newReplicationSource(adapter string) (replication.Source, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewReplication(), nil
 	default:
 		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

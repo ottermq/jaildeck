@@ -3,6 +3,9 @@ package metrics
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/ottermq/jaildeck/internal/replication"
 )
 
 func int64p(v int64) *int64 { return &v }
@@ -75,5 +78,32 @@ func TestProcessMetrics(t *testing.T) {
 	requireLine(t, body, `jaildeck_go_heap_inuse_bytes{side="back"} 9.437184e+06`)
 	if strings.Contains(body, `jaildeck_go_heap_inuse_bytes{side="front"}`) {
 		t.Error("a heap written for the front, which the root side cannot read")
+	}
+}
+
+func TestReplicationMetrics(t *testing.T) {
+	checked := time.Unix(1794942100, 0)
+	report := aReport()
+	report.Replication = &replication.Snapshot{Status: replication.Replicating, Checked: &checked, Jobs: []replication.Job{
+		{Name: "local_push", Datasets: []replication.Dataset{{Name: "tank/jails", Replicated: time.Unix(1794942041, 0)}}},
+	}}
+	body := render(t, report)
+	checkFormat(t, body)
+	requireLine(t, body, "jaildeck_replication_last_read_timestamp_seconds 1.7949421e+09")
+	requireLine(t, body, `jaildeck_replication_last_snapshot_timestamp_seconds{job="local_push",dataset="tank/jails"} 1.794942041e+09`)
+
+	// A failed read writes no ages, and keeps the last success's time.
+	report.Replication = &replication.Snapshot{Status: replication.Unknown, Checked: &checked, Jobs: []replication.Job{}}
+	body = render(t, report)
+	checkFormat(t, body)
+	if strings.Contains(body, "jaildeck_replication_last_snapshot_timestamp_seconds") {
+		t.Error("ages written for a failed read")
+	}
+	requireLine(t, body, "jaildeck_replication_last_read_timestamp_seconds 1.7949421e+09")
+
+	// Before the first read, nothing at all.
+	report.Replication = &replication.Snapshot{Status: replication.Unchecked, Jobs: []replication.Job{}}
+	if strings.Contains(render(t, report), "jaildeck_replication_") {
+		t.Error("replication series before the first read")
 	}
 }

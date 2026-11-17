@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"bufio"
+	"github.com/ottermq/jaildeck/internal/replication"
 	"io"
 	"sort"
 	"strconv"
@@ -40,6 +41,7 @@ func WriteExposition(w io.Writer, report Report) error {
 	out.versions(report.OS)
 	out.vulnerabilities(report.Vulnerabilities)
 	out.processes(report.Processes)
+	out.replication(report.Replication)
 
 	return out.w.Flush()
 }
@@ -270,6 +272,29 @@ func (e *exposition) processes(processes []Process) {
 			wrote = true
 		}
 		e.value(labels{{"side", p.Side}}, float64(*p.HeapInuse))
+	}
+}
+
+// replication is zrepl's cursors (#247). Unix times rather than ages, so an
+// alert is time() - x. Nothing is written for a read that failed, and the
+// last-read timestamp stops moving, which is what an alert on a stalled read
+// watches.
+func (e *exposition) replication(r *replication.Snapshot) {
+	if r == nil {
+		return
+	}
+	if r.Checked != nil {
+		e.gauge("jaildeck_replication_last_read_timestamp_seconds", "When zrepl's replication cursors were last read successfully, as a Unix time.")
+		e.value(nil, float64(r.Checked.Unix()))
+	}
+	if r.Status != replication.Replicating {
+		return
+	}
+	e.gauge("jaildeck_replication_last_snapshot_timestamp_seconds", "When the newest snapshot of a dataset that reached the other side of a zrepl job was taken, as a Unix time.")
+	for _, job := range r.Jobs {
+		for _, ds := range job.Datasets {
+			e.value(labels{{"job", job.Name}, {"dataset", ds.Name}}, float64(ds.Replicated.Unix()))
+		}
 	}
 }
 

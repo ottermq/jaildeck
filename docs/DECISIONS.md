@@ -2897,3 +2897,28 @@ That makes this the first time the root process looks inside a jail's files from
 
 - **About 0.2 s per tree with packages.** Measured on FreeBSD 15.1: a host of a few hundred packages plus six jails and templates took 1.2 s in all.
 - **A timer, not a request.** It is the first thing the root side does on its own: an audit at startup, then a `stat` of the database every 5 minutes, with an audit when the database has changed or the last audit is an hour old. Requests and scrapes read the published result. A jail created since the last audit is `unchecked` until the next one.
+
+## JD-062 — Replication Is Read from zrepl's Cursors
+
+**Status:** Locked — 2026-11-17.
+
+#247 shows how long ago each dataset a zrepl job replicates last reached the other side. ZFS replication status had been deferred since the original scope; it came back when jails' data started to be backed up by zrepl on the reference host, where a replication that stopped would show nothing until a restore found an old copy.
+
+### The source
+
+- **zrepl's replication cursors, not `zrepl status`.** zrepl keeps a bookmark on the sending side of every filesystem it replicates, one per job: `<fs>#zrepl_CURSOR_G_<guid>_J_<job>`. A bookmark keeps the creation time of the snapshot it was made from, so the cursor's creation is the time of the newest snapshot known to have reached the other side. It covers a push job and a source job that another host pulls from, which the sending host can't otherwise know about.
+- **`zrepl status --mode raw` describes the current attempt**, not when each filesystem last succeeded, and needs the root-only control socket. Measured: about 220 KB of JSON for 26 filesystems. It would add errors (a failed step, a plan error) but not ages, so it's left for later, as a complement.
+- **Bookmarks, not snapshots.** One `zfs list -H -p -t bookmark -o name,creation` over every pool: 0.03 s on the reference host, where listing its roughly 2,000 snapshots took 2.8 s. It needs neither zrepl's configuration, which is root-only, nor its socket, and works unprivileged.
+- **Only the versioned cursor.** zrepl before 0.3 used `zrepl_replication_cursor`, which names no job. It isn't read.
+
+### What it shows, and doesn't
+
+- **Ages, no threshold.** How old is too old depends on the job's interval, which lives in zrepl's configuration. Jail Deck shows ages without colouring them, and the metric is a Unix time for an alert in Prometheus, as the vulnerability database's is (JD-061).
+- **A failed read is `unknown`, and drops the last answer.** Ages computed from an old read would look current. The last-read time stays at the last success, so `time() -` it catches a read that keeps failing.
+- **No cursors is `none`.** zrepl isn't replicating from this host, or hasn't finished a first replication. The dashboard has no card then. A dataset zrepl is configured to replicate but never has is not listed: without its configuration, Jail Deck can't know it should be.
+- **A job removed from zrepl's configuration leaves its cursors**, and they keep ageing. That's shown as it is: the cursor is the operator's to destroy.
+
+### What it costs
+
+A timer of its own on the root side: a read at startup, then every minute. Requests and scrapes read the last result.
+

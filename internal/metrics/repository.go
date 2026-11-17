@@ -82,3 +82,9 @@ type JailSource interface {
 type GuestSource interface {
 	GuestUsage(ctx context.Context) ([]GuestUsage, error)
 }
+
+// VersionSource reads the host's FreeBSD versions and every jail's and
+// template's userland against them (#229).
+type VersionSource interface {
+	Versions(ctx context.Context) (OSVersions, error)
+}

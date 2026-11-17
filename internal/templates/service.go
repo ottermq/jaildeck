@@ -12,6 +12,7 @@ import (
 
 	"github.com/ottermq/jaildeck/internal/audit"
 	"github.com/ottermq/jaildeck/internal/common"
+	"github.com/ottermq/jaildeck/internal/osversion"
 	"github.com/ottermq/jaildeck/internal/system"
 )
 
@@ -25,7 +26,14 @@ type Service struct {
 	// running is what this process is doing right now, which is the one part
 	// of a template's state that cannot be read off the disk (JD-008).
 	running *operations
+	// versions reads each template's userland and the host's (#229). Nil
+	// leaves templates without one.
+	versions osversion.Source
 }
+
+// SetVersions gives the listing each template's userland, judged against the
+// host's (#229).
+func (s *Service) SetVersions(v osversion.Source) { s.versions = v }
 
 // OnProgress is told each step of the templates this process is preparing,
 // and the end of each with an empty step (#124).
@@ -81,7 +89,37 @@ func (s *Service) List(ctx context.Context) ([]Template, error) {
 		}
 		found = append(found, template)
 	}
+	s.withUserland(ctx, found)
 	return found, nil
+}
+
+// withUserland gives each template with a tree its userland version (#229). A
+// template that has only been fetched has no tree yet, and gets none.
+func (s *Service) withUserland(ctx context.Context, found []Template) {
+	if s.versions == nil {
+		return
+	}
+	roots := make([]string, 0, len(found))
+	for _, t := range found {
+		if hasTree(t) {
+			roots = append(roots, t.Mountpoint)
+		}
+	}
+	if len(roots) == 0 {
+		return
+	}
+	_, standings := osversion.Judge(ctx, s.versions, roots)
+	for i, t := range found {
+		if standing, ok := standings[t.Mountpoint]; ok && hasTree(t) {
+			found[i].Userland = &standing
+		}
+	}
+}
+
+// hasTree is whether a template's dataset is mounted somewhere a userland can
+// be read from.
+func hasTree(t Template) bool {
+	return t.Dataset != "" && t.Mountpoint != "" && t.Mountpoint != "-" && t.Mountpoint != "none"
 }
 
 // Derive builds a template from another one plus packages: clone the parent's

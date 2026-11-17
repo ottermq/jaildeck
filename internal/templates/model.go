@@ -1,5 +1,7 @@
 package templates
 
+import "github.com/ottermq/jaildeck/internal/osversion"
+
 // Template is a FreeBSD userland a jail can be cloned from.
 //
 // Nothing here is stored. A template's whole state is derivable from ZFS
@@ -39,6 +41,10 @@ type Template struct {
 	// Referenced is the whole userland; for a derived template most of it is
 	// still shared with its parent, so Used is what the packages cost.
 	Referenced int64 `json:"referenced"`
+	// Userland is the template's FreeBSD userland and how it stands against
+	// the host's (#229). Every jail cloned from it starts at this patch
+	// level. Absent until there is a tree to read it from.
+	Userland *osversion.Standing `json:"userland,omitempty"`
 }
 
 // ReadySnapshot is the snapshot name that marks a template usable (JD-007).

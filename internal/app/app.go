@@ -23,6 +23,7 @@ import (
 	"github.com/ottermq/jaildeck/internal/metrics"
 	"github.com/ottermq/jaildeck/internal/names"
 	"github.com/ottermq/jaildeck/internal/networks"
+	"github.com/ottermq/jaildeck/internal/osversion"
 	"github.com/ottermq/jaildeck/internal/state"
 	"github.com/ottermq/jaildeck/internal/storage"
 	"github.com/ottermq/jaildeck/internal/system"
@@ -154,6 +155,16 @@ func NewBack(cfg *config.Config, recheck func(*http.Request) error) (*Back, erro
 	metricsService := metrics.NewService(hostMetrics, jailAdapter.usage, jailService, disks)
 	metricsHandler := metrics.NewHandler(metricsService)
 
+	// FreeBSD versions: each jail's and template's userland against the
+	// host's, on their own pages and on the dashboard (#229, JD-060).
+	versionSource, err := newVersionSource(cfg.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	jailService.SetVersions(versionSource)
+	templateService.SetVersions(versionSource)
+	metricsService.SetVersions(metricsVersions{source: versionSource, jails: jailService, templates: templateService})
+
 	firewallSystem, err := newFirewallSystem(cfg.Adapter)
 	if err != nil {
 		return nil, err
@@ -276,6 +287,42 @@ func newShells(adapter string) (console.Shells, error) {
 	}
 	return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 		adapter, config.AdapterFreeBSD, config.AdapterFake)
+}
+
+// metricsVersions answers the dashboard's question about FreeBSD versions
+// from the jails and templates services, which already judge each one against
+// the host (#229). The metrics service reads it at most once a minute.
+type metricsVersions struct {
+	source    osversion.Source
+	jails     *jails.JailService
+	templates *templates.Service
+}
+
+func (m metricsVersions) Versions(ctx context.Context) (metrics.OSVersions, error) {
+	host, err := m.source.HostVersions(ctx)
+	if err != nil {
+		return metrics.OSVersions{}, err
+	}
+	out := metrics.OSVersions{Host: host, Jails: make([]metrics.Userland, 0), Templates: make([]metrics.Userland, 0)}
+	found, err := m.jails.List(ctx)
+	if err != nil {
+		return metrics.OSVersions{}, err
+	}
+	for _, jail := range found {
+		if jail.Userland != nil {
+			out.Jails = append(out.Jails, metrics.Userland{Name: jail.Name, Standing: *jail.Userland})
+		}
+	}
+	prepared, err := m.templates.List(ctx)
+	if err != nil {
+		return metrics.OSVersions{}, err
+	}
+	for _, template := range prepared {
+		if template.Userland != nil {
+			out.Templates = append(out.Templates, metrics.Userland{Name: template.Name, Standing: *template.Userland})
+		}
+	}
+	return out, nil
 }
 
 // runningJails answers the console's one question of the jails service.
@@ -404,6 +451,20 @@ func newImageSystem(adapter string) (images.ImageSystem, error) {
 		return freebsd.NewImageAdapter(system.NewExecCommandRunner()), nil
 	case config.AdapterFake:
 		return fake.NewImages(), nil
+	default:
+		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
+			adapter, config.AdapterFreeBSD, config.AdapterFake)
+	}
+}
+
+// newVersionSource selects what reads FreeBSD versions (#229), with the same
+// refusal to guess as every other adapter choice here.
+func newVersionSource(adapter string) (osversion.Source, error) {
+	switch adapter {
+	case config.AdapterFreeBSD:
+		return freebsd.NewAdapter(system.NewExecCommandRunner()), nil
+	case config.AdapterFake:
+		return fake.NewVersions(), nil
 	default:
 		return nil, fmt.Errorf("unknown JAILDECK_ADAPTER %q (want %q or %q)",
 			adapter, config.AdapterFreeBSD, config.AdapterFake)

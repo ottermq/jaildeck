@@ -20,6 +20,17 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+- **FreeBSD versions, and what is behind the host** (#229, JD-060). The host's running kernel, installed kernel and userland, with `reboot_pending` when an update is installed and the host has not been restarted. Each jail's and template's userland, judged against the host's: `current`, `behind` by how many patch levels, `ahead`, `other-release` or `unknown`. Updating the host doesn't update a jail, whose userland is its own copy, and this is where that shows. The version is read from the tree's `bin/freebsd-version` as text and never run, through `os.Root`, so a jail can't point it at the host. The interface comes in a second change.
+- **Metrics:** `jaildeck_host_reboot_pending`, `jaildeck_os_version_info` and `jaildeck_jail_userland_behind` / `jaildeck_template_userland_behind`. A jail on another release, or whose version can't be read, is left out of the last two, so an alert on them never fires on a guess.
+
+### API
+
+- `GET /api/jails` and `GET /api/jails/{name}`: each jail has `userland` (`version`, `status`, `levels`, `host`).
+- `GET /api/templates` and `GET /api/templates/{name}`: the same `userland`, on a template that has a tree to read.
+- `GET /api/metrics`: `os`, with the host's `kernel_running`, `kernel_installed`, `userland` and `reboot_pending`, and each jail's and template's `userland` by name. Read at most once a minute. `os_unavailable` says why when it couldn't be read.
+
 ## v0.30.2 — 2026-11-09
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.30.2)

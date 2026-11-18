@@ -198,7 +198,7 @@ async function remove() {
                 <span data-built>{builtLabel(template)}</span>
             {/if}
             {#if parent}
-                <span>derived from
+                <span>{template.built === 'refreshed' ? 'refreshed from' : 'derived from'}
                     <a href={`/templates/${encodeURIComponent(parent)}`}
                        onclick={(e) => onNavClick(e, `/templates/${encodeURIComponent(parent)}`)}>
                         {parent}
@@ -222,9 +222,10 @@ async function remove() {
         <form class="panel refresh" onsubmit={refresh} data-form="refresh">
             <h2>Refresh into a new template</h2>
             <p class="hint">
-                A clone of <code>{template.name}@base</code>, brought to its release's current patch
+                A full copy of <code>{template.name}@base</code>, brought to its release's current patch
                 level with <code>freebsd-update</code> and every package upgraded. It takes a few
-                minutes. <strong>{template.name} itself is not changed</strong>, nor is any jail cloned
+                minutes, and the space of a whole template: a copy rather than a clone, so that
+                {template.name} can be removed once no jail is cloned from it. <strong>{template.name} itself is not changed</strong>, nor is any jail cloned
                 from it: moving a jail onto the new template is a reclone, on the jail's page.
             </p>
             <div class="field">

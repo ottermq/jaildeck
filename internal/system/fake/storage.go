@@ -378,6 +378,31 @@ func (s *StorageSystem) CloneSnapshot(_ context.Context, snapshot, target string
 	return result, nil
 }
 
+// SendReceive makes the target a dataset of its own with one snapshot, and
+// no origin: a copy, which is what tells it apart from a clone.
+func (s *StorageSystem) SendReceive(_ context.Context, snapshot, target string) (storage.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dataset, short, _ := strings.Cut(target, "@")
+	result := storage.Result{Dataset: dataset, Command: "zfs send " + snapshot + " | zfs receive " + target}
+	if slices.ContainsFunc(s.datasets, func(d storage.Dataset) bool { return d.Name == dataset }) {
+		return result, fmt.Errorf("cannot receive new filesystem stream: destination '%s' exists", dataset)
+	}
+	if !slices.ContainsFunc(s.snapshots, func(x storage.Snapshot) bool { return x.Name == snapshot }) {
+		return result, fmt.Errorf("cannot open '%s': dataset does not exist", snapshot)
+	}
+	parent, child, _ := cutLast(dataset, "/")
+	const gib = 1 << 30
+	s.datasets = append(s.datasets, storage.Dataset{
+		Name: dataset, Mountpoint: s.childMountpointOf(parent, child),
+		Used: 372 << 20, Referenced: 372 << 20, Available: 400 * gib,
+	})
+	slices.SortFunc(s.datasets, func(a, b storage.Dataset) int { return strings.Compare(a.Name, b.Name) })
+	s.snapshots = append(s.snapshots, s.snapshot(dataset, short))
+	return result, nil
+}
+
 func (s *StorageSystem) Origin(_ context.Context, dataset string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

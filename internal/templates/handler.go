@@ -107,8 +107,10 @@ func (h *TemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Description
 // @Description  ### Or refresh a template
 // @Description
-// @Description  Send `from` with `refresh: true` to build a **new** template from that one's
-// @Description  `@base`, brought to its release's current patch level with `freebsd-update -b`
+// @Description  Send `from` with `refresh: true` to build a **new** template, an independent
+// @Description  copy of that one's `@base` (#258) so that the parent can still be removed once
+// @Description  no jail is cloned from it. The copy is brought to its release's current patch
+// @Description  level with `freebsd-update -b`
 // @Description  and every package upgraded with `pkg -c <root> upgrade -y` (#252). The parent
 // @Description  is never changed: the jails cloned from it are unaffected, and moving one onto
 // @Description  the new template is `POST /api/jails/{name}/reclone`. **202**, watched like a

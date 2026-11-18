@@ -52,11 +52,12 @@ func TestRefreshBuildsANewTemplate(t *testing.T) {
 	}
 	waitIdle(t, service, "pg18-p7")
 
+	// Copied, not cloned (#258), with the parent's name recorded.
 	storage.mu.Lock()
-	derived := append([]string(nil), storage.derived...)
+	copied, derived := append([]string(nil), storage.copied...), len(storage.derived)
 	storage.mu.Unlock()
-	if !slices.Equal(derived, []string{"tank/jails/templates/pg18@base -> pg18-p7"}) {
-		t.Errorf("derived %v", derived)
+	if !slices.Equal(copied, []string{"tank/jails/templates/pg18@base => pg18-p7 (from pg18)"}) || derived != 0 {
+		t.Errorf("copied %v, derived %d", copied, derived)
 	}
 	// freebsd-update is told the plain release, read from the parent's @base.
 	if got := releases.brought(); !slices.Equal(got, []string{"15.1-RELEASE"}) {
@@ -86,8 +87,8 @@ func TestRefreshRefusesATreeJailDeckDidNotBuild(t *testing.T) {
 		if appErrCode(t, err) != http.StatusConflict || !strings.Contains(err.Error(), want) {
 			t.Errorf("built %q: %v", built, err)
 		}
-		if len(storage.derived) != 0 {
-			t.Errorf("built %q: cloned anyway", built)
+		if len(storage.copied) != 0 {
+			t.Errorf("built %q: copied anyway", built)
 		}
 	}
 }
@@ -114,8 +115,8 @@ func TestRefreshIsIdempotentOnceReady(t *testing.T) {
 	storage.templates = append(storage.templates, Template{Name: "pg18-p7", Dataset: "tank/jails/templates/pg18-p7",
 		Mountpoint: "/usr/local/jails/templates/pg18-p7", Ready: true})
 	got, err := service.Refresh(context.Background(), "pg18-p7", "pg18")
-	if err != nil || got.Name != "pg18-p7" || len(storage.derived) != 0 {
-		t.Fatalf("got %+v, %v; derived %v", got, err, storage.derived)
+	if err != nil || got.Name != "pg18-p7" || len(storage.copied) != 0 {
+		t.Fatalf("got %+v, %v; copied %v", got, err, storage.copied)
 	}
 }
 

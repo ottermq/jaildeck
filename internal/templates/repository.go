@@ -24,6 +24,9 @@ type TemplateStorage interface {
 	// Mark records how the template was made, in its jaildeck:built user
 	// property (#252). Set before Seal, so a ready template always says.
 	Mark(ctx context.Context, name, built string) error
+	// Copy makes name an independent copy of parentSnapshot, recording
+	// parent as where it came from, and returns where it is mounted (#258).
+	Copy(ctx context.Context, parentSnapshot, name, parent string) (string, error)
 
 	// Dependents names what is holding a template in place: the datasets
 	// cloned from any of its snapshots, and the holds on them. Facts, not a

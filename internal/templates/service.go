@@ -216,6 +216,9 @@ func (s *Service) Derive(ctx context.Context, name, parent string, packages []st
 		return Template{}, false, common.NewAppError(http.StatusConflict, fmt.Sprintf(
 			"%s has no @%s snapshot, so it is not usable as a parent (JD-007)", parent, ReadySnapshot))
 	}
+	if err := refuseSuperseded(existing, from); err != nil {
+		return Template{}, false, err
+	}
 
 	root, err := s.storage.Derive(ctx, from.Snapshot, name)
 	if err != nil {

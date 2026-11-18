@@ -57,6 +57,9 @@ func (s *Service) Refresh(ctx context.Context, name, parent string) (Template, e
 	if !from.Refreshable() {
 		return Template{}, notRefreshable(from)
 	}
+	if err := refuseSuperseded(existing, from); err != nil {
+		return Template{}, err
+	}
 	// The release freebsd-update is told the tree is running: read from the
 	// parent's @base (#251), the plain release without its patch level.
 	release := ""
@@ -86,7 +89,9 @@ func (s *Service) Refresh(ctx context.Context, name, parent string) (Template, e
 }
 
 // refresh runs the stages, each audited as it goes. A stage that fails leaves
-// the clone without @base, shown as not ready, as a failed derive does.
+// the clone without @base, shown as not ready, as a failed derive does, and
+// the parent unmarked. Once the new template is sealed, the parent is marked
+// superseded by it (#259).
 func (s *Service) refresh(ctx context.Context, name, parent, parentSnapshot, release string) {
 	defer s.running.stop(name)
 
@@ -106,7 +111,13 @@ func (s *Service) refresh(ctx context.Context, name, parent, parentSnapshot, rel
 	if err != nil {
 		return
 	}
-	s.seal(ctx, name, BuiltRefreshed)
+	if !s.seal(ctx, name, BuiltRefreshed) {
+		return
+	}
+	// Only now is there something to point at (#259). Audited by storage
+	// as set-properties; a failure leaves the parent unmarked, which is
+	// where it started, and the refresh itself is still done.
+	_ = s.storage.Supersede(ctx, parent, name)
 }
 
 func notRefreshable(t Template) error {

@@ -58,6 +58,11 @@ type Template struct {
 	// freebsd-update and pkg as root on the tree, so it is allowed only on a
 	// tree Jail Deck built itself, never one a jail's root filled (JD-061).
 	Built string `json:"built,omitempty" enums:"release,derived,refreshed,jail"`
+	// SupersededBy is the template a refresh replaced this one with, from
+	// its jaildeck:superseded-by user property (#259). A superseded template
+	// is refused as the source of a new jail, a reclone, a derive or a
+	// refresh; the jails already cloned from it are not affected.
+	SupersededBy string `json:"superseded_by,omitempty"`
 }
 
 // BuiltProperty is the ZFS user property that records how a template was made
@@ -67,6 +72,11 @@ const BuiltProperty = "jaildeck:built"
 // RefreshedFromProperty is the template a refreshed one was copied from
 // (#258). A copy has no origin to read its parent from.
 const RefreshedFromProperty = "jaildeck:refreshed-from"
+
+// SupersededProperty names the template that replaced this one (#259). Set
+// on the parent once its refresh is sealed; cleared by hand with
+// zfs inherit, which lifts the refusal at once.
+const SupersededProperty = "jaildeck:superseded-by"
 
 // How a template was made.
 const (

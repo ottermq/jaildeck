@@ -25,8 +25,14 @@ func someVersions() OSVersions {
 			judge("legacy", "14.3-RELEASE-p4"),
 			judge("broken", ""),
 		},
-		Templates: []Userland{judge("15.1-RELEASE", "15.1-RELEASE-p5")},
+		Templates: []Userland{superseded(judge("15.1-RELEASE", "15.1-RELEASE-p5"), "15.1-RELEASE-p6"),
+			judge("15.1-RELEASE-p6", "15.1-RELEASE-p6")},
 	}
+}
+
+func superseded(u Userland, by string) Userland {
+	u.SupersededBy = by
+	return u
 }
 
 func TestVersionMetrics(t *testing.T) {
@@ -46,6 +52,9 @@ func TestVersionMetrics(t *testing.T) {
 	requireLine(t, body, `jaildeck_jail_userland_behind{jail="nginx"} 0`)
 	requireLine(t, body, `jaildeck_jail_userland_behind{jail="postgres"} 4`)
 	requireLine(t, body, `jaildeck_template_userland_behind{template="15.1-RELEASE"} 1`)
+	// A refreshed template's parent (#259), and the refresh itself.
+	requireLine(t, body, `jaildeck_template_superseded{template="15.1-RELEASE",superseded_by="15.1-RELEASE-p6"} 1`)
+	requireLine(t, body, `jaildeck_template_superseded{template="15.1-RELEASE-p6",superseded_by=""} 0`)
 	// Another release and an unreadable version are not "0 behind": they
 	// are left out, so an alert never fires or clears on a guess.
 	for _, absent := range []string{`jail="legacy"`, `jail="broken"`} {

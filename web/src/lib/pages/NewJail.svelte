@@ -2,7 +2,7 @@
 import { onMount } from 'svelte'
 import NameField from '../components/NameField.svelte'
 import { navigate, onNavClick } from '../router.svelte'
-import { listTemplates } from '../stores/templates.svelte'
+import { listTemplates, cloneable } from '../stores/templates.svelte'
 import { ownNetworks } from '../stores/networks.svelte'
 import type { OwnNetwork } from '../stores/networks.svelte'
 import type { Template } from '../stores/templates.svelte'
@@ -60,8 +60,11 @@ let submitError = $state('')
 // Only a template with its @base snapshot can be cloned (JD-007). One still
 // being prepared is listed as unusable rather than hidden, so a half-built
 // template explains why it is not on offer.
-let ready = $derived((templates ?? []).filter(t => t.ready && t.snapshot))
+let ready = $derived((templates ?? []).filter(cloneable))
 let unready = $derived((templates ?? []).filter(t => !t.ready || !t.snapshot))
+// Superseded templates (#259) are refused by the server; named so their
+// absence from the list is explained.
+let superseded = $derived((templates ?? []).filter(t => t.ready && t.snapshot && t.superseded_by))
 
 async function load() {
     loadError = ''
@@ -283,6 +286,12 @@ let stoppedAt = $derived(failed?.failed_at)
                 <p class="hint">
                     Not offered: {unready.map(t => `${t.name} (${t.state})`).join(', ')} — a
                     template is cloneable only once it has its <code>@base</code> snapshot.
+                </p>
+            {/if}
+            {#if superseded.length > 0}
+                <p class="hint">
+                    Superseded: {superseded.map(t => `${t.name} (by ${t.superseded_by})`).join(', ')} — a
+                    refresh replaced them, so new jails come from the replacement.
                 </p>
             {/if}
             <p class="hint">

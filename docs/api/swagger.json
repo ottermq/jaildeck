@@ -6483,6 +6483,10 @@
                 "status": {
                     "$ref": "#/definitions/osversion.Status"
                 },
+                "superseded_by": {
+                    "description": "SupersededBy is, for a template, the one a refresh replaced it with\n(#259). Here rather than in a list of its own because it is read in\nthe same pass over the templates, and every superseded template is a\nready one with a userland.",
+                    "type": "string"
+                },
                 "version": {
                     "description": "Version is the userland as read, \"\" when it could not be read or was\nnot shaped like a version.",
                     "type": "string"
@@ -7175,6 +7179,10 @@
                     "description": "State is where this template has got to, read off the filesystem except\nfor the -ing forms, which come from what this process is doing (JD-008).\nA template that has only been fetched has no dataset and still has a\nstate, because the resource a client watches has to exist from the\nmoment the work starts.",
                     "type": "string"
                 },
+                "superseded_by": {
+                    "description": "SupersededBy is the template a refresh replaced this one with, from\nits jaildeck:superseded-by user property (#259). A superseded template\nis refused as the source of a new jail, a reclone, a derive or a\nrefresh; the jails already cloned from it are not affected.",
+                    "type": "string"
+                },
                 "used": {
                     "type": "integer"
                 },
@@ -7277,6 +7285,10 @@
                 },
                 "state": {
                     "description": "State is where this template has got to, read off the filesystem except\nfor the -ing forms, which come from what this process is doing (JD-008).\nA template that has only been fetched has no dataset and still has a\nstate, because the resource a client watches has to exist from the\nmoment the work starts.",
+                    "type": "string"
+                },
+                "superseded_by": {
+                    "description": "SupersededBy is the template a refresh replaced this one with, from\nits jaildeck:superseded-by user property (#259). A superseded template\nis refused as the source of a new jail, a reclone, a derive or a\nrefresh; the jails already cloned from it are not affected.",
                     "type": "string"
                 },
                 "used": {

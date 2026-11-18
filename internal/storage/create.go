@@ -32,7 +32,7 @@ func (s *JailSource) CheckTemplate(ctx context.Context, templateSnapshot string)
 	}
 	for _, found := range snapshots {
 		if found.Name == templateSnapshot {
-			return nil
+			return s.service.refuseSuperseded(ctx, dataset)
 		}
 	}
 	return common.NewAppError(http.StatusNotFound, "no snapshot named "+templateSnapshot)

@@ -49,11 +49,13 @@ func TestFromJailSnapshotsClonesAndPromotes(t *testing.T) {
 		"zfs snapshot " + configuredJail + "@base",
 		"zfs clone " + configuredJail + "@base tank/jails/templates/ottermq-base",
 		"zfs promote tank/jails/templates/ottermq-base",
+		// Marked as a jail's, so it is never refreshed (#252).
+		"zfs set jaildeck:built=jail tank/jails/templates/ottermq-base",
 	}
 	if !reflect.DeepEqual(system.ran, want) {
 		t.Errorf("ran\n  %q\nwant\n  %q", system.ran, want)
 	}
-	if len(logger.entries) < 3 {
+	if len(logger.entries) < 4 {
 		t.Errorf("wrote %d audit entries, want one per command", len(logger.entries))
 	}
 }
@@ -115,6 +117,11 @@ func TestATemplateMadeFromAJailListsLikeAnyOther(t *testing.T) {
 		}
 		if template.Parent != "15.1-RELEASE" {
 			t.Errorf("parent = %q, want 15.1-RELEASE", template.Parent)
+		}
+		// Its origin reads exactly like a derived template's; the marker
+		// is what says it was a jail's, and is never refreshed (#252).
+		if template.Built != "jail" || template.Refreshable() {
+			t.Errorf("built = %q, refreshable %v; want jail, not refreshable", template.Built, template.Refreshable())
 		}
 	}
 	if !found {

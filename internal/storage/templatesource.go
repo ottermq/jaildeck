@@ -76,7 +76,32 @@ func (s *TemplateSource) Templates(ctx context.Context) ([]templates.Template, e
 			found = append(found, template)
 		}
 	}
+
+	// How each was made, from its jaildeck:built property (#252): one zfs
+	// get for them all. Unreadable reads as unmarked, which refuses a
+	// refresh rather than allowing one on a guess.
+	if len(found) > 0 {
+		names := make([]string, 0, len(found))
+		for _, t := range found {
+			names = append(names, t.Dataset)
+		}
+		if properties, err := s.service.UserPropertiesOf(ctx, names); err == nil {
+			for i, t := range found {
+				found[i].Built = properties[t.Dataset][templates.BuiltProperty]
+			}
+		}
+	}
 	return found, nil
+}
+
+// Mark records how a template was made (#252).
+func (s *TemplateSource) Mark(ctx context.Context, name, built string) error {
+	dataset, err := s.datasetFor(ctx, name)
+	if err != nil {
+		return err
+	}
+	_, err = s.service.SetUserProperties(ctx, dataset, map[string]*string{templates.BuiltProperty: &built})
+	return err
 }
 
 // Create makes an empty template dataset and returns where it is mounted,
@@ -219,6 +244,13 @@ func (s *TemplateSource) FromJail(ctx context.Context, jailDataset, name string)
 		// The template exists and the jail is pinned by it. Reported rather
 		// than unwound: zfs promote failing is not a state to guess at.
 		return "", toWriteError("promote", target, promoteErr)
+	}
+	// Marked as a jail's, so it is never refreshed (#252): its tree is
+	// whatever that jail's root left in it. After the promote, the template
+	// carries the jail's origin and would otherwise read as derived.
+	jail := templates.BuiltJail
+	if _, err := s.service.SetUserProperties(ctx, target, map[string]*string{templates.BuiltProperty: &jail}); err != nil {
+		return "", err
 	}
 	return target, nil
 }

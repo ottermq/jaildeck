@@ -220,6 +220,9 @@ func (s *Service) Derive(ctx context.Context, name, parent string, packages []st
 		}
 	}
 
+	if err := s.storage.Mark(ctx, name, BuiltDerived); err != nil {
+		return Template{}, false, err
+	}
 	if err := s.storage.Seal(ctx, name); err != nil {
 		return Template{}, false, err
 	}

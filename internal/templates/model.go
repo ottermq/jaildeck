@@ -52,6 +52,40 @@ type Template struct {
 	// (#230, JD-061). Every jail cloned from it starts with these packages.
 	// Absent until there is a tree to audit.
 	Vulnerabilities *vulns.Summary `json:"vulnerabilities,omitempty"`
+	// Built is how Jail Deck made this template, from its jaildeck:built
+	// user property (#252): release, derived, refreshed or jail. Empty for a
+	// template made before the property existed, or by hand. A refresh runs
+	// freebsd-update and pkg as root on the tree, so it is allowed only on a
+	// tree Jail Deck built itself, never one a jail's root filled (JD-061).
+	Built string `json:"built,omitempty" enums:"release,derived,refreshed,jail"`
+}
+
+// BuiltProperty is the ZFS user property that records how a template was made
+// (#252). Kept in ZFS, as everything about a template is (JD-011).
+const BuiltProperty = "jaildeck:built"
+
+// How a template was made.
+const (
+	// BuiltRelease is extracted from a release's base.txz.
+	BuiltRelease = "release"
+	// BuiltDerived is a clone of another template plus packages, by pkg -c.
+	BuiltDerived = "derived"
+	// BuiltRefreshed is a clone of another template, brought to its
+	// release's current patch level and its packages upgraded.
+	BuiltRefreshed = "refreshed"
+	// BuiltJail is promoted from a jail: whatever that jail's root left in
+	// it. Never refreshed.
+	BuiltJail = "jail"
+)
+
+// Refreshable is whether a refresh may run freebsd-update and pkg as root on
+// a clone of this template: only when Jail Deck built the tree itself.
+func (t Template) Refreshable() bool {
+	switch t.Built {
+	case BuiltRelease, BuiltDerived, BuiltRefreshed:
+		return true
+	}
+	return false
 }
 
 // ReadySnapshot is the snapshot name that marks a template usable (JD-007).

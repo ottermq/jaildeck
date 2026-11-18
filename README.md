@@ -314,7 +314,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `DELETE /api/retained/{name}?confirm={name}` | destroy a retained dataset and its snapshots |
 | `GET /api/templates` | templates, their readiness and their lineage |
 | `GET /api/templates/{name}` | one, with every jail and template cloned from it |
-| `PUT /api/templates/{name}` | derive one from another, plus packages |
+| `PUT /api/templates/{name}` | derive one from another, plus packages; prepare one from a release; or refresh one into a new template, brought to its release's current patch level with every package upgraded |
 | `DELETE /api/templates/{name}` | destroy one, refusing while jails are cloned from it |
 | `POST /api/jails/{name}/template` | clone a configured jail as a template |
 | `POST /api/jails/{name}/reclone` | replace its root from a newer template, keeping its children |

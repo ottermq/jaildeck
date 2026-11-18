@@ -182,7 +182,7 @@ func (s *Service) prepare(ctx context.Context, name, release, arch string) {
 	if !s.update(ctx, name, release, root) {
 		return
 	}
-	s.seal(ctx, name)
+	s.seal(ctx, name, BuiltRelease)
 }
 
 // fetch is the first stage, skipped when the archive is already there: that is
@@ -238,10 +238,14 @@ func (s *Service) update(ctx context.Context, name, release, root string) bool {
 // seal takes the @base snapshot, which is the whole of what makes a template
 // usable (JD-007). It is last for that reason: until it runs, every stage
 // before it has left something that is honestly not ready.
-func (s *Service) seal(ctx context.Context, name string) bool {
+func (s *Service) seal(ctx context.Context, name, built string) bool {
 	s.running.step(name, StateUpdating, "snapshotting the finished template")
 
-	err := s.storage.Seal(ctx, name)
+	// Marked first, so a ready template always says how it was made (#252).
+	err := s.storage.Mark(ctx, name, built)
+	if err == nil {
+		err = s.storage.Seal(ctx, name)
+	}
 	if err != nil {
 		s.logOperation(ctx, OperationSeal, name, "", err)
 	}

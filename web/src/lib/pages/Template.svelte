@@ -5,7 +5,8 @@ import VulnBadge from '../components/VulnBadge.svelte'
 import VulnPanel from '../components/VulnPanel.svelte'
 import { userlandTitle } from '../osversion'
 import { onLive, aboutWork } from '../stores/events.svelte'
-import { getTemplate, listTemplates, classifyClones, removeTemplate } from '../stores/templates.svelte'
+import { getTemplate, listTemplates, classifyClones, removeTemplate, refreshTemplate } from '../stores/templates.svelte'
+import { builtLabel, refreshRefusal, suggestedName } from '../refresh'
 import type { Template, TemplateDetail, Blocked } from '../stores/templates.svelte'
 import { listJails } from '../stores/jails.svelte'
 import type { JailData } from '../stores/jails.svelte'
@@ -79,6 +80,42 @@ let clones = $derived(
 let holds = $derived(template?.dependents.holds ?? [])
 let parent = $derived(template?.parent ?? '')
 let removable = $derived(template !== null && (template.dependents.clones.length + holds.length) === 0)
+
+// ---- refreshing (#252) -------------------------------------------------
+
+// A new template from this one's @base, brought to its release's current patch
+// level with every package upgraded. This template is never changed, so the
+// jails cloned from it are unaffected; moving one is a reclone, on its page.
+let refusal = $derived(template ? refreshRefusal(template) : '')
+let refreshing = $state(false)
+let refreshName = $state('')
+let refreshError = $state('')
+let refreshBusy = $state(false)
+
+function startRefresh() {
+    if (!template) return
+    refreshName = suggestedName(template)
+    refreshError = ''
+    refreshing = true
+}
+
+async function refresh(event: Event) {
+    event.preventDefault()
+    if (!template || refreshBusy) return
+    refreshBusy = true
+    refreshError = ''
+    try {
+        const started = await refreshTemplate(refreshName.trim(), template.name)
+        // The new template is the one to watch: its page polls while it runs.
+        navigate(`/templates/${encodeURIComponent(started.name)}`)
+    } catch (err) {
+        refreshError = err instanceof ApiError
+            ? err.statusText ?? 'Could not start the refresh'
+            : 'Could not reach Jail Deck'
+    } finally {
+        refreshBusy = false
+    }
+}
 
 // ---- removing ---------------------------------------------------------
 
@@ -157,6 +194,9 @@ async function remove() {
             {/if}
             <span>{formatBytes(template.used)} used</span>
             <span>{formatBytes(template.referenced)} referenced</span>
+            {#if builtLabel(template)}
+                <span data-built>{builtLabel(template)}</span>
+            {/if}
             {#if parent}
                 <span>derived from
                     <a href={`/templates/${encodeURIComponent(parent)}`}
@@ -167,10 +207,43 @@ async function remove() {
             {/if}
             </p>
         </div>
-        <button type="button" class="btn btn--small btn--danger" disabled={busy} onclick={remove}>
-            {busy ? 'Removing…' : 'Remove'}
-        </button>
+        <div class="head-actions">
+            <button type="button" class="btn btn--small" data-action="refresh"
+                    disabled={refusal !== '' || refreshing} title={refusal || undefined} onclick={startRefresh}>
+                Refresh
+            </button>
+            <button type="button" class="btn btn--small btn--danger" disabled={busy} onclick={remove}>
+                {busy ? 'Removing…' : 'Remove'}
+            </button>
+        </div>
     </header>
+
+    {#if refreshing}
+        <form class="panel refresh" onsubmit={refresh} data-form="refresh">
+            <h2>Refresh into a new template</h2>
+            <p class="hint">
+                A clone of <code>{template.name}@base</code>, brought to its release's current patch
+                level with <code>freebsd-update</code> and every package upgraded. It takes a few
+                minutes. <strong>{template.name} itself is not changed</strong>, nor is any jail cloned
+                from it: moving a jail onto the new template is a reclone, on the jail's page.
+            </p>
+            <div class="field">
+                <label for="refresh-name">New template's name</label>
+                <input id="refresh-name" bind:value={refreshName} autocomplete="off" spellcheck="false" required />
+            </div>
+            {#if refreshError}
+                <p class="notice notice--error" role="alert">{refreshError}</p>
+            {/if}
+            <div class="form__actions">
+                <button type="button" class="btn btn--small" onclick={() => (refreshing = false)}>Cancel</button>
+                <button type="submit" class="btn btn--small btn--primary" disabled={refreshBusy || !refreshName.trim()}>
+                    {refreshBusy ? 'Starting…' : 'Refresh'}
+                </button>
+            </div>
+        </form>
+    {:else if refusal && template.ready && !template.running}
+        <p class="hint refusal-note" data-refusal>{refusal}</p>
+    {/if}
 
     {#if removeError}
         <p class="notice notice--error" role="alert">{removeError}</p>
@@ -319,6 +392,38 @@ async function remove() {
 {/if}
 
 <style>
+.head-actions {
+    display: flex;
+    gap: var(--space-2);
+    align-items: flex-start;
+}
+
+.refresh .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    max-width: 24rem;
+    margin-top: var(--space-3);
+}
+
+.refresh .hint,
+.refusal-note {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.refresh .form__actions {
+    display: flex;
+    gap: var(--space-2);
+    justify-content: flex-end;
+    margin-top: var(--space-3);
+}
+
+.refusal-note {
+    margin-top: var(--space-2);
+    max-width: 60rem;
+}
+
 .crumbs {
     display: flex;
     gap: var(--space-2);

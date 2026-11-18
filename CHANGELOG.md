@@ -22,7 +22,14 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
 
+- **Refresh a template** (#252, JD-063). A template's userland and packages stopped at the day it was sealed, and patching one in place changed nothing a clone gets. A refresh builds a **new** template from another's `@base`: `freebsd-update` brings it to its release's current patch level, and `pkg upgrade` upgrades every package. The parent is never changed, so the jails cloned from it are unaffected, and moving one onto the new template is a reclone. It takes minutes, so it answers `202` and the template is watched as a release is. **A refresh runs `freebsd-update` and `pkg` as root on the tree, so it's allowed only on a template Jail Deck built.** Every template Jail Deck makes now records how in a `jaildeck:built` ZFS property (`release`, `derived`, `refreshed` or `jail`), and a template made from a jail is refused. The template page has a Refresh button.
+- **Upgrading:** templates made before this have no `jaildeck:built` property, so they're refused a refresh until marked by hand, once each, after checking how they were made: `zfs set jaildeck:built=derived <dataset>` (or `release`).
 - **A template is judged by its `@base`, not its live tree** (#251). A jail is cloned from `@base`, so that's what the FreeBSD versions check and the package audit now read. A template updated in place after it was sealed used to read as current, while every jail cloned from it started where `@base` was, which could be several patches older.
+
+### API
+
+- `PUT /api/templates/{name}` takes `refresh: true` with `from` (#252), and answers `202`.
+- `GET /api/templates` and `GET /api/templates/{name}`: `built`, how Jail Deck made the template.
 
 ## v0.34.0 — 2026-11-17
 

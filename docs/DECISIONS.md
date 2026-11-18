@@ -2874,6 +2874,10 @@ That makes this the first time the root process looks inside a jail's files from
 - **A file read per jail and template per listing,** and one `freebsd-version -k` per listing. The dashboard reads the versions at most once a minute.
 - **Stopped jails are read too.** Their files are there, and a stopped jail is started one day. That means the host opens files a jail controls even while nothing runs in it, which is exactly what the rule above is for.
 
+### A template is read at its `@base` (added 2026-11-18, #251)
+
+A jail is cloned from a template's `@base` (JD-007), so that's what a template's userland and packages are judged by: `<mountpoint>/.zfs/snapshot/base`, for this check and for the package audit (JD-061). A template still being built has no `@base` and no clones, and its live tree is read. Reading the live tree had hidden a real case: a release template updated in place with `freebsd-update -b` read as one patch behind, while its `@base`, and so every new clone, was four behind. `.zfs/snapshot` is readable with the default `snapdir=hidden`, and through a read-only snapshot `pkg` as `nobody` reads the package database just as it does a live tree.
+
 ## JD-061 — What a Jail Controls Is Parsed by Nobody
 
 **Status:** Locked — 2026-11-17.

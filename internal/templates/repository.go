@@ -38,9 +38,12 @@ type TemplateStorage interface {
 	// cloned from any of its snapshots, and the holds on them. Facts, not a
 	// judgement -- whether they are a reason to refuse is this package's rule.
 	Dependents(ctx context.Context, name string) (Dependents, error)
-	// Destroy removes the template and its snapshots. It does not check
-	// anything: Dependents is asked first, by the service.
+	// Destroy removes the template and its snapshots, and records its name
+	// as removed (#268). It does not check anything: Dependents is asked
+	// first, by the service.
 	Destroy(ctx context.Context, name string) error
+	// Removed names the templates removed before, oldest first (#268).
+	Removed(ctx context.Context) ([]string, error)
 }
 
 // Dependents is what would be taken, or broken, by destroying a template.

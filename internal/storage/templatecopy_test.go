@@ -3,7 +3,9 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -115,5 +117,46 @@ func TestRecordOrphans(t *testing.T) {
 		if template.Name == "15.1-RELEASE" && !reflect.DeepEqual(template.Orphans, []string{"binutils", "gmp"}) {
 			t.Errorf("listed %+v", template)
 		}
+	}
+}
+
+// Removing a template records its name on the templates parent (#268),
+// once and most recent last, so a refresh can avoid suggesting it.
+func TestDestroyRecordsTheRemovedName(t *testing.T) {
+	system := withConfiguredJail()
+	system.properties = append(system.properties, Property{
+		Dataset: "tank/jails/templates", Name: "jaildeck:removed-templates", Value: "15.1-RELEASE,old"})
+	source := NewTemplateSource(NewService(system, &fakeLogger{}, "tank"))
+
+	if err := source.Destroy(context.Background(), "15.1-RELEASE"); err != nil {
+		t.Fatal(err)
+	}
+	want := "zfs set jaildeck:removed-templates=old,15.1-RELEASE tank/jails/templates"
+	if len(system.ran) != 2 || system.ran[1] != want {
+		t.Errorf("ran %q, want the destroy then %q", system.ran, want)
+	}
+	removed, err := source.Removed(context.Background())
+	if err != nil || !reflect.DeepEqual(removed, []string{"old", "15.1-RELEASE"}) {
+		t.Errorf("Removed = %q, %v", removed, err)
+	}
+}
+
+// The list is a naming hint, not a history: it keeps the newest names.
+func TestRemovedNamesAreBounded(t *testing.T) {
+	system := withConfiguredJail()
+	names := make([]string, 0, 40)
+	for i := range 40 {
+		names = append(names, fmt.Sprintf("t%02d", i))
+	}
+	system.properties = append(system.properties, Property{
+		Dataset: "tank/jails/templates", Name: "jaildeck:removed-templates", Value: strings.Join(names, ",")})
+	source := NewTemplateSource(NewService(system, &fakeLogger{}, "tank"))
+
+	if err := source.Destroy(context.Background(), "15.1-RELEASE"); err != nil {
+		t.Fatal(err)
+	}
+	removed, _ := source.Removed(context.Background())
+	if len(removed) != 32 || removed[31] != "15.1-RELEASE" || removed[0] != "t09" {
+		t.Errorf("kept %d, first %q, last %q", len(removed), removed[0], removed[len(removed)-1])
 	}
 }

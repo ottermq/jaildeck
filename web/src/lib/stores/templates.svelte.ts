@@ -88,6 +88,9 @@ export interface Dependents {
 
 export interface TemplateDetail extends Template {
     dependents: Dependents
+    // Templates removed before, oldest first (#268). A backup may still hold
+    // a copy of one, which a new template of that name cannot continue.
+    removed_names: string[]
 }
 
 export interface RetainedDataset {

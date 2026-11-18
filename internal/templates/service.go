@@ -509,6 +509,11 @@ func blockedReason(dependents Dependents) string {
 type Detail struct {
 	Template
 	Dependents Dependents `json:"dependents"`
+	// RemovedNames are the templates removed before, oldest first (#268).
+	// A refresh suggests a name that is not among them: a backup may still
+	// hold a copy of one, which a new template of that name cannot
+	// continue. Never null.
+	RemovedNames []string `json:"removed_names"`
 }
 
 // Get returns one template by name.
@@ -540,5 +545,11 @@ func (s *Service) Get(ctx context.Context, name string) (Detail, error) {
 	if dependents.Holds == nil {
 		dependents.Holds = make([]string, 0)
 	}
-	return Detail{Template: template, Dependents: dependents}, nil
+	// Only a naming hint: a failed read leaves it empty rather than failing
+	// the page.
+	removed, err := s.storage.Removed(ctx)
+	if err != nil || removed == nil {
+		removed = make([]string, 0)
+	}
+	return Detail{Template: template, Dependents: dependents, RemovedNames: removed}, nil
 }

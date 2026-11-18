@@ -83,6 +83,15 @@ const RefreshedFromProperty = "jaildeck:refreshed-from"
 // zfs inherit, which lifts the refusal at once.
 const SupersededProperty = "jaildeck:superseded-by"
 
+// RemovedProperty lists, comma-separated and oldest first, the templates
+// removed from under a templates parent dataset (#268), so a new template
+// is not suggested a name a backup may still hold an unrelated copy of.
+// Kept on the parent, the one dataset that outlives its templates.
+const RemovedProperty = "jaildeck:removed-templates"
+
+// RemovedKept bounds that list: it is a hint for naming, not a history.
+const RemovedKept = 32
+
 // OrphansProperty lists, comma-separated, the packages a refresh left that
 // nothing depends on (#264).
 const OrphansProperty = "jaildeck:orphans"

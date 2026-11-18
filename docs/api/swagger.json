@@ -7170,6 +7170,13 @@
                     "description": "Referenced is the whole userland; for a derived template most of it is\nstill shared with its parent, so Used is what the packages cost.",
                     "type": "integer"
                 },
+                "removed_names": {
+                    "description": "RemovedNames are the templates removed before, oldest first (#268).\nA refresh suggests a name that is not among them: a backup may still\nhold a copy of one, which a new template of that name cannot\ncontinue. Never null.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "running": {
                     "description": "Running is the step executing right now, absent when nothing is. Held in\nmemory and never written down: a restart kills the work, so a marker\nthat survived it would be claiming something false.",
                     "allOf": [

@@ -3001,3 +3001,11 @@ So a refresh now guards the one way a later autoremove could take a package inst
 - **Orphans are reported, never removed.** The packages installed as a dependency that nothing depends on (`%a == 1 && %#r == 0`) are recorded in `jaildeck:orphans` on the new template, which audits as `set-properties`, and shown on its page. A failed read costs only the report.
 
 Derive is not guarded: it installs into its parent's clone and upgrades nothing.
+
+### Amended: a removed template's name is not suggested again (#268, 2026-11-18)
+
+A refresh suggested `<name>-YYYYMMDD`, so a refresh removed and redone the same day suggested the removed one's name. The new template is a full copy with no snapshot in common with the old one, and a replication tool that already received the old one under that name cannot continue it: on the reference host zrepl stopped replicating both templates ("no common snapshot") until the stale copies were destroyed on the backup side. Jail Deck never touches the backup side.
+
+- **Removed names are recorded in ZFS,** in `jaildeck:removed-templates` on the templates parent dataset (`<pool>/jails/templates`), oldest first, at most 32. The parent is the one dataset that outlives its templates, and it keeps the rule that a template's state lives in ZFS (JD-011). The state directory was not an option: it holds the front's state file alone (JD-056). The templates beneath inherit the property; every property here is read locally, so none of them claims it.
+- **The template detail carries `removed_names`,** and the refresh form suggests the first of `-YYYYMMDD`, `-YYYYMMDD-2`, `-YYYYMMDD-3`… that no template has and none had.
+- **A removed name can still be chosen,** with a note saying why the backup may stop replicating it.

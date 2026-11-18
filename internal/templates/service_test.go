@@ -40,6 +40,14 @@ type stubStorage struct {
 	superseded []string
 	// orphans is each RecordOrphans, by template (#264).
 	orphans map[string][]string
+	// removed is what Removed answers (#268).
+	removed []string
+}
+
+func (s *stubStorage) Removed(context.Context) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.removed...), nil
 }
 
 func (s *stubStorage) RecordOrphans(_ context.Context, name string, orphans []string) error {
@@ -763,6 +771,21 @@ func TestGetNeverReturnsNullDependents(t *testing.T) {
 	}
 	if detail.Dependents.Clones == nil || detail.Dependents.Holds == nil {
 		t.Errorf("dependents = %+v, want empty lists rather than nil", detail.Dependents)
+	}
+	if detail.RemovedNames == nil {
+		t.Error("removed_names is nil, want an empty list")
+	}
+}
+
+// The detail carries the names of removed templates, for the refresh form to
+// avoid (#268).
+func TestGetCarriesRemovedNames(t *testing.T) {
+	storage := removable()
+	storage.removed = []string{"pg18-20261118"}
+	detail, err := NewService(storage, &stubPackages{}, &stubReleases{}, &fakeLogger{}).
+		Get(context.Background(), "postgres-16")
+	if err != nil || !slices.Equal(detail.RemovedNames, []string{"pg18-20261118"}) {
+		t.Errorf("removed_names = %v, %v", detail.RemovedNames, err)
 	}
 }
 

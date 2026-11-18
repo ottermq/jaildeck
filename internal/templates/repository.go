@@ -27,6 +27,9 @@ type TemplateStorage interface {
 	// Copy makes name an independent copy of parentSnapshot, recording
 	// parent as where it came from, and returns where it is mounted (#258).
 	Copy(ctx context.Context, parentSnapshot, name, parent string) (string, error)
+	// Supersede records that name has been replaced by another template,
+	// in its jaildeck:superseded-by user property (#259).
+	Supersede(ctx context.Context, name, by string) error
 
 	// Dependents names what is holding a template in place: the datasets
 	// cloned from any of its snapshots, and the holds on them. Facts, not a

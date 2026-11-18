@@ -378,7 +378,9 @@ func (m metricsVersions) Versions(ctx context.Context) (metrics.OSVersions, erro
 	}
 	for _, template := range prepared {
 		if template.Userland != nil {
-			out.Templates = append(out.Templates, metrics.Userland{Name: template.Name, Standing: *template.Userland})
+			out.Templates = append(out.Templates, metrics.Userland{
+				Name: template.Name, Standing: *template.Userland, SupersededBy: template.SupersededBy,
+			})
 		}
 	}
 	return out, nil

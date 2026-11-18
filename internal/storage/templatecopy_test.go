@@ -63,3 +63,30 @@ func TestCopyStopsWhereItFails(t *testing.T) {
 		t.Errorf("went on after the receive failed: %q", system.ran)
 	}
 }
+
+// Supersede marks the parent, and the listing reads the mark back (#259).
+func TestSupersedeMarksAndListsTheParent(t *testing.T) {
+	system := withConfiguredJail()
+	source := NewTemplateSource(NewService(system, &fakeLogger{}, "tank"))
+
+	if err := source.Supersede(context.Background(), "15.1-RELEASE", "15.1-RELEASE-p7"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"zfs set jaildeck:superseded-by=15.1-RELEASE-p7 tank/jails/templates/15.1-RELEASE"}
+	if !reflect.DeepEqual(system.ran, want) {
+		t.Errorf("ran %q, want %q", system.ran, want)
+	}
+	listed, err := source.Templates(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, template := range listed {
+		if template.Name == "15.1-RELEASE" {
+			if template.SupersededBy != "15.1-RELEASE-p7" {
+				t.Errorf("listed %+v", template)
+			}
+			return
+		}
+	}
+	t.Errorf("not listed: %+v", listed)
+}

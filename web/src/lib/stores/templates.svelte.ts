@@ -40,6 +40,16 @@ export interface Template {
     // How Jail Deck made it (#252), from its jaildeck:built property. Absent
     // on a template made before that, or by hand.
     built?: 'release' | 'derived' | 'refreshed' | 'jail'
+    // The template a refresh replaced this one with (#259). The server
+    // refuses a superseded template as the source of a new jail, a reclone,
+    // a derive or a refresh; the jails already cloned from it carry on.
+    superseded_by?: string
+}
+
+// cloneable is whether a template is on offer as a source: ready, with its
+// @base, and not superseded (#259). The server refuses the rest anyway.
+export function cloneable(t: Template): boolean {
+    return t.ready && !!t.snapshot && !t.superseded_by
 }
 
 // The states a template reports, in the order it passes through them.

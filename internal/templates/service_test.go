@@ -36,6 +36,26 @@ type stubStorage struct {
 	marked []string
 	// copied is each Copy (#258).
 	copied []string
+	// superseded is each Supersede, "name>by" (#259).
+	superseded []string
+}
+
+func (s *stubStorage) Supersede(_ context.Context, name, by string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.superseded = append(s.superseded, name+">"+by)
+	for i, template := range s.templates {
+		if template.Name == name {
+			s.templates[i].SupersededBy = by
+		}
+	}
+	return nil
+}
+
+func (s *stubStorage) supersededTemplates() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.superseded...)
 }
 
 func (s *stubStorage) Mark(_ context.Context, name, built string) error {

@@ -197,6 +197,15 @@ async function remove() {
             {#if builtLabel(template)}
                 <span data-built>{builtLabel(template)}</span>
             {/if}
+            {#if template.superseded_by}
+                {@const by = template.superseded_by}
+                <span class="badge badge--stopped" data-superseded>superseded by
+                    <a href={`/templates/${encodeURIComponent(by)}`}
+                       onclick={(e) => onNavClick(e, `/templates/${encodeURIComponent(by)}`)}>
+                        {by}
+                    </a>
+                </span>
+            {/if}
             {#if parent}
                 <span>{template.built === 'refreshed' ? 'refreshed from' : 'derived from'}
                     <a href={`/templates/${encodeURIComponent(parent)}`}
@@ -322,7 +331,12 @@ async function remove() {
     <section class="panel">
         <h2>What depends on this</h2>
 
-        {#if removable}
+        {#if removable && template.superseded_by}
+            <p class="notice">
+                Nothing any more. It has been superseded by {template.superseded_by},
+                so it can be removed.
+            </p>
+        {:else if removable}
             <p class="notice">
                 Nothing. This template can be removed.
             </p>

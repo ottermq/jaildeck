@@ -255,6 +255,16 @@ async function remove() {
         <p class="hint refusal-note" data-refusal>{refusal}</p>
     {/if}
 
+    {#if template.orphans?.length}
+        <p class="notice" data-orphans>
+            The refresh that made this template left {template.orphans.length === 1 ? 'a package' : `${template.orphans.length} packages`}
+            that nothing depends on: {template.orphans.join(', ')}. Jail Deck never removes packages
+            from a template, because <code>pkg autoremove</code> has proposed taking an explicitly
+            installed one along with them. They cost space, not correctness; a later refresh may
+            no longer pull them in.
+        </p>
+    {/if}
+
     {#if removeError}
         <p class="notice notice--error" role="alert">{removeError}</p>
     {:else if blocked}

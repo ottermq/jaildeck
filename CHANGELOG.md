@@ -20,6 +20,14 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+- **A refresh keeps explicitly installed packages explicit, and reports orphans** (#264, JD-063). It reads the packages installed on purpose before and after `pkg upgrade`; any the upgrade left marked automatic is marked explicit again (`restore-explicit` in the audit log), so a later `pkg autoremove` cannot take it. Packages left with nothing depending on them are recorded in `jaildeck:orphans` and shown on the template's page, never removed. A refresh that cannot read the package list stops before upgrading (`read-packages`).
+
+### API
+
+- `Template` gains `orphans`, absent unless the refresh that made the template left any.
+
 ## v0.38.0 — 2026-11-18
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.38.0)

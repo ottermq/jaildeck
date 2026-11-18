@@ -2,6 +2,8 @@ package freebsd
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/ottermq/jaildeck/internal/system"
@@ -44,6 +46,39 @@ func (a *Adapter) Upgrade(ctx context.Context, root string) (templates.Result, e
 	_, err := a.runHost(ctx, cmd)
 	return templates.Result{Root: root, Command: cmd.String()}, err
 }
+
+// Explicit names the packages installed in root on purpose (#264).
+func (a *Adapter) Explicit(ctx context.Context, root string) ([]string, error) {
+	return a.queryPackages(ctx, root, "%a == 0")
+}
+
+// Orphans names the packages in root installed as a dependency that nothing
+// depends on any more (#264): what pkg autoremove would take.
+func (a *Adapter) Orphans(ctx context.Context, root string) ([]string, error) {
+	return a.queryPackages(ctx, root, "%a == 1 && %#r == 0")
+}
+
+func (a *Adapter) queryPackages(ctx context.Context, root, expression string) ([]string, error) {
+	cmd := system.Command{Name: "pkg", Args: []string{"-c", root, "query", "-e", expression, "%n"}, Timeout: queryTimeout}
+	result, err := a.runHost(ctx, cmd)
+	if err != nil {
+		return nil, err
+	}
+	names := strings.Fields(result.Stdout)
+	slices.Sort(names)
+	return names, nil
+}
+
+// MarkExplicit marks pkg as installed on purpose again (#264). One package a
+// call, so the audit log names each one.
+func (a *Adapter) MarkExplicit(ctx context.Context, root, pkg string) (templates.Result, error) {
+	cmd := system.Command{Name: "pkg", Args: []string{"-c", root, "set", "-y", "-A", "0", pkg}, Timeout: queryTimeout}
+	_, err := a.runHost(ctx, cmd)
+	return templates.Result{Root: root, Command: cmd.String()}, err
+}
+
+// queryTimeout bounds a local pkg database read or flag change: no mirror.
+const queryTimeout = time.Minute
 
 // packageTimeout is generous: pkg fetches from a mirror and a slow link is not
 // a failure. It is still bounded, because a request that never returns is

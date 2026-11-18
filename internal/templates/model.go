@@ -63,6 +63,11 @@ type Template struct {
 	// is refused as the source of a new jail, a reclone, a derive or a
 	// refresh; the jails already cloned from it are not affected.
 	SupersededBy string `json:"superseded_by,omitempty"`
+	// Orphans are the packages the refresh that made this template left
+	// installed with nothing depending on them, from its jaildeck:orphans
+	// user property (#264). Reported, never removed: removing them is the
+	// operator's call (JD-063).
+	Orphans []string `json:"orphans,omitempty"`
 }
 
 // BuiltProperty is the ZFS user property that records how a template was made
@@ -77,6 +82,10 @@ const RefreshedFromProperty = "jaildeck:refreshed-from"
 // on the parent once its refresh is sealed; cleared by hand with
 // zfs inherit, which lifts the refusal at once.
 const SupersededProperty = "jaildeck:superseded-by"
+
+// OrphansProperty lists, comma-separated, the packages a refresh left that
+// nothing depends on (#264).
+const OrphansProperty = "jaildeck:orphans"
 
 // How a template was made.
 const (

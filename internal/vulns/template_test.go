@@ -80,3 +80,19 @@ func TestAuditTemplateWaitsForAFullAudit(t *testing.T) {
 		t.Errorf("a: %+v", got)
 	}
 }
+
+func TestForgetTemplate(t *testing.T) {
+	src := &stubSource{installed: map[string][]Package{"/a": pkgs("expat"), "/b": pkgs("zstd")}, dbUpdated: now}
+	s := newTestService(src, stubTargets{templates: []Target{{"a", "/a"}, {"b", "/b"}}})
+	before := s.Audit(context.Background())
+	s.ForgetTemplate("a")
+	if got := s.Template("a"); got.Status != Unchecked {
+		t.Errorf("a: %+v", got)
+	}
+	if got := s.Template("b"); got.Status != Clean {
+		t.Errorf("b: %+v", got)
+	}
+	if len(before.Templates) != 2 {
+		t.Errorf("the published snapshot changed: %+v", before.Templates)
+	}
+}

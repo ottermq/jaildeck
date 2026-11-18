@@ -253,6 +253,21 @@ func (s *Service) AuditTemplate(ctx context.Context, name, root string) {
 	log.Info("audited a new template", slog.String("template", name), slog.String("status", string(report.Status)))
 }
 
+// ForgetTemplate drops a removed template from the last audit (#264), so a
+// template made later under its name reads unchecked until it is audited,
+// and its metric goes with it.
+func (s *Service) ForgetTemplate(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := make([]Named, 0, len(s.snap.Templates))
+	for _, t := range s.snap.Templates {
+		if t.Name != name {
+			kept = append(kept, t)
+		}
+	}
+	s.snap.Templates = kept
+}
+
 // tree audits the packages installed under root.
 func (s *Service) tree(ctx context.Context, log *slog.Logger, root string) Report {
 	if root == "" {

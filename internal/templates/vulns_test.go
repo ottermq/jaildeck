@@ -2,22 +2,32 @@ package templates
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/ottermq/jaildeck/internal/system"
 	"github.com/ottermq/jaildeck/internal/vulns"
 )
 
 type stubAudit map[string]vulns.Summary
 
 func (stubAudit) AuditTemplate(context.Context, string, string) {}
+func (stubAudit) ForgetTemplate(string)                         {}
 
 // recordingAudit records each template audited as soon as it was sealed.
 type recordingAudit struct {
-	mu      sync.Mutex
-	audited []string
+	mu        sync.Mutex
+	audited   []string
+	forgotten []string
+}
+
+func (r *recordingAudit) ForgetTemplate(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.forgotten = append(r.forgotten, name)
 }
 
 func (r *recordingAudit) Template(string) vulns.Summary {
@@ -136,5 +146,35 @@ func TestListGivesEachTemplateWithATreeItsLastAudit(t *testing.T) {
 	}
 	if seen != 2 {
 		t.Fatalf("listed %d of the two templates", seen)
+	}
+}
+
+// A removed template's audit goes with it (#264): a template made later
+// under the same name must not show it.
+func TestRemoveForgetsTheAudit(t *testing.T) {
+	audit := &recordingAudit{}
+	service := NewService(removable(), &stubPackages{}, &stubReleases{}, &fakeLogger{})
+	service.SetVulnerabilities(audit)
+	if _, err := service.Remove(context.Background(), "postgres-16", "postgres-16"); err != nil {
+		t.Fatal(err)
+	}
+	audit.mu.Lock()
+	defer audit.mu.Unlock()
+	if !slices.Equal(audit.forgotten, []string{"postgres-16"}) {
+		t.Errorf("forgot %v", audit.forgotten)
+	}
+}
+
+// freebsd-update says why it failed on standard output (#264); the audit
+// entry carries the end of it when standard error is empty.
+func TestAFailedStageCarriesItsOutput(t *testing.T) {
+	logger := &fakeLogger{}
+	service := NewService(&stubStorage{}, &stubPackages{}, &stubReleases{}, logger)
+	err := &system.CommandError{Command: "freebsd-update", Err: errors.New("exit status 1"),
+		Result: system.CommandResult{ExitCode: 1, Stdout: "Fetching metadata signature...\n\nfiles/abc.gz not found\nFetching files failed.\n"}}
+	service.logOperation(context.Background(), OperationUpdate, "x", "freebsd-update ...", err)
+	got := logger.entries[0].Error
+	if got != "exit status 1: Fetching metadata signature... / files/abc.gz not found / Fetching files failed." {
+		t.Errorf("error %q", got)
 	}
 }

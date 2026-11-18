@@ -170,6 +170,10 @@ type stubReleases struct {
 	attempts   []string
 	unpacked   []string
 	patched    []string
+	// gate, when set, holds each Update until it is closed, counting how
+	// many are in at once (#264).
+	gate             chan struct{}
+	inFlight, peaked int
 }
 
 func (s *stubReleases) Host(context.Context) (Host, error) {
@@ -200,6 +204,14 @@ func (s *stubReleases) FetchBase(_ context.Context, release, _ string) (Result, 
 
 func (s *stubReleases) Update(_ context.Context, release, root string) (Result, error) {
 	s.mu.Lock()
+	if gate := s.gate; gate != nil {
+		s.inFlight++
+		s.peaked = max(s.peaked, s.inFlight)
+		s.mu.Unlock()
+		<-gate
+		s.mu.Lock()
+		s.inFlight--
+	}
 	defer s.mu.Unlock()
 	s.patched = append(s.patched, release)
 	if s.updateErr != nil {

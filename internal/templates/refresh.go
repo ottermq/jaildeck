@@ -75,7 +75,7 @@ func (s *Service) Refresh(ctx context.Context, name, parent string) (Template, e
 			"%s is already being built by this process; watch it rather than starting it again", name))
 	}
 	work := context.WithoutCancel(ctx)
-	go s.refresh(work, name, from.Snapshot, release)
+	go s.refresh(work, name, from.Name, from.Snapshot, release)
 
 	after, err := s.List(work)
 	if err != nil {
@@ -87,11 +87,12 @@ func (s *Service) Refresh(ctx context.Context, name, parent string) (Template, e
 
 // refresh runs the stages, each audited as it goes. A stage that fails leaves
 // the clone without @base, shown as not ready, as a failed derive does.
-func (s *Service) refresh(ctx context.Context, name, parentSnapshot, release string) {
+func (s *Service) refresh(ctx context.Context, name, parent, parentSnapshot, release string) {
 	defer s.running.stop(name)
 
-	// The clone is audited by storage, as clone-dataset, failed or not.
-	root, err := s.storage.Derive(ctx, parentSnapshot, name)
+	// A copy, not a clone (#258): a clone would keep the parent from ever
+	// being removed. Audited by storage, as copy-dataset, failed or not.
+	root, err := s.storage.Copy(ctx, parentSnapshot, name, parent)
 	if err != nil {
 		return
 	}

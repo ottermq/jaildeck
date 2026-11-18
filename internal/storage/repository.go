@@ -82,6 +82,13 @@ type StorageSystem interface {
 	// of templates/15.1-RELEASE@base -- so re-cloning one onto a newer
 	// snapshot is how a jail is upgraded.
 	CloneSnapshot(ctx context.Context, snapshot, target string) (Result, error)
+	// SendReceive copies a snapshot into a new dataset that shares nothing
+	// with it: zfs send piped into zfs receive, with no properties sent.
+	// target is <dataset>@<snapshot>, the name the copy's snapshot gets. A
+	// clone keeps its origin from ever being destroyed; a copy does not, which
+	// is what a refreshed template needs from its parent (#258). A receive
+	// into an existing dataset is refused.
+	SendReceive(ctx context.Context, snapshot, target string) (Result, error)
 	// Origin is the snapshot a dataset was cloned from, empty when it was not
 	// cloned from anything.
 	Origin(ctx context.Context, dataset string) (string, error)

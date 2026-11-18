@@ -88,10 +88,55 @@ func (s *TemplateSource) Templates(ctx context.Context) ([]templates.Template, e
 		if properties, err := s.service.UserPropertiesOf(ctx, names); err == nil {
 			for i, t := range found {
 				found[i].Built = properties[t.Dataset][templates.BuiltProperty]
+				// A refreshed template is a copy with no origin (#258),
+				// so its lineage is the one thing about it that is
+				// recorded rather than read.
+				if from := properties[t.Dataset][templates.RefreshedFromProperty]; t.Parent == "" && from != "" {
+					found[i].Parent = from
+				}
 			}
 		}
 	}
 	return found, nil
+}
+
+// copiedSnapshot is what a copy's received snapshot is called until it is
+// destroyed. Never @base: a copy is not ready until a refresh has finished
+// with it and sealed it, and a received @base would say it was.
+const copiedSnapshot = "refresh-copy"
+
+// Copy makes a template an independent copy of another's @base (#258): zfs
+// send into zfs receive, then the received snapshot destroyed, so nothing
+// holds the parent's blocks once the copy has diverged. Records the parent's
+// name, the lineage a copy cannot read from its origin. Returns where the
+// copy is mounted.
+func (s *TemplateSource) Copy(ctx context.Context, parentSnapshot, name, parent string) (string, error) {
+	pool, _, _ := strings.Cut(parentSnapshot, "/")
+	target := templateParent(pool) + "/" + name
+
+	result, err := s.service.system.SendReceive(ctx, parentSnapshot, target+"@"+copiedSnapshot)
+	s.service.logWrite(ctx, OperationCopyDataset, result, err)
+	if err != nil {
+		return "", toWriteError("copy "+parentSnapshot+" to", target, err)
+	}
+
+	result, err = s.service.system.DestroySnapshot(ctx, target, copiedSnapshot, false)
+	s.service.logWrite(ctx, OperationDestroySnapshot, result, err)
+	if err != nil {
+		return "", toWriteError("destroy the received snapshot of", target, err)
+	}
+
+	if _, err := s.service.SetUserProperties(ctx, target,
+		map[string]*string{templates.RefreshedFromProperty: &parent}); err != nil {
+		return "", err
+	}
+
+	dataset, err := s.service.datasetNamed(ctx, target)
+	if err != nil || dataset == nil {
+		return "", common.NewAppError(http.StatusInternalServerError,
+			"copied to "+target+" but cannot find where it is mounted")
+	}
+	return dataset.Mountpoint, nil
 }
 
 // Mark records how a template was made (#252).

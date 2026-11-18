@@ -36,7 +36,12 @@ func (a *Adapter) runHost(ctx context.Context, cmd system.Command) (system.Comma
 		if msg := strings.TrimSpace(result.Stderr); msg != "" {
 			err = fmt.Errorf("%w: %s", err, msg)
 		}
-		return result, &system.CommandError{Command: cmd.Name, Args: cmd.Args, Result: result, Err: err}
+		args := cmd.Args
+		if cmd.Into != nil {
+			// The whole pipe, so the error names both halves.
+			args = strings.Fields(cmd.String())[1:]
+		}
+		return result, &system.CommandError{Command: cmd.Name, Args: args, Result: result, Err: err}
 	}
 	return result, nil
 }

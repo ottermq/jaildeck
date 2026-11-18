@@ -42,6 +42,13 @@ type Command struct {
 	// reaches nobody rather than the host's root (JD-061). Nil runs it as
 	// Jail Deck.
 	Credential *syscall.Credential
+	// Into runs a second command with this one's standard output as its
+	// standard input: a pipe, without a shell. For a stream too large to
+	// hold and with no file to land in -- zfs send into zfs receive (#258).
+	// Into may not itself pipe on, detach or write to a file, and this
+	// command may not detach or set StdoutFile. Both run under this
+	// command's Timeout; Into's own is ignored.
+	Into *Command
 }
 
 func (c Command) String() string {
@@ -54,6 +61,10 @@ func (c Command) String() string {
 	if c.StdoutFile != "" {
 		sb.WriteString(" > ")
 		sb.WriteString(c.StdoutFile)
+	}
+	if c.Into != nil {
+		sb.WriteString(" | ")
+		sb.WriteString(c.Into.String())
 	}
 	return sb.String()
 }

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/ottermq/jaildeck/internal/system"
 )
@@ -226,5 +228,32 @@ func TestMountedFixture(t *testing.T) {
 	mounted, err := NewStorageAdapter(runner).Mounted(context.Background(), probe)
 	if err != nil || !mounted {
 		t.Errorf("Mounted(%s) = %v, %v; want true", probe, mounted, err)
+	}
+}
+
+// A plain send piped into a receive without -F (#258): no properties come
+// across, and an existing dataset is refused rather than overwritten.
+func TestSendReceiveIsAPipeNotAShell(t *testing.T) {
+	runner := &recordingRunner{}
+	result, err := NewStorageAdapter(runner).SendReceive(context.Background(),
+		"tank/jails/templates/app@base", "tank/jails/templates/app-new@refresh-copy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.ran) != 1 {
+		t.Fatalf("ran %d commands", len(runner.ran))
+	}
+	cmd := runner.ran[0]
+	if cmd.Name != "zfs" || !slices.Equal(cmd.Args, []string{"send", "tank/jails/templates/app@base"}) ||
+		cmd.Into == nil || cmd.Into.Name != "zfs" ||
+		!slices.Equal(cmd.Into.Args, []string{"receive", "tank/jails/templates/app-new@refresh-copy"}) {
+		t.Errorf("ran %+v", cmd)
+	}
+	if cmd.Timeout < 10*time.Minute {
+		t.Errorf("timeout %s: a copy is not a 10-second command", cmd.Timeout)
+	}
+	if result.Dataset != "tank/jails/templates/app-new" ||
+		result.Command != "zfs send tank/jails/templates/app@base | zfs receive tank/jails/templates/app-new@refresh-copy" {
+		t.Errorf("result %+v", result)
 	}
 }

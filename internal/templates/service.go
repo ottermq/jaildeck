@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ottermq/jaildeck/internal/audit"
@@ -32,6 +33,9 @@ type Service struct {
 	versions osversion.Source
 	// vulnerabilities answers each template's last package audit (#230).
 	vulnerabilities TemplateVulnerabilities
+	// audits is the audits of newly sealed templates still running, for
+	// tests to wait on.
+	audits sync.WaitGroup
 }
 
 // SetVersions gives the listing each template's userland, judged against the
@@ -41,6 +45,9 @@ func (s *Service) SetVersions(v osversion.Source) { s.versions = v }
 // TemplateVulnerabilities answers a template's last package audit (#230).
 type TemplateVulnerabilities interface {
 	Template(name string) vulns.Summary
+	// AuditTemplate audits one template's tree now, rather than at the next
+	// scheduled audit (#257).
+	AuditTemplate(ctx context.Context, name, root string)
 }
 
 // SetVulnerabilities gives the listing each template's last package audit.
@@ -226,6 +233,7 @@ func (s *Service) Derive(ctx context.Context, name, parent string, packages []st
 	if err := s.storage.Seal(ctx, name); err != nil {
 		return Template{}, false, err
 	}
+	s.auditSealed(ctx, name)
 
 	after, err := s.List(ctx)
 	if err != nil {
@@ -237,6 +245,28 @@ func (s *Service) Derive(ctx context.Context, name, parent string, packages []st
 			"the template was built but is not in the listing: "+name)
 	}
 	return derived, true, nil
+}
+
+// auditSealed audits a template that has just been sealed (#257), in the
+// background: an audit takes seconds, and neither the seal nor the answer
+// to the request waits for it. Through its @base, as every audit reads a
+// ready template (#251).
+func (s *Service) auditSealed(ctx context.Context, name string) {
+	if s.vulnerabilities == nil {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	s.audits.Add(1)
+	go func() {
+		defer s.audits.Done()
+		listed, err := s.storage.Templates(ctx)
+		if err != nil {
+			return
+		}
+		if t, ok := byName(listed, name); ok && t.Ready && hasTree(t) {
+			s.vulnerabilities.AuditTemplate(ctx, name, t.Tree())
+		}
+	}()
 }
 
 func byName(templates []Template, name string) (Template, bool) {

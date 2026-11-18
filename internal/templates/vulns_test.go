@@ -2,12 +2,98 @@ package templates
 
 import (
 	"context"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ottermq/jaildeck/internal/vulns"
 )
 
 type stubAudit map[string]vulns.Summary
+
+func (stubAudit) AuditTemplate(context.Context, string, string) {}
+
+// recordingAudit records each template audited as soon as it was sealed.
+type recordingAudit struct {
+	mu      sync.Mutex
+	audited []string
+}
+
+func (r *recordingAudit) Template(string) vulns.Summary {
+	return vulns.Summary{Status: vulns.Unchecked}
+}
+
+func (r *recordingAudit) AuditTemplate(_ context.Context, name, root string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.audited = append(r.audited, name+" at "+root)
+}
+
+func (r *recordingAudit) got() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.audited...)
+}
+
+// Every way a template is sealed audits it at once, through its @base
+// (#257): a derive, a prepare and a refresh.
+func TestASealedTemplateIsAuditedAtOnce(t *testing.T) {
+	t.Run("derive", func(t *testing.T) {
+		audit := &recordingAudit{}
+		service := NewService(release(), &stubPackages{}, &stubReleases{}, &fakeLogger{})
+		service.SetVulnerabilities(audit)
+		if _, _, err := service.Derive(context.Background(), "web", "15.1-RELEASE", []string{"nginx"}); err != nil {
+			t.Fatal(err)
+		}
+		service.audits.Wait()
+		if got := audit.got(); !slices.Equal(got, []string{"web at /usr/local/jails/templates/web/.zfs/snapshot/base"}) {
+			t.Errorf("audited %v", got)
+		}
+	})
+	t.Run("prepare", func(t *testing.T) {
+		audit := &recordingAudit{}
+		service := NewService(&stubStorage{}, &stubPackages{}, &stubReleases{}, &fakeLogger{})
+		service.SetVulnerabilities(audit)
+		if _, err := service.Prepare(context.Background(), "15.1-RELEASE", "15.1-RELEASE"); err != nil {
+			t.Fatal(err)
+		}
+		waitIdle(t, service, "15.1-RELEASE")
+		service.audits.Wait()
+		if got := audit.got(); len(got) != 1 || !strings.HasPrefix(got[0], "15.1-RELEASE at ") || !strings.HasSuffix(got[0], "/.zfs/snapshot/base") {
+			t.Errorf("audited %v", got)
+		}
+	})
+	t.Run("refresh", func(t *testing.T) {
+		audit := &recordingAudit{}
+		_, _, _, service := refreshable(BuiltDerived)
+		service.SetVulnerabilities(audit)
+		if _, err := service.Refresh(context.Background(), "pg18-p7", "pg18"); err != nil {
+			t.Fatal(err)
+		}
+		waitIdle(t, service, "pg18-p7")
+		service.audits.Wait()
+		if got := audit.got(); !slices.Equal(got, []string{"pg18-p7 at /usr/local/jails/templates/pg18-p7/.zfs/snapshot/base"}) {
+			t.Errorf("audited %v", got)
+		}
+	})
+}
+
+// A template that was not sealed has nothing to audit yet.
+func TestAFailedSealAuditsNothing(t *testing.T) {
+	audit := &recordingAudit{}
+	_, releases, _, service := refreshable(BuiltDerived)
+	releases.updateErr = context.DeadlineExceeded
+	service.SetVulnerabilities(audit)
+	if _, err := service.Refresh(context.Background(), "pg18-p7", "pg18"); err != nil {
+		t.Fatal(err)
+	}
+	waitIdle(t, service, "pg18-p7")
+	service.audits.Wait()
+	if got := audit.got(); len(got) != 0 {
+		t.Errorf("audited %v", got)
+	}
+}
 
 func (s stubAudit) Template(name string) vulns.Summary {
 	if summary, ok := s[name]; ok {

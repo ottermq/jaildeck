@@ -210,6 +210,49 @@ func (s *Service) Audit(ctx context.Context) Snapshot {
 	return snap
 }
 
+// AuditTemplate audits one template that has just been sealed, and puts it
+// in the last audit beside the others (#257). Without it, a template sealed
+// between two audits read as unchecked for up to an hour -- a refresh, whose
+// whole point is fewer vulnerable packages, most of all.
+//
+// It waits for an audit already running rather than running beside it: a
+// full audit lists the templates when it starts, and finishing after this
+// one would publish a snapshot without the new template in it. Waiting, this
+// runs after it and adds the template, or a full audit that starts later
+// lists it anyway.
+func (s *Service) AuditTemplate(ctx context.Context, name, root string) {
+	s.auditing.Lock()
+	defer s.auditing.Unlock()
+	log := common.Logger(ctx, "vulns")
+
+	var report Report
+	path, _, err := s.source.Database(ctx)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		report = unknown(fmt.Sprintf("there is no vulnerability database at %s", path))
+	case err != nil:
+		report = unknown(bounded("the vulnerability database could not be read: " + err.Error()))
+	default:
+		report = s.tree(ctx, log, root)
+	}
+	if report.Status == Clean || report.Status == Vulnerable {
+		finished := s.now()
+		report.Checked = &finished
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// A new slice, since a published snapshot is never changed in place.
+	templates := make([]Named, 0, len(s.snap.Templates)+1)
+	for _, t := range s.snap.Templates {
+		if t.Name != name {
+			templates = append(templates, t)
+		}
+	}
+	s.snap.Templates = append(templates, Named{Name: name, Report: report})
+	log.Info("audited a new template", slog.String("template", name), slog.String("status", string(report.Status)))
+}
+
 // tree audits the packages installed under root.
 func (s *Service) tree(ctx context.Context, log *slog.Logger, root string) Report {
 	if root == "" {

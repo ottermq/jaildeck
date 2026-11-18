@@ -2970,3 +2970,12 @@ So a refresh now copies:
 
 Templates refreshed by v0.35.0 are clones. Nothing in Jail Deck converts them. One that no jail is cloned from yet can be removed and refreshed again.
 
+### Amended: one update per release, and no autoremove (#264, 2026-11-18)
+
+Two refreshes of one release, started a minute apart on the reference host, showed what the first design missed.
+- **`freebsd-update` takes no lock, and every template of a release shares its work directory** (`<media>/<release>/freebsd-update`). The second run broke the first, which exited 1 a minute and a half in, and itself took 21 minutes instead of about 4. Updates of one release now take turns, behind a lock per release shared by prepare and refresh. The one waiting says so in its step. A work directory per template would avoid the wait, but at the cost of downloading the same patches once per template.
+- **`freebsd-update` reports its failures on standard output,** so its audit entry read "exit status 1" and nothing else. When a template stage's standard error is empty, the entry now carries the last lines of its standard output.
+- **A removed template's audit result is dropped with it.** Before, a template made later under the same name showed the old one's result until the next full audit.
+
+**Orphans aren't removed.** The upgrade left gcc12-devel, binutils, gmp, mpc and mpfr in a PostgreSQL template, marked automatic, with nothing depending on them. `pkg -c <root> autoremove -n` on a copy of that template proposed removing those five, **and `postgresql18-server`, which was installed explicitly, along with its `llvm19`**. A refresh that ran it would have sealed a database template without its server. Until it's understood why, a refresh removes nothing: an unwanted package costs space and attack surface, but a missing one breaks every jail cloned from the template.
+

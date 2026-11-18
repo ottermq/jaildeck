@@ -33,6 +33,8 @@ type Service struct {
 	versions osversion.Source
 	// vulnerabilities answers each template's last package audit (#230).
 	vulnerabilities TemplateVulnerabilities
+	// updates keeps two freebsd-updates of one release apart (#264).
+	updates releaseLocks
 	// audits is the audits of newly sealed templates still running, for
 	// tests to wait on.
 	audits sync.WaitGroup
@@ -48,6 +50,9 @@ type TemplateVulnerabilities interface {
 	// AuditTemplate audits one template's tree now, rather than at the next
 	// scheduled audit (#257).
 	AuditTemplate(ctx context.Context, name, root string)
+	// ForgetTemplate drops a removed template's audit, so a template made
+	// later under its name does not show it (#264).
+	ForgetTemplate(name string)
 }
 
 // SetVulnerabilities gives the listing each template's last package audit.
@@ -351,6 +356,14 @@ func (s *Service) logOperation(ctx context.Context, operation, target, command s
 		if errors.As(opErr, &cmdErr) {
 			entry.ExitCode = cmdErr.Result.ExitCode
 			entry.Error = cmdErr.Unwrap().Error()
+			// freebsd-update says why it failed on standard output and
+			// leaves standard error empty (#264): without this, its audit
+			// entry read "exit status 1" and nothing else.
+			if strings.TrimSpace(cmdErr.Result.Stderr) == "" {
+				if tail := lastLines(cmdErr.Result.Stdout, 5, 600); tail != "" {
+					entry.Error += ": " + tail
+				}
+			}
 		} else {
 			entry.Error = opErr.Error()
 			entry.ExitCode = -1
@@ -360,6 +373,23 @@ func (s *Service) logOperation(ctx context.Context, operation, target, command s
 		common.Logger(ctx, "templates").Error("failed to write operation log",
 			slog.String("target", target), slog.Any("err", err))
 	}
+}
+
+// lastLines is the last n non-empty lines of out, joined with " / ", at most
+// limit bytes from the end.
+func lastLines(out string, n, limit int) string {
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	kept := make([]string, 0, n)
+	for i := len(lines) - 1; i >= 0 && len(kept) < n; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			kept = append([]string{line}, kept...)
+		}
+	}
+	joined := strings.Join(kept, " / ")
+	if len(joined) > limit {
+		joined = "…" + joined[len(joined)-limit:]
+	}
+	return joined
 }
 
 // toInstallError carries pkg's own message, which says precisely which package
@@ -447,6 +477,9 @@ func (s *Service) Remove(ctx context.Context, name, confirm string) (Removal, er
 
 	if err := s.storage.Destroy(ctx, name); err != nil {
 		return Removal{}, err
+	}
+	if s.vulnerabilities != nil {
+		s.vulnerabilities.ForgetTemplate(name)
 	}
 	return Removal{Template: template.Dataset, Destroyed: true}, nil
 }

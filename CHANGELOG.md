@@ -20,6 +20,17 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.37.0 — 2026-11-18
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.37.0)
+
+**Refreshes of one release take turns, and a failed stage says why** (#264). Two refreshes at once
+broke each other in their shared `freebsd-update` work directory.
+
+- **Refreshes of one release take turns** (#264, JD-063). `freebsd-update` locks nothing, and every template of a release shares one work directory, so two refreshes at once broke each other. Updates of a release now run one at a time, and the one waiting says so.
+- **A failed template stage says why** (#264). `freebsd-update` prints its errors on standard output, so its audit entry read only "exit status 1". The entry now carries the end of the output when standard error is empty.
+- **A removed template's audit result goes with it** (#264). A template made later under the same name showed the old one's result until the next audit.
+
 ## v0.36.0 — 2026-11-18
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.36.0)

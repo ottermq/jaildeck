@@ -2926,3 +2926,33 @@ A jail is cloned from a template's `@base` (JD-007), so that's what a template's
 
 A timer of its own on the root side: a read at startup, then every minute. Requests and scrapes read the last result.
 
+## JD-063 — A Template Is Refreshed into a New One
+
+**Status:** Locked — 2026-11-18.
+
+#252 lets a template catch up with its release's patch level and its packages' fixes. A template's userland and packages stop at the day it was sealed, and every jail cloned afterwards starts there. On the reference host, a release template was patched in place and snapshotted under another name; `@base` was left as it was, and a template derived from it later got the old userland. #251 makes that visible; this makes it fixable.
+
+### The rule
+
+- **A refresh builds a new template; it never changes one.** A clone of the parent's `@base` is brought to the release's current patch level with `freebsd-update -b` and has every package upgraded with `pkg -c <root> upgrade -y`, then it is marked and sealed as `@base`. The parent and every jail cloned from it are unaffected, the parent is the way back, and the name is the caller's.
+- **Running jails are never patched in place.** `freebsd-update -j` or `pkg -j upgrade` in a running jail restarts services when it chooses, can leave configuration merges half done, and leaves a jail that matches no template. A jail moves onto a refreshed template with `reclone`, which keeps its child datasets. Jail Deck doesn't decide when that happens: the orchestrator does for its jails, and the operator for the rest.
+- **Only a tree Jail Deck built is refreshed.** The refresh runs `freebsd-update` and `pkg` as root on the tree, and `pkg` runs the packages' own scripts in the chroot. That is acceptable for a tree extracted from `base.txz` or built with `pkg -c`. It is not acceptable for a template promoted from a jail, whose tree is whatever that jail's root left in it (JD-061).
+
+### How a template was made is recorded in ZFS
+
+Nothing about a template was stored (JD-011), and a template promoted from a jail takes over the jail's origin, so it reads exactly like a derived one. So every template Jail Deck makes gets a user property, `jaildeck:built`: `release`, `derived`, `refreshed` or `jail`. It is set before `@base`, so a ready template always says. A clone doesn't copy its origin's user properties, and templates have no endpoint that edits properties, so only Jail Deck or the operator, with `zfs set`, can set it.
+
+**A template without the property is refused, not guessed at.** Templates made before this have none. The operator marks each once, after checking how it was made, which is a deliberate act rather than a default.
+
+### Measured
+
+On FreeBSD 15.1, a derived PostgreSQL template at p2:
+- `freebsd-update -b <root> -d <workdir> --currently-running 15.1-RELEASE --not-running-from-cron fetch install` took it to p7 in 3.6 to 9 minutes, depending on the mirror. It changed 6,800 files and wrote 92 MB with the work directory outside the tree (224 MB with it inside). There were no prompts and nothing to merge: in a template, `/etc` is untouched since extraction, and only the CA bundle changed.
+- The plain release works as `--currently-running` on an already patched tree, as it does on a fresh one (JD-007).
+- `pkg upgrade` upgraded 2 packages in 35 s, and the vulnerable packages went from 5 to 4. The rest had no fixed version yet.
+- `freebsd-update` installs the latest patch for the release, which can be newer than the host's. The versions check then reads the template as `ahead`. A specific patch level can't be asked for.
+
+### Not in scope
+
+Crossing releases (`freebsd-update upgrade -r`, with merges), refreshing on a schedule, and moving jails onto a refreshed template automatically.
+

@@ -55,4 +55,9 @@ func (s *PackageSystem) Install(_ context.Context, root string, packages []strin
 	return result, nil
 }
 
+// Upgrade upgrades nothing: the fake host's packages are always current.
+func (s *PackageSystem) Upgrade(_ context.Context, root string) (templates.Result, error) {
+	return templates.Result{Root: root, Command: "pkg -c " + root + " upgrade -y"}, nil
+}
+
 var _ templates.PackageSystem = (*PackageSystem)(nil)

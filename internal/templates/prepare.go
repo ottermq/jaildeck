@@ -248,8 +248,10 @@ func (s *Service) seal(ctx context.Context, name, built string) bool {
 	}
 	if err != nil {
 		s.logOperation(ctx, OperationSeal, name, "", err)
+		return false
 	}
-	return err == nil
+	s.auditSealed(ctx, name)
+	return true
 }
 
 // stateOf reads a template's state from what exists, with the in-flight record

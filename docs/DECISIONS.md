@@ -2900,7 +2900,7 @@ A jail is cloned from a template's `@base` (JD-007), so that's what a template's
 ### What it costs
 
 - **About 0.2 s per tree with packages.** Measured on FreeBSD 15.1: a host of a few hundred packages plus six jails and templates took 1.2 s in all.
-- **A timer, not a request.** It is the first thing the root side does on its own: an audit at startup, then a `stat` of the database every 5 minutes, with an audit when the database has changed or the last audit is an hour old. Requests and scrapes read the published result. A jail created since the last audit is `unchecked` until the next one.
+- **A timer, not a request.** It is the first thing the root side does on its own: an audit at startup, then a `stat` of the database every 5 minutes, with an audit when the database has changed or the last audit is an hour old. Requests and scrapes read the published result. A jail created since the last audit is `unchecked` until the next one. **A template is the exception** (#257): one sealed by a prepare, derive or refresh is audited on its own straight away, in the background, so the result of a refresh is visible at once. It waits for a full audit already running rather than running beside it. A full audit lists the templates when it starts, and one that finished after would otherwise publish a snapshot without the new template.
 
 ## JD-062 — Replication Is Read from zrepl's Cursors
 

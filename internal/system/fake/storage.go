@@ -67,6 +67,9 @@ func NewStorageSystem() *StorageSystem {
 			{Dataset: "zroot/jails/nginx/logs", Name: "otter:retention", Value: "14d"},
 			{Dataset: "zroot/jails/redis", Name: "otter:instance", Value: "cache-01"},
 			{Dataset: "zroot/vm/jd-cap-running", Name: "otter:tenant", Value: "acme"},
+			// Prepared from a release by Jail Deck, so it can be refreshed
+			// (#252).
+			{Dataset: "zroot/jails/templates/15.1-RELEASE", Name: "jaildeck:built", Value: "release"},
 		},
 	}
 	system.seedSnapshots()

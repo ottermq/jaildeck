@@ -32,6 +32,27 @@ type stubStorage struct {
 	dependentsErr error
 	destroyed     []string
 	destroyErr    error
+	// marked is each Mark, "name=built".
+	marked []string
+}
+
+func (s *stubStorage) Mark(_ context.Context, name, built string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.marked = append(s.marked, name+"="+built)
+	for i, template := range s.templates {
+		if template.Name == name {
+			s.templates[i].Built = built
+		}
+	}
+	return nil
+}
+
+// markedTemplates is what Mark was asked for, copied under the lock.
+func (s *stubStorage) markedTemplates() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.marked...)
 }
 
 func (s *stubStorage) Templates(context.Context) ([]Template, error) {
@@ -100,8 +121,18 @@ func (s *stubStorage) Seal(_ context.Context, name string) error {
 }
 
 type stubPackages struct {
-	installed []string
-	err       error
+	mu         sync.Mutex
+	installed  []string
+	err        error
+	upgraded   []string
+	upgradeErr error
+}
+
+func (s *stubPackages) Upgrade(_ context.Context, root string) (Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.upgraded = append(s.upgraded, root)
+	return Result{Root: root, Command: "pkg -c " + root + " upgrade -y"}, s.upgradeErr
 }
 
 // stubReleases is the mirror. Most tests here never reach it -- they are about

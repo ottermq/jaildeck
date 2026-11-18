@@ -29,6 +29,11 @@ type deriveRequest struct {
 	// answers 202 and the client watches the template (JD-008). Empty with no
 	// From means the host's own release, which is also the ceiling.
 	Release string `json:"release"`
+	// Refresh builds from From's @base brought to its release's current
+	// patch level, with every package upgraded, instead of installing
+	// Packages (#252). Minutes of work: 202, and the client watches the
+	// template, as for a release.
+	Refresh bool `json:"refresh"`
 }
 
 // List returns every template on the host.
@@ -100,6 +105,18 @@ func (h *TemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Description  memory. **200** instead when it was already ready, which is the same
 // @Description  idempotent answer a derive gives.
 // @Description
+// @Description  ### Or refresh a template
+// @Description
+// @Description  Send `from` with `refresh: true` to build a **new** template from that one's
+// @Description  `@base`, brought to its release's current patch level with `freebsd-update -b`
+// @Description  and every package upgraded with `pkg -c <root> upgrade -y` (#252). The parent
+// @Description  is never changed: the jails cloned from it are unaffected, and moving one onto
+// @Description  the new template is `POST /api/jails/{name}/reclone`. **202**, watched like a
+// @Description  release, since it takes minutes. **409** for a parent Jail Deck did not build
+// @Description  (`built` is `jail`, or absent on a template made before #252): the refresh
+// @Description  runs `freebsd-update` and `pkg` as root on the tree (JD-061). `packages` and
+// @Description  `release` cannot be sent with `refresh`.
+// @Description
 // @Description  Naming both `from` and `release` is a 400: they are two ways to build a
 // @Description  template, and picking one for the caller would be guessing.
 // @Description
@@ -117,7 +134,7 @@ func (h *TemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Param        derive   body      deriveRequest  true  "The parent and the packages"
 // @Success      200      {object}  Template  "Already there and ready"
 // @Success      201      {object}  Template  "Built"
-// @Success      202      {object}  Template  "Preparing a release; watch the template"
+// @Success      202      {object}  Template  "Preparing a release or refreshing; watch the template"
 // @Failure      400      {object}  common.ErrorResponse  "A bad name, or a package pkg refused"
 // @Failure      401      {object}  common.ErrorResponse
 // @Failure      404      {object}  common.ErrorResponse  "No such parent template"
@@ -137,6 +154,17 @@ func (h *TemplateHandler) Derive(w http.ResponseWriter, r *http.Request) {
 	if body.From != "" && body.Release != "" {
 		common.HandlerError(w, common.NewAppError(http.StatusBadRequest,
 			"from and release are two ways to build a template; name one of them"))
+		return
+	}
+	if body.Refresh {
+		if body.From == "" || body.Release != "" || len(body.Packages) > 0 {
+			common.HandlerError(w, common.NewAppError(http.StatusBadRequest,
+				"a refresh takes from and nothing else: it upgrades what the parent has; derive from the refreshed template to add packages"))
+			return
+		}
+		h.detached(w, func() (Template, error) {
+			return h.service.Refresh(r.Context(), chi.URLParam(r, "name"), body.From)
+		})
 		return
 	}
 	if body.From == "" {
@@ -163,7 +191,15 @@ func (h *TemplateHandler) Derive(w http.ResponseWriter, r *http.Request) {
 // 200 when it was already ready, which is the same idempotent answer Derive
 // gives: a client that timed out and repeated the call has not made a mistake.
 func (h *TemplateHandler) prepare(w http.ResponseWriter, r *http.Request, release string) {
-	template, err := h.service.Prepare(r.Context(), chi.URLParam(r, "name"), release)
+	h.detached(w, func() (Template, error) {
+		return h.service.Prepare(r.Context(), chi.URLParam(r, "name"), release)
+	})
+}
+
+// detached answers an operation that runs on after the response: 202 with the
+// template's state, or 200 when it was already ready (JD-008, JD-016).
+func (h *TemplateHandler) detached(w http.ResponseWriter, start func() (Template, error)) {
+	template, err := start()
 	if err != nil {
 		common.HandlerError(w, err)
 		return

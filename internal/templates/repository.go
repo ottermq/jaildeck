@@ -21,6 +21,9 @@ type TemplateStorage interface {
 	// runs, the template exists and is not ready -- which is the state a
 	// failed derive leaves behind, and it needs no cleanup to be truthful.
 	Seal(ctx context.Context, name string) error
+	// Mark records how the template was made, in its jaildeck:built user
+	// property (#252). Set before Seal, so a ready template always says.
+	Mark(ctx context.Context, name, built string) error
 
 	// Dependents names what is holding a template in place: the datasets
 	// cloned from any of its snapshots, and the holds on them. Facts, not a
@@ -54,6 +57,9 @@ func (d Dependents) Any() bool { return len(d.Clones) > 0 || len(d.Holds) > 0 }
 // installing packages (JD-027).
 type PackageSystem interface {
 	Install(ctx context.Context, root string, packages []string) (Result, error)
+	// Upgrade upgrades every package installed in root to the repository's
+	// current version (#252).
+	Upgrade(ctx context.Context, root string) (Result, error)
 }
 
 // Result is what a package install actually ran, for the audit log.

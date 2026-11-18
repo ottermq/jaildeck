@@ -37,6 +37,9 @@ export interface Template {
     userland?: Standing
     // The last package audit in numbers (#230); absent with no tree to audit.
     vulnerabilities?: VulnSummary
+    // How Jail Deck made it (#252), from its jaildeck:built property. Absent
+    // on a template made before that, or by hand.
+    built?: 'release' | 'derived' | 'refreshed' | 'jail'
 }
 
 // The states a template reports, in the order it passes through them.
@@ -49,6 +52,16 @@ export async function prepareRelease(name: string, release: string): Promise<Tem
     return await api<Template>(`/templates/${encodeURIComponent(name)}`, {
         method: 'PUT',
         body: JSON.stringify({ release }),
+    })
+}
+
+// refreshTemplate builds a new template from another's @base, brought to its
+// release's current patch level with every package upgraded (#252). Like a
+// release, it answers at once and the new template is polled (JD-008).
+export async function refreshTemplate(name: string, from: string): Promise<Template> {
+    return await api<Template>(`/templates/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ from, refresh: true }),
     })
 }
 

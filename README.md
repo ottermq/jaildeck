@@ -7,9 +7,9 @@ Jail Deck is a thin layer over the tools FreeBSD already ships — `jls`, `servi
 binary, no database, no Node.js at runtime, and no abstraction that pretends a jail
 is a Linux container.
 
-**Current release: v0.34.0.** Jails can be created from release templates, started,
+**Current release: v0.35.0.** Jails can be created from release templates, started,
 stopped, restarted and destroyed from the browser or the API, and their limits changed in place; their ZFS datasets,
-snapshots and resource usage are visible, and a dataset kept past its jail can be restored or destroyed; host setup is checked, along with the host's FreeBSD version, a reboot it's waiting for and any jail or template behind it, and every package on the host, in jails and in templates is audited against the host's vulnerability database; how long ago each dataset zrepl replicates last reached the other side is shown; PF can be seen,
+snapshots and resource usage are visible, and a dataset kept past its jail can be restored or destroyed; host setup is checked, along with the host's FreeBSD version, a reboot it's waiting for and any jail or template behind it, and every package on the host, in jails and in templates is audited against the host's vulnerability database; how long ago each dataset zrepl replicates last reached the other side is shown; a template can be refreshed into a new one with its release's current patches and upgraded packages; PF can be seen,
 read-only; bhyve VMs are created from cloud images (Debian, Ubuntu, Fedora, Alpine, Arch) with cloud-init, with a console password if wanted, pinned to host CPUs, started,
 stopped, labelled, snapshotted and destroyed, on a default network Jail Deck sets up with NAT through PF, or on networks of their own kept apart by PF, with addresses Jail Deck picks and checks, and every network and what is on it can be seen; a jail has a shell in the
 browser, and a guest its serial console; each one's files on the host can be read on its page; jails and guests are found in one list by name, state or label, with what each is using over the last minutes, and started, stopped, restarted or snapshotted several at once; the storage nothing uses is listed and can be reclaimed; pages update live as anyone changes the host; a token can be limited to reading, running commands and taking its own snapshots in jails with a given label; the part that faces the network runs as a user of its own, not root; every operation is audited, a console with who opened it and why when the client says, and nothing is reachable without a password or an
@@ -314,7 +314,7 @@ to an old unprefixed path answers `200` with HTML rather than failing loudly.
 | `DELETE /api/retained/{name}?confirm={name}` | destroy a retained dataset and its snapshots |
 | `GET /api/templates` | templates, their readiness and their lineage |
 | `GET /api/templates/{name}` | one, with every jail and template cloned from it |
-| `PUT /api/templates/{name}` | derive one from another, plus packages |
+| `PUT /api/templates/{name}` | derive one from another, plus packages; prepare one from a release; or refresh one into a new template, brought to its release's current patch level with every package upgraded |
 | `DELETE /api/templates/{name}` | destroy one, refusing while jails are cloned from it |
 | `POST /api/jails/{name}/template` | clone a configured jail as a template |
 | `POST /api/jails/{name}/reclone` | replace its root from a newer template, keeping its children |

@@ -114,7 +114,7 @@ func (s *Service) withUserland(ctx context.Context, found []Template) {
 	roots := make([]string, 0, len(found))
 	for _, t := range found {
 		if hasTree(t) {
-			roots = append(roots, t.Mountpoint)
+			roots = append(roots, t.Tree())
 		}
 	}
 	if len(roots) == 0 {
@@ -122,7 +122,7 @@ func (s *Service) withUserland(ctx context.Context, found []Template) {
 	}
 	_, standings := osversion.Judge(ctx, s.versions, roots)
 	for i, t := range found {
-		if standing, ok := standings[t.Mountpoint]; ok && hasTree(t) {
+		if standing, ok := standings[t.Tree()]; ok && hasTree(t) {
 			found[i].Userland = &standing
 		}
 	}
@@ -145,6 +145,20 @@ func (s *Service) withVulnerabilities(found []Template) {
 // HasTree is whether the template's dataset is mounted somewhere its files
 // can be read from: what the package audit needs of it (#230).
 func (t Template) HasTree() bool { return hasTree(t) }
+
+// Tree is the directory a clone of this template gets its files from, which
+// is what the versions check and the package audit read (#251). Once the
+// template is ready that is its @base snapshot, through .zfs/snapshot, and
+// not its live tree: a jail is cloned from @base (JD-007), and a template
+// changed after it was sealed -- freebsd-update run on it in place -- would
+// otherwise read as current while every new clone starts where @base was.
+// Before it is ready there are no clones, and the live tree is all there is.
+func (t Template) Tree() string {
+	if !t.Ready {
+		return t.Mountpoint
+	}
+	return t.Mountpoint + "/.zfs/snapshot/" + ReadySnapshot
+}
 
 // hasTree is whether a template's dataset is mounted somewhere a userland can
 // be read from.
@@ -206,6 +220,9 @@ func (s *Service) Derive(ctx context.Context, name, parent string, packages []st
 		}
 	}
 
+	if err := s.storage.Mark(ctx, name, BuiltDerived); err != nil {
+		return Template{}, false, err
+	}
 	if err := s.storage.Seal(ctx, name); err != nil {
 		return Template{}, false, err
 	}

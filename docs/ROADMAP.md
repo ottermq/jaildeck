@@ -73,6 +73,7 @@ Earlier revisions of this document used numbered phases, and the numbers were re
 - **Vulnerable packages on the host, in jails and in templates** (v0.32.0): every package audited against the host's vulnerability database, read as `nobody`, on a timer, on the dashboard, the lists, each page and `/metrics`. The other half of the same risk review (#230, JD-061).
 - **Memory without the cache** (v0.33.0): the dashboard heads its memory card with held memory, physical less free, inactive and the ZFS ARC, and `/metrics` reports the ARC, laundry and Jail Deck's own memory (#224).
 - **ZFS replication status** (v0.34.0): how long ago each dataset a zrepl job replicates last reached the other side, from zrepl's replication cursors, so a job another host pulls from is covered too. On the dashboard, a jail's page and `/metrics`; the threshold is Prometheus's. Read only, and deferred until replication carried Otter's backups (#247, JD-062).
+- **Templates judged by their `@base`, and template refresh** (v0.35.0): the versions check and the package audit read what a clone gets, not a template's live tree (#251); a template can be refreshed into a new one, brought to its release's current patch level with every package upgraded, and jails moved onto it by reclone (#252, JD-063).
 
 ---
 

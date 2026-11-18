@@ -3,6 +3,7 @@ package fake
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/ottermq/jaildeck/internal/osversion"
 )
@@ -29,10 +30,17 @@ func (Versions) Userland(_ context.Context, root string) (string, error) {
 	if root == "" {
 		return "", errors.New("no root")
 	}
-	if v, ok := fakeUserlands[root]; ok {
+	if v, ok := fakeUserlands[liveTree(root)]; ok {
 		return v, nil
 	}
 	return "15.1-RELEASE-p6", nil
 }
 
 var _ osversion.Source = Versions{}
+
+// liveTree maps a template's @base, as the versions check and the audit read
+// it (#251), back to the tree it was taken of: the fake host never changes a
+// template after sealing it, so the two hold the same.
+func liveTree(root string) string {
+	return strings.TrimSuffix(root, "/.zfs/snapshot/base")
+}

@@ -31,8 +31,11 @@ func TestListGivesEachTemplateWithATreeItsUserland(t *testing.T) {
 	service.SetVersions(stubVersions{
 		host: osversion.NewHost("15.1-RELEASE-p6", "15.1-RELEASE-p6", "15.1-RELEASE-p6"),
 		trees: map[string]string{
-			"/usr/local/jails/templates/15.1-RELEASE": "15.1-RELEASE-p5",
-			"/usr/local/jails/templates/pg18":         "15.1-RELEASE-p2",
+			// Updated in place after it was sealed: its live tree is p5,
+			// its @base -- what every clone gets -- still p2 (#251).
+			"/usr/local/jails/templates/15.1-RELEASE":                    "15.1-RELEASE-p5",
+			"/usr/local/jails/templates/15.1-RELEASE/.zfs/snapshot/base": "15.1-RELEASE-p2",
+			"/usr/local/jails/templates/pg18/.zfs/snapshot/base":         "15.1-RELEASE-p2",
 		},
 	})
 
@@ -41,7 +44,7 @@ func TestListGivesEachTemplateWithATreeItsUserland(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]*osversion.Standing{
-		"15.1-RELEASE": {Version: "15.1-RELEASE-p5", Status: osversion.Behind, Levels: 1, Host: "15.1-RELEASE-p6"},
+		"15.1-RELEASE": {Version: "15.1-RELEASE-p2", Status: osversion.Behind, Levels: 4, Host: "15.1-RELEASE-p6"},
 		"pg18":         {Version: "15.1-RELEASE-p2", Status: osversion.Behind, Levels: 4, Host: "15.1-RELEASE-p6"},
 		// Not mounted, and only fetched: no tree, so no version at all
 		// rather than "unknown".
@@ -70,5 +73,18 @@ func TestListWithoutAVersionSource(t *testing.T) {
 	found, err := NewService(release(), &stubPackages{}, &stubReleases{}, &fakeLogger{}).List(context.Background())
 	if err != nil || len(found) != 1 || found[0].Userland != nil {
 		t.Fatalf("List = %+v, %v; want the template with no userland", found, err)
+	}
+}
+
+// A template is judged by what a clone of it gets (#251): its @base once it
+// is ready, its live tree while it is still being built.
+func TestTreeIsWhatACloneGets(t *testing.T) {
+	ready := Template{Mountpoint: "/usr/local/jails/templates/pg18", Ready: true}
+	if got := ready.Tree(); got != "/usr/local/jails/templates/pg18/.zfs/snapshot/base" {
+		t.Errorf("ready: %q", got)
+	}
+	building := Template{Mountpoint: "/usr/local/jails/templates/pg19"}
+	if got := building.Tree(); got != "/usr/local/jails/templates/pg19" {
+		t.Errorf("not ready: %q", got)
 	}
 }

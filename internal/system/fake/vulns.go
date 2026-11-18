@@ -40,7 +40,7 @@ func (Vulns) Installed(_ context.Context, root string) ([]vulns.Package, int, er
 	if root == "" {
 		return nil, 0, errors.New("no root")
 	}
-	return fakePackages[root], 0, nil
+	return fakePackages[liveTree(root)], 0, nil
 }
 
 func (Vulns) Audit(_ context.Context, pkgs []vulns.Package) ([]vulns.Finding, error) {

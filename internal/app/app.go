@@ -411,7 +411,8 @@ func (v vulnTargets) Templates(ctx context.Context) ([]vulns.Target, error) {
 	out := make([]vulns.Target, 0, len(prepared))
 	for _, t := range prepared {
 		if t.HasTree() {
-			out = append(out, vulns.Target{Name: t.Name, Root: t.Mountpoint})
+			// Its @base, what a clone gets, not its live tree (#251).
+			out = append(out, vulns.Target{Name: t.Name, Root: t.Tree()})
 		}
 	}
 	return out, nil

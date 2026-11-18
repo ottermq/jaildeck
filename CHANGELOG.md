@@ -20,7 +20,12 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.38.0 — 2026-11-18
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.38.0)
+
+**A refreshed template's parent is superseded, and refused as a source** (#259). Once a template has
+been refreshed, nothing creates new jails from the outdated one by habit.
 
 - **A refreshed template's parent is marked superseded, and refused as a source** (#259, JD-063). Once a refresh is sealed, its parent gets `jaildeck:superseded-by=<new>`. A new jail, a reclone, a derive or a refresh from a superseded template answers 409 naming the newest replacement; jails already cloned from it are unaffected. `zfs inherit jaildeck:superseded-by <dataset>` lifts it at once. Templates refreshed before this are not marked.
 - **UI:** a "superseded by" badge linking to the replacement; superseded templates are left out of the new-jail, reclone and derive pickers; Refresh is disabled with the reason.

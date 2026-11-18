@@ -15,7 +15,7 @@ import {
 import type {
     JailData, Snapshot, Dataset, PropertyConflict, SnapshotBlock, Reclone, Destroyed, DatasetBlock,
 } from '../stores/jails.svelte'
-import { listTemplates } from '../stores/templates.svelte'
+import { listTemplates, cloneable } from '../stores/templates.svelte'
 import type { Template } from '../stores/templates.svelte'
 import { ApiError } from '../services/api'
 import { onNavClick, navigate } from '../router.svelte'
@@ -59,7 +59,7 @@ async function load() {
     // Only needed to offer a root to re-clone from. A failure costs that
     // button and nothing else.
     try {
-        templates = (await listTemplates()).filter(t => t.ready)
+        templates = (await listTemplates()).filter(cloneable)
     } catch {
         templates = []
     }

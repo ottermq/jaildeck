@@ -2979,3 +2979,15 @@ Two refreshes of one release, started a minute apart on the reference host, show
 
 **Orphans aren't removed.** The upgrade left gcc12-devel, binutils, gmp, mpc and mpfr in a PostgreSQL template, marked automatic, with nothing depending on them. `pkg -c <root> autoremove -n` on a copy of that template proposed removing those five, **and `postgresql18-server`, which was installed explicitly, along with its `llvm19`**. A refresh that ran it would have sealed a database template without its server. Until it's understood why, a refresh removes nothing: an unwanted package costs space and attack surface, but a missing one breaks every jail cloned from the template.
 
+
+### Amended: a refreshed template's parent is superseded (#259, 2026-11-18)
+
+Once a template has been refreshed, the old one is known to be outdated. It stays while jails are cloned from it, and until now nothing stopped the next jail, derive or refresh from using it. The page showed it as behind, but an API caller never looks at the page.
+
+- **A successful refresh marks its parent superseded,** in `jaildeck:superseded-by=<new template>`, set after the new template is sealed. A refresh that fails leaves the parent unmarked. The operator can set the mark by hand, and clears it with `zfs inherit jaildeck:superseded-by <dataset>`.
+- **A superseded template is refused as a source:** a new jail, a reclone onto it, a derive or a refresh answers 409, names the replacement, and runs nothing. When the replacement has itself been superseded, the answer follows the marks to the newest. Jails already cloned from it are not affected, and listing, removal and the dependents view work as before.
+- **Read on every request,** so clearing the mark lifts the refusal at once, without a restart. An unreadable property is not a refusal: the mark guards against habit, and a failed read should not turn into an outage.
+- **Refused rather than warned about.** A platform that names a template in its own configuration would go on creating jails from the outdated one indefinitely, and a warning in an API response is never read.
+- **Shown and measured.** The listing carries `superseded_by`. The UI shows a "superseded by" badge linking to the replacement, leaves superseded templates out of every source picker, disables Refresh with the reason, and says, once nothing is cloned from it, that the template can be removed. `jaildeck_template_superseded{template,superseded_by}` is 1 for a superseded template and 0 for every other.
+
+Templates refreshed before this are not marked. The operator marks their parents once, by hand, when whatever creates jails from them has moved to the new names.

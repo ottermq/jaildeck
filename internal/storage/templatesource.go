@@ -94,6 +94,7 @@ func (s *TemplateSource) Templates(ctx context.Context) ([]templates.Template, e
 				if from := properties[t.Dataset][templates.RefreshedFromProperty]; t.Parent == "" && from != "" {
 					found[i].Parent = from
 				}
+				found[i].SupersededBy = properties[t.Dataset][templates.SupersededProperty]
 			}
 		}
 	}
@@ -146,6 +147,16 @@ func (s *TemplateSource) Mark(ctx context.Context, name, built string) error {
 		return err
 	}
 	_, err = s.service.SetUserProperties(ctx, dataset, map[string]*string{templates.BuiltProperty: &built})
+	return err
+}
+
+// Supersede records the template that replaced this one (#259).
+func (s *TemplateSource) Supersede(ctx context.Context, name, by string) error {
+	dataset, err := s.datasetFor(ctx, name)
+	if err != nil {
+		return err
+	}
+	_, err = s.service.SetUserProperties(ctx, dataset, map[string]*string{templates.SupersededProperty: &by})
 	return err
 }
 

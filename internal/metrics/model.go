@@ -363,4 +363,9 @@ type OSVersions struct {
 type Userland struct {
 	Name string `json:"name"`
 	osversion.Standing
+	// SupersededBy is, for a template, the one a refresh replaced it with
+	// (#259). Here rather than in a list of its own because it is read in
+	// the same pass over the templates, and every superseded template is a
+	// ready one with a userland.
+	SupersededBy string `json:"superseded_by,omitempty"`
 }

@@ -3,7 +3,7 @@ import { onMount } from 'svelte'
 import { onDestroy } from 'svelte'
 import { onLive, aboutWork } from '../stores/events.svelte'
 import {
-    listTemplates, listRetained, lineage, deriveTemplate, removeTemplate, prepareRelease, destroyRetained,
+    listTemplates, listRetained, lineage, cloneable, deriveTemplate, removeTemplate, prepareRelease, destroyRetained,
 } from '../stores/templates.svelte'
 import type { Template, RetainedDataset, Blocked } from '../stores/templates.svelte'
 import { listJails, restoreDataset } from '../stores/jails.svelte'
@@ -83,7 +83,7 @@ function describe(err: unknown, fallback: string): string {
 let rows = $derived(templates ? lineage(templates) : [])
 // Only a ready template can be cloned from: without its @base snapshot there
 // is nothing to clone (JD-007).
-let parents = $derived((templates ?? []).filter(t => t.ready))
+let parents = $derived((templates ?? []).filter(cloneable))
 
 function href(name: string): string {
     return `/templates/${encodeURIComponent(name)}`
@@ -376,6 +376,11 @@ async function restore(event: Event, dataset: RetainedDataset) {
                                 {#if template.running}
                                     <span class="badge badge--timed-out">{template.state}</span>
                                     <div class="step">{template.running.step} · {elapsed(template.running.since)}</div>
+                                {:else if template.ready && template.superseded_by}
+                                    <span class="badge badge--stopped" data-superseded
+                                          title={`Superseded by ${template.superseded_by}: not offered for new jails, reclones or derives`}>
+                                        superseded
+                                    </span>
                                 {:else if template.ready}
                                     <span class="badge badge--running">ready</span>
                                 {:else}

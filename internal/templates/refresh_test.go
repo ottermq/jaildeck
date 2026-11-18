@@ -69,12 +69,47 @@ func TestRefreshBuildsANewTemplate(t *testing.T) {
 	if !slices.Equal(upgraded, []string{"/usr/local/jails/templates/pg18-p7"}) {
 		t.Errorf("upgraded %v", upgraded)
 	}
-	// Marked before it is sealed, and the parent never touched.
+	// Marked before it is sealed; the parent's tree never touched, only
+	// marked superseded by the new one once it is sealed (#259).
 	if got := storage.markedTemplates(); !slices.Equal(got, []string{"pg18-p7=refreshed"}) {
 		t.Errorf("marked %v", got)
 	}
 	if got := storage.sealedTemplates(); !slices.Equal(got, []string{"pg18-p7"}) {
 		t.Errorf("sealed %v", got)
+	}
+	if got := storage.supersededTemplates(); !slices.Equal(got, []string{"pg18>pg18-p7"}) {
+		t.Errorf("superseded %v", got)
+	}
+}
+
+// A superseded template is refused as the parent of a derive or a refresh
+// (#259), naming the newest replacement and running nothing; clearing the
+// mark lifts the refusal.
+func TestASupersededTemplateIsRefusedAsAParent(t *testing.T) {
+	storage, _, _, service := refreshable(BuiltDerived)
+	storage.templates[0].SupersededBy = "pg18-a"
+	storage.templates = append(storage.templates,
+		Template{Name: "pg18-a", Dataset: "tank/jails/templates/pg18-a", Ready: true,
+			Snapshot: "tank/jails/templates/pg18-a@base", Built: BuiltRefreshed, SupersededBy: "pg18-b"},
+		Template{Name: "pg18-b", Dataset: "tank/jails/templates/pg18-b", Ready: true,
+			Snapshot: "tank/jails/templates/pg18-b@base", Built: BuiltRefreshed})
+
+	_, refreshErr := service.Refresh(context.Background(), "pg18-c", "pg18")
+	_, _, deriveErr := service.Derive(context.Background(), "pg18-pkgs", "pg18", nil)
+	for what, err := range map[string]error{"refresh": refreshErr, "derive": deriveErr} {
+		if appErrCode(t, err) != http.StatusConflict ||
+			!strings.Contains(err.Error(), "superseded by pg18-b;") ||
+			!strings.Contains(err.Error(), "zfs inherit jaildeck:superseded-by tank/jails/templates/pg18") {
+			t.Errorf("%s: %v", what, err)
+		}
+	}
+	if len(storage.copied)+len(storage.derived) != 0 {
+		t.Errorf("copied %v derived %v", storage.copied, storage.derived)
+	}
+
+	storage.templates[0].SupersededBy = ""
+	if _, _, err := service.Derive(context.Background(), "pg18-pkgs", "pg18", nil); err != nil {
+		t.Errorf("derive after clearing the mark: %v", err)
 	}
 }
 
@@ -101,7 +136,7 @@ func TestRefreshStopsWhereAStageFails(t *testing.T) {
 	}
 	waitIdle(t, service, "pg18-p7")
 	// Cloned, not sealed: shown as not ready, as a failed derive is.
-	if len(storage.sealedTemplates()) != 0 || len(storage.markedTemplates()) != 0 {
+	if len(storage.sealedTemplates()) != 0 || len(storage.markedTemplates()) != 0 || len(storage.supersededTemplates()) != 0 {
 		t.Errorf("sealed %v marked %v after a failed update", storage.sealedTemplates(), storage.markedTemplates())
 	}
 	// And a repeat is refused rather than built on top of it.

@@ -169,7 +169,7 @@ func (s *Service) CheckRecloneSource(ctx context.Context, root, templateSnapshot
 	}
 	for _, found := range snapshots {
 		if found.Name == templateSnapshot {
-			return nil
+			return s.refuseSuperseded(ctx, dataset)
 		}
 	}
 	return common.NewAppError(http.StatusNotFound, "no snapshot named "+templateSnapshot)

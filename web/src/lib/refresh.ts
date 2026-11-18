@@ -9,6 +9,7 @@ import type { Template } from './stores/templates.svelte'
 export function refreshRefusal(t: Template): string {
     if (t.running) return 'Something is already working on this template.'
     if (!t.ready) return 'It has no @base snapshot to refresh from.'
+    if (t.superseded_by) return supersededRefusal(t)
     switch (t.built) {
         case 'release':
         case 'derived':
@@ -21,6 +22,14 @@ export function refreshRefusal(t: Template): string {
             return `It doesn't say how it was made. If it was prepared from a release or derived, `
                 + `mark it once on the host: zfs set jaildeck:built=derived ${t.dataset}`
     }
+}
+
+// supersededRefusal is why a superseded template is not offered as a source
+// (#259), or '' when it is not superseded.
+export function supersededRefusal(t: Template): string {
+    if (!t.superseded_by) return ''
+    return `It has been superseded by ${t.superseded_by}; use that one instead. `
+        + `To use this one anyway, clear the mark on the host: zfs inherit jaildeck:superseded-by ${t.dataset}`
 }
 
 // builtLabel says how a template was made, for the page's header.

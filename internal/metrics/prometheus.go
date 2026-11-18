@@ -203,6 +203,16 @@ func (e *exposition) versions(osv *OSVersions) {
 		"Patch levels this jail's userland is behind the host's. Updating the host does not update a jail.")
 	e.behind("jaildeck_template_userland_behind", "template", osv.Templates,
 		"Patch levels this template's userland is behind the host's. Every jail cloned from it starts there.")
+
+	// 1 for a template a refresh replaced (#259), 0 for every other, so an
+	// alert can join it with what is still cloned from it.
+	if len(osv.Templates) > 0 {
+		e.gauge("jaildeck_template_superseded",
+			"1 when a refresh replaced this template: new jails, reclones, derives and refreshes from it are refused.")
+		for _, tree := range osv.Templates {
+			e.value(labels{{"template", tree.Name}, {"superseded_by", tree.SupersededBy}}, boolean(tree.SupersededBy != ""))
+		}
+	}
 }
 
 // vulnerabilities is the last package audit (#230). A count is written only

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { builtLabel, refreshRefusal, suggestedName } from './refresh'
+import { builtLabel, refreshRefusal, suggestedName, supersededRefusal } from './refresh'
+import { cloneable } from './stores/templates.svelte'
 import type { Template } from './stores/templates.svelte'
 
 const t = (over: Partial<Template>): Template => ({
@@ -19,6 +20,21 @@ describe('refresh', () => {
     it('needs a ready template with nothing running', () => {
         expect(refreshRefusal(t({ built: 'derived', ready: false }))).toMatch(/no @base/)
         expect(refreshRefusal(t({ built: 'derived', running: { step: 'x', since: '' } }))).toMatch(/already working/)
+    })
+
+    it('refuses a superseded template, naming the replacement and the way back', () => {
+        const old = t({ built: 'derived', superseded_by: 'pg18-20261118' })
+        expect(refreshRefusal(old)).toMatch(/superseded by pg18-20261118/)
+        expect(supersededRefusal(old)).toMatch(/zfs inherit jaildeck:superseded-by tank\/jails\/templates\/pg18/)
+        expect(supersededRefusal(t({ built: 'derived' }))).toBe('')
+    })
+
+    it('offers only ready, unsuperseded templates as a source', () => {
+        const snapshot = 'tank/jails/templates/pg18@base'
+        expect(cloneable(t({ snapshot }))).toBe(true)
+        expect(cloneable(t({ snapshot, superseded_by: 'pg18-20261118' }))).toBe(false)
+        expect(cloneable(t({ snapshot, ready: false }))).toBe(false)
+        expect(cloneable(t({}))).toBe(false)
     })
 
     it('suggests the name and the date, without stacking dates', () => {

@@ -30,6 +30,9 @@ type TemplateStorage interface {
 	// Supersede records that name has been replaced by another template,
 	// in its jaildeck:superseded-by user property (#259).
 	Supersede(ctx context.Context, name, by string) error
+	// RecordOrphans records the packages a refresh left that nothing
+	// depends on, in its jaildeck:orphans user property (#264).
+	RecordOrphans(ctx context.Context, name string, orphans []string) error
 
 	// Dependents names what is holding a template in place: the datasets
 	// cloned from any of its snapshots, and the holds on them. Facts, not a
@@ -66,6 +69,15 @@ type PackageSystem interface {
 	// Upgrade upgrades every package installed in root to the repository's
 	// current version (#252).
 	Upgrade(ctx context.Context, root string) (Result, error)
+	// Explicit names the packages installed in root on purpose, the ones
+	// pkg autoremove would never take (#264).
+	Explicit(ctx context.Context, root string) ([]string, error)
+	// MarkExplicit marks one package in root as installed on purpose
+	// again, with pkg set -A 0 (#264).
+	MarkExplicit(ctx context.Context, root, pkg string) (Result, error)
+	// Orphans names the packages in root installed only as a dependency
+	// that nothing depends on any more (#264).
+	Orphans(ctx context.Context, root string) ([]string, error)
 }
 
 // Result is what a package install actually ran, for the audit log.

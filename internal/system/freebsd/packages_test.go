@@ -50,3 +50,33 @@ func TestInstallReportsTheCommandOnFailure(t *testing.T) {
 }
 
 var errNotFound = errors.New("exit status 70")
+
+// The package guard's reads and its one write (#264), as run on the
+// reference host: pkg -c against the template's root.
+func TestPackageGuardCommands(t *testing.T) {
+	runner := &recordingRunner{stdout: "postgresql18-server\npgbouncer\n"}
+	adapter := NewAdapter(runner)
+	ctx := context.Background()
+
+	explicit, err := adapter.Explicit(ctx, "/t")
+	if err != nil || !reflect.DeepEqual(explicit, []string{"pgbouncer", "postgresql18-server"}) {
+		t.Errorf("Explicit = %q, %v", explicit, err)
+	}
+	if _, err := adapter.Orphans(ctx, "/t"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := adapter.MarkExplicit(ctx, "/t", "postgresql18-server")
+	if err != nil || result.Command != "pkg -c /t set -y -A 0 postgresql18-server" {
+		t.Errorf("MarkExplicit = %+v, %v", result, err)
+	}
+	want := [][]string{
+		{"-c", "/t", "query", "-e", "%a == 0", "%n"},
+		{"-c", "/t", "query", "-e", "%a == 1 && %#r == 0", "%n"},
+		{"-c", "/t", "set", "-y", "-A", "0", "postgresql18-server"},
+	}
+	for i, cmd := range runner.ran {
+		if cmd.Name != "pkg" || !reflect.DeepEqual(cmd.Args, want[i]) || cmd.Timeout == 0 {
+			t.Errorf("command %d = %s %q (timeout %v), want pkg %q", i, cmd.Name, cmd.Args, cmd.Timeout, want[i])
+		}
+	}
+}

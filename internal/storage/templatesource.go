@@ -95,6 +95,9 @@ func (s *TemplateSource) Templates(ctx context.Context) ([]templates.Template, e
 					found[i].Parent = from
 				}
 				found[i].SupersededBy = properties[t.Dataset][templates.SupersededProperty]
+				if orphans := properties[t.Dataset][templates.OrphansProperty]; orphans != "" {
+					found[i].Orphans = strings.Split(orphans, ",")
+				}
 			}
 		}
 	}
@@ -157,6 +160,21 @@ func (s *TemplateSource) Supersede(ctx context.Context, name, by string) error {
 		return err
 	}
 	_, err = s.service.SetUserProperties(ctx, dataset, map[string]*string{templates.SupersededProperty: &by})
+	return err
+}
+
+// RecordOrphans records the packages a refresh left that nothing depends on
+// (#264). Nothing is written when there are none.
+func (s *TemplateSource) RecordOrphans(ctx context.Context, name string, orphans []string) error {
+	if len(orphans) == 0 {
+		return nil
+	}
+	dataset, err := s.datasetFor(ctx, name)
+	if err != nil {
+		return err
+	}
+	list := strings.Join(orphans, ",")
+	_, err = s.service.SetUserProperties(ctx, dataset, map[string]*string{templates.OrphansProperty: &list})
 	return err
 }
 

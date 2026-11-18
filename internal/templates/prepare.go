@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sync"
 
 	"github.com/ottermq/jaildeck/internal/common"
 )
@@ -228,6 +229,17 @@ func (s *Service) extract(ctx context.Context, name, release string) (string, bo
 // cloned from the template is the live answer. A number stored here could
 // disagree with the userland it describes (JD-011).
 func (s *Service) update(ctx context.Context, name, release, root string) bool {
+	// One freebsd-update per release at a time (#264). They share the
+	// release's work directory, freebsd-update locks nothing, and two at
+	// once break each other: measured, the first exited 1 and the second
+	// took five times as long.
+	lock := s.updates.of(release)
+	if !lock.TryLock() {
+		s.running.step(name, StateUpdating, "waiting for another update of "+release+" to finish")
+		lock.Lock()
+	}
+	defer lock.Unlock()
+
 	s.running.step(name, StateUpdating, "bringing "+release+" to its current patch level")
 
 	result, err := s.releases.Update(ctx, release, root)
@@ -279,4 +291,23 @@ func containsString(all []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// releaseLocks is one lock per release, for what shares the release's work
+// directory.
+type releaseLocks struct {
+	mu    sync.Mutex
+	locks map[string]*sync.Mutex
+}
+
+func (l *releaseLocks) of(release string) *sync.Mutex {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.locks == nil {
+		l.locks = map[string]*sync.Mutex{}
+	}
+	if l.locks[release] == nil {
+		l.locks[release] = &sync.Mutex{}
+	}
+	return l.locks[release]
 }

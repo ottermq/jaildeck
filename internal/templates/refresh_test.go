@@ -127,3 +127,59 @@ func TestRefreshNeedsAKnownRelease(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// Two refreshes of one release share its freebsd-update work directory, and
+// freebsd-update locks nothing: they take turns (#264), and the one waiting
+// says so.
+func TestRefreshesOfOneReleaseTakeTurns(t *testing.T) {
+	storage, releases, _, service := refreshable(BuiltDerived)
+	storage.templates = append(storage.templates, Template{
+		Name: "base", Dataset: "tank/jails/templates/base", Mountpoint: "/usr/local/jails/templates/base",
+		Ready: true, Snapshot: "tank/jails/templates/base@base", Built: BuiltRelease,
+	})
+	service.SetVersions(stubVersions{
+		host: osversion.NewHost("15.1-RELEASE-p6", "15.1-RELEASE-p6", "15.1-RELEASE-p6"),
+		trees: map[string]string{
+			"/usr/local/jails/templates/pg18/.zfs/snapshot/base": "15.1-RELEASE-p2",
+			"/usr/local/jails/templates/base/.zfs/snapshot/base": "15.1-RELEASE-p2",
+		},
+	})
+	gate := make(chan struct{})
+	releases.mu.Lock()
+	releases.gate = gate
+	releases.mu.Unlock()
+
+	if _, err := service.Refresh(context.Background(), "pg18-new", "pg18"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Refresh(context.Background(), "base-new", "base"); err != nil {
+		t.Fatal(err)
+	}
+	// One is in freebsd-update; the other waits, and says so.
+	deadline := time.Now().Add(5 * time.Second)
+	waiting := ""
+	for time.Now().Before(deadline) && waiting == "" {
+		for _, name := range []string{"pg18-new", "base-new"} {
+			if r, ok := service.running.of(name); ok && strings.Contains(r.Step, "waiting for another update of 15.1-RELEASE") {
+				waiting = name
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if waiting == "" {
+		t.Fatal("neither refresh said it was waiting")
+	}
+	close(gate)
+	waitIdle(t, service, "pg18-new")
+	waitIdle(t, service, "base-new")
+
+	releases.mu.Lock()
+	peaked := releases.peaked
+	releases.mu.Unlock()
+	if peaked != 1 {
+		t.Errorf("%d updates of one release ran at once", peaked)
+	}
+	if got := storage.sealedTemplates(); len(got) != 2 {
+		t.Errorf("sealed %v, want both", got)
+	}
+}

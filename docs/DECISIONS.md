@@ -2991,3 +2991,21 @@ Once a template has been refreshed, the old one is known to be outdated. It stay
 - **Shown and measured.** The listing carries `superseded_by`. The UI shows a "superseded by" badge linking to the replacement, leaves superseded templates out of every source picker, disables Refresh with the reason, and says, once nothing is cloned from it, that the template can be removed. `jaildeck_template_superseded{template,superseded_by}` is 1 for a superseded template and 0 for every other.
 
 Templates refreshed before this are not marked. The operator marks their parents once, by hand, when whatever creates jails from them has moved to the new names.
+
+### Amended: explicit packages kept, orphans reported (#264, 2026-11-18)
+
+The orphans above could not be reproduced. A later refresh of the same parent upgraded two packages and pulled in nothing, and `pkg autoremove -n` on a copy of it proposed nothing; `postgresql18-server` was explicit in both. The earlier template and every copy of it were gone, so how the server came to be proposed is unknown. The likeliest cause is a quarterly repository that changed between the two runs.
+
+So a refresh now guards the one way a later autoremove could take a package installed on purpose, and reports what it would take:
+- **Explicit packages are kept explicit.** The packages installed on purpose are read before the upgrade (`pkg -c <root> query -e '%a == 0' %n`) and again after it. One that was explicit and no longer is gets `pkg -c <root> set -y -A 0 <pkg>`, audited as `restore-explicit`. A refresh that cannot read the list stops before the upgrade, audited as `read-packages`; one that cannot restore a package (because the upgrade removed it, say) stops unsealed.
+- **Orphans are reported, never removed.** The packages installed as a dependency that nothing depends on (`%a == 1 && %#r == 0`) are recorded in `jaildeck:orphans` on the new template, which audits as `set-properties`, and shown on its page. A failed read costs only the report.
+
+Derive is not guarded: it installs into its parent's clone and upgrades nothing.
+
+### Amended: a removed template's name is not suggested again (#268, 2026-11-18)
+
+A refresh suggested `<name>-YYYYMMDD`, so a refresh removed and redone the same day suggested the removed one's name. The new template is a full copy with no snapshot in common with the old one, and a replication tool that already received the old one under that name cannot continue it: on the reference host zrepl stopped replicating both templates ("no common snapshot") until the stale copies were destroyed on the backup side. Jail Deck never touches the backup side.
+
+- **Removed names are recorded in ZFS,** in `jaildeck:removed-templates` on the templates parent dataset (`<pool>/jails/templates`), oldest first, at most 32. The parent is the one dataset that outlives its templates, and it keeps the rule that a template's state lives in ZFS (JD-011). The state directory was not an option: it holds the front's state file alone (JD-056). The templates beneath inherit the property; every property here is read locally, so none of them claims it.
+- **The template detail carries `removed_names`,** and the refresh form suggests the first of `-YYYYMMDD`, `-YYYYMMDD-2`, `-YYYYMMDD-3`… that no template has and none had.
+- **A removed name can still be chosen,** with a note saying why the backup may stop replicating it.

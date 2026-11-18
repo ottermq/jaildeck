@@ -44,6 +44,9 @@ export interface Template {
     // refuses a superseded template as the source of a new jail, a reclone,
     // a derive or a refresh; the jails already cloned from it carry on.
     superseded_by?: string
+    // Packages the refresh that made it left with nothing depending on them
+    // (#264). Reported, never removed.
+    orphans?: string[]
 }
 
 // cloneable is whether a template is on offer as a source: ready, with its
@@ -85,6 +88,9 @@ export interface Dependents {
 
 export interface TemplateDetail extends Template {
     dependents: Dependents
+    // Templates removed before, oldest first (#268). A backup may still hold
+    // a copy of one, which a new template of that name cannot continue.
+    removed_names: string[]
 }
 
 export interface RetainedDataset {

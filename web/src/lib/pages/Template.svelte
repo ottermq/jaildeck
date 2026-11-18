@@ -6,7 +6,7 @@ import VulnPanel from '../components/VulnPanel.svelte'
 import { userlandTitle } from '../osversion'
 import { onLive, aboutWork } from '../stores/events.svelte'
 import { getTemplate, listTemplates, classifyClones, removeTemplate, refreshTemplate } from '../stores/templates.svelte'
-import { builtLabel, refreshRefusal, suggestedName } from '../refresh'
+import { builtLabel, refreshRefusal, suggestedName, reusedNameNote } from '../refresh'
 import type { Template, TemplateDetail, Blocked } from '../stores/templates.svelte'
 import { listJails } from '../stores/jails.svelte'
 import type { JailData } from '../stores/jails.svelte'
@@ -91,10 +91,12 @@ let refreshing = $state(false)
 let refreshName = $state('')
 let refreshError = $state('')
 let refreshBusy = $state(false)
+let reusedNote = $derived(template ? reusedNameNote(refreshName, template.removed_names ?? []) : '')
 
 function startRefresh() {
     if (!template) return
-    refreshName = suggestedName(template)
+    const taken = [...templateList.map(t => t.name), ...template.removed_names]
+    refreshName = suggestedName(template, new Date(), taken)
     refreshError = ''
     refreshing = true
 }
@@ -241,6 +243,9 @@ async function remove() {
                 <label for="refresh-name">New template's name</label>
                 <input id="refresh-name" bind:value={refreshName} autocomplete="off" spellcheck="false" required />
             </div>
+            {#if reusedNote}
+                <p class="notice" data-reused>{reusedNote}</p>
+            {/if}
             {#if refreshError}
                 <p class="notice notice--error" role="alert">{refreshError}</p>
             {/if}
@@ -253,6 +258,16 @@ async function remove() {
         </form>
     {:else if refusal && template.ready && !template.running}
         <p class="hint refusal-note" data-refusal>{refusal}</p>
+    {/if}
+
+    {#if template.orphans?.length}
+        <p class="notice" data-orphans>
+            The refresh that made this template left {template.orphans.length === 1 ? 'a package' : `${template.orphans.length} packages`}
+            that nothing depends on: {template.orphans.join(', ')}. Jail Deck never removes packages
+            from a template, because <code>pkg autoremove</code> has proposed taking an explicitly
+            installed one along with them. They cost space, not correctness; a later refresh may
+            no longer pull them in.
+        </p>
     {/if}
 
     {#if removeError}

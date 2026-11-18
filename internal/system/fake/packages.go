@@ -60,4 +60,19 @@ func (s *PackageSystem) Upgrade(_ context.Context, root string) (templates.Resul
 	return templates.Result{Root: root, Command: "pkg -c " + root + " upgrade -y"}, nil
 }
 
+// Explicit is what was installed into root: the fake marks nothing automatic.
+func (s *PackageSystem) Explicit(_ context.Context, root string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.installed[root]...), nil
+}
+
+// MarkExplicit changes nothing: nothing here was ever automatic.
+func (s *PackageSystem) MarkExplicit(_ context.Context, root, pkg string) (templates.Result, error) {
+	return templates.Result{Root: root, Command: "pkg -c " + root + " set -y -A 0 " + pkg}, nil
+}
+
+// Orphans is none: the fake's upgrade pulls nothing in.
+func (s *PackageSystem) Orphans(context.Context, string) ([]string, error) { return nil, nil }
+
 var _ templates.PackageSystem = (*PackageSystem)(nil)

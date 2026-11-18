@@ -38,6 +38,29 @@ type stubStorage struct {
 	copied []string
 	// superseded is each Supersede, "name>by" (#259).
 	superseded []string
+	// orphans is each RecordOrphans, by template (#264).
+	orphans map[string][]string
+	// removed is what Removed answers (#268).
+	removed []string
+}
+
+func (s *stubStorage) Removed(context.Context) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.removed...), nil
+}
+
+func (s *stubStorage) RecordOrphans(_ context.Context, name string, orphans []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(orphans) == 0 {
+		return nil
+	}
+	if s.orphans == nil {
+		s.orphans = map[string][]string{}
+	}
+	s.orphans[name] = orphans
+	return nil
 }
 
 func (s *stubStorage) Supersede(_ context.Context, name, by string) error {
@@ -163,6 +186,41 @@ type stubPackages struct {
 	err        error
 	upgraded   []string
 	upgradeErr error
+	// explicit is what each Explicit call answers, in turn: before the
+	// upgrade, then after it (#264). Empty answers nothing.
+	explicit    [][]string
+	explicitErr error
+	marked      []string
+	orphans     []string
+}
+
+func (s *stubPackages) Explicit(context.Context, string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.explicitErr != nil {
+		return nil, s.explicitErr
+	}
+	if len(s.explicit) == 0 {
+		return nil, nil
+	}
+	answer := s.explicit[0]
+	if len(s.explicit) > 1 {
+		s.explicit = s.explicit[1:]
+	}
+	return answer, nil
+}
+
+func (s *stubPackages) MarkExplicit(_ context.Context, root, pkg string) (Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.marked = append(s.marked, pkg)
+	return Result{Root: root, Command: "pkg -c " + root + " set -y -A 0 " + pkg}, nil
+}
+
+func (s *stubPackages) Orphans(context.Context, string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.orphans, nil
 }
 
 func (s *stubPackages) Upgrade(_ context.Context, root string) (Result, error) {
@@ -279,11 +337,32 @@ func (s *stubPackages) Install(_ context.Context, root string, packages []string
 	return Result{Root: root, Command: command}, s.err
 }
 
-type fakeLogger struct{ entries []audit.Entry }
+type fakeLogger struct {
+	mu      sync.Mutex
+	entries []audit.Entry
+}
 
 func (f *fakeLogger) Log(_ context.Context, e audit.Entry) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.entries = append(f.entries, e)
 	return nil
+}
+
+func (f *fakeLogger) all() []audit.Entry {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]audit.Entry(nil), f.entries...)
+}
+
+// has is whether an entry for operation was written with command.
+func (f *fakeLogger) has(operation, command string) bool {
+	for _, e := range f.all() {
+		if e.Operation == operation && e.Command == command {
+			return true
+		}
+	}
+	return false
 }
 
 func release() *stubStorage {
@@ -692,6 +771,21 @@ func TestGetNeverReturnsNullDependents(t *testing.T) {
 	}
 	if detail.Dependents.Clones == nil || detail.Dependents.Holds == nil {
 		t.Errorf("dependents = %+v, want empty lists rather than nil", detail.Dependents)
+	}
+	if detail.RemovedNames == nil {
+		t.Error("removed_names is nil, want an empty list")
+	}
+}
+
+// The detail carries the names of removed templates, for the refresh form to
+// avoid (#268).
+func TestGetCarriesRemovedNames(t *testing.T) {
+	storage := removable()
+	storage.removed = []string{"pg18-20261118"}
+	detail, err := NewService(storage, &stubPackages{}, &stubReleases{}, &fakeLogger{}).
+		Get(context.Background(), "postgres-16")
+	if err != nil || !slices.Equal(detail.RemovedNames, []string{"pg18-20261118"}) {
+		t.Errorf("removed_names = %v, %v", detail.RemovedNames, err)
 	}
 }
 

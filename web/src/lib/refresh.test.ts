@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { builtLabel, refreshRefusal, suggestedName, supersededRefusal } from './refresh'
+import { builtLabel, refreshRefusal, reusedNameNote, suggestedName, supersededRefusal } from './refresh'
 import { cloneable } from './stores/templates.svelte'
 import type { Template } from './stores/templates.svelte'
 
@@ -35,6 +35,18 @@ describe('refresh', () => {
         expect(cloneable(t({ snapshot, superseded_by: 'pg18-20261118' }))).toBe(false)
         expect(cloneable(t({ snapshot, ready: false }))).toBe(false)
         expect(cloneable(t({}))).toBe(false)
+    })
+
+    it('skips a name that exists or was removed (#268)', () => {
+        const day = new Date('2026-11-18T12:00:00Z')
+        expect(suggestedName(t({}), day, ['pg18-20261118'])).toBe('pg18-20261118-2')
+        expect(suggestedName(t({}), day, ['pg18-20261118', 'pg18-20261118-2'])).toBe('pg18-20261118-3')
+        expect(suggestedName(t({ name: 'pg18-20261118-2' }), day, ['pg18-20261118'])).toBe('pg18-20261118-2')
+    })
+
+    it('warns when the chosen name was a removed template\'s', () => {
+        expect(reusedNameNote('pg18-20261118 ', ['pg18-20261118'])).toMatch(/was removed before/)
+        expect(reusedNameNote('pg18-20261119', ['pg18-20261118'])).toBe('')
     })
 
     it('suggests the name and the date, without stacking dates', () => {

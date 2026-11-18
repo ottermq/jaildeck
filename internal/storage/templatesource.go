@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path"
+	"slices"
 	"strings"
 
 	"github.com/ottermq/jaildeck/internal/common"
@@ -95,6 +97,7 @@ func (s *TemplateSource) Templates(ctx context.Context) ([]templates.Template, e
 					found[i].Parent = from
 				}
 				found[i].SupersededBy = properties[t.Dataset][templates.SupersededProperty]
+				found[i].Orphans = splitList(properties[t.Dataset][templates.OrphansProperty])
 			}
 		}
 	}
@@ -157,6 +160,21 @@ func (s *TemplateSource) Supersede(ctx context.Context, name, by string) error {
 		return err
 	}
 	_, err = s.service.SetUserProperties(ctx, dataset, map[string]*string{templates.SupersededProperty: &by})
+	return err
+}
+
+// RecordOrphans records the packages a refresh left that nothing depends on
+// (#264). Nothing is written when there are none.
+func (s *TemplateSource) RecordOrphans(ctx context.Context, name string, orphans []string) error {
+	if len(orphans) == 0 {
+		return nil
+	}
+	dataset, err := s.datasetFor(ctx, name)
+	if err != nil {
+		return err
+	}
+	list := strings.Join(orphans, ",")
+	_, err = s.service.SetUserProperties(ctx, dataset, map[string]*string{templates.OrphansProperty: &list})
 	return err
 }
 
@@ -362,7 +380,58 @@ func (s *TemplateSource) Destroy(ctx context.Context, name string) error {
 	if destroyErr != nil {
 		return toWriteError("destroy", dataset, destroyErr)
 	}
+	// Remembered for naming only (#268): a failure is audited by
+	// SetUserProperties and does not undo a removal that happened.
+	_ = s.recordRemoved(ctx, path.Dir(dataset), name)
 	return nil
+}
+
+// recordRemoved appends name to the parent's list of removed templates,
+// once, dropping the oldest past templates.RemovedKept.
+func (s *TemplateSource) recordRemoved(ctx context.Context, parent, name string) error {
+	properties, err := s.service.UserPropertiesOf(ctx, []string{parent})
+	if err != nil {
+		return err
+	}
+	removed := splitList(properties[parent][templates.RemovedProperty])
+	removed = slices.DeleteFunc(removed, func(n string) bool { return n == name })
+	removed = append(removed, name)
+	if len(removed) > templates.RemovedKept {
+		removed = removed[len(removed)-templates.RemovedKept:]
+	}
+	list := strings.Join(removed, ",")
+	_, err = s.service.SetUserProperties(ctx, parent, map[string]*string{templates.RemovedProperty: &list})
+	return err
+}
+
+// Removed names the templates removed from under every templates parent,
+// oldest first (#268). Read locally, as every property here is: the
+// templates beneath inherit it and must not each claim it.
+func (s *TemplateSource) Removed(ctx context.Context) ([]string, error) {
+	roots, err := s.service.roots(ctx)
+	if err != nil {
+		return nil, err
+	}
+	parents := make([]string, 0, len(roots))
+	for _, root := range roots {
+		parents = append(parents, templateParent(root))
+	}
+	properties, err := s.service.UserPropertiesOf(ctx, parents)
+	if err != nil {
+		return nil, err
+	}
+	removed := make([]string, 0)
+	for _, parent := range parents {
+		removed = append(removed, splitList(properties[parent][templates.RemovedProperty])...)
+	}
+	return removed, nil
+}
+
+func splitList(value string) []string {
+	if value == "" {
+		return nil
+	}
+	return strings.Split(value, ",")
 }
 
 // datasetFor finds the template's dataset on whichever pool has it.

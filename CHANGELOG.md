@@ -20,6 +20,22 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.39.0 — 2026-11-18
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.39.0)
+
+**A refresh keeps explicit packages explicit, reports orphans, and doesn't reuse a removed
+template's name** (#264, #268).
+
+- **A refresh keeps explicitly installed packages explicit, and reports orphans** (#264, JD-063). It reads the packages installed on purpose before and after `pkg upgrade`; any the upgrade left marked automatic is marked explicit again (`restore-explicit` in the audit log), so a later `pkg autoremove` cannot take it. Packages left with nothing depending on them are recorded in `jaildeck:orphans` and shown on the template's page, never removed. A refresh that cannot read the package list stops before upgrading (`read-packages`).
+
+- **A refresh does not suggest a removed template's name** (#268, JD-063). Removing a template records its name in `jaildeck:removed-templates` on the templates parent dataset; the refresh form suggests `-YYYYMMDD-2` and on when the plain date is taken by a template that exists or existed, and warns when a removed name is chosen by hand: a backup that holds the old copy cannot continue replicating the new one.
+
+### API
+
+- `Template` gains `orphans`, absent unless the refresh that made the template left any.
+- `GET /api/templates/{name}` gains `removed_names`, the templates removed before, oldest first; never null.
+
 ## v0.38.0 — 2026-11-18
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.38.0)

@@ -7151,6 +7151,13 @@
                     "description": "Name is the last component of the dataset, which is what a client uses:\n\"15.1-RELEASE\", \"postgres-16\".",
                     "type": "string"
                 },
+                "orphans": {
+                    "description": "Orphans are the packages the refresh that made this template left\ninstalled with nothing depending on them, from its jaildeck:orphans\nuser property (#264). Reported, never removed: removing them is the\noperator's call (JD-063).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "parent": {
                     "description": "Parent is the template this one was derived from, empty for a release\ntemplate built from base.txz. Read from the clone's origin rather than\nrecorded: a derived template cannot outlive or disagree with its parent.",
                     "type": "string"
@@ -7162,6 +7169,13 @@
                 "referenced": {
                     "description": "Referenced is the whole userland; for a derived template most of it is\nstill shared with its parent, so Used is what the packages cost.",
                     "type": "integer"
+                },
+                "removed_names": {
+                    "description": "RemovedNames are the templates removed before, oldest first (#268).\nA refresh suggests a name that is not among them: a backup may still\nhold a copy of one, which a new template of that name cannot\ncontinue. Never null.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "running": {
                     "description": "Running is the step executing right now, absent when nothing is. Held in\nmemory and never written down: a restart kills the work, so a marker\nthat survived it would be claiming something false.",
@@ -7258,6 +7272,13 @@
                 "name": {
                     "description": "Name is the last component of the dataset, which is what a client uses:\n\"15.1-RELEASE\", \"postgres-16\".",
                     "type": "string"
+                },
+                "orphans": {
+                    "description": "Orphans are the packages the refresh that made this template left\ninstalled with nothing depending on them, from its jaildeck:orphans\nuser property (#264). Reported, never removed: removing them is the\noperator's call (JD-063).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "parent": {
                     "description": "Parent is the template this one was derived from, empty for a release\ntemplate built from base.txz. Read from the clone's origin rather than\nrecorded: a derived template cannot outlive or disagree with its parent.",

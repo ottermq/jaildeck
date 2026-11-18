@@ -2,6 +2,7 @@ package templates
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"strings"
@@ -216,5 +217,66 @@ func TestRefreshesOfOneReleaseTakeTurns(t *testing.T) {
 	}
 	if got := storage.sealedTemplates(); len(got) != 2 {
 		t.Errorf("sealed %v, want both", got)
+	}
+}
+
+// A package installed on purpose that the upgrade left marked automatic is
+// marked explicit again, audited, so a later pkg autoremove cannot take it;
+// the orphans are recorded, not removed (#264).
+func TestRefreshKeepsExplicitPackagesAndReportsOrphans(t *testing.T) {
+	storage, _, packages, service := refreshable(BuiltDerived)
+	packages.explicit = [][]string{
+		{"pgbouncer", "postgresql18-server"},
+		{"pgbouncer"},
+	}
+	packages.orphans = []string{"binutils", "gcc12-devel"}
+	logger := &fakeLogger{}
+	service.operationLogger = logger
+
+	if _, err := service.Refresh(context.Background(), "pg18-p7", "pg18"); err != nil {
+		t.Fatal(err)
+	}
+	waitIdle(t, service, "pg18-p7")
+
+	packages.mu.Lock()
+	marked := append([]string(nil), packages.marked...)
+	packages.mu.Unlock()
+	if !slices.Equal(marked, []string{"postgresql18-server"}) {
+		t.Errorf("marked explicit %v", marked)
+	}
+	if !logger.has(OperationRestoreExplicit, "pkg -c /usr/local/jails/templates/pg18-p7 set -y -A 0 postgresql18-server") {
+		t.Errorf("no restore-explicit entry: %+v", logger.all())
+	}
+	storage.mu.Lock()
+	orphans := storage.orphans["pg18-p7"]
+	storage.mu.Unlock()
+	if !slices.Equal(orphans, []string{"binutils", "gcc12-devel"}) {
+		t.Errorf("orphans %v", orphans)
+	}
+	if got := storage.sealedTemplates(); !slices.Equal(got, []string{"pg18-p7"}) {
+		t.Errorf("sealed %v", got)
+	}
+}
+
+// Without knowing what was installed on purpose, the guard cannot work: the
+// refresh stops before the upgrade, audited, and nothing is sealed.
+func TestRefreshStopsWhenItCannotReadThePackages(t *testing.T) {
+	storage, _, packages, service := refreshable(BuiltDerived)
+	packages.explicitErr = errors.New("pkg: database locked")
+	logger := &fakeLogger{}
+	service.operationLogger = logger
+
+	if _, err := service.Refresh(context.Background(), "pg18-p7", "pg18"); err != nil {
+		t.Fatal(err)
+	}
+	waitIdle(t, service, "pg18-p7")
+	packages.mu.Lock()
+	upgraded := len(packages.upgraded)
+	packages.mu.Unlock()
+	if upgraded != 0 || len(storage.sealedTemplates()) != 0 {
+		t.Errorf("upgraded %d, sealed %v", upgraded, storage.sealedTemplates())
+	}
+	if !logger.has(OperationReadPackages, "") {
+		t.Errorf("no read-packages entry: %+v", logger.all())
 	}
 }

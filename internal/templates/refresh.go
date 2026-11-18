@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/ottermq/jaildeck/internal/common"
 	"github.com/ottermq/jaildeck/internal/osversion"
@@ -12,6 +13,15 @@ import (
 // OperationUpgradePackages is a refresh's pkg upgrade, audited like every
 // other stage of a detached operation.
 const OperationUpgradePackages = "upgrade-packages"
+
+// OperationReadPackages is a refresh failing to read which packages were
+// installed on purpose (#264). Only a failure is audited: the read changes
+// nothing.
+const OperationReadPackages = "read-packages"
+
+// OperationRestoreExplicit is a package the upgrade left marked automatic
+// though it was installed on purpose, marked explicit again (#264).
+const OperationRestoreExplicit = "restore-explicit"
 
 // Refresh builds a new template from another one's @base, brought to its
 // release's current patch level with freebsd-update and with every package
@@ -106,10 +116,29 @@ func (s *Service) refresh(ctx context.Context, name, parent, parentSnapshot, rel
 	}
 
 	s.running.step(name, StateUpdating, "upgrading its packages")
+	// What was installed on purpose, read before the upgrade (#264): an
+	// upgrade that leaves one of them marked automatic would let a later
+	// pkg autoremove take it -- a database template without its server.
+	explicit, err := s.packages.Explicit(ctx, root)
+	if err != nil {
+		s.logOperation(ctx, OperationReadPackages, name, "", err)
+		return
+	}
 	result, err := s.packages.Upgrade(ctx, root)
 	s.logOperation(ctx, OperationUpgradePackages, name, result.Command, err)
 	if err != nil {
 		return
+	}
+	if !s.keepExplicit(ctx, name, root, explicit) {
+		return
+	}
+	// Reported, never removed (JD-063): pkg autoremove once proposed
+	// taking an explicitly installed server along with the orphans. A
+	// failed read only costs the report.
+	if orphans, err := s.packages.Orphans(ctx, root); err == nil {
+		if s.storage.RecordOrphans(ctx, name, orphans) != nil {
+			return
+		}
 	}
 	if !s.seal(ctx, name, BuiltRefreshed) {
 		return
@@ -118,6 +147,27 @@ func (s *Service) refresh(ctx context.Context, name, parent, parentSnapshot, rel
 	// as set-properties; a failure leaves the parent unmarked, which is
 	// where it started, and the refresh itself is still done.
 	_ = s.storage.Supersede(ctx, parent, name)
+}
+
+// keepExplicit marks explicit again every package that was explicit before
+// the upgrade and is not after it, each audited (#264).
+func (s *Service) keepExplicit(ctx context.Context, name, root string, before []string) bool {
+	after, err := s.packages.Explicit(ctx, root)
+	if err != nil {
+		s.logOperation(ctx, OperationReadPackages, name, "", err)
+		return false
+	}
+	for _, pkg := range before {
+		if slices.Contains(after, pkg) {
+			continue
+		}
+		result, err := s.packages.MarkExplicit(ctx, root, pkg)
+		s.logOperation(ctx, OperationRestoreExplicit, name, result.Command, err)
+		if err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func notRefreshable(t Template) error {

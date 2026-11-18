@@ -64,6 +64,10 @@ type Template struct {
 // (#252). Kept in ZFS, as everything about a template is (JD-011).
 const BuiltProperty = "jaildeck:built"
 
+// RefreshedFromProperty is the template a refreshed one was copied from
+// (#258). A copy has no origin to read its parent from.
+const RefreshedFromProperty = "jaildeck:refreshed-from"
+
 // How a template was made.
 const (
 	// BuiltRelease is extracted from a release's base.txz.

@@ -20,6 +20,11 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+- **A refreshed template no longer keeps its parent forever** (#258, JD-063). A refresh cloned the parent's `@base`, and ZFS never destroys a snapshot with clones, so a template that had been refreshed could never be removed, even with no jail left on it. **A refresh now makes an independent copy** with `zfs send | zfs receive`. It costs the space of a whole template, and jails cloned from it still share its blocks. The parent is recorded in a `jaildeck:refreshed-from` property, shown as "refreshed from" on the template's page. Derive still clones.
+- **Upgrading:** templates refreshed by v0.35.0 are still clones of their parents. Any that no jail is cloned from yet can be removed and refreshed again, which takes minutes.
+
 ## v0.35.0 — 2026-11-18
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.35.0)

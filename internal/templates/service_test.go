@@ -34,6 +34,8 @@ type stubStorage struct {
 	destroyErr    error
 	// marked is each Mark, "name=built".
 	marked []string
+	// copied is each Copy (#258).
+	copied []string
 }
 
 func (s *stubStorage) Mark(_ context.Context, name, built string) error {
@@ -87,6 +89,21 @@ func (s *stubStorage) madeDatasets() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.created...)
+}
+
+// Copy records "snapshot => name (from parent)", apart from a derive's clone.
+func (s *stubStorage) Copy(_ context.Context, parentSnapshot, name, parent string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.copied = append(s.copied, parentSnapshot+" => "+name+" (from "+parent+")")
+	if s.deriveErr != nil {
+		return "", s.deriveErr
+	}
+	root := "/usr/local/jails/templates/" + name
+	s.templates = append(s.templates, Template{
+		Name: name, Dataset: "tank/jails/templates/" + name, Mountpoint: root, Parent: parent,
+	})
+	return root, nil
 }
 
 func (s *stubStorage) Derive(_ context.Context, parentSnapshot, name string) (string, error) {

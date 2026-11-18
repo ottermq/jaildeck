@@ -11,6 +11,9 @@ import (
 
 const OperationCloneDataset = "clone-dataset"
 
+// OperationCopyDataset is a zfs send into zfs receive (#258).
+const OperationCopyDataset = "copy-dataset"
+
 // The steps of a re-clone, named so a failure can say which one it reached.
 // They are in the order they run, and the order is the safety property: every
 // child leaves the jail before anything touches the root.

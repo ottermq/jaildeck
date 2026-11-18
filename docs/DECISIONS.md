@@ -2934,7 +2934,7 @@ A timer of its own on the root side: a read at startup, then every minute. Reque
 
 ### The rule
 
-- **A refresh builds a new template; it never changes one.** A clone of the parent's `@base` is brought to the release's current patch level with `freebsd-update -b` and has every package upgraded with `pkg -c <root> upgrade -y`, then it is marked and sealed as `@base`. The parent and every jail cloned from it are unaffected, the parent is the way back, and the name is the caller's.
+- **A refresh builds a new template; it never changes one.** A copy of the parent's `@base` (a clone until #258, below) is brought to the release's current patch level with `freebsd-update -b` and has every package upgraded with `pkg -c <root> upgrade -y`, then it is marked and sealed as `@base`. The parent and every jail cloned from it are unaffected, the parent is the way back, and the name is the caller's.
 - **Running jails are never patched in place.** `freebsd-update -j` or `pkg -j upgrade` in a running jail restarts services when it chooses, can leave configuration merges half done, and leaves a jail that matches no template. A jail moves onto a refreshed template with `reclone`, which keeps its child datasets. Jail Deck doesn't decide when that happens: the orchestrator does for its jails, and the operator for the rest.
 - **Only a tree Jail Deck built is refreshed.** The refresh runs `freebsd-update` and `pkg` as root on the tree, and `pkg` runs the packages' own scripts in the chroot. That is acceptable for a tree extracted from `base.txz` or built with `pkg -c`. It is not acceptable for a template promoted from a jail, whose tree is whatever that jail's root left in it (JD-061).
 
@@ -2955,4 +2955,18 @@ On FreeBSD 15.1, a derived PostgreSQL template at p2:
 ### Not in scope
 
 Crossing releases (`freebsd-update upgrade -r`, with merges), refreshing on a schedule, and moving jails onto a refreshed template automatically.
+
+### Amended: a copy, not a clone (#258, 2026-11-18)
+
+As first built, a refresh cloned the parent's `@base`. ZFS won't destroy a snapshot that has clones, so a template that had been refreshed could never be removed, even with every jail moved off it. Every refresh added a link to the chain, and retiring an outdated template, the reason for refreshing at all, became impossible. `zfs promote` doesn't fix it: the promote would move the parent's `@base` onto a dataset that will have its own `@base`, and ZFS refuses the clash.
+
+So a refresh now copies:
+- **`zfs send <parent>@base | zfs receive <new>@refresh-copy`, then the received snapshot destroyed.** It's a plain send, with no `-p`, so no properties come across and the copy inherits its mountpoint like any other template. The receive has no `-F`, so an existing name is refused. The received snapshot is never called `@base`: a template is ready only once a refresh has sealed it.
+- **The parent is recorded in `jaildeck:refreshed-from`.** A copy has no origin to read it from, and the listing uses it as the parent.
+- **The pipe runs without a shell.** A `Command` can name another as `Into`, and the runner joins the two with an OS pipe. A writer killed by a broken pipe is not the cause: the reader that left is.
+- **The cost is the space of a whole template per refresh.** Jails cloned from the new template still share its blocks. Measured on throwaways, the copy itself takes seconds.
+
+**Derive still clones.** A derived template is its parent plus packages, so the shared blocks are the point. Its chain is also one link deep and clears itself: once the derived template has been refreshed and its jails have moved, it can be removed, and then so can its parent.
+
+Templates refreshed by v0.35.0 are clones. Nothing in Jail Deck converts them. One that no jail is cloned from yet can be removed and refreshed again.
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/ottermq/jaildeck/internal/storage"
 	"github.com/ottermq/jaildeck/internal/system"
@@ -106,6 +107,23 @@ func (a *StorageAdapter) Mount(ctx context.Context, dataset string) (storage.Res
 
 func (a *StorageAdapter) CloneSnapshot(ctx context.Context, snapshot, target string) (storage.Result, error) {
 	return a.runWrite(ctx, target, system.Command{Name: "zfs", Args: []string{"clone", snapshot, target}})
+}
+
+// copyTimeout bounds a local zfs send into zfs receive. A template is a few
+// GB at most, copied within one pool: seconds, measured. The margin is for a
+// pool busy with something else.
+const copyTimeout = 30 * time.Minute
+
+// SendReceive pipes zfs send into zfs receive. Plain send: no -p, so the copy
+// takes its properties from where it lands, mountpoint included, and none of
+// the source's. receive without -F, so an existing dataset is refused, not
+// overwritten.
+func (a *StorageAdapter) SendReceive(ctx context.Context, snapshot, target string) (storage.Result, error) {
+	dataset, _, _ := strings.Cut(target, "@")
+	return a.runWrite(ctx, dataset, system.Command{
+		Name: "zfs", Args: []string{"send", snapshot}, Timeout: copyTimeout,
+		Into: &system.Command{Name: "zfs", Args: []string{"receive", target}},
+	})
 }
 
 // Origin reads the clone's parent snapshot. zfs prints a dash for a dataset

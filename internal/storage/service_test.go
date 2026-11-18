@@ -511,6 +511,18 @@ func (s *stubSystem) mountErrorFor(dataset string) error {
 	return s.mountErr
 }
 
+func (s *stubSystem) SendReceive(_ context.Context, snapshot, target string) (Result, error) {
+	command := "zfs send " + snapshot + " | zfs receive " + target
+	s.ran = append(s.ran, command)
+	dataset, short, _ := strings.Cut(target, "@")
+	if s.cloneErr != nil {
+		return Result{Dataset: dataset, Command: command}, s.cloneErr
+	}
+	s.datasets = append(s.datasets, Dataset{Name: dataset, Mountpoint: s.mountpointFor(dataset)})
+	s.snapshots = append(s.snapshots, Snapshot{Name: target, Dataset: dataset, Short: short})
+	return Result{Dataset: dataset, Command: command}, nil
+}
+
 func (s *stubSystem) CloneSnapshot(_ context.Context, snapshot, target string) (Result, error) {
 	command := "zfs clone " + snapshot + " " + target
 	s.ran = append(s.ran, command)

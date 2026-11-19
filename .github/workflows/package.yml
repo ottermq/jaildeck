@@ -59,13 +59,21 @@ jobs:
           release: "15.1"
           arch: x86_64
           envs: VERSION COMMIT
-          # A fresh catalogue or nothing (#276). pkg goes on after "Error
-          # updating repositories!" with the catalogue the VM image shipped,
-          # and asks for packages the mirrors no longer have (go127-1.27.3
-          # after 1.27.4 replaced it). So the update has to succeed first,
-          # retried, and only the ports repository: the build needs nothing
-          # from base, whose catalogue alone takes minutes.
+          # A current pkg and a fresh catalogue, or nothing (#276).
+          # - The image's pkg follows meta.conf's packing_format and asks
+          #   for data.tzst, which the mirrors stopped publishing (they
+          #   serve data.pkg); pkg 2.9 reads it. pkg bootstrap -f fetches
+          #   the current pkg and checks its signature against the
+          #   fingerprints in base, without needing the catalogue.
+          # - pkg goes on after "Error updating repositories!" with the
+          #   catalogue the image shipped, and asks for packages the
+          #   mirrors no longer have (go127-1.27.3 after 1.27.4). So the
+          #   update has to succeed first, retried, and only for the
+          #   ports repository: the build needs nothing from base.
           prepare: |
+            echo "pkg before: $(pkg -v)"
+            env ASSUME_ALWAYS_YES=yes pkg bootstrap -f
+            echo "pkg after: $(pkg -v)"
             ok=
             for attempt in 1 2 3; do
               echo "pkg attempt $attempt of 3"

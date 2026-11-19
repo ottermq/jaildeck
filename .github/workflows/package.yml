@@ -32,7 +32,7 @@ concurrency:
 jobs:
   package:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
@@ -59,8 +59,23 @@ jobs:
           release: "15.1"
           arch: x86_64
           envs: VERSION COMMIT
+          # A fresh catalogue or nothing (#276). pkg goes on after "Error
+          # updating repositories!" with the catalogue the VM image shipped,
+          # and asks for packages the mirrors no longer have (go127-1.27.3
+          # after 1.27.4 replaced it). So the update has to succeed first,
+          # retried, and only the ports repository: the build needs nothing
+          # from base, whose catalogue alone takes minutes.
           prepare: |
-            pkg install -y go gmake node26 npm-node26
+            ok=
+            for attempt in 1 2 3; do
+              echo "pkg attempt $attempt of 3"
+              if pkg update -f -r FreeBSD-ports && pkg install -y -r FreeBSD-ports go gmake node26 npm-node26; then
+                ok=1
+                break
+              fi
+              [ "$attempt" -lt 3 ] && sleep 60
+            done
+            [ -n "$ok" ] || { echo "pkg failed 3 times; see above" >&2; exit 1; }
           run: |
             freebsd-version
             gmake package VERSION="$VERSION" COMMIT="$COMMIT"

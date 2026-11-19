@@ -20,9 +20,17 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## v0.39.1 — 2026-11-19
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.39.1)
+
+**The package builds again** (#276). v0.39.0 has no package; this is the same code with the build fixed.
+
+- **The release build bootstraps a current pkg** (#276). The FreeBSD mirrors now publish their catalogues as `data.pkg` only, and the build VM's pkg 2.9.0 asked for `data.tzst`. It failed to update and installed from the stale catalogue in its image, asking for packages the mirrors no longer have. The build now runs `pkg bootstrap -f` (verified against the fingerprints in base), requires a fresh `pkg update` before installing, retries it three times, and fails if all three do.
+
 ## v0.39.0 — 2026-11-18
 
-[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.39.0)
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.39.0). No package: its build failed (#276); use v0.39.1.
 
 **A refresh keeps explicit packages explicit, reports orphans, and doesn't reuse a removed
 template's name** (#264, #268).

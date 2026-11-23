@@ -30,7 +30,7 @@ func TestDestroyPurgesTheSnapshotsItWasToldTo(t *testing.T) {
 	if err != nil || result.Blocked != nil || !result.Destroyed {
 		t.Fatalf("result %+v, err %v", result, err)
 	}
-	if want := []string{"purge", "stop", "autostart", "remove-config", "purge", "destroy-root"}; !slices.Equal(steps, want) {
+	if want := []string{"purge", "stop", "purge", "autostart", "remove-config", "destroy-root"}; !slices.Equal(steps, want) {
 		t.Errorf("steps = %v, want %v", steps, want)
 	}
 	if want := []string{rootSnap, childSnap, later}; !slices.Equal(result.Purged, want) {
@@ -102,10 +102,10 @@ func TestAFailedPurgeLeavesTheJailAsItWas(t *testing.T) {
 	}
 }
 
-// The purge before the root still runs when nothing matched at the check --
+// The purge after the stop still runs when nothing matched at the check --
 // the schedule may have taken one while the jail stopped -- and a failure
-// there stops before the root, which is still named.
-func TestAPurgeBeforeTheRootThatFailsStopsThere(t *testing.T) {
+// there leaves the jail configured, so the same call can be repeated.
+func TestAPurgeAfterTheStopThatFailsLeavesTheJailConfigured(t *testing.T) {
 	system, destroyer, remover, autostart, logger := destroyable()
 	destroyer.purgeErr, destroyer.purgeErrAt = errors.New("dataset is busy"), 1
 
@@ -114,8 +114,8 @@ func TestAPurgeBeforeTheRootThatFailsStopsThere(t *testing.T) {
 	if err == nil || result.FailedAt != StepPurge || result.Destroyed || len(destroyer.destroyed) != 0 {
 		t.Fatalf("result %+v, err %v", result, err)
 	}
-	if !result.Stopped || !result.Unlisted || result.Config == "" || result.Root == "" {
-		t.Errorf("result %+v does not say what was done", result)
+	if !result.Stopped || result.Unlisted || result.Config != "" || len(remover.removed) != 0 || result.Root == "" {
+		t.Errorf("result %+v: want stopped, still configured, root named", result)
 	}
 }
 

@@ -2,8 +2,11 @@ package storage
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"strings"
 
+	"github.com/ottermq/jaildeck/internal/common"
 	"github.com/ottermq/jaildeck/internal/jails"
 )
 
@@ -102,10 +105,17 @@ func (s *JailSource) PurgeSnapshots(ctx context.Context, jailPath, prefix string
 	if err != nil {
 		return purged, err
 	}
+	// The caller checked, but the listing is new: a snapshot without the
+	// prefix taken since means the destroy will be refused anyway, and
+	// purging the rest first would only lose them for nothing.
 	for _, snapshot := range snapshots {
 		if !strings.HasPrefix(snapshot.Short, prefix) {
-			continue
+			return purged, common.NewAppError(http.StatusConflict, fmt.Sprintf(
+				"%s does not start with %s and was taken since the destroy was checked; nothing was purged",
+				snapshot.Name, prefix))
 		}
+	}
+	for _, snapshot := range snapshots {
 		result, destroyErr := s.service.system.DestroySnapshot(ctx, snapshot.Dataset, snapshot.Short, false)
 		s.service.logWrite(ctx, OperationDestroySnapshot, result, destroyErr)
 		if destroyErr != nil {

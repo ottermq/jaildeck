@@ -41,8 +41,8 @@ const (
 	StepUnconfigure = "unconfigure"
 	StepDestroy     = "destroy"
 	// StepPurge is the destroy of the snapshots purge_snapshots named
-	// (#280). It runs twice: before the stop, and again just before the
-	// root's destroy.
+	// (#280). It runs twice: before the stop, and again after it, before
+	// the jail is unconfigured.
 	StepPurge = "purge-snapshots"
 )
 
@@ -130,8 +130,8 @@ func (s *JailService) Destroy(ctx context.Context, name JailName, confirm string
 // snapshot, any clone and any hold still refuses the destroy, with nothing
 // touched. The purge runs after every refusal and before the stop, so a
 // purge that fails leaves the jail running and configured. It runs again
-// just before the root's destroy, for a snapshot the schedule took while the
-// jail was stopping.
+// once the jail is stopped and before it is unconfigured, for a snapshot the
+// schedule took while the jail was stopping.
 func (s *JailService) DestroyPurging(ctx context.Context, name JailName, confirm, prefix string) (Destroyed, error) {
 	if err := checkPurgePrefix(prefix); err != nil {
 		return Destroyed{}, err
@@ -208,6 +208,15 @@ func (s *JailService) DestroyPurging(ctx context.Context, name JailName, confirm
 		result.Stopped = true
 	}
 
+	// Again once the jail is down, for a snapshot the schedule took while it
+	// stopped -- and before it is unconfigured, so a purge that fails here
+	// leaves a jail this call can be repeated on.
+	if prefix != "" {
+		if err := s.purge(opCtx, jail.Path, prefix, &result); err != nil {
+			return result, err
+		}
+	}
+
 	// A stopped VNET jail has already taken its own epair away through
 	// exec.poststop, so this normally finds nothing. It finds something when
 	// an earlier start failed: jail(8) skips poststop then, and the orphan
@@ -234,12 +243,6 @@ func (s *JailService) DestroyPurging(ctx context.Context, name JailName, confirm
 		return result, err
 	}
 	result.Config = path
-
-	if prefix != "" {
-		if err := s.purge(opCtx, jail.Path, prefix, &result); err != nil {
-			return result, err
-		}
-	}
 
 	root, err := s.rootDestroyer.DestroyRoot(opCtx, jail.Path)
 	if err != nil {
@@ -371,7 +374,7 @@ func blockedReason(name JailName, dependents RootDependents) string {
 	reason := "refused: " + strings.Join(parts, ", ") +
 		". Each was kept on purpose, so each has to go first -- a snapshot with DELETE " +
 		"/api/jails/" + name.String() + "/snapshots/{snapshot}, giving confirm its full " +
-		"dataset@snapshot name, whether it is of the jail or of one of its datasets (#280); " +
+		"dataset@snapshot name, of the jail or of a dataset directly beneath it (#280), or purge_snapshots=<prefix> for a schedule's; " +
 		"a clone by destroying it or by zfs promote, which moves the dependency the other way."
 	if len(dependents.Clones) == 0 {
 		// The holds are on snapshots that are in the way anyway; the hint is

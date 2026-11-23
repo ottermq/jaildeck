@@ -20,10 +20,11 @@ func withScheduledSnapshots() *stubSystem {
 	return system
 }
 
-// Each matching snapshot goes in its own destroy, never -r, and is audited;
-// the hand-taken one stays (#280).
-func TestPurgeSnapshotsTakesOnlyThePrefix(t *testing.T) {
+// Each matching snapshot goes in its own destroy, never -r, and is audited
+// (#280).
+func TestPurgeSnapshotsTakesThePrefix(t *testing.T) {
 	system := withScheduledSnapshots()
+	system.snapshots = slices.DeleteFunc(system.snapshots, func(s Snapshot) bool { return s.Short == "by-hand" })
 	logger := &fakeLogger{}
 
 	purged, err := jailSourceFor(system, logger).PurgeSnapshots(context.Background(), jailPath, "auto_")
@@ -40,14 +41,37 @@ func TestPurgeSnapshotsTakesOnlyThePrefix(t *testing.T) {
 		t.Errorf("%d audit entries, want one per snapshot", len(logger.entries))
 	}
 	left, _ := NewService(system, &fakeLogger{}, "tank").SnapshotsOf(context.Background(), jailRoot)
-	if len(left) != 1 || left[0].Short != "by-hand" {
-		t.Errorf("left %+v, want only the hand-taken one", left)
+	if len(left) != 0 {
+		t.Errorf("left %+v", left)
+	}
+}
+
+// A snapshot without the prefix in the fresh listing -- taken since the
+// caller checked -- stops the purge before it destroys anything.
+func TestPurgeSnapshotsRefusesWhenSomethingElseAppeared(t *testing.T) {
+	system := withScheduledSnapshots()
+	purged, err := jailSourceFor(system, &fakeLogger{}).PurgeSnapshots(context.Background(), jailPath, "auto_")
+	if appErrCode(t, err) != 409 || len(purged) != 0 || len(system.ran) != 0 {
+		t.Errorf("purged %v, ran %q, err %v", purged, system.ran, err)
+	}
+}
+
+// A destroy that fails part way stops there, and what went before it is
+// returned.
+func TestPurgeSnapshotsReturnsWhatWentBeforeAFailure(t *testing.T) {
+	system := withScheduledSnapshots()
+	system.snapshots = slices.DeleteFunc(system.snapshots, func(s Snapshot) bool { return s.Short == "by-hand" })
+	system.writeErrOn = map[string]bool{jailRoot + "/data@auto_1": true}
+	purged, err := jailSourceFor(system, &fakeLogger{}).PurgeSnapshots(context.Background(), jailPath, "auto_")
+	if err == nil || !slices.Equal(purged, []string{jailRoot + "@auto_1"}) {
+		t.Errorf("purged %v, err %v", purged, err)
 	}
 }
 
 // A destroy that fails stops there, and what went before it is returned.
 func TestPurgeSnapshotsStopsAtAFailure(t *testing.T) {
 	system := withScheduledSnapshots()
+	system.snapshots = slices.DeleteFunc(system.snapshots, func(s Snapshot) bool { return s.Short == "by-hand" })
 	system.writeErr = errors.New("cannot destroy snapshot: dataset is busy")
 
 	purged, err := jailSourceFor(system, &fakeLogger{}).PurgeSnapshots(context.Background(), jailPath, "auto_")

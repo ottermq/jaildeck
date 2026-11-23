@@ -223,8 +223,9 @@ something (JD-021).
 ### Snapshots in the way of a destroy
 
 `DELETE /api/jails/{name}` refuses while the jail or any of its datasets has a snapshot, and
-names each one (#280). Any of them goes through the jail's own snapshot route — give `confirm`
-the snapshot's full name and a child's snapshot is destroyed alone, as its own route would:
+names each one (#280). The jail's own snapshot route takes the jail's and its direct children's
+— give `confirm` the snapshot's full name and a child's snapshot is destroyed alone, as its own
+route would (a deeper dataset's goes through `zfs destroy` by hand):
 
 ```sh
 curl -X DELETE '.../api/jails/db1/snapshots/nightly?confirm=tank/jails/containers/db1/data@nightly'
@@ -244,9 +245,12 @@ curl -X DELETE '.../api/jails/db1?confirm=db1&purge_snapshots=auto_'
   refuses, with nothing touched, and the refusal says how many the prefix would have taken.
 - **One `zfs destroy` per snapshot, never `-r`**, each audited as `destroy-snapshot`.
 - **Twice.** Once before the stop, so a purge that fails leaves the jail running and
-  configured; again just before the dataset's destroy, for a snapshot the schedule took while
-  the jail was stopping. A failure is `failed_at: "purge-snapshots"`, with `purged` listing
-  what went.
+  configured; again once it is stopped and before it is unconfigured, for a snapshot the
+  schedule took meanwhile, so a failure there leaves a jail the same call can be repeated on.
+  Each pass reads the snapshots afresh and destroys nothing if one without the prefix has
+  appeared. A failure is `failed_at: "purge-snapshots"`, with `purged` listing what went.
+- **Not the last moment.** A snapshot taken between the second pass and the dataset's destroy
+  is taken with it when the jail has child datasets (`zfs destroy -r`), as without the option.
 - **Only this host's snapshots.** Copies a replication has sent elsewhere stay.
 
 A hold placed by a replication run in progress — zrepl's `zrepl_STEP_*` — goes when the run

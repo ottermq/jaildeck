@@ -20,6 +20,14 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+- **Removing a template moves on the superseded marks that named it** (#284). A template whose `jaildeck:superseded-by` named the removed one was refused for good, by a refusal pointing at a template that no longer existed; the only way out was `zfs inherit` by hand. The mark now points at whatever superseded the removed template, or is lifted (`zfs inherit`, audited) when nothing did.
+
+### API
+
+- `DELETE /api/templates/{name}` answers with `replaced`: each template whose mark moved, with its new `superseded_by` (empty when lifted), and `error` for one that could not be changed. Never null.
+
 ## v0.40.0 — 2026-11-23
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.40.0)

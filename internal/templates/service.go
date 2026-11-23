@@ -428,6 +428,10 @@ const OperationDestroyTemplate = "destroy-template"
 type Removal struct {
 	Template  string `json:"template"`
 	Destroyed bool   `json:"destroyed"`
+	// Replaced are the templates that were marked superseded by this one
+	// (#284), each now pointing at what replaced it in turn, or unmarked
+	// when nothing did. Never null.
+	Replaced []Replacement `json:"replaced"`
 	// Blocked is set when something is cloned from the template. Nothing ran.
 	Blocked *Blocked `json:"blocked,omitempty"`
 }
@@ -470,6 +474,7 @@ func (s *Service) Remove(ctx context.Context, name, confirm string) (Removal, er
 	if dependents.Any() {
 		return Removal{
 			Template: template.Dataset,
+			Replaced: []Replacement{},
 			Blocked: &Blocked{
 				Reason: blockedReason(dependents),
 				Clones: dependents.Clones,
@@ -484,7 +489,39 @@ func (s *Service) Remove(ctx context.Context, name, confirm string) (Removal, er
 	if s.vulnerabilities != nil {
 		s.vulnerabilities.ForgetTemplate(name)
 	}
-	return Removal{Template: template.Dataset, Destroyed: true}, nil
+	return Removal{Template: template.Dataset, Destroyed: true,
+		Replaced: s.followRemoval(ctx, template, existing)}, nil
+}
+
+// Replacement is one template whose superseded mark followed a removal.
+type Replacement struct {
+	Template string `json:"template"`
+	// SupersededBy is its mark now: the removed template's own replacement,
+	// or empty for a mark that was lifted.
+	SupersededBy string `json:"superseded_by"`
+	// Error is set when the mark could not be changed; it still names the
+	// removed template, and refuses what it refused before.
+	Error string `json:"error,omitempty"`
+}
+
+// followRemoval moves every mark naming the removed template on to the one that
+// replaced it, or lifts it (#284). A mark left naming a template that no
+// longer exists refuses its template for good, with a refusal that points at
+// nothing. Each change is its own audited write, and one that fails is
+// reported, not retried: the removal it follows has already happened.
+func (s *Service) followRemoval(ctx context.Context, removed Template, all []Template) []Replacement {
+	replaced := make([]Replacement, 0)
+	for _, t := range all {
+		if t.SupersededBy != removed.Name || t.Name == removed.Name {
+			continue
+		}
+		r := Replacement{Template: t.Name, SupersededBy: removed.SupersededBy}
+		if err := s.storage.Supersede(ctx, t.Name, removed.SupersededBy); err != nil {
+			r.SupersededBy, r.Error = removed.Name, err.Error()
+		}
+		replaced = append(replaced, r)
+	}
+	return replaced
 }
 
 func blockedReason(dependents Dependents) string {

@@ -3147,7 +3147,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Destroys the template dataset and its snapshots.\n\n**409 while anything is cloned from it**, naming every one. A template's\nsnapshot is the origin of every jail made from it, so destroying it would\ntake them with it. ZFS would refuse too — but only after being asked, with\na message about dependent clones rather than a list of the jails running on\nthem. This asks first, so the refusal is an answer.\n\nA jail that should outlive its template is not stuck: `zfs promote` on the\njail moves the dependency the other way, exactly as cloning a jail as a\ntemplate does in reverse (JD-027).\n\n`confirm` is the template's name. Unlike a snapshot's, it is unambiguous on\nits own — a template name is unique within the pool, where `nightly` names a\nsnapshot on every dataset that has one.\n\nNever `zfs destroy -R`: that would take the dependent clones this refuses to\ntouch, which would make the check decorative.",
+                "description": "Destroys the template dataset and its snapshots.\n\n**409 while anything is cloned from it**, naming every one. A template's\nsnapshot is the origin of every jail made from it, so destroying it would\ntake them with it. ZFS would refuse too — but only after being asked, with\na message about dependent clones rather than a list of the jails running on\nthem. This asks first, so the refusal is an answer.\n\nA jail that should outlive its template is not stuck: `zfs promote` on the\njail moves the dependency the other way, exactly as cloning a jail as a\ntemplate does in reverse (JD-027).\n\n`confirm` is the template's name. Unlike a snapshot's, it is unambiguous on\nits own — a template name is unique within the pool, where `nightly` names a\nsnapshot on every dataset that has one.\n\nNever `zfs destroy -R`: that would take the dependent clones this refuses to\ntouch, which would make the check decorative.\n\nA template it superseded is not left marked by a template that no longer\nexists (#284): its mark moves on to whatever superseded the removed one, or\nis lifted when nothing did. `replaced` lists each, with `error` for a mark\nthat could not be changed.",
                 "produces": [
                     "application/json"
                 ],
@@ -7254,6 +7254,29 @@
                 },
                 "destroyed": {
                     "type": "boolean"
+                },
+                "replaced": {
+                    "description": "Replaced are the templates that were marked superseded by this one\n(#284), each now pointing at what replaced it in turn, or unmarked\nwhen nothing did. Never null.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/templates.Replacement"
+                    }
+                },
+                "template": {
+                    "type": "string"
+                }
+            }
+        },
+        "templates.Replacement": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "description": "Error is set when the mark could not be changed; it still names the\nremoved template, and refuses what it refused before.",
+                    "type": "string"
+                },
+                "superseded_by": {
+                    "description": "SupersededBy is its mark now: the removed template's own replacement,\nor empty for a mark that was lifted.",
+                    "type": "string"
                 },
                 "template": {
                     "type": "string"

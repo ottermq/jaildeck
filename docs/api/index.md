@@ -398,6 +398,11 @@ against a 372 MB template, in that run.
 
 ### If a step fails
 
+`children` and `properties` list only what was done: a re-clone that stopped before the copy
+answers `"properties":[]` whatever the old root carried, and its properties are still on the
+parked root.
+
+
 Nothing is retried and nothing is undone. The response names the step and lists every dataset
 that is no longer under the jail:
 

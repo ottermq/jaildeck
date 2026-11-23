@@ -575,9 +575,13 @@ func blockedReason(dependents Dependents) string {
 	if n := len(dependents.Holds); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d hold(s) are on its snapshots", n))
 	}
-	return "refused: " + strings.Join(parts, " and ") +
+	reason := "refused: " + strings.Join(parts, " and ") +
 		". Destroying it would take them with it, so each has to go first -- or, for a jail " +
 		"that should outlive the template, zfs promote moves the dependency the other way."
+	if len(dependents.Clones) == 0 {
+		reason += common.TransientHoldHint(dependents.Holds)
+	}
+	return reason
 }
 
 // Detail is one template with what depends on it.

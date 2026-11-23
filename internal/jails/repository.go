@@ -348,6 +348,12 @@ type RootDestroyer interface {
 	// jail is stopped and unconfigured, and ZFS refusing a dataset that is
 	// still busy is the guard that cannot race (JD-030).
 	DestroyRoot(ctx context.Context, jailPath string) (string, error)
+	// PurgeSnapshots destroys every snapshot of the jail's root and of its
+	// children whose name starts with prefix, one at a time and audited, and
+	// returns the ones it destroyed -- also when it stopped part way (#280).
+	// It reads the snapshots afresh: what matched when the destroy was
+	// checked may have been pruned since, and a new one may have been taken.
+	PurgeSnapshots(ctx context.Context, jailPath, prefix string) ([]string, error)
 }
 
 // BridgeSource names the bridges the host has.

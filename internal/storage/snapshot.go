@@ -223,6 +223,9 @@ func (s *Service) blockersFor(ctx context.Context, snapshots []string) (*Snapsho
 	}
 	block.Reason = "refused: " + strings.Join(reasons, " and ") +
 		". Neither can be overridden here: releasing a hold or destroying a clone is a separate, deliberate act."
+	if len(block.Clones) == 0 {
+		block.Reason += common.TransientHoldHint(block.Holds)
+	}
 	return block, nil
 }
 

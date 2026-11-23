@@ -40,6 +40,10 @@ const (
 	StepStop        = "stop"
 	StepUnconfigure = "unconfigure"
 	StepDestroy     = "destroy"
+	// StepPurge is the destroy of the snapshots purge_snapshots named
+	// (#280). It runs twice: before the stop, and again just before the
+	// root's destroy.
+	StepPurge = "purge-snapshots"
 )
 
 // Destroyed is what destroying a jail did, or got as far as doing. Like
@@ -53,6 +57,9 @@ type Destroyed struct {
 	// Taken are the child datasets destroyed along with the root. A jail's
 	// children go with it (JD-007), and they go silently unless listed here.
 	Taken []string `json:"taken,omitempty"`
+	// Purged are the snapshots destroyed because purge_snapshots asked for
+	// them (#280), in the order they went.
+	Purged []string `json:"purged,omitempty"`
 	// Stopped says the jail was running and this stopped it.
 	Stopped bool `json:"stopped"`
 	// Unlisted says it was taken out of rc.conf's jail_list.
@@ -111,6 +118,24 @@ type DestroyBlock struct {
 // **If a step fails, nothing is undone**, the same as a create. A jail that
 // was stopped stays stopped and the result says which step it reached.
 func (s *JailService) Destroy(ctx context.Context, name JailName, confirm string) (Destroyed, error) {
+	return s.DestroyPurging(ctx, name, confirm, "")
+}
+
+// DestroyPurging is Destroy that first destroys the snapshots whose names
+// start with prefix (#280) -- the ones a replication or snapshot schedule
+// takes, which would otherwise refuse every destroy. An empty prefix purges
+// nothing.
+//
+// It purges only when that is all that stands in the way: any other
+// snapshot, any clone and any hold still refuses the destroy, with nothing
+// touched. The purge runs after every refusal and before the stop, so a
+// purge that fails leaves the jail running and configured. It runs again
+// just before the root's destroy, for a snapshot the schedule took while the
+// jail was stopping.
+func (s *JailService) DestroyPurging(ctx context.Context, name JailName, confirm, prefix string) (Destroyed, error) {
+	if err := checkPurgePrefix(prefix); err != nil {
+		return Destroyed{}, err
+	}
 	if confirm != name.String() {
 		return Destroyed{}, common.NewAppError(http.StatusBadRequest, fmt.Sprintf(
 			"this destroys %s, its configuration and its filesystem; it needs confirm=%s", name, name))
@@ -132,10 +157,18 @@ func (s *JailService) Destroy(ctx context.Context, name JailName, confirm string
 		return result, err
 	}
 	result.Root, result.Taken = dependents.Root, dependents.Children
-	if dependents.Blocking() {
+	purgeable, kept := splitByPrefix(dependents.Snapshots, prefix)
+	inTheWay := dependents
+	inTheWay.Snapshots = kept
+	if inTheWay.Blocking() {
+		reason := blockedReason(name, inTheWay)
+		if prefix != "" {
+			reason += fmt.Sprintf(" purge_snapshots=%s would take %d snapshot(s), and only when "+
+				"nothing else is in the way.", prefix, len(purgeable))
+		}
 		result.Blocked = &DestroyBlock{
-			Reason:    blockedReason(name, dependents),
-			Snapshots: dependents.Snapshots,
+			Reason:    reason,
+			Snapshots: kept,
 			Clones:    dependents.Clones,
 			Holds:     dependents.Holds,
 		}
@@ -160,6 +193,12 @@ func (s *JailService) Destroy(ctx context.Context, name JailName, confirm string
 	// Detached from the request like every other mutation: a client hanging
 	// up must not leave a jail half destroyed (JD-014).
 	opCtx := context.WithoutCancel(ctx)
+
+	if len(purgeable) > 0 {
+		if err := s.purge(opCtx, jail.Path, prefix, &result); err != nil {
+			return result, err
+		}
+	}
 
 	if jail.Status == JailStatusRunning {
 		if _, err := s.Stop(opCtx, name); err != nil {
@@ -196,6 +235,12 @@ func (s *JailService) Destroy(ctx context.Context, name JailName, confirm string
 	}
 	result.Config = path
 
+	if prefix != "" {
+		if err := s.purge(opCtx, jail.Path, prefix, &result); err != nil {
+			return result, err
+		}
+	}
+
 	root, err := s.rootDestroyer.DestroyRoot(opCtx, jail.Path)
 	if err != nil {
 		// The jail is gone from the host's configuration and its filesystem
@@ -207,6 +252,44 @@ func (s *JailService) Destroy(ctx context.Context, name JailName, confirm string
 	result.Root = root
 	result.Destroyed = true
 	return result, nil
+}
+
+// purge destroys the snapshots starting with prefix and adds them to the
+// result. A failure names the step; what went before it stays listed.
+func (s *JailService) purge(ctx context.Context, jailPath, prefix string, result *Destroyed) error {
+	purged, err := s.rootDestroyer.PurgeSnapshots(ctx, jailPath, prefix)
+	result.Purged = append(result.Purged, purged...)
+	if err != nil {
+		result.FailedAt = StepPurge
+	}
+	return err
+}
+
+// splitByPrefix parts full dataset@snapshot names into those whose snapshot
+// name starts with prefix and the rest. An empty prefix matches nothing.
+func splitByPrefix(snapshots []string, prefix string) (matching, rest []string) {
+	for _, snapshot := range snapshots {
+		_, short, _ := strings.Cut(snapshot, "@")
+		if prefix != "" && strings.HasPrefix(short, prefix) {
+			matching = append(matching, snapshot)
+		} else {
+			rest = append(rest, snapshot)
+		}
+	}
+	return matching, rest
+}
+
+// checkPurgePrefix refuses a prefix that could not begin a snapshot name.
+// The characters are the ones zfs allows in one.
+func checkPurgePrefix(prefix string) error {
+	for _, r := range prefix {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' ||
+			r == '_' || r == '-' || r == '.' || r == ':') {
+			return common.NewAppError(http.StatusBadRequest, fmt.Sprintf(
+				"purge_snapshots=%q: a snapshot name has only letters, digits and _ - . :", prefix))
+		}
+	}
+	return nil
 }
 
 // sweepEpair destroys a leftover epair, and never fails the destroy. It is
@@ -285,8 +368,15 @@ func blockedReason(name JailName, dependents RootDependents) string {
 	if n := len(dependents.Holds); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d hold(s) are on them", n))
 	}
-	return "refused: " + strings.Join(parts, ", ") +
+	reason := "refused: " + strings.Join(parts, ", ") +
 		". Each was kept on purpose, so each has to go first -- a snapshot with DELETE " +
-		"/api/jails/" + name.String() + "/snapshots/{snapshot}, a clone by destroying it or by " +
-		"zfs promote, which moves the dependency the other way."
+		"/api/jails/" + name.String() + "/snapshots/{snapshot}, giving confirm its full " +
+		"dataset@snapshot name, whether it is of the jail or of one of its datasets (#280); " +
+		"a clone by destroying it or by zfs promote, which moves the dependency the other way."
+	if len(dependents.Clones) == 0 {
+		// The holds are on snapshots that are in the way anyway; the hint is
+		// only about whether to wait or to act on them.
+		reason += common.TransientHoldHint(dependents.Holds)
+	}
+	return reason
 }

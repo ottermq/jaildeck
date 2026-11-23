@@ -439,6 +439,7 @@ export interface Destroyed {
     // The child datasets destroyed with the jail. They go silently unless
     // listed (JD-007).
     taken?: string[]
+    purged?: string[]
     stopped: boolean
     unlisted: boolean
     config?: string

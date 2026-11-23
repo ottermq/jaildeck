@@ -220,6 +220,38 @@ first; a process still using the path makes the unmount refuse, and nothing move
 part of the layout readiness check: a host that has never retained anything is not missing
 something (JD-021).
 
+### Snapshots in the way of a destroy
+
+`DELETE /api/jails/{name}` refuses while the jail or any of its datasets has a snapshot, and
+names each one (#280). Any of them goes through the jail's own snapshot route — give `confirm`
+the snapshot's full name and a child's snapshot is destroyed alone, as its own route would:
+
+```sh
+curl -X DELETE '.../api/jails/db1/snapshots/nightly?confirm=tank/jails/containers/db1/data@nightly'
+```
+
+A replication or snapshot schedule keeps putting snapshots back, so one by one is a race.
+`purge_snapshots=<prefix>` destroys every snapshot whose name starts with the prefix as part of
+the destroy:
+
+```sh
+curl -X DELETE '.../api/jails/db1?confirm=db1&purge_snapshots=auto_'
+# {"jail":"db1","purged":["tank/jails/containers/db1@auto_1","tank/jails/containers/db1/data@auto_1"],
+#  "destroyed":true, ...}
+```
+
+- **Only when they are all that is in the way.** Another snapshot, a clone or a hold still
+  refuses, with nothing touched, and the refusal says how many the prefix would have taken.
+- **One `zfs destroy` per snapshot, never `-r`**, each audited as `destroy-snapshot`.
+- **Twice.** Once before the stop, so a purge that fails leaves the jail running and
+  configured; again just before the dataset's destroy, for a snapshot the schedule took while
+  the jail was stopping. A failure is `failed_at: "purge-snapshots"`, with `purged` listing
+  what went.
+- **Only this host's snapshots.** Copies a replication has sent elsewhere stay.
+
+A hold placed by a replication run in progress — zrepl's `zrepl_STEP_*` — goes when the run
+ends; a refusal that names only such holds says to retry in a minute or two.
+
 ## Templates
 
 A jail is always a clone of a template, so the only question is **when** you provision it:

@@ -80,6 +80,42 @@ func (s *JailSource) DestroyRoot(ctx context.Context, jailPath string) (string, 
 	return root, nil
 }
 
+// PurgeSnapshots destroys each snapshot of the jail's root and of everything
+// beneath it whose name starts with prefix (#280).
+//
+// One zfs destroy per snapshot, never -r: a recursive destroy of name@snap
+// takes that name on every descendant, which is right for a schedule's
+// snapshots and wrong for one somebody took by hand with the same name on
+// one child. Each is audited. A held or cloned snapshot makes zfs refuse,
+// and that refusal is the answer -- the caller checked for both, and this
+// does not check again only to lose the same race.
+func (s *JailSource) PurgeSnapshots(ctx context.Context, jailPath, prefix string) ([]string, error) {
+	purged := make([]string, 0)
+	if prefix == "" {
+		return purged, nil
+	}
+	root, err := s.datasetFor(ctx, jailPath, "")
+	if err != nil {
+		return purged, err
+	}
+	snapshots, err := s.service.SnapshotsOf(ctx, root)
+	if err != nil {
+		return purged, err
+	}
+	for _, snapshot := range snapshots {
+		if !strings.HasPrefix(snapshot.Short, prefix) {
+			continue
+		}
+		result, destroyErr := s.service.system.DestroySnapshot(ctx, snapshot.Dataset, snapshot.Short, false)
+		s.service.logWrite(ctx, OperationDestroySnapshot, result, destroyErr)
+		if destroyErr != nil {
+			return purged, toWriteError("destroy", snapshot.Name, destroyErr)
+		}
+		purged = append(purged, snapshot.Name)
+	}
+	return purged, nil
+}
+
 // childrenOf names the datasets beneath root, in the order zfs listed them.
 func (s *JailSource) childrenOf(ctx context.Context, root string) ([]string, error) {
 	inventory, err := s.service.Inventory(ctx)

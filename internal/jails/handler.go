@@ -1347,6 +1347,15 @@ func (h *JailHandler) Exec(w http.ResponseWriter, r *http.Request) {
 // @Description  `zfs destroy -R` is never passed, which is what would make this check
 // @Description  decorative.
 // @Description
+// @Description  **purge_snapshots=<prefix> destroys a schedule's snapshots first** (#280):
+// @Description  every snapshot of the jail or its datasets whose name starts with the
+// @Description  prefix, one `zfs destroy` each, audited, listed in `purged`. Only when
+// @Description  they are all that is in the way: any other snapshot, a clone or a hold
+// @Description  still refuses, with nothing touched. It runs before the stop, so a purge
+// @Description  that fails leaves the jail running, and again just before the dataset's
+// @Description  destroy, for one taken while the jail stopped. Copies replicated
+// @Description  elsewhere are not touched. Without it, nothing is purged.
+// @Description
 // @Description  **The last word is ZFS's.** Nothing here re-checks that the jail is down
 // @Description  before destroying its dataset: `zfs destroy` refuses one whose jail is
 // @Description  running with `pool or dataset is busy`, and a check of our own would read
@@ -1363,8 +1372,9 @@ func (h *JailHandler) Exec(w http.ResponseWriter, r *http.Request) {
 // @Produce      json
 // @Param        name     path      string  true  "The jail to destroy"
 // @Param        confirm  query     string  true  "The jail's name again"
+// @Param        purge_snapshots  query  string  false  "Destroy first the snapshots whose names start with this"
 // @Success      200      {object}  Destroyed
-// @Failure      400      {object}  common.ErrorResponse  "Missing or mismatched confirm"
+// @Failure      400      {object}  common.ErrorResponse  "Missing or mismatched confirm, or a purge_snapshots that cannot begin a snapshot name"
 // @Failure      401      {object}  common.ErrorResponse
 // @Failure      404      {object}  common.ErrorResponse  "No such jail, or it has no dataset of its own"
 // @Failure      409      {object}  Destroyed             "Snapshots, clones or holds are in the way, or the jail is configured in /etc/jail.conf"
@@ -1379,14 +1389,15 @@ func (h *JailHandler) Destroy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.Destroy(r.Context(), name, r.URL.Query().Get("confirm"))
+	result, err := h.service.DestroyPurging(r.Context(), name,
+		r.URL.Query().Get("confirm"), r.URL.Query().Get("purge_snapshots"))
 	if err != nil {
 		// Once a step has run there is something the caller has to know
 		// about, and an error message on its own would throw it away. Before
 		// that -- a mismatched confirm, no such jail, a configuration file
 		// Jail Deck cannot remove -- nothing happened, so the plain error is
 		// the whole answer and an empty body would only bury it.
-		if result.Stopped || result.Unlisted || result.Config != "" {
+		if result.Stopped || result.Unlisted || result.Config != "" || len(result.Purged) > 0 {
 			result.Error = err.Error()
 			common.WriteJSON(w, statusForPartial(err), result)
 			return

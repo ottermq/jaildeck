@@ -26,10 +26,17 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 - **A superseded mark that names a missing template, or the template itself, refuses nothing** (#284). It used to keep refusing, naming the missing template; with nothing to use instead, the template was refused for good. The listing, the UI and `jaildeck_template_superseded` now show such a template as not superseded. The property is left on the dataset.
 
+- **A jail with scheduled snapshots can be destroyed** (#280). A replication or snapshot schedule put snapshots back on a jail faster than they could be removed one at a time, so its destroy was refused for good. `purge_snapshots=<prefix>` on the destroy removes every snapshot whose name starts with the prefix, one `zfs destroy` each and audited, only when they are all that is in the way; anything else still refuses with nothing touched. It runs before the stop, so a failure leaves the jail running, and again just before the dataset's destroy.
+
+- **One snapshot route for anything under a jail** (#280). `DELETE /api/jails/{name}/snapshots/{snapshot}` with `confirm` naming a child's snapshot in full destroys that snapshot alone, as the child's own route would; before, it was refused as not the jail's. A refused jail destroy now says so, rather than pointing only at the root's route.
+
+- **A refusal held up only by a replication run says to wait** (#280). When every hold in the way is zrepl's `zrepl_STEP_*`, which goes when the run ends, a destroy's refusal (jail, dataset, snapshot or template) adds that a retry in a minute or two should get through.
+
 ### API
 
 - `DELETE /api/templates/{name}` answers with `replaced`: each template whose mark moved, with its new `superseded_by` (empty when lifted), and `error` for one that could not be changed. The answer is still `200` when a change fails, since the destroy has happened. Never null.
 - `Template.superseded_by` is empty for a mark naming a missing template or the template itself.
+- `DELETE /api/jails/{name}` takes `purge_snapshots`; `Destroyed` gains `purged`, and `failed_at` can be `purge-snapshots`. A prefix that could not begin a snapshot name is a 400.
 
 ## v0.40.0 — 2026-11-23
 

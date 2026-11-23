@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/ottermq/jaildeck/internal/common"
@@ -22,6 +23,7 @@ const (
 	StepRetainChildren  = "retain-children"
 	StepParkRoot        = "park-root"
 	StepClone           = "clone"
+	StepCopyProperties  = "copy-properties"
 	StepRestoreChildren = "restore-children"
 )
 
@@ -44,6 +46,11 @@ type Reclone struct {
 	// that is no longer under the jail currently sits.
 	FailedAt string   `json:"failed_at,omitempty"`
 	Parked   []Parked `json:"parked,omitempty"`
+	// Properties are the user properties carried from the old root to the
+	// new one, by name only: values can be anything a client stored (#281).
+	Properties []string `json:"properties"`
+	// PropertiesKept are the ones the new root already set itself, which win.
+	PropertiesKept []string `json:"properties_kept,omitempty"`
 }
 
 // Parked is one dataset that has been moved out and not yet moved back.
@@ -63,7 +70,8 @@ type Parked struct {
 // children, so a re-clone onto a bad template costs a second call to undo
 // rather than a restore from backup.
 func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string) (Reclone, error) {
-	result := Reclone{Root: root, To: templateSnapshot, Children: make([]string, 0), Parked: make([]Parked, 0)}
+	result := Reclone{Root: root, To: templateSnapshot, Children: make([]string, 0),
+		Parked: make([]Parked, 0), Properties: make([]string, 0)}
 
 	// Everything that can be checked before anything moves, is. A template
 	// that does not exist should cost nothing but an error.
@@ -79,6 +87,16 @@ func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string
 	result.From = origin
 
 	children, err := s.childrenOf(ctx, root)
+	if err != nil {
+		result.FailedAt = StepReadState
+		return result, err
+	}
+
+	// The root's own user properties -- a role, a tenant, whatever a client
+	// tags its jails with -- belong to the jail, not to the userland, and a
+	// fresh clone has none of them (#281). Read before anything moves, so a
+	// failed read costs nothing.
+	carried, err := s.carriedProperties(ctx, root)
 	if err != nil {
 		result.FailedAt = StepReadState
 		return result, err
@@ -111,7 +129,12 @@ func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string
 	// Children first, and all of them, before the root is touched at all.
 	for _, child := range children {
 		name := recloneRetainName(root, child)
-		if _, err := s.RetainDataset(ctx, child, name); err != nil {
+		if moved, err := s.RetainDataset(ctx, child, name); err != nil {
+			// A move that failed after its rename has still moved it, and says
+			// so by naming where it went (#281).
+			if moved.To != "" {
+				outstanding[child] = moved.To
+			}
 			result.FailedAt, result.Parked = StepRetainChildren, parked()
 			return result, err
 		}
@@ -119,7 +142,11 @@ func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string
 	}
 
 	oldRoot := recloneRootName(root, origin)
-	if _, err := s.RetainDataset(ctx, root, oldRoot); err != nil {
+	if moved, err := s.RetainDataset(ctx, root, oldRoot); err != nil {
+		// The same for the root, which a client most needs to find.
+		if moved.To != "" {
+			outstanding[root] = moved.To
+		}
 		result.FailedAt, result.Parked = StepParkRoot, parked()
 		return result, err
 	}
@@ -137,10 +164,24 @@ func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string
 	// meant to be rather than somewhere a failure left it.
 	delete(outstanding, root)
 
+	// Before the children come back, so a failure here leaves the same
+	// recovery as any other: the new root is in place, the old one is
+	// parked with every property still on it, and parked lists the children.
+	if err := s.copyProperties(ctx, root, carried, &result); err != nil {
+		result.FailedAt, result.Parked = StepCopyProperties, parked()
+		return result, err
+	}
+
 	// And now the children have somewhere to go back to.
 	for _, child := range children {
 		name := strings.TrimPrefix(outstanding[child], retainedParent(poolOf(root))+"/")
-		if _, err := s.RestoreDataset(ctx, poolOf(root), name, child); err != nil {
+		if moved, err := s.RestoreDataset(ctx, poolOf(root), name, child); err != nil {
+			// Renamed back but not mounted: it is under the jail again, and
+			// the error says what is left to do. Reporting it as still in
+			// retained/ would send a client looking where it is not.
+			if moved.To != "" {
+				delete(outstanding, child)
+			}
 			result.FailedAt, result.Parked = StepRestoreChildren, parked()
 			return result, err
 		}
@@ -148,6 +189,60 @@ func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string
 		result.Children = append(result.Children, child)
 	}
 	return result, nil
+}
+
+// carriedProperties are the user properties set locally on the root, less
+// Jail Deck's own: those describe the dataset (a recorded mountpoint, a
+// template's provenance), not the jail, and are not this move's to copy.
+// Inherited ones are left to zfs, which gives the new root the same.
+func (s *Service) carriedProperties(ctx context.Context, root string) (map[string]string, error) {
+	properties, err := s.userPropertiesOf(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	for name := range properties {
+		if strings.HasPrefix(name, "jaildeck:") {
+			delete(properties, name)
+		}
+	}
+	return properties, nil
+}
+
+// copyProperties sets carried on the new root, except any the new root already
+// sets locally itself: that value is someone's decision, and it is kept and
+// reported rather than overwritten.
+//
+// One zfs set per property, in name order (#282 review). zfs can apply part of
+// a multi-property set and still fail, and then nobody could say which landed;
+// one at a time, properties names exactly what did, and no count of them can
+// outgrow the argument limit.
+func (s *Service) copyProperties(ctx context.Context, root string, carried map[string]string, result *Reclone) error {
+	if len(carried) == 0 {
+		return nil
+	}
+	existing, err := s.userPropertiesOf(ctx, root)
+	if err != nil {
+		return err
+	}
+	names := make([]string, 0, len(carried))
+	for name := range carried {
+		if _, ok := existing[name]; ok {
+			result.PropertiesKept = append(result.PropertiesKept, name)
+			continue
+		}
+		names = append(names, name)
+	}
+	slices.Sort(result.PropertiesKept)
+	slices.Sort(names)
+	for _, name := range names {
+		written, err := s.system.SetProperties(ctx, root, map[string]string{name: carried[name]})
+		s.logWrite(ctx, OperationSetProperties, written, err)
+		if err != nil {
+			return toWriteError("copy the old root's property "+name+" to", root, err)
+		}
+		result.Properties = append(result.Properties, name)
+	}
+	return nil
 }
 
 // CheckRecloneSource refuses a re-clone that cannot work, without touching

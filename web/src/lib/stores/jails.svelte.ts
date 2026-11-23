@@ -302,6 +302,12 @@ export interface Reclone {
     running: boolean
     parked?: Parked[]
     failed_at?: string
+    // Why that step failed (#281).
+    error?: string
+    // User properties carried from the old root, by name; the ones the new
+    // root already set itself, which were kept (#281).
+    properties?: string[]
+    properties_kept?: string[]
 }
 
 // restoreDataset brings a retained dataset back under a jail. It need not be

@@ -160,3 +160,21 @@ func TestRemovedNamesAreBounded(t *testing.T) {
 		t.Errorf("kept %d, first %q, last %q", len(removed), removed[0], removed[len(removed)-1])
 	}
 }
+
+// An empty replacement lifts the mark with zfs inherit, not an empty value
+// (#284): an empty jaildeck:superseded-by would still be a local property.
+func TestSupersedeWithNothingLiftsTheMark(t *testing.T) {
+	system := withConfiguredJail()
+	source := NewTemplateSource(NewService(system, &fakeLogger{}, "tank"))
+	if err := source.Supersede(context.Background(), "15.1-RELEASE", "15.1-RELEASE-p7"); err != nil {
+		t.Fatal(err)
+	}
+	system.ran = nil
+	if err := source.Supersede(context.Background(), "15.1-RELEASE", ""); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"zfs inherit jaildeck:superseded-by tank/jails/templates/15.1-RELEASE"}
+	if !reflect.DeepEqual(system.ran, want) {
+		t.Errorf("ran %q, want %q", system.ran, want)
+	}
+}

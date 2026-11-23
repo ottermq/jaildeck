@@ -280,3 +280,15 @@ func TestRefreshStopsWhenItCannotReadThePackages(t *testing.T) {
 		t.Errorf("no read-packages entry: %+v", logger.all())
 	}
 }
+
+// A mark naming a template that is gone, or the template itself, refuses
+// nothing (#284).
+func TestADanglingOrSelfMarkDoesNotRefuseAParent(t *testing.T) {
+	for _, by := range []string{"pg18-removed", "pg18"} {
+		storage, _, _, service := refreshable(BuiltDerived)
+		storage.templates[0].SupersededBy = by
+		if _, _, err := service.Derive(context.Background(), "pg18-pkgs", "pg18", nil); err != nil {
+			t.Errorf("marked %q: %v", by, err)
+		}
+	}
+}

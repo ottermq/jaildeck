@@ -243,6 +243,12 @@ func RegisterTemplateRoutes(r chi.Router, h *TemplateHandler) {
 // @Description
 // @Description  Never `zfs destroy -R`: that would take the dependent clones this refuses to
 // @Description  touch, which would make the check decorative.
+// @Description
+// @Description  A template it superseded is not left marked by a template that no longer
+// @Description  exists (#284): its mark moves on to whatever superseded the removed one, or
+// @Description  is lifted when nothing did. `replaced` lists each, with `error` for a mark
+// @Description  that could not be changed; the answer is still 200, since the destroy happened.
+// @Description  A mark naming a template that no longer exists refuses nothing.
 // @Tags         templates
 // @Produce      json
 // @Param        name     path      string  true  "The template to destroy"

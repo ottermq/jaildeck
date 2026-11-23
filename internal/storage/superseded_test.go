@@ -15,6 +15,10 @@ func TestASupersededTemplateIsRefusedAsACloneSource(t *testing.T) {
 	mark := func(dataset, by string) {
 		system.properties = append(system.properties, Property{Dataset: dataset, Name: "jaildeck:superseded-by", Value: by})
 	}
+	for _, name := range []string{"15.1-RELEASE-a", "15.1-RELEASE-b"} {
+		system.datasets = append(system.datasets,
+			Dataset{Name: "tank/jails/templates/" + name, Mountpoint: "/usr/local/jails/templates/" + name})
+	}
 	mark("tank/jails/templates/15.1-RELEASE", "15.1-RELEASE-a")
 	mark("tank/jails/templates/15.1-RELEASE-a", "15.1-RELEASE-b")
 
@@ -51,6 +55,8 @@ func TestASupersededTemplateIsRefusedAsACloneSource(t *testing.T) {
 // A mark set by hand into a loop ends the chain rather than spinning.
 func TestASupersededLoopEnds(t *testing.T) {
 	system := withContainersParent()
+	system.datasets = append(system.datasets,
+		Dataset{Name: "tank/jails/templates/other", Mountpoint: "/usr/local/jails/templates/other"})
 	system.properties = []Property{
 		{Dataset: "tank/jails/templates/15.1-RELEASE", Name: "jaildeck:superseded-by", Value: "other"},
 		{Dataset: "tank/jails/templates/other", Name: "jaildeck:superseded-by", Value: "15.1-RELEASE"},
@@ -58,5 +64,17 @@ func TestASupersededLoopEnds(t *testing.T) {
 	err := jailSourceFor(system, &fakeLogger{}).CheckTemplate(context.Background(), createTemplate)
 	if appErrCode(t, err) != http.StatusConflict || !strings.Contains(err.Error(), "superseded by other;") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// A mark naming a template that is gone, or the template itself, refuses
+// nothing (#284): there is nothing to use instead.
+func TestADanglingOrSelfMarkRefusesNothing(t *testing.T) {
+	for _, by := range []string{"removed-long-ago", "15.1-RELEASE"} {
+		system := withContainersParent()
+		system.properties = []Property{{Dataset: "tank/jails/templates/15.1-RELEASE", Name: "jaildeck:superseded-by", Value: by}}
+		if err := jailSourceFor(system, &fakeLogger{}).CheckTemplate(context.Background(), createTemplate); err != nil {
+			t.Errorf("marked %q: %v", by, err)
+		}
 	}
 }

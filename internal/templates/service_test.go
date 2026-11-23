@@ -37,7 +37,8 @@ type stubStorage struct {
 	// copied is each Copy (#258).
 	copied []string
 	// superseded is each Supersede, "name>by" (#259).
-	superseded []string
+	superseded   []string
+	supersedeErr error
 	// orphans is each RecordOrphans, by template (#264).
 	orphans map[string][]string
 	// removed is what Removed answers (#268).
@@ -66,6 +67,9 @@ func (s *stubStorage) RecordOrphans(_ context.Context, name string, orphans []st
 func (s *stubStorage) Supersede(_ context.Context, name, by string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.supersedeErr != nil {
+		return s.supersedeErr
+	}
 	s.superseded = append(s.superseded, name+">"+by)
 	for i, template := range s.templates {
 		if template.Name == name {

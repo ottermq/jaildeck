@@ -42,7 +42,11 @@ type stubSystem struct {
 	mountErrFor map[string]bool
 	// mountOnly keeps mountErr off zfs unmount, for a test about the mount
 	// that ends a restore rather than the unmount that starts a retain.
-	mountOnly  bool
+	mountOnly bool
+	// setErr fails zfs set alone; cloneProps are set locally on a new clone,
+	// as a clone given properties at creation would have them.
+	setErr     error
+	cloneProps map[string]string
 	origins    map[string]string
 	cloneErr   error
 	promoteErr error
@@ -99,6 +103,9 @@ func (s *stubSystem) SetProperties(_ context.Context, name string, properties ma
 	s.ran = append(s.ran, stubCommand("set", name, properties))
 	if s.writeErr != nil {
 		return Result{Dataset: name, Command: stubCommand("set", name, properties)}, s.writeErr
+	}
+	if s.setErr != nil {
+		return Result{Dataset: name, Command: stubCommand("set", name, properties)}, s.setErr
 	}
 	for property, value := range properties {
 		replaced := false
@@ -540,6 +547,9 @@ func (s *stubSystem) CloneSnapshot(_ context.Context, snapshot, target string) (
 		s.origins = map[string]string{}
 	}
 	s.origins[target] = snapshot
+	for property, value := range s.cloneProps {
+		s.properties = append(s.properties, Property{Dataset: target, Name: property, Value: value})
+	}
 	return Result{Dataset: target, Command: command}, nil
 }
 

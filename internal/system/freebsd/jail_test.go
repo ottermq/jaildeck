@@ -614,8 +614,8 @@ func TestGoneReadsDyingJails(t *testing.T) {
 		want      bool
 		wantErr   bool
 	}{
-		{name: "still listed, dying", stdout: "otter-db\napi\n", want: false},
-		{name: "not listed", stdout: "otter-db\n", want: true},
+		{name: "still listed, dying", stdout: "db1\napi\n", want: false},
+		{name: "not listed", stdout: "db1\n", want: true},
 		{name: "a longer name is another jail", stdout: "api2\n", want: true},
 		{name: "nothing at all", stdout: "", want: true},
 		{name: "jls fails", runnerErr: errors.New("jls unavailable"), wantErr: true},

@@ -309,6 +309,16 @@ function isPartialDestroy(body: unknown): body is Destroyed {
     return typeof body === 'object' && body !== null && 'destroyed' in body
 }
 
+// The root's own tags come across to the new root (#281); one the new root
+// already set itself is kept, and both are worth knowing.
+function carriedNote(result: Reclone): string {
+    const carried = result.properties ?? []
+    const kept = result.properties_kept ?? []
+    let note = carried.length > 0 ? ` Carried to the new root: ${carried.join(', ')}.` : ''
+    if (kept.length > 0) note += ` Kept the new root's own value of ${kept.join(', ')}.`
+    return note
+}
+
 async function reclone(event: Event) {
     event.preventDefault()
     const from = recloneFrom
@@ -340,6 +350,7 @@ async function reclone(event: Event) {
             + (children === 0
                 ? ' and nothing else moved.'
                 : `, and ${children === 1 ? 'one child dataset' : `${children} child datasets`} came back with it.`)
+            + carriedNote(result)
     } catch (err) {
         // A failure after the datasets started moving carries the recovery
         // information; an error message alone would throw it away.

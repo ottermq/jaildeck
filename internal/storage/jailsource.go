@@ -302,7 +302,8 @@ func (s *JailSource) Reclone(ctx context.Context, jailPath, templateSnapshot str
 	out := jails.Reclone{
 		Root: result.Root, From: result.From, To: result.To,
 		OldRoot: result.OldRoot, Children: result.Children, FailedAt: result.FailedAt,
-		Parked: make([]jails.Parked, 0, len(result.Parked)),
+		Parked:     make([]jails.Parked, 0, len(result.Parked)),
+		Properties: result.Properties, PropertiesKept: result.PropertiesKept,
 	}
 	for _, parked := range result.Parked {
 		out.Parked = append(out.Parked, jails.Parked{Was: parked.Was, Now: parked.Now})

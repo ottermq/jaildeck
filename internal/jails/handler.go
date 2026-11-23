@@ -863,6 +863,10 @@ type recloneRequest struct {
 // @Description  left stopped. A root still in use is refused before it is renamed (#281).
 // @Description  A failed step's body carries error, the reason it failed.
 // @Description
+// @Description  The old root's own user properties, jaildeck:* excepted, are carried to the
+// @Description  new root and named in properties; one the new root already sets is kept and
+// @Description  named in properties_kept. A failed copy stops at copy-properties.
+// @Description
 // @Description  The template must be the full dataset@snapshot. There is no default:
 // @Description  every jail on a real host is already a clone of templates/<release>@base,
 // @Description  so defaulting to it would be a no-op dressed as an upgrade.

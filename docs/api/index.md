@@ -358,8 +358,16 @@ curl -X POST '.../api/jails/ottermq/reclone?confirm=ottermq' \
  "to":"tank/jails/templates/15.1-RELEASE@p5",
  "old_root":"tank/jails/retained/ottermq-root-base",
  "children":["tank/jails/containers/ottermq/data"],
+ "properties":["acme:role"],
  "running":true}
 ```
+
+The root's own user properties — a role, a tenant, anything set on the jail's dataset itself —
+belong to the jail, not to its userland, so they are carried to the new root, and `properties`
+names them (#281). Jail Deck's own `jaildeck:*` properties are not; inherited ones the new root
+inherits anyway. One the new root already sets itself is kept, and listed in `properties_kept`.
+The parked root keeps all of its own. A copy that fails stops at `copy-properties`, before the
+children come back.
 
 The jail is stopped and started again by the call, and ends in the state it was found in.
 **Nothing is destroyed** — the old root is parked beside the children, so an upgrade onto the

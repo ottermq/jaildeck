@@ -219,6 +219,10 @@ type Reclone struct {
 	// where every dataset that is no longer under the jail currently sits.
 	Parked   []Parked `json:"parked,omitempty"`
 	FailedAt string   `json:"failed_at,omitempty"`
+	// Properties are the user properties carried from the old root to the new
+	// one, by name; PropertiesKept the ones the new root already set (#281).
+	Properties     []string `json:"properties"`
+	PropertiesKept []string `json:"properties_kept,omitempty"`
 	// Error is why that step failed, which the status code alone does not say
 	// (#281).
 	Error string `json:"error,omitempty"`

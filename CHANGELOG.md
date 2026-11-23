@@ -20,7 +20,11 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
-## Unreleased
+## v0.40.0 — 2026-11-23
+
+[Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.40.0)
+
+**A re-clone is safe on a jail that takes a while to stop, and keeps the root's properties** (#281).
 
 - **A re-clone no longer leaves a busy root half moved** (#281). `service jail stop` can return while the jail is still dying, and a dying jail still holds its root. A re-clone now waits until `jls -d` no longer lists the jail, up to two minutes, and otherwise refuses with 409 at `stop` with nothing moved. Every dataset move now unmounts before it renames, so a dataset still in use is refused under its own name, mounted where it was; before, the rename went through and the refused unmount left it renamed into `retained/` but mounted inside the jail, with no name to retry under. A rename that fails is mounted back, and the response keeps both errors. A dataset that moved before its step failed is reported where it is: in `parked` if it went to `retained/` (the root included), out of it if it is back under the jail.
 

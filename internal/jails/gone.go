@@ -59,9 +59,9 @@ func (s *JailService) waitGone(ctx context.Context, name string) error {
 		if waitCtx.Err() != nil && ctx.Err() == nil {
 			// The wait ran out, whether between questions or during one.
 			return common.NewAppError(http.StatusConflict, fmt.Sprintf(
-				"%s is stopped but jls -d still lists it after %s: it is still being torn "+
-					"down and holds its root, or it was started again. Nothing was moved; "+
-					"retry once jls -d no longer lists it", name, wait))
+				"%s is stopped but after %s jls -d still lists it, or did not answer: it is "+
+					"still being torn down and holds its root, or it was started again. Nothing "+
+					"was moved; retry once jls -d no longer lists it", name, wait))
 		}
 		if err != nil {
 			return fmt.Errorf("ask whether %s is gone: %w", name, err)

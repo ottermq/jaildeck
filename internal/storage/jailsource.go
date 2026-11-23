@@ -286,7 +286,14 @@ func (s *JailSource) CheckReclone(ctx context.Context, jailPath, templateSnapsho
 	if err != nil {
 		return err
 	}
-	return s.service.CheckRecloneSource(ctx, root, templateSnapshot)
+	if err := s.service.CheckRecloneSource(ctx, root, templateSnapshot); err != nil {
+		return err
+	}
+	// The root's properties are read again once the jail is stopped; read
+	// here first so one that cannot be read refuses the re-clone before the
+	// stop rather than after it (#282 review).
+	_, err = s.service.carriedProperties(ctx, root)
+	return err
 }
 
 // Reclone implements jails.Recloner. The jail's root is resolved from its path

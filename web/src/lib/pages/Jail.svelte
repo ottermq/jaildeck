@@ -667,6 +667,9 @@ async function retain(event: Event, dataset: Dataset) {
                     Each can be brought back with a restore, from the Templates page.
                 </p>
             {/if}
+            {#if recloneFailure.old_root}
+                <p>The old root, with its own properties, is parked at <code>{recloneFailure.old_root}</code>.</p>
+            {/if}
             <div class="form__actions">
                 <button type="button" class="btn btn--small" onclick={() => (recloneFailure = null)}>Dismiss</button>
             </div>

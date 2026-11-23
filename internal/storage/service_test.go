@@ -46,6 +46,8 @@ type stubSystem struct {
 	// setErr fails zfs set alone; cloneProps are set locally on a new clone,
 	// as a clone given properties at creation would have them.
 	setErr     error
+	setErrOn   string // fails only a zfs set that includes this property
+	propErrFor string // fails only a property read that asks about this dataset
 	cloneProps map[string]string
 	origins    map[string]string
 	cloneErr   error
@@ -81,6 +83,9 @@ func (s *stubSystem) DatasetsUnder(_ context.Context, roots []string) ([]Dataset
 
 func (s *stubSystem) LocalProperties(_ context.Context, roots []string) ([]Property, error) {
 	s.roots = append(s.roots, roots)
+	if s.propErrFor != "" && !slices.Contains(roots, s.propErrFor) {
+		return s.properties, nil
+	}
 	return s.properties, s.propErr
 }
 
@@ -104,7 +109,7 @@ func (s *stubSystem) SetProperties(_ context.Context, name string, properties ma
 	if s.writeErr != nil {
 		return Result{Dataset: name, Command: stubCommand("set", name, properties)}, s.writeErr
 	}
-	if s.setErr != nil {
+	if _, hit := properties[s.setErrOn]; s.setErr != nil && (s.setErrOn == "" || hit) {
 		return Result{Dataset: name, Command: stubCommand("set", name, properties)}, s.setErr
 	}
 	for property, value := range properties {

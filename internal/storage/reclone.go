@@ -208,9 +208,14 @@ func (s *Service) carriedProperties(ctx context.Context, root string) (map[strin
 	return properties, nil
 }
 
-// copyProperties sets carried on the new root, in one zfs set, except any the
-// new root already sets locally itself: that value is someone's decision, and
-// it is kept and reported rather than overwritten.
+// copyProperties sets carried on the new root, except any the new root already
+// sets locally itself: that value is someone's decision, and it is kept and
+// reported rather than overwritten.
+//
+// One zfs set per property, in name order (#282 review). zfs can apply part of
+// a multi-property set and still fail, and then nobody could say which landed;
+// one at a time, properties names exactly what did, and no count of them can
+// outgrow the argument limit.
 func (s *Service) copyProperties(ctx context.Context, root string, carried map[string]string, result *Reclone) error {
 	if len(carried) == 0 {
 		return nil
@@ -219,27 +224,24 @@ func (s *Service) copyProperties(ctx context.Context, root string, carried map[s
 	if err != nil {
 		return err
 	}
-	set := make(map[string]string, len(carried))
-	for name, value := range carried {
+	names := make([]string, 0, len(carried))
+	for name := range carried {
 		if _, ok := existing[name]; ok {
 			result.PropertiesKept = append(result.PropertiesKept, name)
 			continue
 		}
-		set[name] = value
+		names = append(names, name)
 	}
 	slices.Sort(result.PropertiesKept)
-	if len(set) == 0 {
-		return nil
-	}
-	written, err := s.system.SetProperties(ctx, root, set)
-	s.logWrite(ctx, OperationSetProperties, written, err)
-	if err != nil {
-		return toWriteError("copy the old root's properties to", root, err)
-	}
-	for name := range set {
+	slices.Sort(names)
+	for _, name := range names {
+		written, err := s.system.SetProperties(ctx, root, map[string]string{name: carried[name]})
+		s.logWrite(ctx, OperationSetProperties, written, err)
+		if err != nil {
+			return toWriteError("copy the old root's property "+name+" to", root, err)
+		}
 		result.Properties = append(result.Properties, name)
 	}
-	slices.Sort(result.Properties)
 	return nil
 }
 

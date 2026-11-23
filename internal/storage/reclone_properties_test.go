@@ -99,3 +99,39 @@ func TestRecloneWithNothingToCarrySetsNothing(t *testing.T) {
 		}
 	}
 }
+
+// One zfs set per property: a failure part way says exactly what landed.
+func TestRecloneSaysWhichPropertiesLandedBeforeAFailure(t *testing.T) {
+	system := withTaggedJailToReclone()
+	system.setErr = errors.New("cannot set property: permission denied")
+	system.setErrOn = "acme:tenant"
+
+	result, err := NewService(system, &fakeLogger{}, "tank").
+		RecloneRoot(context.Background(), recloneRoot, newTemplate)
+	if err == nil || result.FailedAt != StepCopyProperties {
+		t.Fatalf("FailedAt = %q, error = %v; want %q", result.FailedAt, err, StepCopyProperties)
+	}
+	if !slices.Equal(result.Properties, []string{"acme:role"}) {
+		t.Errorf("Properties = %v, want only the one that landed", result.Properties)
+	}
+	if got := system.localValue(recloneRoot, "acme:role"); got != "cluster" {
+		t.Errorf("acme:role = %q on the new root", got)
+	}
+}
+
+// Properties that cannot be read refuse the re-clone before the jail is
+// stopped: the check runs first, and nothing has moved.
+func TestRecloneCheckReadsTheRootsProperties(t *testing.T) {
+	system := withTaggedJailToReclone()
+	system.propErr = errors.New("zfs get: cannot parse output")
+	system.propErrFor = recloneRoot
+
+	err := NewJailSource(NewService(system, &fakeLogger{}, "tank")).
+		CheckReclone(context.Background(), "/usr/local/jails/containers/ottermq", newTemplate)
+	if err == nil {
+		t.Fatal("CheckReclone() passed with unreadable properties")
+	}
+	if len(system.ran) != 0 {
+		t.Errorf("ran %q during a check", system.ran)
+	}
+}

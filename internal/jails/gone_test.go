@@ -53,6 +53,28 @@ func TestWaitGoneRefusesAJailThatStaysDying(t *testing.T) {
 	}
 }
 
+// slowRemoval answers only when its context ends, as a hung jls would.
+type slowRemoval struct{}
+
+func (slowRemoval) Gone(ctx context.Context, _ string) (bool, error) {
+	<-ctx.Done()
+	return false, ctx.Err()
+}
+
+// A question still running when the wait runs out ends with it: 409, not a
+// wait carried past its bound or a 500.
+func TestWaitGoneIsAHardDeadline(t *testing.T) {
+	start := time.Now()
+	err := serviceWithRemoval(slowRemoval{}).waitGone(context.Background(), "db")
+	var appErr *common.AppError
+	if !errors.As(err, &appErr) || appErr.Code != http.StatusConflict {
+		t.Fatalf("waitGone() error = %v, want a 409", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("waited %s past a 50ms bound", elapsed)
+	}
+}
+
 func TestWaitGoneReportsAFailedQuestion(t *testing.T) {
 	asked := 0
 	if err := serviceWithRemoval(removalAfter{asked: &asked, err: errors.New("jls: boom")}).
@@ -102,7 +124,7 @@ func TestRecloneRefusesAJailThatStaysDying(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.FailedAt != "stop" || !strings.Contains(got.Error, "still dying") {
+	if got.FailedAt != "stop" || !strings.Contains(got.Error, "jls -d still lists it") {
 		t.Errorf("body = %+v, want failed_at stop and the reason", got)
 	}
 	if recloner.recloned != 0 {

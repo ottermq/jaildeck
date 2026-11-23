@@ -22,12 +22,12 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
 
-- **A re-clone no longer leaves a busy root half moved** (#281). `service jail stop` can return while the jail is still dying, and a dying jail still holds its root. A re-clone now waits until `jls -d` no longer lists the jail, up to two minutes, and otherwise refuses with 409 at `stop` with nothing moved. Every dataset move now unmounts before it renames, so a dataset still in use is refused under its own name, mounted where it was; before, the rename went through and the refused unmount left it renamed into `retained/` but mounted inside the jail, with no name to retry under. A rename that fails is mounted back. If parking the root fails after its rename, `parked` now lists the root.
+- **A re-clone no longer leaves a busy root half moved** (#281). `service jail stop` can return while the jail is still dying, and a dying jail still holds its root. A re-clone now waits until `jls -d` no longer lists the jail, up to two minutes, and otherwise refuses with 409 at `stop` with nothing moved. Every dataset move now unmounts before it renames, so a dataset still in use is refused under its own name, mounted where it was; before, the rename went through and the refused unmount left it renamed into `retained/` but mounted inside the jail, with no name to retry under. A rename that fails is mounted back, and the response keeps both errors. A dataset that moved before its step failed is reported where it is: in `parked` if it went to `retained/` (the root included), out of it if it is back under the jail.
 
 ### API
 
 - A failed re-clone's body (`Reclone`) gains `error`, the reason the step failed; before, only the status code and `failed_at` said anything.
-- `POST /api/jails/{name}/reclone` can answer 409 with `failed_at: "stop"` when the jail stays dying.
+- `POST /api/jails/{name}/reclone` can answer 409 with `failed_at: "stop"` when `jls -d` still lists the jail after two minutes.
 - Moves (retain, restore, re-clone) audit `zfs unmount` of the source before `zfs rename -u`, instead of unmounting the new name after it.
 
 ## v0.39.1 — 2026-11-19

@@ -876,7 +876,7 @@ type recloneRequest struct {
 // @Failure      400       {object}  common.ErrorResponse  "Missing confirm, or a malformed snapshot name"
 // @Failure      401       {object}  common.ErrorResponse
 // @Failure      404       {object}  common.ErrorResponse  "No such jail, no such template snapshot, or the jail is not on ZFS"
-// @Failure      409       {object}  Reclone               "The jail stopped but stayed dying; nothing moved"
+// @Failure      409       {object}  Reclone               "jls -d still lists the stopped jail after the wait; nothing moved"
 // @Failure      500       {object}  Reclone               "A step failed; the body says which and where the datasets are"
 // @Security     BearerAuth
 // @Router       /jails/{name}/reclone [post]

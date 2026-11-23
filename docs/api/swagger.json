@@ -1955,7 +1955,7 @@
                         }
                     },
                     "409": {
-                        "description": "The jail stopped but stayed dying; nothing moved",
+                        "description": "jls -d still lists the stopped jail after the wait; nothing moved",
                         "schema": {
                             "$ref": "#/definitions/jails.Reclone"
                         }

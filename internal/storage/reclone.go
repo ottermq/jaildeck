@@ -111,7 +111,12 @@ func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string
 	// Children first, and all of them, before the root is touched at all.
 	for _, child := range children {
 		name := recloneRetainName(root, child)
-		if _, err := s.RetainDataset(ctx, child, name); err != nil {
+		if moved, err := s.RetainDataset(ctx, child, name); err != nil {
+			// A move that failed after its rename has still moved it, and says
+			// so by naming where it went (#281).
+			if moved.To != "" {
+				outstanding[child] = moved.To
+			}
 			result.FailedAt, result.Parked = StepRetainChildren, parked()
 			return result, err
 		}
@@ -119,12 +124,10 @@ func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string
 	}
 
 	oldRoot := recloneRootName(root, origin)
-	if _, err := s.RetainDataset(ctx, root, oldRoot); err != nil {
-		// A move that fails after its rename has still moved the root. Asked
-		// rather than assumed, so parked never leaves out the one dataset a
-		// client most needs to find (#281).
-		if moved := retainedParent(poolOf(root)) + "/" + oldRoot; s.movedTo(ctx, root, moved) {
-			outstanding[root] = moved
+	if moved, err := s.RetainDataset(ctx, root, oldRoot); err != nil {
+		// The same for the root, which a client most needs to find.
+		if moved.To != "" {
+			outstanding[root] = moved.To
 		}
 		result.FailedAt, result.Parked = StepParkRoot, parked()
 		return result, err
@@ -146,7 +149,13 @@ func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string
 	// And now the children have somewhere to go back to.
 	for _, child := range children {
 		name := strings.TrimPrefix(outstanding[child], retainedParent(poolOf(root))+"/")
-		if _, err := s.RestoreDataset(ctx, poolOf(root), name, child); err != nil {
+		if moved, err := s.RestoreDataset(ctx, poolOf(root), name, child); err != nil {
+			// Renamed back but not mounted: it is under the jail again, and
+			// the error says what is left to do. Reporting it as still in
+			// retained/ would send a client looking where it is not.
+			if moved.To != "" {
+				delete(outstanding, child)
+			}
 			result.FailedAt, result.Parked = StepRestoreChildren, parked()
 			return result, err
 		}
@@ -154,17 +163,6 @@ func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string
 		result.Children = append(result.Children, child)
 	}
 	return result, nil
-}
-
-// movedTo is true when from is gone and to is there. A read that fails answers
-// false: the result then says less than it might, never something untrue.
-func (s *Service) movedTo(ctx context.Context, from, to string) bool {
-	left, err := s.datasetNamed(ctx, from)
-	if err != nil || left != nil {
-		return false
-	}
-	arrived, err := s.datasetNamed(ctx, to)
-	return err == nil && arrived != nil
 }
 
 // CheckRecloneSource refuses a re-clone that cannot work, without touching

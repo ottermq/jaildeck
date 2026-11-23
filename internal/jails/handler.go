@@ -500,7 +500,10 @@ func (h *JailHandler) CreateDatasetSnapshot(w http.ResponseWriter, r *http.Reque
 // DestroySnapshot removes the snapshot from the jail and its children.
 //
 // @Summary      Destroy a snapshot
-// @Description  Recursive, matching what the recursive create made.
+// @Description  Recursive, matching what the recursive create made -- unless confirm names
+// @Description  a snapshot of one of the jail's direct child datasets in full
+// @Description  (`<root>/<child>@<snapshot>`): then that one snapshot alone, as the child's
+// @Description  own route would (#280). A deeper dataset's snapshot is not reached this way.
 // @Description
 // @Description  409 with a dependent clone or a hold, naming them. Both are checked by
 // @Description  asking ZFS first — zfs get clones and zfs holds — rather than by running
@@ -1347,6 +1350,18 @@ func (h *JailHandler) Exec(w http.ResponseWriter, r *http.Request) {
 // @Description  `zfs destroy -R` is never passed, which is what would make this check
 // @Description  decorative.
 // @Description
+// @Description  **purge_snapshots=<prefix> destroys a schedule's snapshots first** (#280):
+// @Description  every snapshot of the jail or its datasets whose name starts with the
+// @Description  prefix, one `zfs destroy` each, audited, listed in `purged`. Only when
+// @Description  they are all that is in the way: any other snapshot, a clone or a hold
+// @Description  still refuses, with nothing touched. It runs before the stop, so a purge
+// @Description  that fails leaves the jail running, and again for one taken while the
+// @Description  jail stopped -- after the stop, before
+// @Description  the jail is unconfigured. A snapshot without the prefix found by either
+// @Description  pass stops it before it destroys anything. A failed purge answers with
+// @Description  the `Destroyed` body, `failed_at: "purge-snapshots"` and `purged`. Copies
+// @Description  replicated elsewhere are not touched. Without it, nothing is purged.
+// @Description
 // @Description  **The last word is ZFS's.** Nothing here re-checks that the jail is down
 // @Description  before destroying its dataset: `zfs destroy` refuses one whose jail is
 // @Description  running with `pool or dataset is busy`, and a check of our own would read
@@ -1363,12 +1378,13 @@ func (h *JailHandler) Exec(w http.ResponseWriter, r *http.Request) {
 // @Produce      json
 // @Param        name     path      string  true  "The jail to destroy"
 // @Param        confirm  query     string  true  "The jail's name again"
+// @Param        purge_snapshots  query  string  false  "Destroy first the snapshots whose names start with this"
 // @Success      200      {object}  Destroyed
-// @Failure      400      {object}  common.ErrorResponse  "Missing or mismatched confirm"
+// @Failure      400      {object}  common.ErrorResponse  "Missing or mismatched confirm, or a purge_snapshots that cannot begin a snapshot name"
 // @Failure      401      {object}  common.ErrorResponse
 // @Failure      404      {object}  common.ErrorResponse  "No such jail, or it has no dataset of its own"
 // @Failure      409      {object}  Destroyed             "Snapshots, clones or holds are in the way, or the jail is configured in /etc/jail.conf"
-// @Failure      500      {object}  Destroyed             "A step failed; the body says which and what was done"
+// @Failure      500      {object}  Destroyed             "A step failed; the body says which and what was done. A failed purge carries this body with its own status"
 // @Failure      501      {object}  common.ErrorResponse  "This Jail Deck has no storage wired"
 // @Security     BearerAuth
 // @Router       /jails/{name} [delete]
@@ -1379,14 +1395,15 @@ func (h *JailHandler) Destroy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.Destroy(r.Context(), name, r.URL.Query().Get("confirm"))
+	result, err := h.service.DestroyPurging(r.Context(), name,
+		r.URL.Query().Get("confirm"), r.URL.Query().Get("purge_snapshots"))
 	if err != nil {
 		// Once a step has run there is something the caller has to know
 		// about, and an error message on its own would throw it away. Before
 		// that -- a mismatched confirm, no such jail, a configuration file
 		// Jail Deck cannot remove -- nothing happened, so the plain error is
 		// the whole answer and an empty body would only bury it.
-		if result.Stopped || result.Unlisted || result.Config != "" {
+		if result.Stopped || result.Unlisted || result.Config != "" || result.FailedAt == StepPurge {
 			result.Error = err.Error()
 			common.WriteJSON(w, statusForPartial(err), result)
 			return

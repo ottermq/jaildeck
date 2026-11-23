@@ -187,9 +187,39 @@ func (s *JailSource) CreateSnapshot(ctx context.Context, jailPath, child, short 
 }
 
 func (s *JailSource) DestroySnapshot(ctx context.Context, jailPath, child, short, confirm string, recursive bool) (jails.SnapshotResult, error) {
+	if child == "" {
+		// One route for any snapshot under the jail (#280): a confirm naming
+		// one of the jail's own datasets' snapshots in full is that snapshot,
+		// destroyed alone, as its own route would. A client cleaning up a
+		// jail need not work out which route each snapshot takes.
+		if named, err := s.childNamedBy(ctx, jailPath, short, confirm); err != nil {
+			return jails.SnapshotResult{}, err
+		} else if named != "" {
+			child, recursive = named, false
+		}
+	}
 	return s.snapshotCall(ctx, jailPath, child, func(dataset string) (SnapshotResult, error) {
 		return s.service.DestroySnapshot(ctx, dataset, short, confirm, recursive)
 	})
+}
+
+// childNamedBy is the child dataset confirm names, when confirm is the full
+// name of a snapshot called short on a direct child of the jail's root; empty
+// for anything else, which the root route then refuses as it always has.
+func (s *JailSource) childNamedBy(ctx context.Context, jailPath, short, confirm string) (string, error) {
+	dataset, snapshot, ok := strings.Cut(confirm, "@")
+	if !ok || snapshot != short {
+		return "", nil
+	}
+	root, err := s.datasetFor(ctx, jailPath, "")
+	if err != nil {
+		return "", err
+	}
+	child, under := strings.CutPrefix(dataset, root+"/")
+	if !under || child == "" || strings.Contains(child, "/") {
+		return "", nil
+	}
+	return child, nil
 }
 
 func (s *JailSource) Rollback(ctx context.Context, jailPath, child, short, confirm string, destroyNewer bool) (jails.SnapshotResult, error) {

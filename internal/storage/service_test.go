@@ -27,6 +27,9 @@ type stubSystem struct {
 	// make the next one fail.
 	ran      []string
 	writeErr error
+	// writeErrOn fails a snapshot destroy of exactly these dataset@snapshot
+	// names, with writeErr or a generic error.
+	writeErrOn map[string]bool
 	// The snapshot half.
 	snapshots     []Snapshot
 	snapshotErr   error
@@ -358,6 +361,9 @@ func (s *stubSystem) CreateSnapshot(_ context.Context, dataset, short string, re
 	}
 	command += " " + dataset + "@" + short
 	s.ran = append(s.ran, command)
+	if s.writeErrOn[dataset+"@"+short] {
+		return Result{Dataset: dataset + "@" + short, Command: command}, errors.New("cannot destroy snapshot: dataset is busy")
+	}
 	if s.writeErr != nil {
 		return Result{Dataset: dataset + "@" + short, Command: command}, s.writeErr
 	}
@@ -377,6 +383,9 @@ func (s *stubSystem) DestroySnapshot(_ context.Context, dataset, short string, r
 	}
 	command += " " + dataset + "@" + short
 	s.ran = append(s.ran, command)
+	if s.writeErrOn[dataset+"@"+short] {
+		return Result{Dataset: dataset + "@" + short, Command: command}, errors.New("cannot destroy snapshot: dataset is busy")
+	}
 	if s.writeErr != nil {
 		return Result{Dataset: dataset + "@" + short, Command: command}, s.writeErr
 	}
@@ -394,6 +403,9 @@ func (s *stubSystem) Rollback(_ context.Context, dataset, short string, destroyN
 	}
 	command += " " + dataset + "@" + short
 	s.ran = append(s.ran, command)
+	if s.writeErrOn[dataset+"@"+short] {
+		return Result{Dataset: dataset + "@" + short, Command: command}, errors.New("cannot destroy snapshot: dataset is busy")
+	}
 	if s.writeErr != nil {
 		return Result{Dataset: dataset + "@" + short, Command: command}, s.writeErr
 	}

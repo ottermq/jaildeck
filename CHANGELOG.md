@@ -20,6 +20,14 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+- **A jail's destroy no longer takes a snapshot it was not told about** (#288). A jail with child datasets was destroyed with `zfs destroy -r`, which took along any snapshot taken after the destroy was checked, unreported. Its datasets are now destroyed one at a time, deepest first, each with a bare `zfs destroy`, so ZFS refuses one that has gained a snapshot. A destroy stopped that way has `failed_at: "destroy"`, and `taken` names only the children already destroyed. Each dataset's destroy is its own audit entry. Bookmarks, which zrepl leaves, do not refuse a bare destroy.
+
+### API
+
+- `Destroyed.taken` is the children actually destroyed once the destroy step has run, rather than the ones the check found; they differ only when the destroy stopped part way.
+
 ## v0.41.0 — 2026-11-23
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.41.0)

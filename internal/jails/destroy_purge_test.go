@@ -129,3 +129,21 @@ func TestAPurgePrefixMustBeASnapshotName(t *testing.T) {
 		}
 	}
 }
+
+// A destroy that stops part way reports in Taken only the children that
+// went, not the ones the check said would (#288).
+func TestAFailedDestroyReportsOnlyWhatWasTaken(t *testing.T) {
+	system, destroyer, remover, autostart, logger := destroyable()
+	destroyer.dependents.Children = []string{"tank/jails/containers/db1/data", "tank/jails/containers/db1/logs"}
+	destroyer.destroyErr = errors.New("filesystem has children")
+	destroyer.takenBeforeErr = []string{"tank/jails/containers/db1/logs"}
+
+	result, err := destroyService(system, destroyer, remover, autostart, logger).
+		Destroy(context.Background(), "db1", "db1")
+	if err == nil || result.FailedAt != StepDestroy || result.Destroyed {
+		t.Fatalf("result %+v, err %v", result, err)
+	}
+	if !slices.Equal(result.Taken, []string{"tank/jails/containers/db1/logs"}) {
+		t.Errorf("Taken = %v", result.Taken)
+	}
+}

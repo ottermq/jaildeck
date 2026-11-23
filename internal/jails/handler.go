@@ -730,8 +730,8 @@ type restoreRequest struct {
 // Retain moves a child dataset out of the jail.
 //
 // @Summary      Retain a dataset past its jail
-// @Description  Moves it to <pool>/jails/retained/<name>. zfs destroy -r on a jail takes
-// @Description  its children and their snapshots with it (JD-007), so a dataset worth
+// @Description  Moves it to <pool>/jails/retained/<name>. Destroying a jail takes its
+// @Description  children with it (JD-007), so a dataset worth
 // @Description  keeping has to stop being a child first.
 // @Description
 // @Description  Three audited commands: zfs rename -u, zfs unmount, zfs mount. The -u is
@@ -1092,8 +1092,8 @@ type Template struct {
 // @Description  `/usr/local/jails/containers/db1/var/db/postgres`.
 // @Description
 // @Description  **A mountpoint outside the jail is refused.** Measured: ZFS makes such a
-// @Description  dataset without complaint, the jail cannot see it, and `zfs destroy -r`
-// @Description  on the jail destroys it anyway — so the jail's destroy would take a
+// @Description  dataset without complaint, the jail cannot see it, and destroying the
+// @Description  jail destroys it anyway — so the jail's destroy would take a
 // @Description  dataset living elsewhere on the host. Data meant to outlive the jail goes
 // @Description  through `POST /api/jails/{name}/datasets/{child}/retain` instead.
 // @Description
@@ -1165,8 +1165,8 @@ func (h *JailHandler) Create(w http.ResponseWriter, r *http.Request) {
 // @Description
 // @Description  **Child datasets and tags** are compared against ZFS. A child the spec
 // @Description  asks for and the jail does not have is a difference, and so is one the
-// @Description  jail has and the spec does not name — a child takes space and `zfs
-// @Description  destroy -r` on the jail takes it along, so it is part of the jail in a
+// @Description  jail has and the spec does not name — a child takes space and the
+// @Description  jail's destroy takes it along, so it is part of the jail in a
 // @Description  way a tag is not. Only direct children: the spec describes one level, so
 // @Description  a deeper dataset is one it could neither ask for nor disown.
 // @Description
@@ -1341,7 +1341,9 @@ func (h *JailHandler) Exec(w http.ResponseWriter, r *http.Request) {
 // @Description  A sweep that removed something, or failed to, is audited as
 // @Description  `remove-leftover-epair` or `remove-leftover-rctl`.
 // @Description
-// @Description  **Child datasets go with it** (JD-007). They are listed in `taken`. A
+// @Description  **Child datasets go with it** (JD-007), one `zfs destroy` each, deepest
+// @Description  first, never `-r` (#288): one that has gained a snapshot since the check
+// @Description  is refused, and `taken` then lists only the children already gone. A
 // @Description  dataset worth keeping has to stop being a child first: `POST
 // @Description  /api/jails/{name}/datasets/{child}/retain` moves it out.
 // @Description

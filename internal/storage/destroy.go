@@ -56,31 +56,53 @@ func (s *JailSource) CheckDestroy(ctx context.Context, jailPath string) (jails.R
 }
 
 // DestroyRoot destroys the jail's own dataset and the children mounted
-// beneath it (JD-007).
+// beneath it (JD-007), and returns the root and the children it destroyed.
 //
-// -r only when there are children, and never -R. The difference matters at
-// exactly one moment: the service has already established there are no
-// snapshots, and without -r a snapshot taken in the gap since makes zfs
-// refuse rather than letting -r take it along silently. -R would take
-// dependent clones too, which is the thing every destroy here refuses to do.
-func (s *JailSource) DestroyRoot(ctx context.Context, jailPath string) (string, error) {
+// One dataset at a time, deepest first, never -r and never -R (#288). zfs
+// refuses a bare destroy of a dataset that has a snapshot, so one taken
+// since the service checked -- by hand, or by a schedule -- stops the destroy
+// at that dataset instead of going with it unreported, which is what -r did
+// to a jail with children. -R would take dependent clones too, which is the
+// thing every destroy here refuses to do. Bookmarks do not refuse a bare
+// destroy, and go with their dataset.
+//
+// A destroy that fails part way stops there and returns the children already
+// destroyed: nothing is undone (JD-030), and the caller reports exactly what
+// is gone.
+func (s *JailSource) DestroyRoot(ctx context.Context, jailPath string) (string, []string, error) {
+	taken := make([]string, 0)
 	root, err := s.datasetFor(ctx, jailPath, "")
 	if err != nil {
-		return "", err
+		return "", taken, err
 	}
 	// Read again rather than carried over from CheckDestroy: a child created
-	// in between is still the jail's, and would make a bare destroy fail.
+	// in between is still the jail's, and would make the root's destroy fail.
 	children, err := s.childrenOf(ctx, root)
 	if err != nil {
-		return "", err
+		return "", taken, err
 	}
+	// zfs lists a dataset before what is beneath it, so the reverse order
+	// reaches every dataset after everything beneath it.
+	for i := len(children) - 1; i >= 0; i-- {
+		if err := s.destroyOne(ctx, children[i]); err != nil {
+			return root, taken, err
+		}
+		taken = append(taken, children[i])
+	}
+	if err := s.destroyOne(ctx, root); err != nil {
+		return root, taken, err
+	}
+	return root, taken, nil
+}
 
-	result, destroyErr := s.service.system.DestroyDataset(ctx, root, len(children) > 0)
-	s.service.logWrite(ctx, OperationDestroyDataset, result, destroyErr)
-	if destroyErr != nil {
-		return "", toWriteError("destroy", root, destroyErr)
+// destroyOne runs a bare zfs destroy of one dataset, audited.
+func (s *JailSource) destroyOne(ctx context.Context, dataset string) error {
+	result, err := s.service.system.DestroyDataset(ctx, dataset, false)
+	s.service.logWrite(ctx, OperationDestroyDataset, result, err)
+	if err != nil {
+		return toWriteError("destroy", dataset, err)
 	}
-	return root, nil
+	return nil
 }
 
 // PurgeSnapshots destroys each snapshot of the jail's root and of everything

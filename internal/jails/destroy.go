@@ -56,6 +56,8 @@ type Destroyed struct {
 	Root string `json:"root,omitempty"`
 	// Taken are the child datasets destroyed along with the root. A jail's
 	// children go with it (JD-007), and they go silently unless listed here.
+	// On a refusal they are the ones that would go; once the destroy step
+	// has run, the ones that went (#288).
 	Taken []string `json:"taken,omitempty"`
 	// Purged are the snapshots destroyed because purge_snapshots asked for
 	// them (#280), in the order they went.
@@ -244,7 +246,10 @@ func (s *JailService) DestroyPurging(ctx context.Context, name JailName, confirm
 	}
 	result.Config = path
 
-	root, err := s.rootDestroyer.DestroyRoot(opCtx, jail.Path)
+	root, taken, err := s.rootDestroyer.DestroyRoot(opCtx, jail.Path)
+	// From here Taken is what went, not what would: a destroy that stopped
+	// part way has taken only these (#288).
+	result.Taken = taken
 	if err != nil {
 		// The jail is gone from the host's configuration and its filesystem
 		// is still there. Root is in the result for exactly this moment: it

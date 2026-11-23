@@ -30,6 +30,8 @@ type stubSystem struct {
 	// writeErrOn fails a snapshot destroy of exactly these dataset@snapshot
 	// names, with writeErr or a generic error.
 	writeErrOn map[string]bool
+	// destroyErrOn fails a dataset destroy of exactly these names.
+	destroyErrOn map[string]bool
 	// The snapshot half.
 	snapshots     []Snapshot
 	snapshotErr   error
@@ -628,6 +630,9 @@ func (s *stubSystem) DestroyDataset(_ context.Context, dataset string, recursive
 	}
 	command += " " + dataset
 	s.ran = append(s.ran, command)
+	if s.destroyErrOn[dataset] {
+		return Result{Dataset: dataset, Command: command}, errors.New("cannot destroy '" + dataset + "': pool or dataset is busy")
+	}
 	if s.writeErr != nil {
 		return Result{Dataset: dataset, Command: command}, s.writeErr
 	}

@@ -17,7 +17,11 @@ import (
 // -p is the whole reason the space columns are usable: without it zfs list
 // prints "1.41G" and "897G", which no client can total.
 var (
-	zfsListSpace = []string{"list", "-H", "-p", "-o", "name,used,avail,refer,mountpoint", "-r"}
+	// -t filesystem,volume: a pool with listsnapshots=on would otherwise put
+	// its snapshots in the listing as if they were datasets, and a jail's
+	// destroy, which destroys what this lists beneath its root, would destroy
+	// one by name (#288).
+	zfsListSpace = []string{"list", "-H", "-p", "-t", "filesystem,volume", "-o", "name,used,avail,refer,mountpoint", "-r"}
 	// -t filesystem,volume keeps a recursive get out of the snapshots, which
 	// it otherwise walks one by one though none has a local property worth
 	// listing: 2.52 s against 0.03 s on a host with 381 snapshots under its

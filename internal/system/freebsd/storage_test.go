@@ -19,7 +19,9 @@ import (
 func withStorageRoots(roots ...string) map[string]string {
 	captures := make(map[string]string, 2*len(roots))
 	for _, root := range roots {
-		captures["zfs list -H -p -o name,used,avail,refer,mountpoint -r "+root] = "zfs_list_space_rp_" + root
+		// Captured without -t (#288) on pools with listsnapshots=off, where
+		// the default is filesystems and volumes: the same bytes.
+		captures["zfs list -H -p -t filesystem,volume -o name,used,avail,refer,mountpoint -r "+root] = "zfs_list_space_rp_" + root
 		// Captured without -t filesystem,volume (#135). Its output is the
 		// same: no snapshot on any captured host had a local property, so
 		// the captures hold no snapshot rows to leave out.
@@ -99,7 +101,7 @@ func TestDatasetsUnderFixtures(t *testing.T) {
 		// The batched shape #2 requires: every pool of a host, one command.
 		runner := &replayRunner{t: t, set: "isengard",
 			captures: map[string]string{
-				"zfs list -H -p -o name,used,avail,refer,mountpoint -r tank zroot": "zfs_list_space_rp_tank",
+				"zfs list -H -p -t filesystem,volume -o name,used,avail,refer,mountpoint -r tank zroot": "zfs_list_space_rp_tank",
 			}}
 		if _, err := NewAdapter(runner).DatasetsUnder(context.Background(), []string{"tank", "zroot"}); err != nil {
 			t.Fatalf("DatasetsUnder() error = %v", err)

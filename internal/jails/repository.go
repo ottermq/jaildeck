@@ -343,11 +343,13 @@ type RootDestroyer interface {
 	// touching nothing. Asked before the jail is stopped, so a jail that
 	// cannot be destroyed is not left shut down to no purpose.
 	CheckDestroy(ctx context.Context, jailPath string) (RootDependents, error)
-	// DestroyRoot destroys the jail's root and returns the dataset it
-	// destroyed. It is called last and checks nothing itself: by then the
-	// jail is stopped and unconfigured, and ZFS refusing a dataset that is
-	// still busy is the guard that cannot race (JD-030).
-	DestroyRoot(ctx context.Context, jailPath string) (string, error)
+	// DestroyRoot destroys the jail's root and the datasets beneath it, and
+	// returns the root and the children it destroyed -- the children also
+	// when it stopped part way (#288). It is called last and checks nothing
+	// itself: by then the jail is stopped and unconfigured, and ZFS refusing
+	// a dataset that is still busy, or that has gained a snapshot, is the
+	// guard that cannot race (JD-030).
+	DestroyRoot(ctx context.Context, jailPath string) (string, []string, error)
 	// PurgeSnapshots destroys every snapshot of the jail's root and of its
 	// children whose name starts with prefix, one at a time and audited, and
 	// returns the ones it destroyed -- also when it stopped part way (#280).

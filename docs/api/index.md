@@ -175,8 +175,8 @@ them by accident (JD-016).
 
 ## Destroy the jail, keep the data
 
-`zfs destroy -r` on a jail takes its children and their snapshots with it, so a dataset worth
-keeping has to stop being a child first (JD-025).
+Destroying a jail takes its children with it, so a dataset worth keeping has to stop being a
+child first (JD-025).
 
 ```sh
 curl -X POST .../api/jails/ottermq/datasets/data/retain -d '{"name":"ottermq-data"}'
@@ -249,8 +249,10 @@ curl -X DELETE '.../api/jails/db1?confirm=db1&purge_snapshots=auto_'
   schedule took meanwhile, so a failure there leaves a jail the same call can be repeated on.
   Each pass reads the snapshots afresh and destroys nothing if one without the prefix has
   appeared. A failure is `failed_at: "purge-snapshots"`, with `purged` listing what went.
-- **Not the last moment.** A snapshot taken between the second pass and the dataset's destroy
-  is taken with it when the jail has child datasets (`zfs destroy -r`), as without the option.
+- **Not the last moment, and not needed to be.** The jail's datasets are destroyed one at a
+  time, deepest first, never with `-r` (#288), so a snapshot taken after the second pass makes
+  ZFS refuse that dataset. `failed_at: "destroy"`, and `taken` names the children whose destroy
+  succeeded. The jail is unconfigured by then: what is left goes with `zfs destroy` by hand.
 - **Only this host's snapshots.** Copies a replication has sent elsewhere stay.
 
 A hold placed by a replication run in progress — zrepl's `zrepl_STEP_*` — goes when the run

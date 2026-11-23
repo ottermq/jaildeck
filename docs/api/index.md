@@ -342,6 +342,19 @@ which. This asks `zfs get clones` first, so the refusal is an answer.
 
 It is also how you clean up the half-built template a failed derive leaves behind.
 
+**A template it superseded follows it** (#284). After the destroy, every template beside it
+whose `jaildeck:superseded-by` named it is marked with whatever superseded the removed one, or
+its mark is lifted when nothing did. The answer is `200` and lists each in `replaced`:
+
+```json
+{"template":"tank/jails/templates/pg18-b","destroyed":true,
+ "replaced":[{"template":"pg18-a","superseded_by":"pg18-c"}]}
+```
+
+A change that fails is listed with `error` and is not retried — the destroy has happened. A mark
+left naming a template that no longer exists refuses nothing, and the listing shows that
+template as not superseded. `replaced` is `[]` on a `409` and when nothing named it.
+
 ## Upgrading a jail
 
 A jail's root is a clone of a template snapshot, so upgrading one is replacing that root with

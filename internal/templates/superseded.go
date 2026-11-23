@@ -40,16 +40,18 @@ func newestReplacement(existing []Template, t Template) Template {
 	return current
 }
 
-// refuseSuperseded refuses t as a source when it has been superseded.
+// refuseSuperseded refuses t as a source when it has been superseded by a
+// template that exists. A mark naming one that is gone, or t itself, refuses
+// nothing (#284): it points at nothing a client could use instead, and
+// refusing on it would leave t refused for good. Such a mark is left by a
+// removal that could not move it on, or set by hand.
 func refuseSuperseded(existing []Template, t Template) error {
-	if t.SupersededBy == "" {
+	if t.SupersededBy == "" || t.SupersededBy == t.Name {
 		return nil
 	}
-	// A replacement that is gone ends the chain at the last mark: still
-	// refused, naming what was marked.
-	newest := t.SupersededBy
-	if found := newestReplacement(existing, t); found.Name != t.Name {
-		newest = found.Name
+	if _, ok := byName(existing, t.SupersededBy); !ok {
+		return nil
 	}
-	return SupersededError(t.Name, newest, t.Dataset, newest)
+	newest := newestReplacement(existing, t)
+	return SupersededError(t.Name, newest.Name, t.Dataset, newest.Name)
 }

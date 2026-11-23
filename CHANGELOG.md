@@ -22,11 +22,14 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
 
-- **Removing a template moves on the superseded marks that named it** (#284). A template whose `jaildeck:superseded-by` named the removed one was refused for good, by a refusal pointing at a template that no longer existed; the only way out was `zfs inherit` by hand. The mark now points at whatever superseded the removed template, or is lifted (`zfs inherit`, audited) when nothing did.
+- **Removing a template moves on the superseded marks that named it** (#284). A template whose `jaildeck:superseded-by` named the removed one was refused for good, by a refusal pointing at a template that no longer existed; the only way out was `zfs inherit` by hand. The mark now points at whatever superseded the removed template, or is lifted (`zfs inherit`, audited) when nothing did. Only templates beside the removed one are touched, and a loop through it is lifted rather than turned into a mark on itself.
+
+- **A superseded mark that names a missing template, or the template itself, refuses nothing** (#284). It used to keep refusing, naming the missing template; with nothing to use instead, the template was refused for good. The listing, the UI and `jaildeck_template_superseded` now show such a template as not superseded. The property is left on the dataset.
 
 ### API
 
-- `DELETE /api/templates/{name}` answers with `replaced`: each template whose mark moved, with its new `superseded_by` (empty when lifted), and `error` for one that could not be changed. Never null.
+- `DELETE /api/templates/{name}` answers with `replaced`: each template whose mark moved, with its new `superseded_by` (empty when lifted), and `error` for one that could not be changed. The answer is still `200` when a change fails, since the destroy has happened. Never null.
+- `Template.superseded_by` is empty for a mark naming a missing template or the template itself.
 
 ## v0.40.0 — 2026-11-23
 

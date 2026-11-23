@@ -247,7 +247,8 @@ func RegisterTemplateRoutes(r chi.Router, h *TemplateHandler) {
 // @Description  A template it superseded is not left marked by a template that no longer
 // @Description  exists (#284): its mark moves on to whatever superseded the removed one, or
 // @Description  is lifted when nothing did. `replaced` lists each, with `error` for a mark
-// @Description  that could not be changed.
+// @Description  that could not be changed; the answer is still 200, since the destroy happened.
+// @Description  A mark naming a template that no longer exists refuses nothing.
 // @Tags         templates
 // @Produce      json
 // @Param        name     path      string  true  "The template to destroy"

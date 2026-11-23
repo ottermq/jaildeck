@@ -274,7 +274,7 @@ async function destroyThisJail() {
             children.length > 0
                 ? 'Its child datasets go with it. They are listed below — anything worth keeping has to be retained first.'
                 : 'Its dataset and everything in it go. Nothing here can be undone.',
-            'A snapshot, a clone of one, or a hold refuses the whole thing and nothing is touched.',
+            'A snapshot, a clone of one, or a hold found before anything runs refuses the whole thing and nothing is touched. One that appears while it runs stops it at that dataset, and the result says what went.',
         ],
         items: children.map(d => d.name),
         verb: 'Destroy',
@@ -547,11 +547,33 @@ async function retain(event: Event, dataset: Dataset) {
     <span class="crumbs__here">{name}</span>
 </nav>
 
+{#snippet destroyFailure(result: Destroyed)}
+    <div class="notice notice--error" role="alert">
+        <p>
+            Stopped at <strong>{result.failed_at}</strong>. Nothing was undone:
+            {result.stopped ? 'the jail was stopped' : 'the jail was not stopped'}{result.unlisted ? ', taken out of jail_list' : ''}{result.config ? `, and ${result.config} was deleted` : ''}.
+            {#if result.root}Its dataset is still <code>{result.root}</code>.{/if}
+        </p>
+        {#if result.purged?.length}
+            <p class="blocked__group"><strong>Snapshots purged</strong>{#each result.purged as item (item)}<code>{item}</code>{/each}</p>
+        {/if}
+        {#if result.failed_at === 'destroy' && result.taken?.length}
+            <p class="blocked__group"><strong>Child datasets destroyed</strong>{#each result.taken as item (item)}<code>{item}</code>{/each}</p>
+        {/if}
+    </div>
+{/snippet}
+
 {#if loadError}
     <p class="notice notice--error" role="alert">
         {loadError}
         <button type="button" class="btn btn--small" onclick={load}>Retry</button>
     </p>
+    {#if destroyResult && !destroyResult.destroyed && !destroyResult.blocked}
+        <!-- A destroy that stopped after the jail was unconfigured leaves
+             nothing for the reload to find; its result is the only record
+             of where it got to (JD-030), so it outlives the page. -->
+        {@render destroyFailure(destroyResult)}
+    {/if}
 {:else if jail === null}
     <p class="notice">Loading {name}…</p>
 {:else}
@@ -1179,13 +1201,7 @@ async function retain(event: Event, dataset: Dataset) {
                 {/each}
             </div>
         {:else if destroyResult && !destroyResult.destroyed}
-            <div class="notice notice--error" role="alert">
-                <p>
-                    Stopped at <strong>{destroyResult.failed_at}</strong>. Nothing was undone:
-                    {destroyResult.stopped ? 'the jail was stopped' : 'the jail was not stopped'}{destroyResult.unlisted ? ', taken out of jail_list' : ''}{destroyResult.config ? `, and ${destroyResult.config} was deleted` : ''}.
-                    {#if destroyResult.root}Its dataset is still <code>{destroyResult.root}</code>.{/if}
-                </p>
-            </div>
+            {@render destroyFailure(destroyResult)}
         {/if}
     </section>
 {/if}

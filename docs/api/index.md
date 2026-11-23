@@ -251,7 +251,8 @@ curl -X DELETE '.../api/jails/db1?confirm=db1&purge_snapshots=auto_'
   appeared. A failure is `failed_at: "purge-snapshots"`, with `purged` listing what went.
 - **Not the last moment, and not needed to be.** The jail's datasets are destroyed one at a
   time, deepest first, never with `-r` (#288), so a snapshot taken after the second pass makes
-  ZFS refuse that dataset. `failed_at: "destroy"`, and `taken` names the children already gone.
+  ZFS refuse that dataset. `failed_at: "destroy"`, and `taken` names the children whose destroy
+  succeeded. The jail is unconfigured by then: what is left goes with `zfs destroy` by hand.
 - **Only this host's snapshots.** Copies a replication has sent elsewhere stay.
 
 A hold placed by a replication run in progress — zrepl's `zrepl_STEP_*` — goes when the run

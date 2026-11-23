@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/ottermq/jaildeck/internal/common"
@@ -81,13 +82,17 @@ func (s *JailSource) DestroyRoot(ctx context.Context, jailPath string) (string, 
 	if err != nil {
 		return "", taken, err
 	}
-	// zfs lists a dataset before what is beneath it, so the reverse order
-	// reaches every dataset after everything beneath it.
-	for i := len(children) - 1; i >= 0; i-- {
-		if err := s.destroyOne(ctx, children[i]); err != nil {
+	// Deepest first, so every dataset is reached after everything beneath
+	// it; among equals, the reverse of zfs's order.
+	slices.Reverse(children)
+	slices.SortStableFunc(children, func(a, b string) int {
+		return strings.Count(b, "/") - strings.Count(a, "/")
+	})
+	for _, child := range children {
+		if err := s.destroyOne(ctx, child); err != nil {
 			return root, taken, err
 		}
-		taken = append(taken, children[i])
+		taken = append(taken, child)
 	}
 	if err := s.destroyOne(ctx, root); err != nil {
 		return root, taken, err
@@ -95,8 +100,14 @@ func (s *JailSource) DestroyRoot(ctx context.Context, jailPath string) (string, 
 	return root, taken, nil
 }
 
-// destroyOne runs a bare zfs destroy of one dataset, audited.
+// destroyOne runs a bare zfs destroy of one dataset, audited. A snapshot or
+// bookmark name is refused: zfs destroy would take it, past the refusal a
+// dataset with a snapshot gives, and nothing here means to.
 func (s *JailSource) destroyOne(ctx context.Context, dataset string) error {
+	if strings.ContainsAny(dataset, "@#") {
+		return common.NewAppError(http.StatusInternalServerError, fmt.Sprintf(
+			"%s is not a dataset; a jail's destroy destroys only datasets", dataset))
+	}
 	result, err := s.service.system.DestroyDataset(ctx, dataset, false)
 	s.service.logWrite(ctx, OperationDestroyDataset, result, err)
 	if err != nil {

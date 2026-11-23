@@ -22,11 +22,13 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
 
-- **A jail's destroy no longer takes a snapshot it was not told about** (#288). A jail with child datasets was destroyed with `zfs destroy -r`, which took along any snapshot taken after the destroy was checked, unreported. Its datasets are now destroyed one at a time, deepest first, each with a bare `zfs destroy`, so ZFS refuses one that has gained a snapshot. A destroy stopped that way has `failed_at: "destroy"`, and `taken` names only the children already destroyed. Each dataset's destroy is its own audit entry. Bookmarks, which zrepl leaves, do not refuse a bare destroy.
+- **A jail's destroy no longer takes a snapshot it was not told about** (#288). A jail with child datasets was destroyed with `zfs destroy -r`, which took along any snapshot taken after the destroy was checked, unreported. Its datasets are now destroyed one at a time, deepest first, each with a bare `zfs destroy`, so ZFS refuses one that has gained a snapshot. A destroy stopped that way has `failed_at: "destroy"`, and `taken` names the children whose destroy succeeded. As before, the jail is unconfigured by then, so what is left is cleaned up with `zfs destroy`. Each dataset's destroy is its own audit entry. Bookmarks, which zrepl leaves, do not refuse a bare destroy. The jail page shows the children destroyed and the snapshots purged, and keeps the result on screen when the jail can no longer be loaded.
+
+- **The dataset listing asks for filesystems and volumes only** (#288). On a pool with `listsnapshots=on`, `zfs list` put snapshots in it as if they were datasets. A jail's destroy also refuses to destroy anything named with `@` or `#`.
 
 ### API
 
-- `Destroyed.taken` is the children actually destroyed once the destroy step has run, rather than the ones the check found; they differ only when the destroy stopped part way.
+- `Destroyed.taken` is, once the destroy step has run, the children whose `zfs destroy` succeeded, rather than the ones the check found. A command that timed out is not in it even if ZFS finished it; the audit log has the attempt.
 
 ## v0.41.0 — 2026-11-23
 

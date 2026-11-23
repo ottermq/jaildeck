@@ -1893,7 +1893,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "The upgrade path for a jail whose state lives in a child dataset: stop,\nmove the children aside, park the old root, clone the new one, move the\nchildren back, start (JD-007, JD-026).\n\n**Nothing is destroyed.** The old root is renamed to\n\u003cpool\u003e/jails/retained/\u003cjail\u003e-root-\u003csnapshot\u003e, so a re-clone onto a bad\ntemplate costs one call to undo rather than a restore from backup. It is a\nclone, so it occupies only what the jail wrote since it was made.\n\nThe jail is stopped and started again by this call, and ends in the state\nit was found in. A jail that was already stopped stays stopped.\n\n**If a step fails, nothing is retried and nothing is undone.** The response\nnames the step and lists every dataset that is no longer under the jail,\nwith where it now sits, so it can be restored with the call you already\nhave. Running a recovery automatically while the first failure is still\nunexplained is how a bad situation becomes an unreadable one.\n\nThe template must be the full dataset@snapshot. There is no default:\nevery jail on a real host is already a clone of templates/\u003crelease\u003e@base,\nso defaulting to it would be a no-op dressed as an upgrade.",
+                "description": "The upgrade path for a jail whose state lives in a child dataset: stop,\nmove the children aside, park the old root, clone the new one, move the\nchildren back, start (JD-007, JD-026).\n\n**Nothing is destroyed.** The old root is renamed to\n\u003cpool\u003e/jails/retained/\u003cjail\u003e-root-\u003csnapshot\u003e, so a re-clone onto a bad\ntemplate costs one call to undo rather than a restore from backup. It is a\nclone, so it occupies only what the jail wrote since it was made.\n\nThe jail is stopped and started again by this call, and ends in the state\nit was found in. A jail that was already stopped stays stopped.\n\n**If a step fails, nothing is retried and nothing is undone.** The response\nnames the step and lists every dataset that is no longer under the jail,\nwith where it now sits, so it can be restored with the call you already\nhave. Running a recovery automatically while the first failure is still\nunexplained is how a bad situation becomes an unreadable one.\n\n**A stopped jail can still be dying**, and a dying jail still holds its root.\nThe call waits until jls -d no longer lists it, up to two minutes, and\notherwise refuses with 409 and failed_at \"stop\", nothing moved and the jail\nleft stopped. A root still in use is refused before it is renamed (#281).\nA failed step's body carries error, the reason it failed.\n\nThe old root's own user properties, jaildeck:* excepted, are carried to the\nnew root and named in properties; one the new root already sets is kept and\nnamed in properties_kept. A failed copy stops at copy-properties.\n\nThe template must be the full dataset@snapshot. There is no default:\nevery jail on a real host is already a clone of templates/\u003crelease\u003e@base,\nso defaulting to it would be a no-op dressed as an upgrade.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1952,6 +1952,12 @@
                         "description": "No such jail, no such template snapshot, or the jail is not on ZFS",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "jls -d still lists the stopped jail after the wait; nothing moved",
+                        "schema": {
+                            "$ref": "#/definitions/jails.Reclone"
                         }
                     },
                     "500": {
@@ -5828,6 +5834,10 @@
                         "type": "string"
                     }
                 },
+                "error": {
+                    "description": "Error is why that step failed, which the status code alone does not say\n(#281).",
+                    "type": "string"
+                },
                 "failed_at": {
                     "type": "string"
                 },
@@ -5843,6 +5853,19 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/jails.Parked"
+                    }
+                },
+                "properties": {
+                    "description": "Properties are the user properties carried from the old root to the new\none, by name; PropertiesKept the ones the new root already set (#281).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "properties_kept": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
                     }
                 },
                 "root": {

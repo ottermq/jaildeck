@@ -190,31 +190,31 @@ curl -X POST .../api/jails/ottermq/datasets/data/restore -d '{"from":"ottermq-da
 Three commands under the hood, each audited separately:
 
 ```
+zfs unmount                 <jail>/data
 zfs rename -u  <jail>/data  <pool>/jails/retained/<name>
-zfs unmount                 <pool>/jails/retained/<name>
 zfs mount                   <pool>/jails/retained/<name>
 ```
 
-**The `-u` is not a style preference.** A plain `zfs rename` unmounts and remounts inside the
-same command. On a running jail that is the filesystem disappearing from under a live process,
-decided by `zfs` rather than by anyone:
+**The unmount comes first** (#281). A filesystem still in use — a process in a running jail, a
+jail that `service jail stop` has left dying — refuses with `pool or dataset is busy`, and
+refused before the rename, the dataset is still under its own name, mounted where it was.
+Unmounted after the rename, the same refusal left it renamed into `retained/` but still mounted
+inside the jail. If the rename itself fails, the dataset is mounted back where it was.
 
-```
-plain zfs rename  ->  ls: /data: No such file or directory   (inside the RUNNING jail)
-zfs rename -u     ->  mount untouched; the jail keeps working
-```
+**The `-u` is not a style preference.** A plain `zfs rename` remounts the dataset by itself,
+inside the same command, at whatever the new name implies — decided by `zfs` rather than by
+anyone. With `-u` it stays unmounted until the mount the call chose.
 
-**But the move still completes in the same call**, because `-u` alone leaves the dataset named
-in one place and mounted in another — and a jail with a foreign filesystem mounted inside it
-cannot be destroyed:
+**And the move completes in the same call.** A dataset named in one place and mounted in
+another is a trap: a jail with a foreign filesystem mounted inside it cannot be destroyed:
 
 ```
 zfs destroy -r tank/jails/containers/probe-jail
   cannot unmount '/usr/local/jails/containers/probe-jail': pool or dataset is busy
 ```
 
-So `remounted: true` means the filesystem moved and a running jail just lost that path. Stop
-it first.
+So `remounted: true` means the filesystem moved, and a running jail lost that path. Stop it
+first; a process still using the path makes the unmount refuse, and nothing moves.
 
 `<pool>/jails/retained` is created the first time one is needed and is deliberately **not**
 part of the layout readiness check: a host that has never retained anything is not missing
@@ -358,8 +358,17 @@ curl -X POST '.../api/jails/ottermq/reclone?confirm=ottermq' \
  "to":"tank/jails/templates/15.1-RELEASE@p5",
  "old_root":"tank/jails/retained/ottermq-root-base",
  "children":["tank/jails/containers/ottermq/data"],
+ "properties":["acme:role"],
  "running":true}
 ```
+
+The root's own user properties — a role, a tenant, anything set on the jail's dataset itself —
+belong to the jail, not to its userland, so they are carried to the new root, and `properties`
+names them (#281). Jail Deck's own `jaildeck:*` properties are not; inherited ones the new root
+inherits anyway. One the new root already sets itself is kept, and listed in `properties_kept`.
+The parked root keeps all of its own. They are copied one `zfs set` each, so a copy that fails
+stops at `copy-properties`, before the children come back, with `properties` naming exactly the
+ones that landed.
 
 The jail is stopped and started again by the call, and ends in the state it was found in.
 **Nothing is destroyed** — the old root is parked beside the children, so an upgrade onto the
@@ -404,6 +413,16 @@ also fails you have two interleaved failures and a host in a state neither descr
 Refusals happen **before** the jail is stopped — a mistyped template name costs an error, not
 an outage.
 
+**A stopped jail can still be dying.** `service jail stop` returns while the kernel is still
+tearing the jail down — a VNET jail can stay so until its TCP connections close — and a dying
+jail still holds its root. The call waits until `jls -d` no longer lists the jail, up to two
+minutes. If it is still there, the answer is `409` with `failed_at: "stop"`, nothing has moved,
+and the jail is left stopped (#281).
+
+A root that is busy anyway is refused at `park-root` **before** it is renamed, because every
+move unmounts first (see [Destroy the jail, keep the data](#destroy-the-jail-keep-the-data)): it is still the jail's root,
+and `parked` lists only the children. Restore them, and start the jail.
+
 ## Correlating with your own jobs
 
 Send `X-Request-Id` and every audit entry the request produces carries it, so
@@ -411,8 +430,8 @@ Send `X-Request-Id` and every audit entry the request produces carries it, so
 
 ```
 create-dataset  rid=otter.job.5  zfs create tank/jails/retained
+mount-dataset   rid=otter.job.5  zfs unmount tank/.../data
 rename-dataset  rid=otter.job.5  zfs rename -u tank/.../data tank/jails/retained/probe5-data
-mount-dataset   rid=otter.job.5  zfs unmount tank/jails/retained/probe5-data
 mount-dataset   rid=otter.job.5  zfs mount tank/jails/retained/probe5-data
 ```
 

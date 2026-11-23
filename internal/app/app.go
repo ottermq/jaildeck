@@ -189,6 +189,11 @@ func NewBack(cfg *config.Config, recheck func(*http.Request) error) (*Back, erro
 		return nil, err
 	}
 	jailService.SetVersions(versionSource)
+	// Optional, like the other ports set after construction: a system that
+	// cannot say whether a jail is gone leaves a re-clone without the wait.
+	if removal, ok := jailAdapter.system.(jails.JailRemoval); ok {
+		jailService.SetRemoval(removal)
+	}
 	templateService.SetVersions(versionSource)
 	metricsService.SetVersions(metricsVersions{source: versionSource, jails: jailService, templates: templateService})
 

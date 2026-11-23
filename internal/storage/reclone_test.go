@@ -81,6 +81,7 @@ func TestRecloneDestroysNothing(t *testing.T) {
 		case "restore":
 			system.mountErr = errors.New("cannot mount: busy")
 			system.mountErrFor = map[string]bool{recloneRoot + "/data": true}
+			system.mountOnly = true
 		}
 		_, _ = NewService(system, &fakeLogger{}, "tank").
 			RecloneRoot(context.Background(), recloneRoot, newTemplate)
@@ -206,6 +207,7 @@ func TestRecloneReportsOnlyWhatIsStillOut(t *testing.T) {
 	// version of this test actually measured.
 	system.mountErr = errors.New("cannot mount: pool or dataset is busy")
 	system.mountErrFor = map[string]bool{recloneRoot + "/data": true}
+	system.mountOnly = true
 
 	result, err := NewService(system, &fakeLogger{}, "tank").
 		RecloneRoot(context.Background(), recloneRoot, newTemplate)

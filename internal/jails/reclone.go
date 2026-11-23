@@ -47,6 +47,12 @@ func (s *JailService) Reclone(ctx context.Context, name JailName, templateSnapsh
 		}
 	}
 
+	// Asked whether or not this call stopped it: a jail someone else stopped
+	// a moment ago can be just as much in the way.
+	if err := s.waitGone(opCtx, name.String()); err != nil {
+		return Reclone{FailedAt: "stop"}, err
+	}
+
 	result, recloneErr := s.recloner.Reclone(opCtx, jail.Path, templateSnapshot)
 	if recloneErr != nil {
 		// Left stopped on purpose. Starting a jail whose root may be half

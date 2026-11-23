@@ -40,9 +40,18 @@ type stubSystem struct {
 	// mountErrFor fails only the named datasets, so a test can break one step
 	// of a sequence without breaking every step that uses the same call.
 	mountErrFor map[string]bool
-	origins     map[string]string
-	cloneErr    error
-	promoteErr  error
+	// mountOnly keeps mountErr off zfs unmount, for a test about the mount
+	// that ends a restore rather than the unmount that starts a retain.
+	mountOnly bool
+	// setErr fails zfs set alone; cloneProps are set locally on a new clone,
+	// as a clone given properties at creation would have them.
+	setErr     error
+	setErrOn   string // fails only a zfs set that includes this property
+	propErrFor string // fails only a property read that asks about this dataset
+	cloneProps map[string]string
+	origins    map[string]string
+	cloneErr   error
+	promoteErr error
 }
 
 func (s *stubSystem) Pools(context.Context) ([]string, error) { return s.pools, s.poolsErr }
@@ -74,6 +83,9 @@ func (s *stubSystem) DatasetsUnder(_ context.Context, roots []string) ([]Dataset
 
 func (s *stubSystem) LocalProperties(_ context.Context, roots []string) ([]Property, error) {
 	s.roots = append(s.roots, roots)
+	if s.propErrFor != "" && !slices.Contains(roots, s.propErrFor) {
+		return s.properties, nil
+	}
 	return s.properties, s.propErr
 }
 
@@ -96,6 +108,9 @@ func (s *stubSystem) SetProperties(_ context.Context, name string, properties ma
 	s.ran = append(s.ran, stubCommand("set", name, properties))
 	if s.writeErr != nil {
 		return Result{Dataset: name, Command: stubCommand("set", name, properties)}, s.writeErr
+	}
+	if _, hit := properties[s.setErrOn]; s.setErr != nil && (s.setErrOn == "" || hit) {
+		return Result{Dataset: name, Command: stubCommand("set", name, properties)}, s.setErr
 	}
 	for property, value := range properties {
 		replaced := false
@@ -489,6 +504,9 @@ func (s *stubSystem) Mounted(_ context.Context, dataset string) (bool, error) {
 func (s *stubSystem) Unmount(_ context.Context, dataset string) (Result, error) {
 	s.ran = append(s.ran, "zfs unmount "+dataset)
 	err := s.mountErrorFor(dataset)
+	if s.mountOnly {
+		err = nil
+	}
 	if err == nil {
 		s.notMounted[dataset] = true
 	}
@@ -534,6 +552,9 @@ func (s *stubSystem) CloneSnapshot(_ context.Context, snapshot, target string) (
 		s.origins = map[string]string{}
 	}
 	s.origins[target] = snapshot
+	for property, value := range s.cloneProps {
+		s.properties = append(s.properties, Property{Dataset: target, Name: property, Value: value})
+	}
 	return Result{Dataset: target, Command: command}, nil
 }
 

@@ -857,6 +857,16 @@ type recloneRequest struct {
 // @Description  have. Running a recovery automatically while the first failure is still
 // @Description  unexplained is how a bad situation becomes an unreadable one.
 // @Description
+// @Description  **A stopped jail can still be dying**, and a dying jail still holds its root.
+// @Description  The call waits until jls -d no longer lists it, up to two minutes, and
+// @Description  otherwise refuses with 409 and failed_at "stop", nothing moved and the jail
+// @Description  left stopped. A root still in use is refused before it is renamed (#281).
+// @Description  A failed step's body carries error, the reason it failed.
+// @Description
+// @Description  The old root's own user properties, jaildeck:* excepted, are carried to the
+// @Description  new root and named in properties; one the new root already sets is kept and
+// @Description  named in properties_kept. A failed copy stops at copy-properties.
+// @Description
 // @Description  The template must be the full dataset@snapshot. There is no default:
 // @Description  every jail on a real host is already a clone of templates/<release>@base,
 // @Description  so defaulting to it would be a no-op dressed as an upgrade.
@@ -870,6 +880,7 @@ type recloneRequest struct {
 // @Failure      400       {object}  common.ErrorResponse  "Missing confirm, or a malformed snapshot name"
 // @Failure      401       {object}  common.ErrorResponse
 // @Failure      404       {object}  common.ErrorResponse  "No such jail, no such template snapshot, or the jail is not on ZFS"
+// @Failure      409       {object}  Reclone               "jls -d still lists the stopped jail after the wait; nothing moved"
 // @Failure      500       {object}  Reclone               "A step failed; the body says which and where the datasets are"
 // @Security     BearerAuth
 // @Router       /jails/{name}/reclone [post]
@@ -890,6 +901,7 @@ func (h *JailHandler) Reclone(w http.ResponseWriter, r *http.Request) {
 		// A failure after the datasets started moving carries the recovery
 		// information, and an error message alone would throw it away.
 		if result.FailedAt != "" {
+			result.Error = partialMessage(err)
 			common.WriteJSON(w, statusForPartial(err), result)
 			return
 		}
@@ -1387,4 +1399,15 @@ func (h *JailHandler) Destroy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, result)
+}
+
+// partialMessage is what a client is told about a step that failed: an
+// AppError's own message, which is written for it, and for anything else what
+// HandlerError says, since its text was not.
+func partialMessage(err error) string {
+	var appErr *common.AppError
+	if errors.As(err, &appErr) {
+		return appErr.Message
+	}
+	return "internal server error"
 }

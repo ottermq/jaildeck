@@ -137,3 +137,23 @@ func summarizeJailActionFailure(name string, op jails.Operation, result system.C
 
 	return output
 }
+
+// jlsGoneCommand lists every jail the kernel still has, dying ones included
+// (-d), by name.
+var jlsGoneCommand = system.Command{Name: "jls", Args: []string{"-d", "name"}}
+
+// Gone is true once jls -d no longer lists the jail (#281).
+func (a *Adapter) Gone(ctx context.Context, name string) (bool, error) {
+	result, err := a.runner.Run(ctx, jlsGoneCommand)
+	if err != nil {
+		return false, fmt.Errorf("list jails, dying ones included: %w", err)
+	}
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		if strings.TrimSpace(line) == name {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+var _ jails.JailRemoval = (*Adapter)(nil)

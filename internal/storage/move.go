@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -233,12 +234,39 @@ func (s *Service) moveDataset(ctx context.Context, from, to string, mountpoint m
 		return MoveResult{}, toWriteError("read the mount state of", from, err)
 	}
 
+	// Unmounted before the rename, not after (#281). A filesystem still in
+	// use -- a jail that stop has left dying, a shell sitting in it -- refuses
+	// with "pool or dataset is busy", and refusing here costs nothing: the
+	// dataset is still under its own name, mounted where it was. Unmounted
+	// after the rename, the same refusal left it named in retained/ and
+	// mounted inside the jail, with no name left to retry under.
+	if wasMounted {
+		unmount, unmountErr := s.system.Unmount(ctx, from)
+		s.logWrite(ctx, OperationMountDataset, unmount, unmountErr)
+		if unmountErr != nil {
+			return MoveResult{}, toWriteError("unmount", from, unmountErr)
+		}
+	}
+
 	result, renameErr := s.system.RenameDataset(ctx, from, to)
 	s.logWrite(ctx, OperationRenameDataset, result, renameErr)
 	if renameErr != nil {
+		if wasMounted {
+			// Back where it was found. A failure here is logged and reported
+			// with the rename's, never instead of it.
+			mount, mountErr := s.system.Mount(ctx, from)
+			s.logWrite(ctx, OperationMountDataset, mount, mountErr)
+			if mountErr != nil {
+				return MoveResult{}, alsoFailed(toWriteError("rename", from, renameErr),
+					"and mounting it back where it was failed too", mountErr)
+			}
+		}
 		return MoveResult{}, toWriteError("rename", from, renameErr)
 	}
 
+	// From here on the rename has happened. Every failure below returns moved
+	// with the error, never an empty result: the caller has to know the
+	// dataset is now named to, or it reports it where it no longer is (#281).
 	moved := MoveResult{From: from, To: to}
 	if !wasMounted && mountpoint == (mountpointChange{}) {
 		// Nothing was mounted, so there is nothing to carry. Mounting it now
@@ -247,18 +275,8 @@ func (s *Service) moveDataset(ctx context.Context, from, to string, mountpoint m
 		return moved, nil
 	}
 
-	// Until this runs, the dataset is named in one place and mounted in
-	// another -- and a jail with a foreign filesystem mounted inside it cannot
-	// be destroyed: zfs answers "pool or dataset is busy".
-	if wasMounted {
-		unmount, unmountErr := s.system.Unmount(ctx, to)
-		s.logWrite(ctx, OperationMountDataset, unmount, unmountErr)
-		if unmountErr != nil {
-			return MoveResult{}, toWriteError("unmount", to, unmountErr)
-		}
-	}
 	if err := s.changeMountpoint(ctx, to, mountpoint); err != nil {
-		return MoveResult{}, err
+		return moved, err
 	}
 	// Setting or inheriting a mountpoint mounts the dataset by itself, even
 	// one that was not mounted -- measured, #121 -- so the mount is asked about
@@ -268,7 +286,7 @@ func (s *Service) moveDataset(ctx context.Context, from, to string, mountpoint m
 	if mountpoint != (mountpointChange{}) {
 		var err error
 		if mounted, err = s.system.Mounted(ctx, to); err != nil {
-			return MoveResult{}, toWriteError("read the mount state of", to, err)
+			return moved, toWriteError("read the mount state of", to, err)
 		}
 	}
 	switch {
@@ -276,13 +294,13 @@ func (s *Service) moveDataset(ctx context.Context, from, to string, mountpoint m
 		mount, mountErr := s.system.Mount(ctx, to)
 		s.logWrite(ctx, OperationMountDataset, mount, mountErr)
 		if mountErr != nil {
-			return MoveResult{}, toWriteError("mount", to, mountErr)
+			return moved, toWriteError("mount", to, mountErr)
 		}
 	case !wasMounted && mounted:
 		unmount, unmountErr := s.system.Unmount(ctx, to)
 		s.logWrite(ctx, OperationMountDataset, unmount, unmountErr)
 		if unmountErr != nil {
-			return MoveResult{}, toWriteError("unmount", to, unmountErr)
+			return moved, toWriteError("unmount", to, unmountErr)
 		}
 	}
 	moved.Remounted = wasMounted
@@ -359,4 +377,15 @@ func mountpointOf(ctx context.Context, s *Service, name string) string {
 		return ""
 	}
 	return dataset.Mountpoint
+}
+
+// alsoFailed adds a second failure to the first one's message. toWriteError
+// keeps only a command's own summary, so a cause wrapped into the error before
+// it would be lost; this adds it after, where it survives.
+func alsoFailed(err error, what string, second error) error {
+	var appErr *common.AppError
+	if errors.As(err, &appErr) {
+		return common.NewAppError(appErr.Code, appErr.Message+"; "+what+": "+second.Error())
+	}
+	return fmt.Errorf("%w; %s: %v", err, what, second)
 }

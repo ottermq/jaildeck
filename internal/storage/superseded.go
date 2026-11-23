@@ -16,10 +16,15 @@ import (
 // a failed read should turn into an outage.
 func (s *Service) refuseSuperseded(ctx context.Context, dataset string) error {
 	by := s.supersededBy(ctx, dataset)
-	if by == "" {
+	parent := path.Dir(dataset)
+	if by == "" || parent+"/"+by == dataset {
 		return nil
 	}
-	parent := path.Dir(dataset)
+	// A mark naming a template that is gone refuses nothing (#284), as in
+	// the templates domain: there is nothing to use instead.
+	if replacement, err := s.datasetNamed(ctx, parent+"/"+by); err != nil || replacement == nil {
+		return nil
+	}
 	newest := by
 	seen := map[string]bool{dataset: true, parent + "/" + by: true}
 	for range templates.SupersededChainLimit {

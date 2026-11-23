@@ -153,13 +153,18 @@ func (s *TemplateSource) Mark(ctx context.Context, name, built string) error {
 	return err
 }
 
-// Supersede records the template that replaced this one (#259).
+// Supersede records the template that replaced this one (#259), and an empty
+// by lifts the record (#284).
 func (s *TemplateSource) Supersede(ctx context.Context, name, by string) error {
 	dataset, err := s.datasetFor(ctx, name)
 	if err != nil {
 		return err
 	}
-	_, err = s.service.SetUserProperties(ctx, dataset, map[string]*string{templates.SupersededProperty: &by})
+	value := &by
+	if by == "" {
+		value = nil // zfs inherit: the mark is gone, not set to nothing
+	}
+	_, err = s.service.SetUserProperties(ctx, dataset, map[string]*string{templates.SupersededProperty: value})
 	return err
 }
 

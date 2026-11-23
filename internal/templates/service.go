@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -99,6 +100,7 @@ func (s *Service) List(ctx context.Context) ([]Template, error) {
 			found[i].Running = &running
 		}
 	}
+	dropDanglingMarks(found)
 
 	// Anything with no dataset yet: fetched, or being fetched right now.
 	for _, name := range append(fetched, s.running.names()...) {
@@ -428,6 +430,10 @@ const OperationDestroyTemplate = "destroy-template"
 type Removal struct {
 	Template  string `json:"template"`
 	Destroyed bool   `json:"destroyed"`
+	// Replaced are the templates that were marked superseded by this one
+	// (#284), each now pointing at what replaced it in turn, or unmarked
+	// when nothing did. Never null.
+	Replaced []Replacement `json:"replaced"`
 	// Blocked is set when something is cloned from the template. Nothing ran.
 	Blocked *Blocked `json:"blocked,omitempty"`
 }
@@ -470,6 +476,7 @@ func (s *Service) Remove(ctx context.Context, name, confirm string) (Removal, er
 	if dependents.Any() {
 		return Removal{
 			Template: template.Dataset,
+			Replaced: []Replacement{},
 			Blocked: &Blocked{
 				Reason: blockedReason(dependents),
 				Clones: dependents.Clones,
@@ -484,7 +491,80 @@ func (s *Service) Remove(ctx context.Context, name, confirm string) (Removal, er
 	if s.vulnerabilities != nil {
 		s.vulnerabilities.ForgetTemplate(name)
 	}
-	return Removal{Template: template.Dataset, Destroyed: true}, nil
+	return Removal{Template: template.Dataset, Destroyed: true,
+		Replaced: s.followRemoval(ctx, template, existing)}, nil
+}
+
+// dropDanglingMarks clears a superseded mark that names a template that is
+// not there, or the template itself (#284). Such a mark points at nothing a
+// client could use instead, so the listing, the refusals, the UI and the
+// metric all treat the template as not superseded. The property itself is
+// left on the dataset: reading is not the place to write.
+func dropDanglingMarks(found []Template) {
+	for i := range found {
+		by := found[i].SupersededBy
+		if by == "" {
+			continue
+		}
+		if _, ok := byName(found, by); !ok || by == found[i].Name {
+			found[i].SupersededBy = ""
+		}
+	}
+}
+
+// Replacement is one template whose superseded mark followed a removal.
+type Replacement struct {
+	Template string `json:"template"`
+	// SupersededBy is its mark now: the removed template's own replacement,
+	// or empty for a mark that was lifted.
+	SupersededBy string `json:"superseded_by"`
+	// Error is set when changing the mark failed. SupersededBy is then what
+	// it was to become, and the change may or may not have landed: the
+	// template's own GET says. A mark left naming the removed template
+	// refuses nothing (#284).
+	Error string `json:"error,omitempty"`
+}
+
+// followRemoval moves every mark naming the removed template on to the one that
+// replaced it, or lifts it (#284). A mark left naming a template that no
+// longer exists would point at nothing; the listing ignores one anyway, but
+// the property is better gone than ignored. Each change is its own audited
+// write, and one that fails is reported, not retried: the removal it follows
+// has already happened.
+//
+// Only templates beside the removed one, under the same parent dataset: a
+// mark names a sibling, and a template of the same name on another pool is
+// not the one it means.
+func (s *Service) followRemoval(ctx context.Context, removed Template, all []Template) []Replacement {
+	replaced := make([]Replacement, 0)
+	for _, t := range all {
+		if t.SupersededBy != removed.Name || t.Name == removed.Name ||
+			path.Dir(t.Dataset) != path.Dir(removed.Dataset) {
+			continue
+		}
+		next := removed.SupersededBy
+		if next == t.Name {
+			next = "" // a loop through the removed one: lift, never mark itself
+		}
+		r := Replacement{Template: t.Name, SupersededBy: next}
+		if err := s.storage.Supersede(ctx, t.Name, next); err != nil {
+			// The write may have happened and its read-back failed; the
+			// template's own GET is the answer to where its mark is now.
+			r.Error = clientMessage(err)
+		}
+		replaced = append(replaced, r)
+	}
+	return replaced
+}
+
+// clientMessage is an AppError's own message, which is written for a client,
+// and for anything else what HandlerError would say.
+func clientMessage(err error) string {
+	var appErr *common.AppError
+	if errors.As(err, &appErr) {
+		return appErr.Message
+	}
+	return "internal server error"
 }
 
 func blockedReason(dependents Dependents) string {
@@ -495,9 +575,13 @@ func blockedReason(dependents Dependents) string {
 	if n := len(dependents.Holds); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d hold(s) are on its snapshots", n))
 	}
-	return "refused: " + strings.Join(parts, " and ") +
+	reason := "refused: " + strings.Join(parts, " and ") +
 		". Destroying it would take them with it, so each has to go first -- or, for a jail " +
 		"that should outlive the template, zfs promote moves the dependency the other way."
+	if len(dependents.Clones) == 0 {
+		reason += common.TransientHoldHint(dependents.Holds)
+	}
+	return reason
 }
 
 // Detail is one template with what depends on it.

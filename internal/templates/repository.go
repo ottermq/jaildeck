@@ -28,7 +28,8 @@ type TemplateStorage interface {
 	// parent as where it came from, and returns where it is mounted (#258).
 	Copy(ctx context.Context, parentSnapshot, name, parent string) (string, error)
 	// Supersede records that name has been replaced by another template,
-	// in its jaildeck:superseded-by user property (#259).
+	// in its jaildeck:superseded-by user property (#259). An empty by lifts
+	// the mark (zfs inherit), as removing the replacement does (#284).
 	Supersede(ctx context.Context, name, by string) error
 	// RecordOrphans records the packages a refresh left that nothing
 	// depends on, in its jaildeck:orphans user property (#264).

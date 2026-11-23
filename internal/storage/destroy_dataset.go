@@ -158,6 +158,9 @@ func datasetBlock(dataset string, children []string, snapshots *SnapshotBlock) *
 	block.Reason = "refused: " + dataset + " has " + strings.Join(reasons, " and ") +
 		". None is overridden here: a dataset of its own is destroyed by naming it, and " +
 		"releasing a hold or destroying a clone is a separate, deliberate act."
+	if len(block.Clones) == 0 && len(children) == 0 {
+		block.Reason += common.TransientHoldHint(block.Holds)
+	}
 	return block
 }
 

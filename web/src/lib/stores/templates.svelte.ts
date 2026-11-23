@@ -218,6 +218,9 @@ export interface Blocked {
 export interface Removal {
     template: string
     destroyed: boolean
+    // The templates it superseded, now pointing at its own replacement or
+    // unmarked (#284). The list shows the new marks anyway.
+    replaced?: { template: string, superseded_by: string, error?: string }[]
     blocked?: Blocked
 }
 

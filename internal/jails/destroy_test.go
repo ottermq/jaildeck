@@ -23,6 +23,27 @@ type stubDestroyer struct {
 	checked   []string
 	destroyed []string
 	steps     *[]string
+
+	// purges answers each PurgeSnapshots call in turn; purgeErr fails the
+	// call numbered purgeErrAt (1-based).
+	purges     [][]string
+	purgeErr   error
+	purgeErrAt int
+	purgedWith []string
+}
+
+func (s *stubDestroyer) PurgeSnapshots(_ context.Context, _ string, prefix string) ([]string, error) {
+	s.purgedWith = append(s.purgedWith, prefix)
+	record(s.steps, "purge")
+	call := len(s.purgedWith)
+	var purged []string
+	if call <= len(s.purges) {
+		purged = s.purges[call-1]
+	}
+	if call == s.purgeErrAt {
+		return purged, s.purgeErr
+	}
+	return purged, nil
 }
 
 func (s *stubDestroyer) CheckDestroy(_ context.Context, jailPath string) (RootDependents, error) {

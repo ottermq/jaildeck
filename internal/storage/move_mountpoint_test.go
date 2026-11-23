@@ -35,8 +35,8 @@ func TestRetainRecordsALocalMountpointAndInheritsIt(t *testing.T) {
 	}
 	// No zfs mount: the inherit mounted it under retained, as zfs does.
 	want := []string{
+		"zfs unmount " + ottermqPG,
 		"zfs rename -u " + ottermqPG + " tank/jails/retained/ottermq-pg",
-		"zfs unmount tank/jails/retained/ottermq-pg",
 		"zfs set jaildeck:mountpoint=var/db/postgres tank/jails/retained/ottermq-pg",
 		"zfs inherit mountpoint tank/jails/retained/ottermq-pg",
 	}
@@ -71,8 +71,8 @@ func TestRestorePutsTheMountpointBackUnderTheNewJail(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
+		"zfs unmount tank/jails/retained/ottermq-pg",
 		"zfs rename -u tank/jails/retained/ottermq-pg tank/jails/containers/db2/pg",
-		"zfs unmount tank/jails/containers/db2/pg",
 		"zfs set mountpoint=/usr/local/jails/containers/db2/var/db/postgres tank/jails/containers/db2/pg",
 		"zfs inherit jaildeck:mountpoint tank/jails/containers/db2/pg",
 	}

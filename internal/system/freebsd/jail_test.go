@@ -605,3 +605,36 @@ func TestRunService(t *testing.T) {
 		})
 	}
 }
+
+func TestGoneReadsDyingJails(t *testing.T) {
+	tests := []struct {
+		name      string
+		stdout    string
+		runnerErr error
+		want      bool
+		wantErr   bool
+	}{
+		{name: "still listed, dying", stdout: "otter-db\napi\n", want: false},
+		{name: "not listed", stdout: "otter-db\n", want: true},
+		{name: "a longer name is another jail", stdout: "api2\n", want: true},
+		{name: "nothing at all", stdout: "", want: true},
+		{name: "jls fails", runnerErr: errors.New("jls unavailable"), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := NewAdapter(runnerFunc(func(_ context.Context, cmd system.Command) (system.CommandResult, error) {
+				if !reflect.DeepEqual(cmd, jlsGoneCommand) {
+					t.Errorf("command = %#v, want %#v", cmd, jlsGoneCommand)
+				}
+				return system.CommandResult{Stdout: tt.stdout}, tt.runnerErr
+			}))
+			got, err := adapter.Gone(context.Background(), "api")
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Gone() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err == nil && got != tt.want {
+				t.Errorf("Gone() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

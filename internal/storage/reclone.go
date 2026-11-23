@@ -120,6 +120,12 @@ func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string
 
 	oldRoot := recloneRootName(root, origin)
 	if _, err := s.RetainDataset(ctx, root, oldRoot); err != nil {
+		// A move that fails after its rename has still moved the root. Asked
+		// rather than assumed, so parked never leaves out the one dataset a
+		// client most needs to find (#281).
+		if moved := retainedParent(poolOf(root)) + "/" + oldRoot; s.movedTo(ctx, root, moved) {
+			outstanding[root] = moved
+		}
 		result.FailedAt, result.Parked = StepParkRoot, parked()
 		return result, err
 	}
@@ -148,6 +154,17 @@ func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string
 		result.Children = append(result.Children, child)
 	}
 	return result, nil
+}
+
+// movedTo is true when from is gone and to is there. A read that fails answers
+// false: the result then says less than it might, never something untrue.
+func (s *Service) movedTo(ctx context.Context, from, to string) bool {
+	left, err := s.datasetNamed(ctx, from)
+	if err != nil || left != nil {
+		return false
+	}
+	arrived, err := s.datasetNamed(ctx, to)
+	return err == nil && arrived != nil
 }
 
 // CheckRecloneSource refuses a re-clone that cannot work, without touching

@@ -24,9 +24,10 @@ func withRetainable() *stubSystem {
 
 const ottermqData = "tank/jails/containers/ottermq/data"
 
-// Three commands, in this order, and nothing else. The rename carries -u so a
-// running jail keeps its filesystem; the unmount and the mount are what
-// actually move it, at a moment this chose rather than one zfs chose.
+// Three commands, in this order, and nothing else. The unmount comes first, so
+// a dataset still in use is refused before anything has moved (#281); the
+// rename carries -u so zfs does not mount it on its own, and the mount puts it
+// at its new place, at a moment this chose rather than one zfs chose.
 func TestRetainMovesAndRemounts(t *testing.T) {
 	system := withRetainable()
 	logger := &fakeLogger{}
@@ -39,8 +40,8 @@ func TestRetainMovesAndRemounts(t *testing.T) {
 
 	want := []string{
 		"zfs create tank/jails/retained",
+		"zfs unmount " + ottermqData,
 		"zfs rename -u " + ottermqData + " tank/jails/retained/ottermq-data",
-		"zfs unmount tank/jails/retained/ottermq-data",
 		"zfs mount tank/jails/retained/ottermq-data",
 	}
 	if !reflect.DeepEqual(system.ran, want) {

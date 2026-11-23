@@ -219,6 +219,9 @@ type Reclone struct {
 	// where every dataset that is no longer under the jail currently sits.
 	Parked   []Parked `json:"parked,omitempty"`
 	FailedAt string   `json:"failed_at,omitempty"`
+	// Error is why that step failed, which the status code alone does not say
+	// (#281).
+	Error string `json:"error,omitempty"`
 }
 
 // Parked is one dataset moved out of the jail and not yet moved back.

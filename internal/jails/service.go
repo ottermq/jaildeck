@@ -147,6 +147,11 @@ type JailService struct {
 	// vulnerabilities answers each jail's last package audit (#230). Nil
 	// leaves jails without one.
 	vulnerabilities JailVulnerabilities
+	// removal answers whether a stopped jail is fully gone (#281). Nil skips
+	// the wait, as in tests that are not about one.
+	removal JailRemoval
+	// goneWait and gonePoll bound that wait; zero means the defaults.
+	goneWait, gonePoll time.Duration
 }
 
 // JailVulnerabilities answers a jail's last package audit, which runs on a

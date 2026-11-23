@@ -233,9 +233,33 @@ func (s *Service) moveDataset(ctx context.Context, from, to string, mountpoint m
 		return MoveResult{}, toWriteError("read the mount state of", from, err)
 	}
 
+	// Unmounted before the rename, not after (#281). A filesystem still in
+	// use -- a jail that stop has left dying, a shell sitting in it -- refuses
+	// with "pool or dataset is busy", and refusing here costs nothing: the
+	// dataset is still under its own name, mounted where it was. Unmounted
+	// after the rename, the same refusal left it named in retained/ and
+	// mounted inside the jail, with no name left to retry under.
+	if wasMounted {
+		unmount, unmountErr := s.system.Unmount(ctx, from)
+		s.logWrite(ctx, OperationMountDataset, unmount, unmountErr)
+		if unmountErr != nil {
+			return MoveResult{}, toWriteError("unmount", from, unmountErr)
+		}
+	}
+
 	result, renameErr := s.system.RenameDataset(ctx, from, to)
 	s.logWrite(ctx, OperationRenameDataset, result, renameErr)
 	if renameErr != nil {
+		if wasMounted {
+			// Back where it was found. A failure here is logged and reported
+			// with the rename's, never instead of it.
+			mount, mountErr := s.system.Mount(ctx, from)
+			s.logWrite(ctx, OperationMountDataset, mount, mountErr)
+			if mountErr != nil {
+				return MoveResult{}, toWriteError("rename", from, fmt.Errorf(
+					"%w; and mounting it back where it was failed too: %v", renameErr, mountErr))
+			}
+		}
 		return MoveResult{}, toWriteError("rename", from, renameErr)
 	}
 
@@ -247,16 +271,6 @@ func (s *Service) moveDataset(ctx context.Context, from, to string, mountpoint m
 		return moved, nil
 	}
 
-	// Until this runs, the dataset is named in one place and mounted in
-	// another -- and a jail with a foreign filesystem mounted inside it cannot
-	// be destroyed: zfs answers "pool or dataset is busy".
-	if wasMounted {
-		unmount, unmountErr := s.system.Unmount(ctx, to)
-		s.logWrite(ctx, OperationMountDataset, unmount, unmountErr)
-		if unmountErr != nil {
-			return MoveResult{}, toWriteError("unmount", to, unmountErr)
-		}
-	}
 	if err := s.changeMountpoint(ctx, to, mountpoint); err != nil {
 		return MoveResult{}, err
 	}

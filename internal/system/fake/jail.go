@@ -539,3 +539,13 @@ func ruleKey(rule string) (name, key string, ok bool) {
 	}
 	return parts[1], subject, true
 }
+
+// Gone is true once a jail is stopped: nothing here lingers dying.
+func (s *JailSystem) Gone(_ context.Context, name string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	jail, ok := s.jails[name]
+	return !ok || jail.Status != jails.JailStatusRunning, nil
+}
+
+var _ jails.JailRemoval = (*JailSystem)(nil)

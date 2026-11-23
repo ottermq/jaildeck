@@ -40,9 +40,12 @@ type stubSystem struct {
 	// mountErrFor fails only the named datasets, so a test can break one step
 	// of a sequence without breaking every step that uses the same call.
 	mountErrFor map[string]bool
-	origins     map[string]string
-	cloneErr    error
-	promoteErr  error
+	// mountOnly keeps mountErr off zfs unmount, for a test about the mount
+	// that ends a restore rather than the unmount that starts a retain.
+	mountOnly  bool
+	origins    map[string]string
+	cloneErr   error
+	promoteErr error
 }
 
 func (s *stubSystem) Pools(context.Context) ([]string, error) { return s.pools, s.poolsErr }
@@ -489,6 +492,9 @@ func (s *stubSystem) Mounted(_ context.Context, dataset string) (bool, error) {
 func (s *stubSystem) Unmount(_ context.Context, dataset string) (Result, error) {
 	s.ran = append(s.ran, "zfs unmount "+dataset)
 	err := s.mountErrorFor(dataset)
+	if s.mountOnly {
+		err = nil
+	}
 	if err == nil {
 		s.notMounted[dataset] = true
 	}

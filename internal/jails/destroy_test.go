@@ -19,6 +19,9 @@ type stubDestroyer struct {
 	dependents RootDependents
 	checkErr   error
 	destroyErr error
+	// takenBeforeErr are the children a failing DestroyRoot reports as
+	// already destroyed.
+	takenBeforeErr []string
 
 	checked   []string
 	destroyed []string
@@ -51,13 +54,13 @@ func (s *stubDestroyer) CheckDestroy(_ context.Context, jailPath string) (RootDe
 	return s.dependents, s.checkErr
 }
 
-func (s *stubDestroyer) DestroyRoot(_ context.Context, jailPath string) (string, error) {
+func (s *stubDestroyer) DestroyRoot(_ context.Context, jailPath string) (string, []string, error) {
 	s.destroyed = append(s.destroyed, jailPath)
 	record(s.steps, "destroy-root")
 	if s.destroyErr != nil {
-		return "", s.destroyErr
+		return s.dependents.Root, s.takenBeforeErr, s.destroyErr
 	}
-	return s.dependents.Root, nil
+	return s.dependents.Root, s.dependents.Children, nil
 }
 
 // stubRemover stands in for the file in jail.conf.d, and -- when it is given

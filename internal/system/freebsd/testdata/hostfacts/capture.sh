@@ -162,7 +162,7 @@ cap zfs_list_absent_pool 'zfs list -H -o name,mountpoint -r nosuchpool'
 # memory of what zfs list looks like.
 for pool in $(cat "$OUT/zpool_list_h.stdout"); do
 	cap "zfs_list_space_r_$pool" "zfs list -H -o name,used,avail,refer,mountpoint -r $pool"
-	cap "zfs_list_space_rp_$pool" "zfs list -H -p -o name,used,avail,refer,mountpoint -r $pool"
+	cap "zfs_list_space_rp_$pool" "zfs list -H -p -t filesystem,volume -o name,used,avail,refer,mountpoint -r $pool"
 	# mounted vs canmount vs mountpoint are three different questions. JD-021
 	# records the mounted state as deliberately unparsed for want of real
 	# output; this is that output.

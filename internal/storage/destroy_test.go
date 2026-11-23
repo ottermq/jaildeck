@@ -109,7 +109,7 @@ func TestDestroyRootWithoutChildrenPassesNoFlag(t *testing.T) {
 	system := withAJail()
 	logger := &fakeLogger{}
 
-	got, err := jailSourceFor(system, logger).DestroyRoot(context.Background(), jailPath)
+	got, _, err := jailSourceFor(system, logger).DestroyRoot(context.Background(), jailPath)
 	if err != nil {
 		t.Fatalf("DestroyRoot: %v", err)
 	}
@@ -133,21 +133,67 @@ func TestDestroyRootWithoutChildrenPassesNoFlag(t *testing.T) {
 	}
 }
 
-func TestDestroyRootWithChildrenPassesMinusR(t *testing.T) {
+// A jail with children is destroyed a dataset at a time, deepest first, and
+// never with -r (#288).
+func TestDestroyRootTakesTheChildrenDeepestFirst(t *testing.T) {
 	system := withAJail()
-	system.datasets = append(system.datasets, Dataset{Name: jailRoot + "/data", Mountpoint: jailPath + "/data"})
+	system.datasets = append(system.datasets,
+		Dataset{Name: jailRoot + "/data", Mountpoint: jailPath + "/data"},
+		Dataset{Name: jailRoot + "/data/wal", Mountpoint: jailPath + "/data/wal"},
+		Dataset{Name: jailRoot + "/logs", Mountpoint: jailPath + "/logs"})
+	logger := &fakeLogger{}
 
-	if _, err := jailSourceFor(system, &fakeLogger{}).DestroyRoot(context.Background(), jailPath); err != nil {
+	root, taken, err := jailSourceFor(system, logger).DestroyRoot(context.Background(), jailPath)
+	if err != nil {
 		t.Fatalf("DestroyRoot: %v", err)
 	}
-	if !slices.Contains(system.ran, "zfs destroy -r "+jailRoot) {
-		t.Errorf("commands run = %v, want -r so the children go with it", system.ran)
+	want := []string{
+		"zfs destroy " + jailRoot + "/data/wal",
+		"zfs destroy " + jailRoot + "/logs",
+		"zfs destroy " + jailRoot + "/data",
+		"zfs destroy " + jailRoot,
 	}
-	// The children went with it, which is the point of the flag.
+	if !slices.Equal(system.ran, want) {
+		t.Errorf("ran\n  %q\nwant\n  %q", system.ran, want)
+	}
+	if root != jailRoot || !slices.Equal(taken, []string{jailRoot + "/data/wal", jailRoot + "/logs", jailRoot + "/data"}) {
+		t.Errorf("root %q taken %v", root, taken)
+	}
+	if len(logger.entries) != 4 {
+		t.Errorf("%d audit entries, want one per dataset", len(logger.entries))
+	}
 	for _, dataset := range system.datasets {
 		if strings.HasPrefix(dataset.Name, jailRoot) {
 			t.Errorf("%s survived the destroy", dataset.Name)
 		}
+	}
+}
+
+// The race #288 is about: a snapshot taken on a child after the check. zfs
+// refuses that child, nothing beneath or beside it that was already gone
+// comes back, and the root and the child with the snapshot are still there.
+func TestDestroyRootRefusesAChildThatGainedASnapshot(t *testing.T) {
+	system := withAJail()
+	system.datasets = append(system.datasets,
+		Dataset{Name: jailRoot + "/data", Mountpoint: jailPath + "/data"},
+		Dataset{Name: jailRoot + "/logs", Mountpoint: jailPath + "/logs"})
+	system.snapshots = append(system.snapshots,
+		Snapshot{Name: jailRoot + "/data@keep", Dataset: jailRoot + "/data", Short: "keep", CreateTXG: 30})
+
+	root, taken, err := jailSourceFor(system, &fakeLogger{}).DestroyRoot(context.Background(), jailPath)
+	if err == nil || !strings.Contains(err.Error(), "filesystem has children") {
+		t.Fatalf("want zfs's refusal, got %v", err)
+	}
+	if root != jailRoot || !slices.Equal(taken, []string{jailRoot + "/logs"}) {
+		t.Errorf("root %q taken %v, want only logs reported as gone", root, taken)
+	}
+	for _, still := range []string{jailRoot, jailRoot + "/data"} {
+		if !slices.ContainsFunc(system.datasets, func(d Dataset) bool { return d.Name == still }) {
+			t.Errorf("%s was destroyed despite the refusal", still)
+		}
+	}
+	if !slices.ContainsFunc(system.snapshots, func(x Snapshot) bool { return x.Name == jailRoot+"/data@keep" }) {
+		t.Error("the late snapshot was destroyed")
 	}
 }
 
@@ -159,7 +205,7 @@ func TestDestroyRootLetsZFSRefuseASnapshotTakenInTheGap(t *testing.T) {
 	system.snapshots = append(system.snapshots,
 		Snapshot{Name: jailRoot + "@late", Dataset: jailRoot, Short: "late", CreateTXG: 30})
 
-	_, err := jailSourceFor(system, &fakeLogger{}).DestroyRoot(context.Background(), jailPath)
+	_, _, err := jailSourceFor(system, &fakeLogger{}).DestroyRoot(context.Background(), jailPath)
 	if err == nil {
 		t.Fatal("want zfs's refusal, got none")
 	}
@@ -178,7 +224,7 @@ func TestDestroyRootPassesOnABusyDataset(t *testing.T) {
 	system.writeErr = errors.New("cannot destroy '" + jailRoot + "': pool or dataset is busy")
 	logger := &fakeLogger{}
 
-	_, err := jailSourceFor(system, logger).DestroyRoot(context.Background(), jailPath)
+	_, _, err := jailSourceFor(system, logger).DestroyRoot(context.Background(), jailPath)
 	if err == nil {
 		t.Fatal("want the busy refusal")
 	}
@@ -187,5 +233,44 @@ func TestDestroyRootPassesOnABusyDataset(t *testing.T) {
 	}
 	if len(logger.entries) == 0 || logger.entries[len(logger.entries)-1].Success {
 		t.Errorf("a failed destroy was not audited as a failure: %+v", logger.entries)
+	}
+}
+
+// A snapshot that reaches the listing as if it were a dataset -- a pool with
+// listsnapshots=on, before the adapter asked for datasets only -- is refused,
+// never destroyed by name (#288).
+func TestDestroyRootNeverDestroysASnapshotByName(t *testing.T) {
+	system := withAJail()
+	system.datasets = append(system.datasets, Dataset{Name: jailRoot + "/data@late"})
+
+	_, taken, err := jailSourceFor(system, &fakeLogger{}).DestroyRoot(context.Background(), jailPath)
+	if err == nil || len(taken) != 0 {
+		t.Fatalf("taken %v, err %v; want a refusal", taken, err)
+	}
+	for _, command := range system.ran {
+		if strings.Contains(command, "@") {
+			t.Errorf("ran %q", command)
+		}
+	}
+}
+
+// A busy child stops the destroy there: what is shallower, and the root, stay.
+func TestDestroyRootStopsAtABusyChild(t *testing.T) {
+	system := withAJail()
+	system.datasets = append(system.datasets,
+		Dataset{Name: jailRoot + "/data", Mountpoint: jailPath + "/data"},
+		Dataset{Name: jailRoot + "/data/wal", Mountpoint: jailPath + "/data/wal"})
+	system.destroyErrOn = map[string]bool{jailRoot + "/data": true}
+	logger := &fakeLogger{}
+
+	_, taken, err := jailSourceFor(system, logger).DestroyRoot(context.Background(), jailPath)
+	if err == nil || !slices.Equal(taken, []string{jailRoot + "/data/wal"}) {
+		t.Fatalf("taken %v, err %v", taken, err)
+	}
+	if last := logger.entries[len(logger.entries)-1]; last.Success || last.Target != jailRoot+"/data" {
+		t.Errorf("last audit entry %+v, want the failed destroy of data", last)
+	}
+	if slices.Contains(system.ran, "zfs destroy "+jailRoot) {
+		t.Error("the root was destroyed after a child refused")
 	}
 }

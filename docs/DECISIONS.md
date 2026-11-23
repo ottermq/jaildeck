@@ -1303,6 +1303,8 @@ A jail whose dataset has snapshots or clones is **refused**, with the dependents
 Two details settled while building it, 2026-10-24:
 
 - **`-r` only when the jail has children.** A jail's child datasets go with it (JD-007), and that needs `-r`. A jail with none is destroyed without it, so that a snapshot taken between the check and the destroy makes ZFS refuse rather than being swept up silently. The check is not the guard; it is the explanation given before the guard runs.
+
+  *Changed 2026-11-23 (#288): never `-r`.* The children are destroyed one at a time, deepest first, then the root, each with a bare `zfs destroy`. `-r` on a jail with children swept up a snapshot taken after the check, unreported, which is exactly what the rule above keeps from happening to a jail without them. A bare destroy refuses a dataset with a snapshot and not one with a bookmark (measured on 15.1), so a replicated jail is still destroyed. A refusal part way leaves the children already gone gone, and `taken` names exactly those.
 - **A jail with no file of its own in `jail.conf.d` is refused.** Its block is in `/etc/jail.conf`, which belongs to the operator and which Jail Deck never writes — so Jail Deck also cannot take the jail out of it. Destroying the dataset anyway would leave the jail still declared, still listed, and pointing at a path that no longer exists. Refusing names the file instead.
 
 ### Orchestration lives in `jails`; the primitives stay in `storage`

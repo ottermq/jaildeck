@@ -467,6 +467,10 @@ func (s *stubSystem) RenameDataset(_ context.Context, from, to string) (Result, 
 	}
 	for i, d := range s.datasets {
 		if d.Name == from || strings.HasPrefix(d.Name, from+"/") {
+			if moved := to + strings.TrimPrefix(d.Name, from); d.Name != from && s.notMounted[d.Name] {
+				delete(s.notMounted, d.Name)
+				s.notMounted[moved] = true
+			}
 			s.datasets[i].Name = to + strings.TrimPrefix(d.Name, from)
 			if s.localValue(from, "mountpoint") == "" {
 				s.datasets[i].Mountpoint = "/usr/local/jails/retained/" + to[strings.LastIndex(to, "/")+1:]
@@ -522,6 +526,13 @@ func (s *stubSystem) Unmount(_ context.Context, dataset string) (Result, error) 
 		err = nil
 	}
 	if err == nil {
+		// zfs unmount takes everything mounted beneath it down too (#294,
+		// measured on 15.1).
+		for _, d := range s.datasets {
+			if d.Name == dataset || strings.HasPrefix(d.Name, dataset+"/") {
+				s.notMounted[d.Name] = true
+			}
+		}
 		s.notMounted[dataset] = true
 	}
 	return Result{Dataset: dataset, Command: "zfs unmount " + dataset}, err

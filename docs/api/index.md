@@ -201,6 +201,13 @@ refused before the rename, the dataset is still under its own name, mounted wher
 Unmounted after the rename, the same refusal left it renamed into `retained/` but still mounted
 inside the jail. If the rename itself fails, the dataset is mounted back where it was.
 
+**What is mounted beneath it comes too** (#294). `zfs unmount` takes every dataset mounted
+beneath the moved one down with it, and `zfs mount` brings back only the one it is given. So each
+that was mounted is mounted again at its new place, parents first, each audited, and listed in
+`remounted_children`. One whose `mountpoint` is set on itself still names the place it left, so it
+is left unmounted, with everything beneath it, and listed in `left_unmounted`: set its mountpoint,
+then mount it. A failed rename mounts them back where they were along with the dataset.
+
 **The `-u` is not a style preference.** A plain `zfs rename` remounts the dataset by itself,
 inside the same command, at whatever the new name implies — decided by `zfs` rather than by
 anyone. With `-u` it stays unmounted until the mount the call chose.

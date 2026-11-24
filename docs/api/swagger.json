@@ -1360,7 +1360,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Moves it to \u003cpool\u003e/jails/retained/\u003cname\u003e. Destroying a jail takes its\nchildren with it (JD-007), so a dataset worth\nkeeping has to stop being a child first.\n\nThree audited commands: zfs rename -u, zfs unmount, zfs mount. The -u is\nnot optional — a plain zfs rename unmounts and remounts inside the same\ncommand, which on a running jail is the filesystem vanishing from under a\nlive process (JD-025).\n\nIt still unmounts: remounted=true means the filesystem moved and a running\njail just lost that path, so stop it first. Leaving the move half done is\nworse — a dataset still mounted inside a jail makes the jail undestroyable.\n\n**A mountpoint set on the dataset itself** (`/var/db/postgres` inside the\njail) travels with a rename, so it would stay mounted in the jail it left.\nIt is recorded instead, relative to the jail, in `jaildeck:mountpoint`, and\ninherited while retained; `zfs inherit` mounts it under retained by itself,\nso no `zfs mount` follows (#121). One outside the jail is refused with `409`.\n\nThe retained parent is created on demand and is deliberately not part of\nthe layout readiness check (JD-021).",
+                "description": "Moves it to \u003cpool\u003e/jails/retained/\u003cname\u003e. Destroying a jail takes its\nchildren with it (JD-007), so a dataset worth\nkeeping has to stop being a child first.\n\nThree audited commands: zfs unmount, zfs rename -u, zfs mount (#281). The\n-u is not optional — a plain zfs rename unmounts and remounts inside the\nsame command, which on a running jail is the filesystem vanishing from\nunder a live process (JD-025).\n\nThe unmount takes what is mounted beneath the dataset down too, so each of\nthose is mounted again afterwards, parents first, and listed in\nremounted_children (#294). One whose mountpoint is set on itself is left\nunmounted, with what is beneath it, and listed in left_unmounted.\n\nIt still unmounts: remounted=true means the filesystem moved and a running\njail just lost that path, so stop it first. Leaving the move half done is\nworse — a dataset still mounted inside a jail makes the jail undestroyable.\n\n**A mountpoint set on the dataset itself** (`/var/db/postgres` inside the\njail) travels with a rename, so it would stay mounted in the jail it left.\nIt is recorded instead, relative to the jail, in `jaildeck:mountpoint`, and\ninherited while retained; `zfs inherit` mounts it under retained by itself,\nso no `zfs mount` follows (#121). One outside the jail is refused with `409`.\n\nThe retained parent is created on demand and is deliberately not part of\nthe layout readiness check (JD-021).",
                 "consumes": [
                     "application/json"
                 ],
@@ -5357,12 +5357,25 @@
                 "from": {
                     "type": "string"
                 },
+                "left_unmounted": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "mountpoint": {
                     "type": "string"
                 },
                 "remounted": {
                     "description": "Remounted says whether the filesystem was actually carried to the new\nmountpoint. False when the dataset was not mounted to begin with --\nwhich is not a failure, just nothing to carry.",
                     "type": "boolean"
+                },
+                "remounted_children": {
+                    "description": "RemountedChildren are the datasets beneath it mounted again after the\nmove (#294); LeftUnmounted the ones that were mounted and are not now,\nbecause their mountpoint is set on themselves or on one above them.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "to": {
                     "type": "string"

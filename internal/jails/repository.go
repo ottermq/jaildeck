@@ -166,6 +166,11 @@ type DatasetMove struct {
 	// mountpoint. False when the dataset was not mounted to begin with --
 	// which is not a failure, just nothing to carry.
 	Remounted bool `json:"remounted"`
+	// RemountedChildren are the datasets beneath it mounted again after the
+	// move (#294); LeftUnmounted the ones that were mounted and are not now,
+	// because their mountpoint is set on themselves or on one above them.
+	RemountedChildren []string `json:"remounted_children,omitempty"`
+	LeftUnmounted     []string `json:"left_unmounted,omitempty"`
 }
 
 // DatasetMover moves a child dataset out of a jail and back in.

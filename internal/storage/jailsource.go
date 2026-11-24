@@ -283,6 +283,7 @@ func toJailsMove(moved MoveResult) jails.DatasetMove {
 	return jails.DatasetMove{
 		From: moved.From, To: moved.To,
 		Mountpoint: moved.Mountpoint, Remounted: moved.Remounted,
+		RemountedChildren: moved.RemountedChildren, LeftUnmounted: moved.LeftUnmounted,
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/ottermq/jaildeck/internal/common"
@@ -40,6 +41,15 @@ type MoveResult struct {
 	To         string `json:"to"`
 	Mountpoint string `json:"mountpoint"`
 	Remounted  bool   `json:"remounted"`
+	// RemountedChildren are the datasets beneath it that were mounted before
+	// the move and are mounted again after it (#294): zfs unmount takes them
+	// down with it, and zfs mount brings back only the one it is given.
+	RemountedChildren []string `json:"remounted_children,omitempty"`
+	// LeftUnmounted are the ones that were mounted and are not now, because
+	// their mountpoint is set on themselves -- it still names the place they
+	// left, so mounting them would put them back there -- or because one
+	// above them is in that state. Their mountpoint wants setting first.
+	LeftUnmounted []string `json:"left_unmounted,omitempty"`
 }
 
 // RetainDataset moves a dataset out of its jail to <pool>/jails/retained/<name>,
@@ -240,6 +250,14 @@ func (s *Service) moveDataset(ctx context.Context, from, to string, mountpoint m
 	// dataset is still under its own name, mounted where it was. Unmounted
 	// after the rename, the same refusal left it named in retained/ and
 	// mounted inside the jail, with no name left to retry under.
+	// What beneath it is mounted, asked before the unmount takes it all
+	// down (#294).
+	var below []belowDataset
+	if wasMounted {
+		if below, err = s.mountedBelow(ctx, from); err != nil {
+			return MoveResult{}, err
+		}
+	}
 	if wasMounted {
 		unmount, unmountErr := s.system.Unmount(ctx, from)
 		s.logWrite(ctx, OperationMountDataset, unmount, unmountErr)
@@ -259,6 +277,11 @@ func (s *Service) moveDataset(ctx context.Context, from, to string, mountpoint m
 			if mountErr != nil {
 				return MoveResult{}, alsoFailed(toWriteError("rename", from, renameErr),
 					"and mounting it back where it was failed too", mountErr)
+			}
+			var back MoveResult
+			if mountErr := s.remountBelow(ctx, from, below, &back); mountErr != nil {
+				return MoveResult{}, alsoFailed(toWriteError("rename", from, renameErr),
+					"and mounting what was beneath it back failed too", mountErr)
 			}
 		}
 		return MoveResult{}, toWriteError("rename", from, renameErr)
@@ -305,7 +328,87 @@ func (s *Service) moveDataset(ctx context.Context, from, to string, mountpoint m
 	}
 	moved.Remounted = wasMounted
 	moved.Mountpoint = mountpointOf(ctx, s, to)
+	if err := s.remountBelow(ctx, to, below, &moved); err != nil {
+		return moved, err
+	}
 	return moved, nil
+}
+
+// belowDataset is a dataset beneath a moved one that was mounted before the
+// move: its name relative to the moved one, and whether its mountpoint is set
+// on itself rather than inherited.
+type belowDataset struct {
+	suffix string
+	local  bool
+}
+
+// mountedBelow lists the mounted datasets beneath dataset, parents before
+// children, in the order zfs lists them.
+func (s *Service) mountedBelow(ctx context.Context, dataset string) ([]belowDataset, error) {
+	datasets, err := s.system.DatasetsUnder(ctx, []string{dataset})
+	if err != nil {
+		return nil, toWriteError("list the datasets beneath", dataset, err)
+	}
+	names := make([]string, 0)
+	for _, d := range datasets {
+		if strings.HasPrefix(d.Name, dataset+"/") {
+			names = append(names, d.Name)
+		}
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+	properties, err := s.system.LocalProperties(ctx, names)
+	if err != nil {
+		return nil, toWriteError("read the properties of the datasets beneath", dataset, err)
+	}
+	local := make(map[string]bool)
+	for _, p := range properties {
+		if p.Name == "mountpoint" {
+			local[p.Dataset] = true
+		}
+	}
+	below := make([]belowDataset, 0, len(names))
+	for _, name := range names {
+		mounted, err := s.system.Mounted(ctx, name)
+		if err != nil {
+			return nil, toWriteError("read the mount state of", name, err)
+		}
+		if mounted {
+			below = append(below, belowDataset{suffix: strings.TrimPrefix(name, dataset), local: local[name]})
+		}
+	}
+	return below, nil
+}
+
+// remountBelow mounts again, under parent, each dataset mountedBelow found,
+// parents first, each audited. One whose mountpoint is set on itself is left
+// unmounted, and so is everything beneath it: an inherited mountpoint below
+// a stale one is stale too. A mount that fails stops there and is the error;
+// what was mounted before it is in the result.
+func (s *Service) remountBelow(ctx context.Context, parent string, below []belowDataset, moved *MoveResult) error {
+	var stale []string
+	for _, b := range below {
+		name := parent + b.suffix
+		if b.local || slices.ContainsFunc(stale, func(st string) bool { return strings.HasPrefix(name, st+"/") }) {
+			stale = append(stale, name)
+			moved.LeftUnmounted = append(moved.LeftUnmounted, name)
+			continue
+		}
+		// Changing the moved dataset's mountpoint can have mounted this one
+		// already (#121).
+		if mounted, err := s.system.Mounted(ctx, name); err == nil && mounted {
+			moved.RemountedChildren = append(moved.RemountedChildren, name)
+			continue
+		}
+		mount, err := s.system.Mount(ctx, name)
+		s.logWrite(ctx, OperationMountDataset, mount, err)
+		if err != nil {
+			return toWriteError("mount", name, err)
+		}
+		moved.RemountedChildren = append(moved.RemountedChildren, name)
+	}
+	return nil
 }
 
 // changeMountpoint records and inherits a retained dataset's own mountpoint,

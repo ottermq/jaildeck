@@ -107,6 +107,11 @@ export interface DatasetMove {
     to: string
     mountpoint: string
     remounted: boolean
+    // Datasets beneath it mounted again after the move, and ones that were
+    // mounted and are not now because their mountpoint is set on
+    // themselves (#294).
+    remounted_children?: string[]
+    left_unmounted?: string[]
 }
 
 // setTags merges user properties into the jail's own dataset. A null value

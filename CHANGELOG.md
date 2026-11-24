@@ -20,6 +20,14 @@ v0.7.0, refer to the archived
 [Codeberg tracker](https://codeberg.org/Otter-Labs/jaildeck/issues), and those
 versions' release notes stay there. GitHub numbering started again at #1.
 
+## Unreleased
+
+- **A moved dataset's own children are mounted again** (#294). Retain, restore and re-clone unmount a dataset before renaming it, and `zfs unmount` takes everything mounted beneath it down too; only the dataset itself was mounted again, so a `data` with a `data/wal` arrived with `wal` unmounted, and a jail started on it saw an empty directory. Each dataset that was mounted beneath it is now mounted again at its new place, parents first, each audited. One whose mountpoint is set on itself is left unmounted, with what is beneath it, and said to be: mounting it would put it back where it left. A failed rename mounts them back where they were.
+
+### API
+
+- A dataset move (`POST /api/jails/{name}/datasets/{child}/retain`, `.../restore`) gains `remounted_children` and `left_unmounted`.
+
 ## v0.41.1 — 2026-11-23
 
 [Release notes](https://github.com/ottermq/jaildeck/releases/tag/v0.41.1)

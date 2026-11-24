@@ -734,10 +734,15 @@ type restoreRequest struct {
 // @Description  children with it (JD-007), so a dataset worth
 // @Description  keeping has to stop being a child first.
 // @Description
-// @Description  Three audited commands: zfs rename -u, zfs unmount, zfs mount. The -u is
-// @Description  not optional — a plain zfs rename unmounts and remounts inside the same
-// @Description  command, which on a running jail is the filesystem vanishing from under a
-// @Description  live process (JD-025).
+// @Description  Three audited commands: zfs unmount, zfs rename -u, zfs mount (#281). The
+// @Description  -u is not optional — a plain zfs rename unmounts and remounts inside the
+// @Description  same command, which on a running jail is the filesystem vanishing from
+// @Description  under a live process (JD-025).
+// @Description
+// @Description  The unmount takes what is mounted beneath the dataset down too, so each of
+// @Description  those is mounted again afterwards, parents first, and listed in
+// @Description  remounted_children (#294). One whose mountpoint is set on itself is left
+// @Description  unmounted, with what is beneath it, and listed in left_unmounted.
 // @Description
 // @Description  It still unmounts: remounted=true means the filesystem moved and a running
 // @Description  jail just lost that path, so stop it first. Leaving the move half done is

@@ -38,7 +38,11 @@ type stubSystem struct {
 	holds         []Hold
 	clones        map[string][]string
 	dependencyErr error
-	nextTXG       uint64
+	// mountedErr fails every Mounted call after the first mountedErrAfter.
+	mountedErr      error
+	mountedErrAfter int
+	mountedCalls    int
+	nextTXG         uint64
 	// The move half.
 	notMounted map[string]bool
 	mountErr   error
@@ -510,9 +514,34 @@ func (s *stubSystem) mountpointChanged(name, mountpoint string) {
 		}
 	}
 	delete(s.notMounted, name)
+	// And everything beneath that inherits it, mounted or not before
+	// (#294): zfs remounts the whole changelist.
+	for _, d := range s.datasets {
+		if strings.HasPrefix(d.Name, name+"/") && !s.inheritsFromAbove(d.Name, name) {
+			continue
+		}
+		if strings.HasPrefix(d.Name, name+"/") {
+			delete(s.notMounted, d.Name)
+		}
+	}
+}
+
+// inheritsFromAbove says no dataset between name and top, name included, has
+// its own mountpoint.
+func (s *stubSystem) inheritsFromAbove(name, top string) bool {
+	for n := name; n != top && strings.HasPrefix(n, top+"/"); n = n[:strings.LastIndex(n, "/")] {
+		if s.localValue(n, "mountpoint") != "" {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *stubSystem) Mounted(_ context.Context, dataset string) (bool, error) {
+	s.mountedCalls++
+	if s.mountedErr != nil && s.mountedCalls > s.mountedErrAfter {
+		return false, s.mountedErr
+	}
 	if s.notMounted[dataset] {
 		return false, nil
 	}

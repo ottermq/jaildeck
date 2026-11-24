@@ -1349,6 +1349,12 @@
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
+                    },
+                    "500": {
+                        "description": "A step after the rename failed; the body says where the dataset is and how far the mounts got",
+                        "schema": {
+                            "$ref": "#/definitions/jails.DatasetMove"
+                        }
                     }
                 }
             }
@@ -1360,7 +1366,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Moves it to \u003cpool\u003e/jails/retained/\u003cname\u003e. Destroying a jail takes its\nchildren with it (JD-007), so a dataset worth\nkeeping has to stop being a child first.\n\nThree audited commands: zfs unmount, zfs rename -u, zfs mount (#281). The\n-u is not optional — a plain zfs rename unmounts and remounts inside the\nsame command, which on a running jail is the filesystem vanishing from\nunder a live process (JD-025).\n\nThe unmount takes what is mounted beneath the dataset down too, so each of\nthose is mounted again afterwards, parents first, and listed in\nremounted_children (#294). One whose mountpoint is set on itself is left\nunmounted, with what is beneath it, and listed in left_unmounted.\n\nIt still unmounts: remounted=true means the filesystem moved and a running\njail just lost that path, so stop it first. Leaving the move half done is\nworse — a dataset still mounted inside a jail makes the jail undestroyable.\n\n**A mountpoint set on the dataset itself** (`/var/db/postgres` inside the\njail) travels with a rename, so it would stay mounted in the jail it left.\nIt is recorded instead, relative to the jail, in `jaildeck:mountpoint`, and\ninherited while retained; `zfs inherit` mounts it under retained by itself,\nso no `zfs mount` follows (#121). One outside the jail is refused with `409`.\n\nThe retained parent is created on demand and is deliberately not part of\nthe layout readiness check (JD-021).",
+                "description": "Moves it to \u003cpool\u003e/jails/retained/\u003cname\u003e. Destroying a jail takes its\nchildren with it (JD-007), so a dataset worth\nkeeping has to stop being a child first.\n\nThree audited commands: zfs unmount, zfs rename -u, zfs mount (#281). The\n-u is not optional — a plain zfs rename unmounts and remounts inside the\nsame command, which on a running jail is the filesystem vanishing from\nunder a live process (JD-025).\n\nThe unmount takes what is mounted beneath the dataset down too, so each of\nthose is mounted again afterwards, parents first, and listed in\nremounted_children (#294); one that was not stays unmounted. One whose\nmountpoint, set on itself or above it, does not lie under where it went is\nleft unmounted and listed in left_unmounted. A step that fails after the\nrename answers with this body and error: the dataset is under To now.\n\nIt still unmounts: remounted=true means the filesystem moved and a running\njail just lost that path, so stop it first. Leaving the move half done is\nworse — a dataset still mounted inside a jail makes the jail undestroyable.\n\n**A mountpoint set on the dataset itself** (`/var/db/postgres` inside the\njail) travels with a rename, so it would stay mounted in the jail it left.\nIt is recorded instead, relative to the jail, in `jaildeck:mountpoint`, and\ninherited while retained; `zfs inherit` mounts it under retained by itself,\nso no `zfs mount` follows (#121). One outside the jail is refused with `409`.\n\nThe retained parent is created on demand and is deliberately not part of\nthe layout readiness check (JD-021).",
                 "consumes": [
                     "application/json"
                 ],
@@ -1425,6 +1431,12 @@
                         "description": "That retained name is taken, or the dataset's own mountpoint is outside its jail",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "A step after the rename failed; the body says where the dataset is and how far the mounts got",
+                        "schema": {
+                            "$ref": "#/definitions/jails.DatasetMove"
                         }
                     }
                 }
@@ -5354,6 +5366,10 @@
         "jails.DatasetMove": {
             "type": "object",
             "properties": {
+                "error": {
+                    "description": "Error is set when a step after the rename failed: the dataset is now\nnamed To, and the lists say how far the mounts got.",
+                    "type": "string"
+                },
                 "from": {
                     "type": "string"
                 },
@@ -5371,7 +5387,7 @@
                     "type": "boolean"
                 },
                 "remounted_children": {
-                    "description": "RemountedChildren are the datasets beneath it mounted again after the\nmove (#294); LeftUnmounted the ones that were mounted and are not now,\nbecause their mountpoint is set on themselves or on one above them.",
+                    "description": "RemountedChildren are the datasets beneath it mounted after the move,\nas they were before (#294); LeftUnmounted the ones that were mounted\nand are not now, because a mountpoint set on themselves or on one\nabove them does not lie under where it went.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -5869,6 +5885,13 @@
                 },
                 "from": {
                     "type": "string"
+                },
+                "left_unmounted": {
+                    "description": "LeftUnmounted are datasets beneath a child that were mounted before\nand are not after, because their own mountpoint is not under the jail\n(#294). Normally none.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "old_root": {
                     "description": "OldRoot is where the previous root is parked. A re-clone destroys\nnothing (JD-026).",

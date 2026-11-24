@@ -166,11 +166,15 @@ type DatasetMove struct {
 	// mountpoint. False when the dataset was not mounted to begin with --
 	// which is not a failure, just nothing to carry.
 	Remounted bool `json:"remounted"`
-	// RemountedChildren are the datasets beneath it mounted again after the
-	// move (#294); LeftUnmounted the ones that were mounted and are not now,
-	// because their mountpoint is set on themselves or on one above them.
+	// RemountedChildren are the datasets beneath it mounted after the move,
+	// as they were before (#294); LeftUnmounted the ones that were mounted
+	// and are not now, because a mountpoint set on themselves or on one
+	// above them does not lie under where it went.
 	RemountedChildren []string `json:"remounted_children,omitempty"`
 	LeftUnmounted     []string `json:"left_unmounted,omitempty"`
+	// Error is set when a step after the rename failed: the dataset is now
+	// named To, and the lists say how far the mounts got.
+	Error string `json:"error,omitempty"`
 }
 
 // DatasetMover moves a child dataset out of a jail and back in.
@@ -228,6 +232,10 @@ type Reclone struct {
 	// one, by name; PropertiesKept the ones the new root already set (#281).
 	Properties     []string `json:"properties"`
 	PropertiesKept []string `json:"properties_kept,omitempty"`
+	// LeftUnmounted are datasets beneath a child that were mounted before
+	// and are not after, because their own mountpoint is not under the jail
+	// (#294). Normally none.
+	LeftUnmounted []string `json:"left_unmounted,omitempty"`
 	// Error is why that step failed, which the status code alone does not say
 	// (#281).
 	Error string `json:"error,omitempty"`

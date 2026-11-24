@@ -201,12 +201,22 @@ refused before the rename, the dataset is still under its own name, mounted wher
 Unmounted after the rename, the same refusal left it renamed into `retained/` but still mounted
 inside the jail. If the rename itself fails, the dataset is mounted back where it was.
 
-**What is mounted beneath it comes too** (#294). `zfs unmount` takes every dataset mounted
-beneath the moved one down with it, and `zfs mount` brings back only the one it is given. So each
-that was mounted is mounted again at its new place, parents first, each audited, and listed in
-`remounted_children`. One whose `mountpoint` is set on itself still names the place it left, so it
-is left unmounted, with everything beneath it, and listed in `left_unmounted`: set its mountpoint,
-then mount it. A failed rename mounts them back where they were along with the dataset.
+**What is beneath it comes too** (#294). `zfs unmount` takes every dataset mounted beneath the
+moved one down with it, and `zfs mount` brings back only the one it is given. So every dataset
+beneath is put back as it stood before the move, parents first: one that was mounted is mounted
+at its new place, and one that was not stays unmounted, even when a mountpoint change mounted
+it. Each `zfs mount` or `zfs unmount` this runs is its own audit entry; one that the mountpoint
+change mounted by itself is audited as part of that `zfs set` or `zfs inherit`.
+
+- `remounted_children` lists the ones mounted after the move.
+- `left_unmounted` lists the ones that were mounted and are not now, because a `mountpoint` set
+  on themselves, or on one above them, does not lie under where they went: mounting them would
+  put them back where they left. Set the mountpoint, then mount them. A re-clone puts each child
+  back where it was, so there they are mounted again, and the re-clone's own `left_unmounted` is
+  normally empty.
+- A failed rename puts them all back where they were, along with the dataset.
+- A step that fails after the rename answers with the move, `error` and the lists so far: the
+  dataset is under its new name, and a retry under the old one would find nothing.
 
 **The `-u` is not a style preference.** A plain `zfs rename` remounts the dataset by itself,
 inside the same command, at whatever the new name implies — decided by `zfs` rather than by

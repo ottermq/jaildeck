@@ -101,9 +101,12 @@ func TestAFailedChildMountIsReported(t *testing.T) {
 	}
 }
 
-// A failed rename mounts the dataset and what was beneath it back where they were.
+// A failed rename mounts the dataset and what was beneath it back where they
+// were -- a child with its own mountpoint too, since there it is right.
 func TestAFailedRenameRemountsTheChildrenWhereTheyWere(t *testing.T) {
 	system := withNestedData()
+	system.properties = append(system.properties, Property{
+		Dataset: ottermqData + "/wal", Name: "mountpoint", Value: "/usr/local/jails/containers/ottermq/var/wal"})
 	system.datasets = append(system.datasets, Dataset{Name: "tank/jails/retained", Mountpoint: "/usr/local/jails/retained"})
 	system.writeErr = errors.New("cannot rename: permission denied")
 
@@ -114,5 +117,108 @@ func TestAFailedRenameRemountsTheChildrenWhereTheyWere(t *testing.T) {
 		if system.notMounted[name] {
 			t.Errorf("%s left unmounted after the rename failed", name)
 		}
+	}
+}
+
+// A mountpoint change on the moved dataset mounts what inherits it (#121);
+// one beneath that was not mounted before is unmounted again.
+func TestAMountpointChangeDoesNotLeaveAnUnmountedChildMounted(t *testing.T) {
+	system := withNestedData()
+	system.properties = append(system.properties, Property{
+		Dataset: ottermqData, Name: "mountpoint", Value: "/usr/local/jails/containers/ottermq/var/db"})
+	system.notMounted[ottermqData+"/wal"] = true
+	system.notMounted[ottermqData+"/wal/archive"] = true
+
+	moved, err := NewService(system, &fakeLogger{}, "tank").RetainDataset(context.Background(), ottermqData, "kept")
+	if err != nil {
+		t.Fatalf("RetainDataset: %v", err)
+	}
+	for _, name := range []string{"tank/jails/retained/kept/wal", "tank/jails/retained/kept/wal/archive"} {
+		if !system.notMounted[name] {
+			t.Errorf("%s is mounted after the move; it was not before", name)
+		}
+	}
+	if len(moved.RemountedChildren)+len(moved.LeftUnmounted) != 0 {
+		t.Errorf("moved = %+v", moved)
+	}
+}
+
+// An unmounted dataset with its own mountpoint still makes the mounted ones
+// beneath it, which inherit that path, stale.
+func TestAnUnmountedAncestorWithItsOwnMountpointMakesItsChildrenStale(t *testing.T) {
+	system := withNestedData()
+	system.properties = append(system.properties, Property{
+		Dataset: ottermqData + "/wal", Name: "mountpoint", Value: "/usr/local/jails/containers/ottermq/var/wal"})
+	system.notMounted[ottermqData+"/wal"] = true
+
+	moved, err := NewService(system, &fakeLogger{}, "tank").RetainDataset(context.Background(), ottermqData, "kept")
+	if err != nil {
+		t.Fatalf("RetainDataset: %v", err)
+	}
+	if !slices.Equal(moved.LeftUnmounted, []string{"tank/jails/retained/kept/wal/archive"}) {
+		t.Errorf("LeftUnmounted = %v", moved.LeftUnmounted)
+	}
+	if slices.Contains(system.ran, "zfs mount tank/jails/retained/kept/wal/archive") {
+		t.Errorf("mounted archive back under the jail it left: %q", system.ran)
+	}
+}
+
+// Restored under a jail, a child's own mountpoint inside that jail is right.
+func TestARestoreMountsAChildWhoseMountpointIsInTheJail(t *testing.T) {
+	system := withNestedData()
+	system.properties = append(system.properties, Property{
+		Dataset: ottermqData + "/wal", Name: "mountpoint", Value: "/usr/local/jails/containers/ottermq/var/wal"})
+	service := NewService(system, &fakeLogger{}, "tank")
+	if _, err := service.RetainDataset(context.Background(), ottermqData, "kept"); err != nil {
+		t.Fatal(err)
+	}
+	// Mounted as it stands in retained/, as an operator who set it would.
+	delete(system.notMounted, "tank/jails/retained/kept/wal")
+	delete(system.notMounted, "tank/jails/retained/kept/wal/archive")
+
+	moved, err := service.RestoreDataset(context.Background(), "tank", "kept", ottermqData)
+	if err != nil {
+		t.Fatalf("RestoreDataset: %v", err)
+	}
+	if len(moved.LeftUnmounted) != 0 || !slices.Contains(moved.RemountedChildren, ottermqData+"/wal") {
+		t.Errorf("moved = %+v", moved)
+	}
+}
+
+// A mount state that cannot be read is the error, not a guess.
+func TestAMountStateThatCannotBeReadIsTheError(t *testing.T) {
+	system := withNestedData()
+	service := NewService(system, &fakeLogger{}, "tank")
+	system.mountedErrAfter = 1 + 2 // the dataset itself, then wal and archive before the move
+	system.mountedErr = errors.New("zfs get mounted: timed out")
+
+	moved, err := service.RetainDataset(context.Background(), ottermqData, "kept")
+	if err == nil || moved.To == "" {
+		t.Fatalf("moved %+v, err %v; want the read's failure after the move", moved, err)
+	}
+}
+
+// A re-clone puts a child back where it was, so a dataset beneath it whose
+// own mountpoint names the jail -- left unmounted while the child sat in
+// retained/ -- is mounted again, and nothing is reported left (#294).
+func TestARecloneRemountsWhatTheRetainLeft(t *testing.T) {
+	system := withJailToReclone()
+	// The containers parent, so the new root's clone inherits the jail's
+	// path the way zfs gives it one.
+	system.datasets = append(system.datasets,
+		Dataset{Name: "tank/jails/containers", Mountpoint: "/usr/local/jails/containers"},
+		Dataset{Name: recloneRoot + "/data/wal", Mountpoint: "/usr/local/jails/containers/ottermq/var/wal"})
+	system.properties = append(system.properties, Property{
+		Dataset: recloneRoot + "/data/wal", Name: "mountpoint", Value: "/usr/local/jails/containers/ottermq/var/wal"})
+
+	result, err := NewService(system, &fakeLogger{}, "tank").RecloneRoot(context.Background(), recloneRoot, newTemplate)
+	if err != nil {
+		t.Fatalf("RecloneRoot: %v (%+v)", err, result)
+	}
+	if len(result.LeftUnmounted) != 0 {
+		t.Errorf("LeftUnmounted = %v", result.LeftUnmounted)
+	}
+	if system.notMounted[recloneRoot+"/data/wal"] {
+		t.Errorf("wal is unmounted after the re-clone; ran %q", system.ran)
 	}
 }

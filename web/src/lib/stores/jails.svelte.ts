@@ -112,6 +112,8 @@ export interface DatasetMove {
     // themselves (#294).
     remounted_children?: string[]
     left_unmounted?: string[]
+    // Set when a step after the rename failed: the dataset is under `to`.
+    error?: string
 }
 
 // setTags merges user properties into the jail's own dataset. A null value
@@ -313,6 +315,8 @@ export interface Reclone {
     // root already set itself, which were kept (#281).
     properties?: string[]
     properties_kept?: string[]
+    // Datasets beneath a child left unmounted (#294). Normally none.
+    left_unmounted?: string[]
 }
 
 // restoreDataset brings a retained dataset back under a jail. It need not be

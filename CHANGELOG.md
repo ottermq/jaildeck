@@ -22,11 +22,12 @@ versions' release notes stay there. GitHub numbering started again at #1.
 
 ## Unreleased
 
-- **A moved dataset's own children are mounted again** (#294). Retain, restore and re-clone unmount a dataset before renaming it, and `zfs unmount` takes everything mounted beneath it down too; only the dataset itself was mounted again, so a `data` with a `data/wal` arrived with `wal` unmounted, and a jail started on it saw an empty directory. Each dataset that was mounted beneath it is now mounted again at its new place, parents first, each audited. One whose mountpoint is set on itself is left unmounted, with what is beneath it, and said to be: mounting it would put it back where it left. A failed rename mounts them back where they were.
+- **A moved dataset's own children come with it** (#294). Retain, restore and re-clone unmount a dataset before renaming it, and `zfs unmount` takes everything mounted beneath it down too; only the dataset itself was mounted again, so a `data` with a `data/wal` arrived with `wal` unmounted, and a jail started on it saw an empty directory. Every dataset beneath is now put back as it stood, parents first: mounted if it was, unmounted if it was not, even when a mountpoint change mounted it. One whose mountpoint, set on itself or on one above it, does not lie under where it went is left unmounted and said to be, since mounting it would put it back where it left; a re-clone mounts it again once its child is back home. A failed rename puts them all back where they were.
 
 ### API
 
-- A dataset move (`POST /api/jails/{name}/datasets/{child}/retain`, `.../restore`) gains `remounted_children` and `left_unmounted`.
+- A dataset move (`POST /api/jails/{name}/datasets/{child}/retain`, `.../restore`) gains `remounted_children` and `left_unmounted`. When a step after the rename fails, it now answers with the move and `error` instead of only the error, since the dataset is already under its new name.
+- `Reclone` gains `left_unmounted`, normally empty.
 
 ## v0.41.1 — 2026-11-23
 

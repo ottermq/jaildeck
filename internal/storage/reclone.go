@@ -51,6 +51,11 @@ type Reclone struct {
 	Properties []string `json:"properties"`
 	// PropertiesKept are the ones the new root already set itself, which win.
 	PropertiesKept []string `json:"properties_kept,omitempty"`
+	// LeftUnmounted are datasets beneath a child that were mounted before
+	// the re-clone and are not after it, because their own mountpoint does
+	// not lie under the jail (#294). Normally none: a child goes back where
+	// it was, and so does what is beneath it.
+	LeftUnmounted []string `json:"left_unmounted,omitempty"`
 }
 
 // Parked is one dataset that has been moved out and not yet moved back.
@@ -127,9 +132,17 @@ func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string
 	}
 
 	// Children first, and all of them, before the root is touched at all.
+	// What a retain leaves unmounted beneath a child, because its own
+	// mountpoint names the jail, is mounted again when the child is back
+	// (#294).
+	remount := make(map[string][]string)
 	for _, child := range children {
 		name := recloneRetainName(root, child)
-		if moved, err := s.RetainDataset(ctx, child, name); err != nil {
+		moved, err := s.RetainDataset(ctx, child, name)
+		for _, left := range moved.LeftUnmounted {
+			remount[child] = append(remount[child], strings.TrimPrefix(left, moved.To))
+		}
+		if err != nil {
 			// A move that failed after its rename has still moved it, and says
 			// so by naming where it went (#281).
 			if moved.To != "" {
@@ -175,7 +188,9 @@ func (s *Service) RecloneRoot(ctx context.Context, root, templateSnapshot string
 	// And now the children have somewhere to go back to.
 	for _, child := range children {
 		name := strings.TrimPrefix(outstanding[child], retainedParent(poolOf(root))+"/")
-		if moved, err := s.RestoreDataset(ctx, poolOf(root), name, child); err != nil {
+		moved, err := s.restoreDataset(ctx, poolOf(root), name, child, remount[child])
+		result.LeftUnmounted = append(result.LeftUnmounted, moved.LeftUnmounted...)
+		if err != nil {
 			// Renamed back but not mounted: it is under the jail again, and
 			// the error says what is left to do. Reporting it as still in
 			// retained/ would send a client looking where it is not.

@@ -741,8 +741,10 @@ type restoreRequest struct {
 // @Description
 // @Description  The unmount takes what is mounted beneath the dataset down too, so each of
 // @Description  those is mounted again afterwards, parents first, and listed in
-// @Description  remounted_children (#294). One whose mountpoint is set on itself is left
-// @Description  unmounted, with what is beneath it, and listed in left_unmounted.
+// @Description  remounted_children (#294); one that was not stays unmounted. One whose
+// @Description  mountpoint, set on itself or above it, does not lie under where it went is
+// @Description  left unmounted and listed in left_unmounted. A step that fails after the
+// @Description  rename answers with this body and error: the dataset is under To now.
 // @Description
 // @Description  It still unmounts: remounted=true means the filesystem moved and a running
 // @Description  jail just lost that path, so stop it first. Leaving the move half done is
@@ -767,6 +769,7 @@ type restoreRequest struct {
 // @Failure      401     {object}  common.ErrorResponse
 // @Failure      404     {object}  common.ErrorResponse  "No such jail or dataset"
 // @Failure      409     {object}  common.ErrorResponse  "That retained name is taken, or the dataset's own mountpoint is outside its jail"
+// @Failure      500     {object}  DatasetMove           "A step after the rename failed; the body says where the dataset is and how far the mounts got"
 // @Security     BearerAuth
 // @Router       /jails/{name}/datasets/{child}/retain [post]
 func (h *JailHandler) Retain(w http.ResponseWriter, r *http.Request) {
@@ -782,6 +785,14 @@ func (h *JailHandler) Retain(w http.ResponseWriter, r *http.Request) {
 	}
 	moved, err := h.service.Retain(r.Context(), name, chi.URLParam(r, "child"), body.Name)
 	if err != nil {
+		// Renamed and then a mount failed: the dataset is now named To,
+		// and a caller told only the error would retry under a name that
+		// is gone (#294).
+		if moved.To != "" {
+			moved.Error = partialMessage(err)
+			common.WriteJSON(w, statusForPartial(err), moved)
+			return
+		}
 		common.HandlerError(w, err)
 		return
 	}
@@ -815,6 +826,7 @@ func (h *JailHandler) Retain(w http.ResponseWriter, r *http.Request) {
 // @Failure      401     {object}  common.ErrorResponse
 // @Failure      404     {object}  common.ErrorResponse  "Nothing retained under that name"
 // @Failure      409     {object}  common.ErrorResponse  "The jail already has a child of that name, or the dataset's recorded mountpoint would land outside it"
+// @Failure      500     {object}  DatasetMove           "A step after the rename failed; the body says where the dataset is and how far the mounts got"
 // @Security     BearerAuth
 // @Router       /jails/{name}/datasets/{child}/restore [post]
 func (h *JailHandler) Restore(w http.ResponseWriter, r *http.Request) {
@@ -830,6 +842,14 @@ func (h *JailHandler) Restore(w http.ResponseWriter, r *http.Request) {
 	}
 	moved, err := h.service.Restore(r.Context(), name, body.From, chi.URLParam(r, "child"))
 	if err != nil {
+		// Renamed and then a mount failed: the dataset is now named To,
+		// and a caller told only the error would retry under a name that
+		// is gone (#294).
+		if moved.To != "" {
+			moved.Error = partialMessage(err)
+			common.WriteJSON(w, statusForPartial(err), moved)
+			return
+		}
 		common.HandlerError(w, err)
 		return
 	}
